@@ -194,7 +194,40 @@ function contentHash(rows: Row[]): string {
   return h.digest("hex");
 }
 
-async function resolveTab(fileId: string, pattern: string | null): Promise<string | null> {
+const MONTH_ABBR = [
+  "jan", "feb", "mar", "apr", "may", "jun",
+  "jul", "aug", "sep", "oct", "nov", "dec",
+];
+const MONTH_FULL = [
+  "january", "february", "march", "april", "may", "june",
+  "july", "august", "september", "october", "november", "december",
+];
+
+// Candidate tab tokens for a plan month, most-specific first. Used when a
+// source's tab_pattern is the literal '{month}' placeholder (per-month tabs,
+// e.g. CP production 'MAY-26'/'JUN-26' or orders 'Apr'/'May'/'Jun').
+function monthTokens(pmFrom: string): string[] {
+  const d = new Date(`${pmFrom.slice(0, 10)}T00:00:00Z`);
+  const m = d.getUTCMonth();
+  const yyyy = d.getUTCFullYear();
+  const yy = String(yyyy).slice(2);
+  const abbr = MONTH_ABBR[m]!;
+  const full = MONTH_FULL[m]!;
+  const mm = String(m + 1).padStart(2, "0");
+  return [
+    `${abbr}-${yy}`, `${abbr} ${yy}`, `${abbr}'${yy}`, `${abbr}${yy}`,
+    `${full}-${yy}`, `${full} ${yy}`, `${full}'${yy}`,
+    `${abbr}-${yyyy}`, `${full}-${yyyy}`,
+    `${mm}-${yy}`, `${mm}/${yy}`,
+    abbr, full,
+  ];
+}
+
+async function resolveTab(
+  fileId: string,
+  pattern: string | null,
+  pmFrom?: string,
+): Promise<string | null> {
   let tabs: string[] = [];
   try {
     tabs = await listTabs(fileId);
@@ -202,8 +235,21 @@ async function resolveTab(fileId: string, pattern: string | null): Promise<strin
     return null;
   }
   if (tabs.length === 0) return null;
-  if (!pattern) return tabs[0] ?? null;
-  const p = norm(pattern);
+  const p = pattern ? norm(pattern) : "";
+  // Month-aware: a '{month}' pattern picks the tab for this plan month.
+  if (p.includes("{month}") && pmFrom) {
+    const toks = monthTokens(pmFrom);
+    for (const t of toks) {
+      const exact = tabs.find((x) => norm(x) === t);
+      if (exact) return exact;
+    }
+    for (const t of toks) {
+      const partial = tabs.find((x) => norm(x).includes(t));
+      if (partial) return partial;
+    }
+    return tabs[0] ?? null;
+  }
+  if (!p) return tabs[0] ?? null;
   const exact = tabs.find((t) => norm(t) === p);
   if (exact) return exact;
   const partial = tabs.find((t) => norm(t).includes(p) || p.includes(norm(t)));
@@ -709,7 +755,7 @@ export async function pullData(
   for (const [handler, cfg] of selected) {
     if (onlyHandler && handler !== onlyHandler && cfg.dataType !== onlyHandler) continue;
 
-    const tab = await resolveTab(cfg.fileId, cfg.tabPattern);
+    const tab = await resolveTab(cfg.fileId, cfg.tabPattern, pmFrom);
     if (!tab) {
       const [b] = await db
         .insert(importBatches)

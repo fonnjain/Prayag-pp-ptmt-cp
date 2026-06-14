@@ -1,3 +1,4 @@
 - [wouter catch-all](wouter-catchall.md) — a pathless `<Route component={...}/>` is the catch-all; `path="/:rest*"` silently fails to match `/`.
 - [Ingestion source selection](ingestion-source-selection.md) — pick one source/handler by month+specificity (fiscal rule); count added/updated via `(xmax=0)`; never mutate the content hash for no-change.
 - [orval query options](orval-query-options.md) — generated react-query hooks require `queryKey` in the options type; pass `enabled` via an `any`-cast helper.
+- [Live data setup](live-data-setup.md) — sheet reads need the `google-sheet` connector (Drive auth is insufficient); DB seeds don't survive task-agent merges, re-seed `source_config` from `lib/db/seeds/source_config.sql`.
