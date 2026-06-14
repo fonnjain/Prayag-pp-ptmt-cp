@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useData } from "@/lib/data-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,10 @@ export default function Settings() {
   
   // Local state for editing to prevent immediate context updates while typing
   const [configs, setConfigs] = useState(sourceConfigs);
+
+  useEffect(() => {
+    setConfigs(sourceConfigs);
+  }, [sourceConfigs]);
 
   if (role !== "admin") {
     return (

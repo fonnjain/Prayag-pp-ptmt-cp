@@ -53,11 +53,26 @@ function ProtectedRoutes() {
   );
 }
 
+function AuthGate() {
+  const { meLoading, isAuthed } = useData();
+  if (meLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
+        Loading…
+      </div>
+    );
+  }
+  if (!isAuthed) {
+    return <Redirect to="/login" />;
+  }
+  return <ProtectedRoutes />;
+}
+
 function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
-      <Route component={ProtectedRoutes} />
+      <Route component={AuthGate} />
     </Switch>
   );
 }

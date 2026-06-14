@@ -33,15 +33,36 @@ function FindingRow({ finding }: { finding: ValidationFinding }) {
 }
 
 export default function DataPage() {
-  const { division, planMonth, importBatches, sanityResult, pullData, acknowledgeWarnings, role } = useData();
+  const { division, planMonth, importBatches, sanityResult, pullData, acknowledgeWarnings, role, isPulling } = useData();
   const { toast } = useToast();
 
-  const handlePull = () => {
-    pullData();
-    toast({
-      title: "Data Pull Complete",
-      description: "Successfully fetched from source integrations.",
-    });
+  const handlePull = async () => {
+    try {
+      await pullData();
+      toast({
+        title: "Data Pull Complete",
+        description: "Successfully fetched and validated source data.",
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Data Pull Failed",
+        description: err instanceof Error ? err.message : "Could not pull data from source.",
+      });
+    }
+  };
+
+  const handleAcknowledge = async () => {
+    try {
+      await acknowledgeWarnings();
+      toast({ title: "Warnings acknowledged", description: "You may now build the plan." });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Acknowledge failed",
+        description: err instanceof Error ? err.message : "Could not acknowledge warnings.",
+      });
+    }
   };
 
   const latestBatch = importBatches[0];
@@ -55,9 +76,9 @@ export default function DataPage() {
         </div>
         
         {role !== "viewer" && (
-          <Button onClick={handlePull} className="gap-2 shrink-0">
+          <Button onClick={handlePull} disabled={isPulling} className="gap-2 shrink-0">
             <Download className="h-4 w-4" />
-            Pull Latest Data
+            {isPulling ? "Pulling..." : "Pull Latest Data"}
           </Button>
         )}
       </div>
@@ -101,7 +122,7 @@ export default function DataPage() {
                   )}
 
                   {sanityResult.verdict === 'warn' && role !== "viewer" && (
-                    <Button variant="outline" className="w-full mt-4 bg-amber-500/5 text-amber-700 hover:bg-amber-500/10 border-amber-200" onClick={acknowledgeWarnings}>
+                    <Button variant="outline" className="w-full mt-4 bg-amber-500/5 text-amber-700 hover:bg-amber-500/10 border-amber-200" onClick={handleAcknowledge}>
                       Acknowledge Warnings & Proceed
                     </Button>
                   )}

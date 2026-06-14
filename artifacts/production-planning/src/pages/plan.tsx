@@ -13,7 +13,7 @@ import { Calculator, Save, AlertTriangle, Layers } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function Plan() {
-  const { division, planMonth, planLines, planRuns, buildPlan, role, categorySummaries } = useData();
+  const { division, planMonth, planLines, planRuns, buildPlan, role, categorySummaries, isBuilding } = useData();
   const { toast } = useToast();
   
   const [multiplierMode, setMultiplierMode] = useState<"single"|"minmax"|"overrides">("single");
@@ -24,41 +24,59 @@ export default function Plan() {
   
   const activeRun = planRuns[0];
 
-  const handleBuild = () => {
-    if (multiplierMode === "single") {
-      buildPlan("single", parseFloat(singleVal));
-    } else if (multiplierMode === "minmax") {
-      buildPlan("minmax", parseFloat(minVal), parseFloat(maxVal));
-    } else {
-      const overrides: Record<string, number> = {};
-      for (const [category, raw] of Object.entries(overrideVals)) {
-        const num = parseFloat(raw);
-        if (raw.trim() !== "" && !Number.isNaN(num)) {
-          overrides[category] = num;
+  const handleBuild = async () => {
+    try {
+      if (multiplierMode === "single") {
+        await buildPlan("single", parseFloat(singleVal));
+      } else if (multiplierMode === "minmax") {
+        await buildPlan("minmax", parseFloat(minVal), parseFloat(maxVal));
+      } else {
+        const overrides: Record<string, number> = {};
+        for (const [category, raw] of Object.entries(overrideVals)) {
+          const num = parseFloat(raw);
+          if (raw.trim() !== "" && !Number.isNaN(num)) {
+            overrides[category] = num;
+          }
         }
+        if (Object.keys(overrides).length === 0) {
+          toast({
+            title: "No overrides entered",
+            description: "Enter a multiplier for at least one category before running the engine.",
+            variant: "destructive",
+          });
+          return;
+        }
+        await buildPlan("overrides", undefined, undefined, overrides);
       }
-      if (Object.keys(overrides).length === 0) {
-        toast({
-          title: "No overrides entered",
-          description: "Enter a multiplier for at least one category before running the engine.",
-          variant: "destructive",
-        });
-        return;
-      }
-      buildPlan("overrides", undefined, undefined, overrides);
+
+      toast({
+        title: "Plan Generated",
+        description: `New plan run created for ${division} ${planMonth}`,
+      });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Plan build failed",
+        description: err instanceof Error ? err.message : "Could not build the plan.",
+      });
     }
-    
-    toast({
-      title: "Plan Generated",
-      description: `New plan run created for ${division} ${planMonth}`,
-    });
   };
 
   return (
     <div className="space-y-6 flex flex-col h-full animate-in fade-in duration-500">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Production Plan</h1>
-        <p className="text-muted-foreground">Buffer-based engine for {division} • {planMonth}</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Production Plan</h1>
+          <p className="text-muted-foreground">Buffer-based engine for {division} • {planMonth}</p>
+        </div>
+        {activeRun && (
+          <Button asChild variant="outline" className="gap-2 shrink-0">
+            <a href={`/api/plan/runs/${activeRun.id}/export`}>
+              <Save className="h-4 w-4" />
+              Export Excel
+            </a>
+          </Button>
+        )}
       </div>
 
       {role !== "viewer" && (
@@ -129,9 +147,9 @@ export default function Plan() {
                   </div>
                 )}
 
-                <Button onClick={handleBuild} className="w-full md:w-auto mt-4 md:mt-0 ml-auto gap-2">
+                <Button onClick={handleBuild} disabled={isBuilding} className="w-full md:w-auto mt-4 md:mt-0 ml-auto gap-2">
                   <Calculator className="h-4 w-4" />
-                  Run Engine
+                  {isBuilding ? "Running..." : "Run Engine"}
                 </Button>
               </div>
             </div>

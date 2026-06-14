@@ -3,9 +3,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FileText, Download, Calendar, Activity, Zap } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Reports() {
-  const { reports, generateReport, role, division, planMonth } = useData();
+  const { reports, generateReport, role, division, planMonth, isGeneratingReport } = useData();
+  const { toast } = useToast();
+
+  const handleGenerate = async () => {
+    try {
+      await generateReport();
+      toast({ title: "Report generated", description: "AI analysis is ready below." });
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Report generation failed",
+        description: err instanceof Error ? err.message : "Build a plan first, then generate a report.",
+      });
+    }
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -16,9 +31,9 @@ export default function Reports() {
         </div>
         
         {role !== "viewer" && (
-          <Button onClick={generateReport} className="gap-2">
+          <Button onClick={handleGenerate} disabled={isGeneratingReport} className="gap-2">
             <FileText className="h-4 w-4" />
-            Generate New Report
+            {isGeneratingReport ? "Generating..." : "Generate New Report"}
           </Button>
         )}
       </div>
@@ -58,10 +73,12 @@ export default function Reports() {
                   {report.tier === "fast" ? <Zap className="h-3 w-3" /> : <Activity className="h-3 w-3" />}
                   <span>Analysis: {report.model} • {report.tier} tier</span>
                 </div>
-                <Button variant="secondary" size="sm" className="gap-2">
-                  <Download className="h-4 w-4" />
-                  <span className="hidden sm:inline">Download PDF</span>
-                  <span className="sm:hidden">PDF</span>
+                <Button asChild variant="secondary" size="sm" className="gap-2">
+                  <a href={`/api/reports/${report.id}/download`}>
+                    <Download className="h-4 w-4" />
+                    <span className="hidden sm:inline">Download PDF</span>
+                    <span className="sm:hidden">PDF</span>
+                  </a>
                 </Button>
               </CardFooter>
             </Card>

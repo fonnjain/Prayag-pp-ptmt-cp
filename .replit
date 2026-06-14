@@ -1,4 +1,4 @@
-modules = ["nodejs-24"]
+modules = ["nodejs-24", "postgresql-16"]
 
 [deployment]
 router = "application"
@@ -34,3 +34,11 @@ externalPort = 3000
 
 [nix]
 channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+ANTHROPIC_MODEL_FAST = "claude-sonnet-4-6"
+ANTHROPIC_MODEL_DEEP = "claude-opus-4-8"
+MAX_TOKENS_FAST = "1500"
+MAX_TOKENS_DEEP = "4000"

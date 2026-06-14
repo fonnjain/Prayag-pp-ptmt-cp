@@ -5,19 +5,33 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useData } from "@/lib/data-provider";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Login() {
   const [, setLocation] = useLocation();
-  const { setRole } = useData();
+  const { login } = useData();
+  const { toast } = useToast();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent, role: "admin" | "planner" | "viewer") => {
+  const handleLogin = async (e: React.FormEvent, presetEmail?: string) => {
     e.preventDefault();
+    const finalEmail = presetEmail ?? email;
+    const finalPassword = presetEmail ? "prayag2026" : password;
+    if (!finalEmail || !finalPassword) {
+      toast({ variant: "destructive", title: "Missing credentials", description: "Enter your email and password." });
+      return;
+    }
     setIsLoading(true);
-    setTimeout(() => {
-      setRole(role);
+    try {
+      await login(finalEmail, finalPassword);
       setLocation("/");
-    }, 600);
+    } catch {
+      toast({ variant: "destructive", title: "Sign in failed", description: "Invalid email or password." });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -32,32 +46,43 @@ export default function Login() {
             Sign in to access your production workspace
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input id="email" type="email" placeholder="m.planner@prayag.com" />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="password">Password</Label>
-            <Input id="password" type="password" />
-          </div>
-        </CardContent>
-        <CardFooter className="flex flex-col space-y-2">
-          <Button 
-            className="w-full" 
-            onClick={(e) => handleLogin(e, "planner")}
-            disabled={isLoading}
-          >
-            {isLoading ? "Signing in..." : "Sign In"}
-          </Button>
-          <div className="text-xs text-center text-muted-foreground mt-4 pt-4 border-t w-full">
-            <p className="mb-2 font-medium">Quick Access (Demo)</p>
-            <div className="flex justify-center gap-2">
-              <Button variant="outline" size="sm" onClick={(e) => handleLogin(e, "admin")}>Admin</Button>
-              <Button variant="outline" size="sm" onClick={(e) => handleLogin(e, "viewer")}>Viewer</Button>
+        <form onSubmit={(e) => handleLogin(e)}>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                autoComplete="username"
+                placeholder="planner@prayag.local"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
-          </div>
-        </CardFooter>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+          </CardContent>
+          <CardFooter className="flex flex-col space-y-2">
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? "Signing in..." : "Sign In"}
+            </Button>
+            <div className="text-xs text-center text-muted-foreground mt-4 pt-4 border-t w-full">
+              <p className="mb-2 font-medium">Quick Access (Demo)</p>
+              <div className="flex justify-center gap-2">
+                <Button type="button" variant="outline" size="sm" disabled={isLoading} onClick={(e) => handleLogin(e, "admin@prayag.local")}>Admin</Button>
+                <Button type="button" variant="outline" size="sm" disabled={isLoading} onClick={(e) => handleLogin(e, "planner@prayag.local")}>Planner</Button>
+                <Button type="button" variant="outline" size="sm" disabled={isLoading} onClick={(e) => handleLogin(e, "viewer@prayag.local")}>Viewer</Button>
+              </div>
+            </div>
+          </CardFooter>
+        </form>
       </Card>
     </div>
   );

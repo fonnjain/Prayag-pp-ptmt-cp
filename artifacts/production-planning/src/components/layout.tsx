@@ -6,9 +6,15 @@ import { Button } from "@/components/ui/button";
 import { LayoutDashboard, FileSpreadsheet, Database, FileText, Settings, History, LogOut, Menu, X } from "lucide-react";
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const { division, setDivision, planMonth, setPlanMonth, role, setRole } = useData();
-  const [location] = useLocation();
+  const { division, setDivision, planMonth, setPlanMonth, role, user, logout } = useData();
+  const [location, setLocation] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleLogout = async () => {
+    setMobileMenuOpen(false);
+    await logout();
+    setLocation("/login");
+  };
 
   const navItems = [
     { label: "Dashboard", href: "/", icon: LayoutDashboard, roles: ["admin", "planner", "viewer"] },
@@ -56,9 +62,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="2024-02">Feb 2024</SelectItem>
-                <SelectItem value="2024-03">Mar 2024</SelectItem>
-                <SelectItem value="2024-04">Apr 2024</SelectItem>
+                <SelectItem value="2026-04">Apr 2026</SelectItem>
+                <SelectItem value="2026-05">May 2026</SelectItem>
+                <SelectItem value="2026-06">Jun 2026</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -78,25 +84,14 @@ export function Layout({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        <div className="p-4 border-t space-y-4">
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Demo Role</label>
-            <Select value={role} onValueChange={(v: any) => setRole(v)}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="admin">Admin</SelectItem>
-                <SelectItem value="planner">Planner</SelectItem>
-                <SelectItem value="viewer">Viewer</SelectItem>
-              </SelectContent>
-            </Select>
+        <div className="p-4 border-t space-y-3">
+          <div className="space-y-0.5">
+            <div className="text-sm font-medium truncate">{user?.name ?? user?.email ?? "Signed in"}</div>
+            <div className="text-xs text-muted-foreground capitalize">{role}</div>
           </div>
-          <Link href="/login">
-            <Button variant="ghost" className="w-full justify-start gap-2 h-8 text-muted-foreground hover:text-foreground" onClick={() => setMobileMenuOpen(false)}>
-              <LogOut className="h-4 w-4" /> Sign Out
-            </Button>
-          </Link>
+          <Button variant="ghost" className="w-full justify-start gap-2 h-8 text-muted-foreground hover:text-foreground" onClick={handleLogout}>
+            <LogOut className="h-4 w-4" /> Sign Out
+          </Button>
         </div>
       </aside>
 

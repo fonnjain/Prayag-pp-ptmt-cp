@@ -3,20 +3,33 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Prayag Production Planning API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication and roles
+  - name: data
+    description: Ingestion and sanity check
+  - name: plan
+    description: Deterministic planning engine
+  - name: dashboard
+    description: Dashboard aggregates
+  - name: reports
+    description: Claude-written reports
+  - name: config
+    description: Source configuration
+  - name: legacy
+    description: One-time legacy import
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +37,616 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /diagnostics:
+    get:
+      operationId: getDiagnostics
+      tags: [health]
+      summary: Connectivity diagnostics (DB, Google, Anthropic)
+      responses:
+        "200":
+          description: Diagnostics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Diagnostics"
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Ok"
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /source-config:
+    get:
+      operationId: getSourceConfigs
+      tags: [config]
+      parameters:
+        - { in: query, name: division, schema: { type: string } }
+      responses:
+        "200":
+          description: Source configs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SourceConfig"
+  /source-config/{id}:
+    patch:
+      operationId: updateSourceConfig
+      tags: [config]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceConfigUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceConfig"
+  /data/pull:
+    post:
+      operationId: pullData
+      tags: [data]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PullInput"
+      responses:
+        "200":
+          description: Pull result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PullResult"
+  /data/acknowledge:
+    post:
+      operationId: acknowledgeData
+      tags: [data]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcknowledgeInput"
+      responses:
+        "200":
+          description: Acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SanityResult"
+  /data/batches:
+    get:
+      operationId: getBatches
+      tags: [data]
+      parameters:
+        - { in: query, name: division, schema: { type: string } }
+        - { in: query, name: planMonth, schema: { type: string } }
+      responses:
+        "200":
+          description: Batches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ImportBatch"
+  /data/sanity:
+    get:
+      operationId: getSanity
+      tags: [data]
+      parameters:
+        - { in: query, name: division, schema: { type: string } }
+        - { in: query, name: planMonth, schema: { type: string } }
+      responses:
+        "200":
+          description: Latest sanity result (or null)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SanityResultNullable"
+  /plan/build:
+    post:
+      operationId: buildPlan
+      tags: [plan]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanBuildInput"
+      responses:
+        "200":
+          description: Built plan run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRun"
+        "409":
+          description: Data not ready (blocked or unacknowledged)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /plan/runs:
+    get:
+      operationId: getPlanRuns
+      tags: [plan]
+      parameters:
+        - { in: query, name: division, schema: { type: string } }
+        - { in: query, name: planMonth, schema: { type: string } }
+      responses:
+        "200":
+          description: Plan runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlanRun"
+  /plan/runs/{id}:
+    get:
+      operationId: getPlanRun
+      tags: [plan]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Plan run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRun"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /plan/runs/{id}/lines:
+    get:
+      operationId: getPlanLines
+      tags: [plan]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: Plan lines
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlanLine"
+  /plan/runs/{id}/export:
+    get:
+      operationId: exportPlanRun
+      tags: [plan]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: XLSX file
+          content:
+            application/octet-stream: {}
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      parameters:
+        - { in: query, name: division, schema: { type: string } }
+        - { in: query, name: planMonth, schema: { type: string } }
+      responses:
+        "200":
+          description: Dashboard data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardData"
+  /reports:
+    get:
+      operationId: getReports
+      tags: [reports]
+      parameters:
+        - { in: query, name: division, schema: { type: string } }
+        - { in: query, name: planMonth, schema: { type: string } }
+      responses:
+        "200":
+          description: Reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Report"
+    post:
+      operationId: generateReport
+      tags: [reports]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReportInput"
+      responses:
+        "200":
+          description: Generated report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Report"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /reports/{id}/download:
+    get:
+      operationId: downloadReport
+      tags: [reports]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: PDF file
+          content:
+            application/pdf: {}
+  /legacy/scopes:
+    get:
+      operationId: getLegacyScopes
+      tags: [legacy]
+      parameters:
+        - { in: query, name: division, schema: { type: string } }
+      responses:
+        "200":
+          description: Legacy scopes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LegacyScope"
+  /legacy/import:
+    post:
+      operationId: runLegacyImport
+      tags: [legacy]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LegacyImportInput"
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LegacyImportResult"
+        "409":
+          description: Scope already imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 components:
   schemas:
     HealthStatus:
       type: object
       properties:
-        status:
-          type: string
-      required:
-        - status
-
+        status: { type: string }
+      required: [status]
+    Ok:
+      type: object
+      properties:
+        ok: { type: boolean }
+      required: [ok]
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+    Diagnostics:
+      type: object
+      properties:
+        db: { type: boolean }
+        google: { type: boolean }
+        googleMessage: { type: string }
+        anthropic: { type: boolean }
+        modelFast: { type: string }
+        modelDeep: { type: string }
+      required: [db, google, anthropic, modelFast, modelDeep]
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        email: { type: ["string", "null"] }
+        name: { type: ["string", "null"] }
+        role: { type: string }
+      required: [id, role]
+    LoginInput:
+      type: object
+      properties:
+        email: { type: string }
+        password: { type: string }
+      required: [email, password]
+    SourceConfig:
+      type: object
+      properties:
+        id: { type: integer }
+        division: { type: string }
+        dataType: { type: string }
+        fileId: { type: string }
+        tabPattern: { type: ["string", "null"] }
+        appliesFrom: { type: ["string", "null"] }
+        appliesTo: { type: ["string", "null"] }
+        notes: { type: ["string", "null"] }
+      required: [id, division, dataType, fileId]
+    SourceConfigUpdate:
+      type: object
+      properties:
+        fileId: { type: string }
+        tabPattern: { type: string }
+        appliesFrom: { type: string }
+        appliesTo: { type: string }
+        notes: { type: string }
+    PullInput:
+      type: object
+      properties:
+        division: { type: string }
+        planMonth: { type: string }
+        source: { type: string }
+      required: [division, planMonth]
+    AcknowledgeInput:
+      type: object
+      properties:
+        division: { type: string }
+        planMonth: { type: string }
+      required: [division, planMonth]
+    ImportBatch:
+      type: object
+      properties:
+        id: { type: integer }
+        division: { type: ["string", "null"] }
+        dataType: { type: ["string", "null"] }
+        planMonth: { type: ["string", "null"] }
+        sourceFileId: { type: ["string", "null"] }
+        contentHash: { type: ["string", "null"] }
+        rowsAdded: { type: integer }
+        rowsUpdated: { type: integer }
+        rowsSkipped: { type: integer }
+        rowsRejected: { type: integer }
+        sanityVerdict: { type: ["string", "null"] }
+        sanitySummary: { type: ["string", "null"] }
+        acknowledged: { type: boolean }
+        noChange: { type: boolean }
+        pulledAt: { type: ["string", "null"] }
+      required: [id, rowsAdded, rowsUpdated, rowsSkipped, rowsRejected, acknowledged, noChange]
+    ValidationFinding:
+      type: object
+      properties:
+        severity: { type: string }
+        type: { type: string }
+        source: { type: ["string", "null"] }
+        message: { type: string }
+        evidence: { type: ["string", "null"] }
+        suggestedFix: { type: ["string", "null"] }
+        model: { type: ["string", "null"] }
+        tier: { type: ["string", "null"] }
+      required: [severity, type, message]
+    SanityResult:
+      type: object
+      properties:
+        verdict: { type: string }
+        summary: { type: string }
+        model: { type: ["string", "null"] }
+        tier: { type: ["string", "null"] }
+        downgraded: { type: boolean }
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationFinding"
+      required: [verdict, summary, findings]
+    SanityResultNullable:
+      oneOf:
+        - $ref: "#/components/schemas/SanityResult"
+        - type: "null"
+    PullResult:
+      type: object
+      properties:
+        batches:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImportBatch"
+        sanity:
+          $ref: "#/components/schemas/SanityResult"
+        noChange: { type: boolean }
+      required: [batches, sanity, noChange]
+    PlanBuildInput:
+      type: object
+      properties:
+        division: { type: string }
+        planMonth: { type: string }
+        mode: { type: string }
+        multiplier: { type: number }
+        multiplierMin: { type: number }
+        multiplierMax: { type: number }
+        includeCurrentPending: { type: boolean }
+        floor0: { type: boolean }
+        overrides:
+          type: object
+          additionalProperties: { type: number }
+      required: [division, planMonth, mode]
+    PlanRun:
+      type: object
+      properties:
+        id: { type: integer }
+        division: { type: string }
+        planMonth: { type: string }
+        version: { type: integer }
+        workingDays: { type: ["integer", "null"] }
+        multiplierMode: { type: ["string", "null"] }
+        multiplier: { type: ["number", "null"] }
+        multiplierMin: { type: ["number", "null"] }
+        multiplierMax: { type: ["number", "null"] }
+        overrides:
+          type: ["object", "null"]
+          additionalProperties: { type: number }
+        reportModel: { type: ["string", "null"] }
+        reportTier: { type: ["string", "null"] }
+        createdAt: { type: ["string", "null"] }
+        createdBy: { type: ["string", "null"] }
+        lineCount: { type: integer }
+      required: [id, division, planMonth, version, lineCount]
+    PlanLine:
+      type: object
+      properties:
+        id: { type: integer }
+        itemCode: { type: ["string", "null"] }
+        colour: { type: ["string", "null"] }
+        model: { type: ["string", "null"] }
+        category: { type: ["string", "null"] }
+        report: { type: ["string", "null"] }
+        runRate: { type: number }
+        last3Sale: { type: number }
+        lastMonthSale: { type: number }
+        avgSaleAnnual: { type: number }
+        openingStock: { type: number }
+        pendingLast: { type: number }
+        pendingCurrent: { type: number }
+        multiplier: { type: ["number", "null"] }
+        bufferTarget: { type: ["number", "null"] }
+        bufferTargetMin: { type: ["number", "null"] }
+        bufferTargetMax: { type: ["number", "null"] }
+        minRequired: { type: ["number", "null"] }
+        maxRequired: { type: ["number", "null"] }
+        productionRequired: { type: number }
+        orderAsOn: { type: number }
+        produced: { type: number }
+        left: { type: number }
+        coverage: { type: number }
+        urgent: { type: boolean }
+        valueAmount: { type: ["number", "null"] }
+      required: [id, runRate, productionRequired, openingStock, pendingLast, pendingCurrent, orderAsOn, produced, left, coverage, urgent]
+    CategorySummary:
+      type: object
+      properties:
+        category: { type: string }
+        targetMin: { type: number }
+        targetMax: { type: number }
+        perDayTarget: { type: number }
+        produced: { type: number }
+        achievementPct: { type: number }
+        rag: { type: string }
+      required: [category, targetMin, targetMax, perDayTarget, produced, achievementPct, rag]
+    DashboardData:
+      type: object
+      properties:
+        categorySummaries:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategorySummary"
+        urgentCount: { type: integer }
+        activeCategories: { type: integer }
+        dataHealth: { type: string }
+        runId: { type: ["integer", "null"] }
+        runVersion: { type: ["integer", "null"] }
+        workingDays: { type: ["integer", "null"] }
+      required: [categorySummaries, urgentCount, activeCategories, dataHealth]
+    ReportInput:
+      type: object
+      properties:
+        runId: { type: integer }
+        cadence: { type: string }
+        board: { type: boolean }
+      required: [runId, cadence]
+    Report:
+      type: object
+      properties:
+        id: { type: integer }
+        planRunId: { type: ["integer", "null"] }
+        periodType: { type: ["string", "null"] }
+        model: { type: ["string", "null"] }
+        tier: { type: ["string", "null"] }
+        downgraded: { type: boolean }
+        summary: { type: ["string", "null"] }
+        createdAt: { type: ["string", "null"] }
+      required: [id, downgraded]
+    LegacyScope:
+      type: object
+      properties:
+        scope: { type: string }
+        division: { type: string }
+        source: { type: string }
+        status: { type: string }
+        importedAt: { type: ["string", "null"] }
+      required: [scope, division, source, status]
+    LegacyImportInput:
+      type: object
+      properties:
+        scope: { type: string }
+        division: { type: string }
+        source: { type: string }
+      required: [scope, source]
+    LegacyImportResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        alreadyDone: { type: boolean }
+        rowsImported: { type: integer }
+        message: { type: string }
+      required: [ok, alreadyDone]
