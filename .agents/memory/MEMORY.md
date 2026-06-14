@@ -5,3 +5,4 @@
 - [Live data setup](live-data-setup.md) — sheet reads need the `google-sheet` connector (not Drive); re-seed `source_config` after task-agent merges (DB rows don't carry over).
 - [Prod reference-data seeding](prod-reference-data-seeding.md) — publish copies schema not rows; seed `source_config` idempotently on boot before listen, or prod pulls/plans/exports come back blank.
 - [Data-gating scope](gating-and-pull-scope.md) — gate Plan/Reports on division-level data, not the month; a pull loads full history and the engine date-filters per month.
+- [Sanity model provenance](sanity-provenance.md) — store sanity_model/tier/downgraded on import_batches; footer resolves finding→batch→default so it never shows "n/a".

@@ -691,14 +691,22 @@ export async function getLatestSanity(
 ): Promise<SanityResult | null> {
   const pm = planMonth.slice(0, 10);
   const batchRes = await db.execute(sql`
-    SELECT id, sanity_verdict, sanity_summary
+    SELECT id, sanity_verdict, sanity_summary,
+           sanity_model, sanity_tier, sanity_downgraded
     FROM import_batches
     WHERE division=${division} AND plan_month=${pm}
     ORDER BY pulled_at DESC NULLS LAST, id DESC
     LIMIT 1
   `);
   const batch = batchRes.rows[0] as
-    | { id?: number; sanity_verdict?: string; sanity_summary?: string }
+    | {
+        id?: number;
+        sanity_verdict?: string;
+        sanity_summary?: string;
+        sanity_model?: string | null;
+        sanity_tier?: string | null;
+        sanity_downgraded?: boolean | null;
+      }
     | undefined;
   if (!batch?.id) return null;
 
@@ -729,9 +737,12 @@ export async function getLatestSanity(
   return {
     verdict: verdictMap[batch.sanity_verdict ?? "ok"] ?? verdictOf(findings),
     summary: batch.sanity_summary ?? "",
-    model: findings.find((f) => f.model)?.model ?? null,
-    tier: findings.find((f) => f.tier)?.tier ?? null,
-    downgraded: false,
+    // Provenance: prefer a finding's recorded model/tier, then the batch-level
+    // value (set even when Claude returned zero findings), so the footer can
+    // always name the model actually used instead of "n/a".
+    model: findings.find((f) => f.model)?.model ?? batch.sanity_model ?? null,
+    tier: findings.find((f) => f.tier)?.tier ?? batch.sanity_tier ?? null,
+    downgraded: batch.sanity_downgraded ?? false,
     findings,
   };
 }
@@ -827,8 +838,9 @@ export async function renderSanityPdf(
       });
     }
 
+    const dg = result.downgraded ? " (downgraded)" : "";
     const footer =
-      `Verdict: ${result.verdict} | Model: ${result.model ?? "n/a"} | Tier: ${result.tier ?? "n/a"}` +
+      `Verdict: ${result.verdict} | Model: ${result.model ?? "unknown"}${dg} | Tier: ${result.tier ?? "n/a"}` +
       ` | Generated: ${formatDateTime(new Date())}`;
     doc
       .fontSize(8)

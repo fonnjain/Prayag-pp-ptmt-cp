@@ -30,6 +30,12 @@ export const importBatches = pgTable(
     rowsRejected: integer("rows_rejected"),
     sanityVerdict: text("sanity_verdict"),
     sanitySummary: text("sanity_summary"),
+    // Provenance of the model ACTUALLY used by the (deep) sanity call — kept on
+    // the batch so the PDF footer can show it even when Claude returns zero
+    // findings (no per-finding provenance row to read from).
+    sanityModel: text("sanity_model"),
+    sanityTier: text("sanity_tier"),
+    sanityDowngraded: boolean("sanity_downgraded").default(false),
     acknowledged: boolean("acknowledged").default(false),
     pulledBy: text("pulled_by"),
     pulledAt: timestamp("pulled_at", { withTimezone: true }).defaultNow(),

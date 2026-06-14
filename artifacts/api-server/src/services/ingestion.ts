@@ -1075,6 +1075,7 @@ export async function setSanityOnLatestBatch(
   planMonth: string,
   verdict: string,
   summary: string,
+  provenance?: { model?: string | null; tier?: string | null; downgraded?: boolean },
 ): Promise<number | undefined> {
   const pm = planMonth.slice(0, 10);
   const rows = await db
@@ -1087,7 +1088,14 @@ export async function setSanityOnLatestBatch(
   if (id === undefined) return undefined;
   await db
     .update(importBatches)
-    .set({ sanityVerdict: verdict, sanitySummary: summary })
+    .set({
+      sanityVerdict: verdict,
+      sanitySummary: summary,
+      // Provenance of the model ACTUALLY used (deep, or fast after a downgrade).
+      sanityModel: provenance?.model ?? null,
+      sanityTier: provenance?.tier ?? null,
+      sanityDowngraded: provenance?.downgraded ?? false,
+    })
     .where(eq(importBatches.id, id));
   return id;
 }

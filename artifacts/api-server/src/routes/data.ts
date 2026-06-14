@@ -40,6 +40,7 @@ router.post(
       body.planMonth,
       sanity.verdict,
       sanity.summary,
+      { model: sanity.model, tier: sanity.tier, downgraded: sanity.downgraded },
     );
     res.json({ batches: outcome.batches, sanity, noChange: outcome.noChange });
   }),
