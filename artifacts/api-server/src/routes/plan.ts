@@ -7,6 +7,7 @@ import {
   listRuns,
   getRun,
   getLines,
+  EmptyPlanError,
   type MultiplierMode,
 } from "../services/plan";
 import { isReadyToPlan } from "../services/ingestion";
@@ -25,19 +26,26 @@ router.post(
       throw new HttpError(409, ready.reason ?? "Data is not ready to plan");
     }
     const user = (req as AuthedRequest).user;
-    const run = await buildPlan({
-      division: body.division,
-      planMonth: body.planMonth,
-      mode: body.mode as MultiplierMode,
-      multiplier: body.multiplier ?? null,
-      multiplierMin: body.multiplierMin ?? null,
-      multiplierMax: body.multiplierMax ?? null,
-      includeCurrentPending: body.includeCurrentPending ?? true,
-      floor0: body.floor0 ?? true,
-      overrides: body.overrides ?? {},
-      createdBy: user?.email ?? undefined,
-    });
-    res.json(run);
+    try {
+      const run = await buildPlan({
+        division: body.division,
+        planMonth: body.planMonth,
+        mode: body.mode as MultiplierMode,
+        multiplier: body.multiplier ?? null,
+        multiplierMin: body.multiplierMin ?? null,
+        multiplierMax: body.multiplierMax ?? null,
+        includeCurrentPending: body.includeCurrentPending ?? true,
+        floor0: body.floor0 ?? true,
+        overrides: body.overrides ?? {},
+        createdBy: user?.email ?? undefined,
+      });
+      res.json(run);
+    } catch (err) {
+      if (err instanceof EmptyPlanError) {
+        throw new HttpError(409, err.message);
+      }
+      throw err;
+    }
   }),
 );
 

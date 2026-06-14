@@ -16,6 +16,15 @@ import {
 export type { MultiplierMode } from "../lib/engine";
 import { gatherInputs } from "./plan-data";
 
+// Thrown when the engine produces no lines (no data pulled for this
+// division/month). Routes map this to a 409 with a user-facing message.
+export class EmptyPlanError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "EmptyPlanError";
+  }
+}
+
 function n(v: unknown): number {
   const x = Number(v);
   return Number.isFinite(x) ? x : 0;
@@ -100,6 +109,15 @@ export async function buildPlan(args: BuildPlanArgs): Promise<ApiPlanRun> {
     args.planMonth,
   );
   const lines = computeLines(inputs, cfg);
+
+  // Never persist an empty plan run — that yields a blank export and hides the
+  // real problem (no data was pulled for this division/month). Fail loudly so the
+  // caller can tell the user to pull data first.
+  if (lines.length === 0) {
+    throw new EmptyPlanError(
+      `No data to plan for ${args.division} ${args.planMonth.slice(0, 7)}. Pull the data for this division and month before building the plan.`,
+    );
+  }
 
   const planMonth = args.planMonth.slice(0, 10);
   const verRes = await db
