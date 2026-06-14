@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useData } from "@/lib/data-provider";
+import { formatDate } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { LayoutDashboard, FileSpreadsheet, Database, FileText, Settings, History, LogOut, Menu, X, Lock } from "lucide-react";
@@ -36,7 +37,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-muted/30 flex flex-col md:flex-row">
       {/* Mobile Header */}
       <div className="md:hidden flex items-center justify-between p-4 bg-card border-b">
-        <div className="font-bold text-lg text-primary">Prayag PP</div>
+        <div className="flex items-center gap-3">
+          <div className="font-bold text-lg text-primary">Prayag PP</div>
+          <span className="text-xs text-muted-foreground">{formatDate(new Date())}</span>
+        </div>
         <Button variant="ghost" size="icon" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
           {mobileMenuOpen ? <X /> : <Menu />}
         </Button>
@@ -118,6 +122,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="hidden md:flex h-16 items-center justify-end px-8 border-b bg-card/50 flex-shrink-0">
+          <span className="text-sm text-muted-foreground">Today: <span className="font-medium text-foreground">{formatDate(new Date())}</span></span>
+        </div>
         <div className="flex-1 p-4 md:p-8 overflow-y-auto">
           <div className="max-w-7xl mx-auto space-y-6">
             {children}

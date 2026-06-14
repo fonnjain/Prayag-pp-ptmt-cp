@@ -8,6 +8,7 @@ import {
   anthropicAvailable,
 } from "../lib/anthropic";
 import type { SourceDiag } from "./ingestion";
+import { formatDateTime } from "../lib/date";
 
 export type Severity = "info" | "warning" | "blocker";
 
@@ -605,7 +606,7 @@ export async function renderSanityPdf(
 
     const footer =
       `Verdict: ${result.verdict} | Model: ${result.model ?? "n/a"} | Tier: ${result.tier ?? "n/a"}` +
-      ` | Generated: ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+      ` | Generated: ${formatDateTime(new Date())}`;
     doc
       .fontSize(8)
       .fillColor("#888")

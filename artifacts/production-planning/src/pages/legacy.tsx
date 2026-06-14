@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Lock, History, AlertCircle, CheckCircle2, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { formatDateTime } from "@/lib/utils";
 
 export default function Legacy() {
   const { role, division, legacyScopes, runLegacyImport } = useData();
@@ -72,7 +73,7 @@ export default function Legacy() {
                 </div>
                 {scope.importedAt && (
                   <p className="text-xs text-muted-foreground">
-                    Imported on {new Date(scope.importedAt).toLocaleString()}
+                    Imported on {formatDateTime(scope.importedAt)}
                   </p>
                 )}
               </div>

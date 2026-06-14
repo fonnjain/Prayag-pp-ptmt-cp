@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FileText, Download, Calendar, Activity, Zap } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { formatDateTime } from "@/lib/utils";
 
 export default function Reports() {
   const { reports, generateReport, role, division, planMonth, isGeneratingReport } = useData();
@@ -59,7 +60,7 @@ export default function Reports() {
                     </CardTitle>
                     <CardDescription className="flex items-center gap-2 mt-1">
                       <Calendar className="h-3 w-3" />
-                      {new Date(report.createdAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                      {formatDateTime(report.createdAt)}
                     </CardDescription>
                   </div>
                   <Badge variant="outline" className="capitalize">{report.cadence}</Badge>

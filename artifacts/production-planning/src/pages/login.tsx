@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useData } from "@/lib/data-provider";
 import { useToast } from "@/hooks/use-toast";
+import { formatDate } from "@/lib/utils";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -45,6 +46,7 @@ export default function Login() {
           <CardDescription>
             Sign in to access your production workspace
           </CardDescription>
+          <div className="text-xs text-muted-foreground pt-1">Today: <span className="font-medium text-foreground">{formatDate(new Date())}</span></div>
         </CardHeader>
         <form onSubmit={(e) => handleLogin(e)}>
           <CardContent className="space-y-4">

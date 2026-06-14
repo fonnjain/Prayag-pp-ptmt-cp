@@ -9,6 +9,7 @@ import {
   anthropicAvailable,
 } from "../lib/anthropic";
 import { HttpError } from "../lib/http";
+import { formatDateTime } from "../lib/date";
 
 export interface ApiReport {
   id: number;
@@ -220,7 +221,7 @@ export async function renderReportPdf(
     const footer =
       `Model: ${report.model ?? "n/a"} | Tier: ${report.tier ?? "n/a"}` +
       (report.downgraded ? " (downgraded)" : "") +
-      ` | Generated: ${report.createdAt ? new Date(report.createdAt).toISOString().slice(0, 16).replace("T", " ") : ""}`;
+      ` | Generated: ${report.createdAt ? formatDateTime(report.createdAt) : ""}`;
     doc.fontSize(8).fillColor("#888").text(footer, 50, doc.page.height - 40, {
       width: doc.page.width - 100,
       align: "center",

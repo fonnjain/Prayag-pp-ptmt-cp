@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Calculator, Save, AlertTriangle, Layers } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { formatDateTime } from "@/lib/utils";
 
 export default function Plan() {
   const { division, planMonth, planLines, planRuns, buildPlan, role, categorySummaries, isBuilding } = useData();
@@ -165,7 +166,7 @@ export default function Plan() {
             {activeRun.multiplierMode === "single" && ` (${activeRun.multiplier})`}
             {activeRun.multiplierMode === "minmax" && ` (${activeRun.multiplierMin} - ${activeRun.multiplierMax})`}
           </span>
-          <span className="ml-auto hidden sm:inline">Generated: {new Date(activeRun.createdAt).toLocaleTimeString()}</span>
+          <span className="ml-auto hidden sm:inline">Generated: {formatDateTime(activeRun.createdAt)}</span>
         </div>
       )}
 
