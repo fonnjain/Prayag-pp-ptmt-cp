@@ -53,6 +53,24 @@ the user then acknowledges (`/data/acknowledge`) before `/plan/build`. If you se
 `block` from out-of-window / multi-workbook / optional-empty, the sanity logic
 regressed — re-check the rules above before "fixing" the data.
 
+# Finding type taxonomy + singleton de-dup
+
+Allowed finding types: empty | partial | wrong_month | wrong_file |
+shifted_column | missing_codes | outlier | no_stock | no_pending. There is NO
+`unit_mismatch` type — negatives/amount anomalies are `outlier`.
+
+- `empty` is ONLY for a core source that returned 0 rows (failed/blank fetch).
+- An absent opening-stock snapshot is `no_stock` (warning), absent pending is
+  `no_pending` (info) — NEVER `empty`. Both layers must use these types.
+- `no_stock` / `no_pending` are whole-division SINGLETONS: at most one each per
+  scope. Both Layer A (aggregate + per-source) and Layer B can surface them, so
+  `dedupeFindings` collapses them by type alone (Layer A wording wins, it's
+  merged first); all other types de-dup by exact severity+type+message.
+
+**Why:** the spec's TYPE-SELECTION rule forbids double-classifying the same
+fact (e.g. a `no_stock` and an `empty` both citing stock=0). Exact-message
+de-dup can't catch cross-type/cross-layer repeats, hence the type-level collapse.
+
 # Connector access gotchas
 
 - Accept connection status `healthy`/`authorized` (not only connected/active/

@@ -105,15 +105,24 @@ function mkAdd(out: Finding[], source: string) {
     });
 }
 
-// Exact-duplicate safety net over the merged Layer A + Layer B findings. The
-// prompt is responsible for SEMANTIC de-dup; this only collapses findings that
-// are byte-identical in severity+type+message (e.g. a deterministic finding the
-// model also restated verbatim), keeping the first (Layer A) occurrence.
+// Whole-division singleton conditions: there can only ever be ONE no_stock /
+// no_pending finding for a scope, but both layers can surface it (Layer A from
+// the aggregate/per-source check, Layer B from stock_opening_count /
+// pending_orders_count). Collapse them to a single finding by type alone.
+const SINGLETON_TYPES = new Set(["no_stock", "no_pending"]);
+
+// De-dup safety net over the merged Layer A + Layer B findings. The prompt is
+// responsible for SEMANTIC de-dup within Layer B; this collapses cross-layer
+// repeats: singleton types (no_stock/no_pending) by type, everything else when
+// byte-identical in severity+type+message. Layer A is listed first, so its
+// deterministic wording wins.
 function dedupeFindings(findings: Finding[]): Finding[] {
   const seen = new Set<string>();
   const out: Finding[] = [];
   for (const f of findings) {
-    const key = `${f.severity}|${f.type}|${f.message.trim().toLowerCase()}`;
+    const key = SINGLETON_TYPES.has(f.type)
+      ? `type:${f.type}`
+      : `${f.severity}|${f.type}|${f.message.trim().toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(f);
@@ -146,22 +155,22 @@ function layerAAggregate(stats: Stats): Finding[] {
   if (stats.stock === 0)
     add(
       "warning",
-      "empty",
-      "No opening-stock snapshot. Coverage and required quantities assume zero stock.",
+      "no_stock",
+      "No opening-stock snapshot. Coverage and required quantities assume zero stock and will be overstated.",
       "stock_opening count = 0",
       "Pull the opening-stock sheet for the stock as-on date.",
     );
   if (stats.pending === 0)
     add(
       "info",
-      "empty",
+      "no_pending",
       "No pending orders for this plan month. Demand will exclude pending quantities.",
       "pending_orders count = 0",
     );
   if (stats.negSales > 0)
     add(
       "warning",
-      "unit_mismatch",
+      "outlier",
       `${stats.negSales} sales rows have negative quantity (returns/credits).`,
       `negative sales rows = ${stats.negSales}`,
       "Confirm these are intentional returns; they reduce run-rate.",
@@ -169,7 +178,7 @@ function layerAAggregate(stats: Stats): Finding[] {
   if (stats.negStock > 0)
     add(
       "warning",
-      "unit_mismatch",
+      "outlier",
       `${stats.negStock} stock rows have negative quantity.`,
       `negative stock rows = ${stats.negStock}`,
     );
@@ -201,18 +210,34 @@ function layerAPerSource(diags: SourceDiag[]): Finding[] {
     const src = d.dataType;
 
     if (d.empty) {
-      // pending and stock are optional inputs: empty just means demand excludes
-      // pending / opening stock is assumed zero. Only the core series block.
-      const optional = src === "pending" || src === "stock";
-      add(
-        optional ? (src === "pending" ? "info" : "warning") : "blocker",
-        "empty",
-        optional
-          ? `Source "${src}" returned 0 rows; the plan will proceed assuming none.`
-          : `Source "${src}" returned 0 usable rows.`,
-        `${src}: rows=0, rejected=${d.rejected}, tab=${d.tab ?? "?"}`,
-        `Re-fetch "${src}" and check the file ID, tab pattern, and column headers.`,
-      );
+      // An absent stock/pending snapshot is its OWN (expected) condition, not an
+      // "empty" fetch failure — reserve `empty` for core sources that returned
+      // nothing. This keeps the type taxonomy clean and lets the cross-layer
+      // de-dup collapse it against Claude's no_stock / no_pending finding.
+      if (src === "stock") {
+        add(
+          "warning",
+          "no_stock",
+          `No opening-stock snapshot ("${src}" returned 0 rows); required quantities assume zero stock and will be overstated.`,
+          "stock_opening count = 0",
+          "Pull the opening-stock sheet for the stock as-on date.",
+        );
+      } else if (src === "pending") {
+        add(
+          "info",
+          "no_pending",
+          `No pending orders ("${src}" returned 0 rows); demand will exclude pending quantities.`,
+          "pending_orders count = 0",
+        );
+      } else {
+        add(
+          "blocker",
+          "empty",
+          `Source "${src}" returned 0 usable rows.`,
+          `${src}: rows=0, rejected=${d.rejected}, tab=${d.tab ?? "?"}`,
+          `Re-fetch "${src}" and check the file ID, tab pattern, and column headers.`,
+        );
+      }
       continue; // further checks are meaningless on an empty source
     }
 
@@ -368,6 +393,18 @@ sources into one finding and name the sources in its \`source\` field
 (e.g. "sales, production"). Never emit a per-source finding and a summary
 finding for the same problem. Aim for the SMALLEST set of findings that fully
 covers the real issues — typically 3–6, not 16. Do not pad.
+
+== TYPE SELECTION (avoid double-classifying) ==
+Choose ONE type per issue; never describe the same fact under two types.
+- Use \`no_stock\` for a missing opening-stock snapshot — never ALSO \`empty\`.
+- Use \`no_pending\` for absent pending orders — never ALSO \`empty\`.
+- Reserve \`empty\` ONLY for a source/tab that returned 0 rows entirely
+  (i.e. a failed/blank fetch), never for an absent stock or pending snapshot.
+Before returning, scan your issues array and MERGE any two entries that cite the
+same underlying fact or the same evidence value into one finding. For example, a
+\`no_stock\` and an \`empty\` both citing stock_opening_count=0 are ONE finding, not
+two; a \`no_pending\` and an \`empty\` both citing pending_orders_count=0 are ONE
+finding. Two findings must never share the same evidence number.
 
 == EVIDENCE & FIXES ==
 For each finding give: the affected source(s); concrete evidence (the numbers
