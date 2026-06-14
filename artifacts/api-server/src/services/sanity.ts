@@ -105,6 +105,22 @@ function mkAdd(out: Finding[], source: string) {
     });
 }
 
+// Exact-duplicate safety net over the merged Layer A + Layer B findings. The
+// prompt is responsible for SEMANTIC de-dup; this only collapses findings that
+// are byte-identical in severity+type+message (e.g. a deterministic finding the
+// model also restated verbatim), keeping the first (Layer A) occurrence.
+function dedupeFindings(findings: Finding[]): Finding[] {
+  const seen = new Set<string>();
+  const out: Finding[] = [];
+  for (const f of findings) {
+    const key = `${f.severity}|${f.type}|${f.message.trim().toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(f);
+  }
+  return out;
+}
+
 // Layer A (deterministic, Node) — aggregate, whole-division sanity on the
 // post-upsert DB state. Complements the per-source checks below.
 function layerAAggregate(stats: Stats): Finding[] {
@@ -220,61 +236,59 @@ function layerAPerSource(diags: SourceDiag[]): Finding[] {
       );
     }
 
-    if (d.windowFrom && d.windowTo && d.outOfWindow > 0) {
-      // The engine date-filters every time-series, so out-of-window rows are
-      // harmless noise unless NONE fall in-window — that signals a wrong-file or
-      // wrong-month pull that leaves the engine nothing usable.
-      const inWindow = d.rows - d.outOfWindow;
+    // Windowed source completeness is judged on IN-WINDOW data only. The source
+    // workbooks are full multi-year history and the engine date-filters every
+    // time series downstream, so out-of-window rows are EXPECTED and never an
+    // error on their own. Only an empty WINDOW means the fetch is unusable.
+    if (d.windowFrom && d.windowTo && d.inWindowRows === 0) {
       add(
-        inWindow === 0 ? "blocker" : "warning",
+        "blocker",
         "wrong_month",
-        `Source "${src}" has ${d.outOfWindow} rows with dates outside the expected window ${d.windowFrom}..${d.windowTo}.`,
-        `out_of_window=${d.outOfWindow}/${d.rows}, date_range=${d.dateMin ?? "?"}..${d.dateMax ?? "?"}`,
+        `Source "${src}" returned no rows inside the plan-month window ${d.windowFrom}..${d.windowTo}; the engine has nothing to plan on.`,
+        `in_window_rows=0, whole_file_rows=${d.rows}, date_range=${d.dateMin ?? "?"}..${d.dateMax ?? "?"}`,
         `Re-fetch "${src}" for the correct plan-month window (possible wrong-month or wrong-file pull).`,
       );
     }
 
-    // Partial fetch: row count or distinct-code count dropped materially vs the
-    // previous accepted pull.
-    if (d.prevRows !== null && d.prevRows > 0 && d.rows < d.prevRows) {
-      const ratio = d.rows / d.prevRows;
+    // Partial fetch of the WINDOW (not of history): in-window row / distinct-code
+    // count dropped materially vs the previous accepted pull's in-window
+    // footprint. Only computed for single-source windowed handlers (prevInWindow
+    // is null otherwise), so multi-file sales never triggers a false drop.
+    if (d.prevInWindowRows !== null && d.prevInWindowRows > 0 && d.inWindowRows < d.prevInWindowRows) {
+      const ratio = d.inWindowRows / d.prevInWindowRows;
       if (ratio < 0.6) {
         add(
           ratio < 0.4 ? "blocker" : "warning",
           "partial",
-          `Source "${src}" row count dropped from ${d.prevRows} to ${d.rows} vs the previous pull.`,
-          `rows ${d.prevRows} -> ${d.rows} (${Math.round(ratio * 100)}%)`,
-          `Re-fetch "${src}"; the previous pull had materially more rows (possible truncated fetch).`,
+          `Source "${src}" in-window row count dropped from ${d.prevInWindowRows} to ${d.inWindowRows} vs the previous pull.`,
+          `in_window_rows ${d.prevInWindowRows} -> ${d.inWindowRows} (${Math.round(ratio * 100)}%)`,
+          `Re-fetch "${src}"; the previous pull had materially more in-window rows (possible truncated fetch).`,
         );
       }
     }
-    if (d.prevDistinct !== null && d.prevDistinct > 0 && d.distinctCodes < d.prevDistinct * 0.6) {
+    if (
+      d.prevInWindowDistinct !== null &&
+      d.prevInWindowDistinct > 0 &&
+      d.inWindowDistinct < d.prevInWindowDistinct * 0.6
+    ) {
       add(
         "warning",
         "missing_codes",
-        `Source "${src}" distinct item codes dropped from ${d.prevDistinct} to ${d.distinctCodes}.`,
-        `distinct codes ${d.prevDistinct} -> ${d.distinctCodes}`,
-        `Re-fetch "${src}"; many item codes from the previous pull are absent now.`,
+        `Source "${src}" in-window distinct item codes dropped from ${d.prevInWindowDistinct} to ${d.inWindowDistinct}.`,
+        `in_window distinct codes ${d.prevInWindowDistinct} -> ${d.inWindowDistinct}`,
+        `Re-fetch "${src}"; many in-window item codes from the previous pull are absent now.`,
       );
     }
 
-    if (d.negQty > 0) {
+    // Negative quantities matter only inside the window (the engine ignores the
+    // rest). Could be legitimate returns/credits, so warn rather than block.
+    if (d.inWindowNegQty > 0) {
       add(
         "warning",
-        "unit_mismatch",
-        `Source "${src}" has ${d.negQty} rows with negative quantity.`,
-        `negative qty rows = ${d.negQty}`,
-        "Confirm these are intentional (returns/credits).",
-      );
-    }
-
-    if (d.amountMismatch > 0) {
-      add(
-        "warning",
-        "unit_mismatch",
-        `Source "${src}" has ${d.amountMismatch} rows where amount does not match qty x rate.`,
-        `amount<>qty*rate rows = ${d.amountMismatch}`,
-        "Check for shifted columns or a unit/rate mismatch in the source sheet.",
+        "outlier",
+        `Source "${src}" has ${d.inWindowNegQty} in-window rows with negative quantity.`,
+        `in_window negative qty rows = ${d.inWindowNegQty}`,
+        "Confirm these are intentional (returns/credits) and not a column shift.",
       );
     }
   }
@@ -300,76 +314,155 @@ async function layerB(
     };
   }
   const choice = selectModel({ task: "sanity" });
-  const system =
-    "You are a meticulous manufacturing-data auditor for a production-planning system. " +
-    "After a Google connector fetch for one DIVISION and PLAN MONTH you receive a NUMBERS-ONLY summary of the fetch (never the full data). " +
-    "Judge whether the fetch looks COMPLETE and CORRECT and catch: empty, partial (drop vs previous pull), wrong_month (dates outside window), wrong_file (fiscal-year file rule), shifted_column, missing_codes, unit_mismatch/outlier, duplicates. " +
-    "You ASSESS ONLY — never modify, clean, or recompute data, and never do the planning math. Base conclusions strictly on the summary. " +
-    "IMPORTANT context about this system's INTENDED design (do NOT flag these as errors): " +
-    "(1) Sales is deliberately loaded as FULL multi-year history and is often split across MULTIPLE fiscal-year workbooks — seeing two or more 'sales' sources with different file_ids and different date ranges is EXPECTED and correct, NOT a duplicate or partial-drop error. Compare a source only against its OWN file_id history, never one workbook against another. " +
-    "(2) The planning engine date-FILTERS every time series downstream, so rows outside expected_window are harmless and should be at most a 'warning'. Only raise a wrong_month/wrong_file BLOCKER when essentially NONE of a source's rows fall inside the window (the fetch is unusable). " +
-    "(3) Production may also be a full-history tab; out-of-window production rows are filtered by the engine — warning, not blocker. " +
-    "(4) amount != qty x rate often reflects tax-inclusive amounts or rounding — treat as a 'warning' unit_mismatch unless the mismatch is pervasive AND extreme. " +
-    "Respond with STRICT JSON only, no prose, no markdown fences. " +
-    'Schema: {"verdict":"ok|warn|block","summary":"<=400 chars","issues":[{"severity":"info|warning|blocker","type":"empty|partial|wrong_month|wrong_file|shifted_column|missing_codes|unit_mismatch|outlier","message":"string","evidence":"string","suggested_fix":"string"}]}. ' +
-    "Use blocker only when the data must not be used (empty, wrong file, wrong month, clearly partial).";
+  const system = `You are the data sanity checker for a production-planning app. After the Google
+Drive connector fetches a batch for a chosen DIVISION (PTMT or CP) and PLAN
+MONTH, you receive a NUMBERS-ONLY SUMMARY of the fetch (never the full data).
+Judge whether the fetch is COMPLETE and CORRECT, and give concise, de-duplicated,
+actionable input. You ASSESS ONLY — never modify, clean, or recompute any data
+or numbers, and never run the planning math. Base every conclusion strictly on
+the summary; if something can't be determined from it, say so.
+
+== SOURCE MODEL (read before flagging anything) ==
+The source workbooks are MULTI-YEAR, FULL-HISTORY files read from a "Combined"
+or full-history tab. Therefore:
+- Sales and production sources LEGITIMATELY contain rows far outside the plan
+  month. A June plan's run-rate window is the three prior calendar months and
+  "last month" is the immediately prior month; the engine FILTERS to the window
+  downstream. Rows outside the window are EXPECTED, not an error.
+- For a June plan, the 3-month sales span legitimately straddles two fiscal-year
+  files (e.g. March from Sale 25-26, April–May from Sale 26-27); both files
+  being present is correct, not a wrong-file pull.
+- \`amount != qty * rate\` is EXPECTED on many rows because amounts are
+  tax-inclusive and/or rounded.
+Do NOT raise wrong_month, wrong_file, partial, or unit_mismatch for any of the
+above. Only raise wrong_month/wrong_file when the IN-WINDOW data is actually
+missing or the file is genuinely the wrong source (file_id not in
+configured_file_ids).
+
+== WHAT IS A REAL PROBLEM ==
+Blocker (data must not be used as-is):
+- A required source returned 0 rows, OR returned 0 rows INSIDE the plan-month
+  window when in-window rows are required (e.g. production for the plan month).
+- The file_id used is not among the configured sources for that division/month.
+- A column is clearly shifted (values of the wrong kind, e.g. text where qty is
+  expected) such that the in-window data is unusable.
+Warning (usable, but planner must acknowledge — these change the output):
+- No opening-stock snapshot (stock_opening_count = 0): required quantities
+  assume zero stock and will be OVERSTATED. Always raise this when stock is absent.
+- Item codes present in sales/orders/production but missing from the items
+  master (orphan_item_codes > 0; they will be dropped from the plan).
+- A genuine in-window anomaly: impossible negatives, an in-window quantity
+  outlier orders of magnitude off history, or in-window row/code count far below
+  the previous accepted pull (true partial fetch of the WINDOW, not of history).
+Info (note only, no action):
+- No pending orders for the plan month (pending_orders_count = 0; demand
+  excludes pending).
+- Expected full-history breadth (out-of-window rows, two-file sales span,
+  tax-inclusive amounts) — mention once, collectively, as context, ONLY if you
+  reference it; do not enumerate per source.
+
+== DE-DUPLICATION (mandatory) ==
+Report each DISTINCT problem EXACTLY ONCE, even if it shows up in several
+sources or both per-source and in aggregate. Merge identical issues across
+sources into one finding and name the sources in its \`source\` field
+(e.g. "sales, production"). Never emit a per-source finding and a summary
+finding for the same problem. Aim for the SMALLEST set of findings that fully
+covers the real issues — typically 3–6, not 16. Do not pad.
+
+== EVIDENCE & FIXES ==
+For each finding give: the affected source(s); concrete evidence (the numbers
+from the summary, and for windowed checks cite the IN-WINDOW figure, not the
+whole-file count); and a specific suggested_fix.
+
+== OUTPUT — STRICT JSON ONLY (no prose outside it, no markdown fences) ==
+{
+  "verdict": "ok" | "warn" | "block",
+  "issues": [
+    {
+      "severity": "info" | "warning" | "blocker",
+      "type": "empty|partial|wrong_month|wrong_file|shifted_column|missing_codes|outlier|no_stock|no_pending",
+      "source": "<source(s), comma-separated>",
+      "message": "<the problem, stated once, plainly>",
+      "evidence": "<in-window numbers that prove it>",
+      "suggested_fix": "<exact action, or 'none — expected for full-history source'>"
+    }
+  ],
+  "summary": "<one short paragraph: is this fetch safe to plan on, and the few things to fix first>"
+}
+
+verdict = "block" if any blocker; else "warn" if any warning; else "ok".
+If the in-window data is complete and correct, return verdict "ok" with an empty
+issues array even if the files contain large out-of-window history.`;
+
   const user = JSON.stringify({
+    instruction: "Review this fetched batch and return your JSON assessment.",
     division,
-    planMonth,
+    plan_month: planMonth.slice(0, 7),
+    // Master / snapshot signals that actually change the plan (whole-division).
+    stock_opening_count: stats.stock,
+    pending_orders_count: stats.pending,
+    orphan_item_codes: stats.salesNoItem,
     perSource: diags.map((d) => ({
       source: d.dataType,
       file_id: d.fileId,
-      expected_file_id: d.expectedFileId,
-      file_matches: d.fileMatches,
+      expected_file_for_month: d.expectedFileId,
+      configured_file_ids: d.configuredFileIds,
+      is_full_history: d.isFullHistory,
       tab: d.tab,
+      expected_window: d.windowFrom ? { from: d.windowFrom, to: d.windowTo } : null,
+      // whole-file (context only — do NOT flag on these)
       rows: d.rows,
       rejected: d.rejected,
-      distinct_codes: d.distinctCodes,
-      prev_rows: d.prevRows,
-      prev_distinct: d.prevDistinct,
-      expected_window: d.windowFrom ? `${d.windowFrom}..${d.windowTo}` : null,
+      distinct_item_codes: d.distinctCodes,
+      out_of_window_rows: d.outOfWindow,
       date_min: d.dateMin,
       date_max: d.dateMax,
-      out_of_window_rows: d.outOfWindow,
+      // IN-WINDOW (judge completeness on these)
+      in_window_rows: d.inWindowRows,
+      in_window_distinct_codes: d.inWindowDistinct,
+      prev_in_window_rows: d.prevInWindowRows,
+      prev_in_window_distinct: d.prevInWindowDistinct,
+      in_window_neg_qty_rows: d.inWindowNegQty,
+      in_window_qty: {
+        min: d.inWindowQtyMin,
+        max: d.inWindowQtyMax,
+        mean: d.inWindowQtyMean,
+        sum: d.inWindowQtySum,
+      },
       missing_columns: d.missingColumns,
-      neg_qty_rows: d.negQty,
-      amount_mismatch_rows: d.amountMismatch,
     })),
-    aggregateStats: stats,
-    layerAFindings: layerAFindings.map((f) => ({
+    deterministic_findings: layerAFindings.map((f) => ({
       severity: f.severity,
       type: f.type,
+      source: f.source,
       message: f.message,
     })),
   });
 
   try {
     const res = await callClaude({ system, user, tier: choice.tier });
+    interface RawIssue {
+      severity?: string;
+      type?: string;
+      source?: string;
+      message?: string;
+      evidence?: string;
+      suggested_fix?: string;
+      suggestedFix?: string;
+    }
     const parsed = extractJSON<{
       verdict?: string;
       summary?: string;
-      issues?: Array<{
-        severity?: string;
-        type?: string;
-        message?: string;
-        evidence?: string;
-        suggested_fix?: string;
-        suggestedFix?: string;
-      }>;
-      findings?: Array<{
-        severity?: string;
-        type?: string;
-        message?: string;
-        evidence?: string;
-        suggested_fix?: string;
-        suggestedFix?: string;
-      }>;
+      issues?: RawIssue[];
+      findings?: RawIssue[];
     }>(res.text);
     const raw = parsed.issues ?? parsed.findings ?? [];
     const findings: Finding[] = raw.map((f) => ({
       severity: normalizeSeverity(f.severity),
       type: f.type || "ai_finding",
-      source: "layerB",
+      // Claude names the affected source(s) per the de-dup contract; fall back
+      // to "layerB" when it omits them.
+      source: f.source?.trim() || "layerB",
       message: f.message || "",
       evidence: f.evidence ?? null,
       suggestedFix: f.suggested_fix ?? f.suggestedFix ?? null,
@@ -427,7 +520,7 @@ export async function runSanity(
   const stats = await gatherStats(division, planMonth);
   const aFindings = [...layerAPerSource(diags), ...layerAAggregate(stats)];
   const b = await layerB(division, planMonth, stats, diags, aFindings);
-  const findings = [...aFindings, ...b.findings];
+  const findings = dedupeFindings([...aFindings, ...b.findings]);
   const verdict = verdictOf(findings);
   const summary = b.summary;
 

@@ -3,20 +3,31 @@ name: Sanity-check semantics for full-history sources
 description: Why the two-layer sanity check must not block on out-of-window / multi-workbook / optional-empty data, since the engine date-filters everything.
 ---
 
-# The engine date-filters every time series
+# The engine date-filters every time series — judge completeness IN-WINDOW
 
 The planning engine filters sales/orders/production by date window itself. So
-rows OUTSIDE a source's expected window are harmless noise — they are simply
-ignored downstream. The only genuinely dangerous case is when **zero** rows fall
-in-window (the fetch is unusable).
+rows OUTSIDE a source's expected window are harmless noise — simply ignored
+downstream. **Never flag completeness on whole-file counts; judge on in-window
+figures only.** Out-of-window rows alone are NOT an error (do not even warn on
+them); whole-file stats are context-only.
 
-**Rule:** the deterministic `wrong_month`/out-of-window finding is a `blocker`
-ONLY when `inWindow === 0`; otherwise it is a `warning`. The sales window is the
-engine's widest read (**12 months**, not 3).
+**Rule (both layers):**
+- `wrong_month` is a `blocker` ONLY when `inWindowRows === 0` for a windowed
+  source (the engine has nothing to plan on). Out-of-window rows existing while
+  in-window rows are present → no finding at all.
+- `partial` / `missing_codes` compare **in-window** counts vs the previous
+  accepted pull's in-window footprint (`prevInWindowRows`/`prevInWindowDistinct`),
+  NOT whole-file counts. These prev-in-window figures are computed pre-upsert and
+  only for single-source windowed handlers (null for multi-file sales, so the
+  two-workbook span never trips a false drop).
+- negatives are judged on `inWindowNegQty` (warning, type `outlier` — could be
+  returns/credits).
 
-**Why:** sales is loaded as full multi-year history and PTMT production is a
-full-history tab, so most rows are legitimately out of the plan-month window. A
-`frac > 0.2 → blocker` rule false-blocked every real pull.
+**Why:** sales is loaded as full multi-year history and production is a
+full-history tab, so most rows are legitimately out of the plan-month window.
+Whole-file or `frac`-based rules false-blocked/false-warned every real pull.
+SourceDiag carries both whole-file AND in-window stats for exactly this reason —
+use the in-window ones for any completeness judgment.
 
 # Multiple workbooks per handler are expected
 

@@ -1,6 +1,6 @@
 - [wouter catch-all](wouter-catchall.md) — a pathless `<Route component={...}/>` is the catch-all; `path="/:rest*"` silently fails to match `/`.
 - [Ingestion source selection](ingestion-source-selection.md) — load ALL applicable sales workbooks (full history); scope per-source checks by sourceFileId; xmax=0 added/updated; no-change keeps hash.
-- [Sanity full-history semantics](sanity-full-history.md) — engine date-filters all, so out-of-window/multi-workbook/optional-empty = warnings not blockers; clean live pull = `warn`.
+- [Sanity full-history semantics](sanity-full-history.md) — engine date-filters all; judge completeness on IN-WINDOW stats not whole-file; multi-workbook/optional-empty/out-of-window are not blockers.
 - [orval query options](orval-query-options.md) — generated react-query hooks require `queryKey` in the options type; pass `enabled` via an `any`-cast helper.
 - [Live data setup](live-data-setup.md) — sheet reads need the `google-sheet` connector (not Drive); re-seed `source_config` after task-agent merges (DB rows don't carry over).
 - [Prod reference-data seeding](prod-reference-data-seeding.md) — publish copies schema not rows; seed `source_config` idempotently on boot before listen, or prod pulls/plans/exports come back blank.

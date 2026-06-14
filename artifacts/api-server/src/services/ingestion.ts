@@ -51,6 +51,21 @@ export interface SourceDiag {
   missingColumns: string[];
   negQty: number;
   amountMismatch: number;
+  // In-window figures (P3): the sanity check judges completeness on these, not
+  // on the whole-file counts, because the sources are full-history workbooks.
+  inWindowRows: number;
+  inWindowDistinct: number;
+  inWindowNegQty: number;
+  inWindowQtyMin: number | null;
+  inWindowQtyMax: number | null;
+  inWindowQtyMean: number | null;
+  inWindowQtySum: number;
+  prevInWindowRows: number | null;
+  prevInWindowDistinct: number | null;
+  // Every file_id configured for this division+handler, so Claude can judge
+  // wrong_file correctly (a two-file sales span is expected, not an error).
+  configuredFileIds: string[];
+  isFullHistory: boolean;
 }
 
 type Row = Record<string, unknown>;
@@ -661,33 +676,60 @@ function buildDiag(
   pmFrom: string,
   prevRows: number | null,
   prevDistinct: number | null,
+  configuredFileIds: string[],
+  prevInWindow: { rows: number; distinct: number } | null,
 ): SourceDiag {
   const rows = mapped.rows;
   const dateField = dateFieldFor(handler);
   const win = windowFor(handler, pmFrom);
   const codes = new Set<string>();
+  const inWindowCodes = new Set<string>();
   let dateMin: string | null = null;
   let dateMax: string | null = null;
   let outOfWindow = 0;
   let negQty = 0;
   let amountMismatch = 0;
+  let inWindowRows = 0;
+  let inWindowNegQty = 0;
+  let inWindowQtyMin: number | null = null;
+  let inWindowQtyMax: number | null = null;
+  let inWindowQtySum = 0;
+  let inWindowQtyCount = 0;
   for (const r of rows) {
     const code = String(r["itemCode"] ?? "");
     if (code) codes.add(code);
     const q = Number(r["qty"]);
-    if (Number.isFinite(q) && q < 0) negQty++;
+    const qValid = Number.isFinite(q);
+    if (qValid && q < 0) negQty++;
+    // A source with no date field (pending/stock/rate_list) is treated as
+    // entirely in-window — the window only constrains the time series.
+    let inWin = win === null;
     if (dateField) {
       const d = r[dateField] ? String(r[dateField]).slice(0, 10) : null;
       if (d) {
         if (!dateMin || d < dateMin) dateMin = d;
         if (!dateMax || d > dateMax) dateMax = d;
-        if (win && (d < win.from || d > win.to)) outOfWindow++;
+        if (win) inWin = d >= win.from && d <= win.to;
+        if (win && !inWin) outOfWindow++;
+      } else {
+        inWin = false; // undated rows can't be confirmed in-window
+      }
+    }
+    if (inWin) {
+      inWindowRows++;
+      if (code) inWindowCodes.add(code);
+      if (qValid) {
+        if (q < 0) inWindowNegQty++;
+        inWindowQtySum += q;
+        inWindowQtyCount++;
+        if (inWindowQtyMin === null || q < inWindowQtyMin) inWindowQtyMin = q;
+        if (inWindowQtyMax === null || q > inWindowQtyMax) inWindowQtyMax = q;
       }
     }
     // amount ~= qty * rate (where all present)
     const amt = handler === "orders" ? Number(r["taxableValue"]) : Number(r["amount"]);
     const rate = Number(r["rate"]);
-    if (Number.isFinite(amt) && Number.isFinite(q) && Number.isFinite(rate) && rate > 0) {
+    if (Number.isFinite(amt) && qValid && Number.isFinite(rate) && rate > 0) {
       const expected = q * rate;
       const tol = Math.max(1, Math.abs(amt) * 0.05);
       if (Math.abs(amt - expected) > tol) amountMismatch++;
@@ -716,6 +758,17 @@ function buildDiag(
     missingColumns,
     negQty,
     amountMismatch,
+    inWindowRows,
+    inWindowDistinct: inWindowCodes.size,
+    inWindowNegQty,
+    inWindowQtyMin,
+    inWindowQtyMax,
+    inWindowQtyMean: inWindowQtyCount > 0 ? Math.round(inWindowQtySum / inWindowQtyCount) : null,
+    inWindowQtySum,
+    prevInWindowRows: prevInWindow?.rows ?? null,
+    prevInWindowDistinct: prevInWindow?.distinct ?? null,
+    configuredFileIds,
+    isFullHistory: handler === "sales" || handler === "production",
   };
 }
 
@@ -723,7 +776,12 @@ function buildDiag(
 // resolved, or the read threw). Marked empty so the sanity layer treats the
 // CURRENT fetch as a failure (blocker for core series) instead of silently
 // relying on stale rows already in the table from a previous pull.
-function failedDiag(cfg: Cfg, handler: string, tab: string | null): SourceDiag {
+function failedDiag(
+  cfg: Cfg,
+  handler: string,
+  tab: string | null,
+  configuredFileIds: string[] = [cfg.fileId],
+): SourceDiag {
   return {
     dataType: cfg.dataType,
     handler,
@@ -745,7 +803,45 @@ function failedDiag(cfg: Cfg, handler: string, tab: string | null): SourceDiag {
     missingColumns: [],
     negQty: 0,
     amountMismatch: 0,
+    inWindowRows: 0,
+    inWindowDistinct: 0,
+    inWindowNegQty: 0,
+    inWindowQtyMin: null,
+    inWindowQtyMax: null,
+    inWindowQtyMean: null,
+    inWindowQtySum: 0,
+    prevInWindowRows: null,
+    prevInWindowDistinct: null,
+    configuredFileIds,
+    isFullHistory: handler === "sales" || handler === "production",
   };
+}
+
+// In-window row + distinct-code count from the fact table BEFORE this upsert —
+// i.e. the previous accepted pull's in-window footprint. Used by the sanity
+// check to detect a true in-window partial fetch (window, not history). Only
+// meaningful for single-source windowed handlers; sales spans two workbooks so
+// callers pass null there (a per-file comparison would be misleading).
+async function prevInWindowInTable(
+  handler: string,
+  division: string,
+  win: { from: string; to: string },
+): Promise<{ rows: number; distinct: number } | null> {
+  const tableAndDate: Record<string, { table: string; date: string }> = {
+    sales: { table: "sales", date: "sale_date" },
+    orders: { table: "orders", date: "order_date" },
+    production: { table: "production", date: "prod_date" },
+  };
+  const t = tableAndDate[handler];
+  if (!t) return null;
+  const res = await db.execute(
+    sql`SELECT COUNT(*) AS rows, COUNT(DISTINCT item_code) AS distinct
+        FROM ${sql.raw(t.table)}
+        WHERE division=${division}
+          AND ${sql.raw(t.date)} >= ${win.from} AND ${sql.raw(t.date)} <= ${win.to}`,
+  );
+  const r = (res.rows[0] ?? {}) as Record<string, unknown>;
+  return { rows: Number(r["rows"]) || 0, distinct: Number(r["distinct"]) || 0 };
 }
 
 export interface PullOutcome {
@@ -783,8 +879,12 @@ export async function pullData(
   // fiscal-year sales files) makes the table-wide distinct-code comparison
   // misleading, so we skip prevDistinct for those.
   const handlerSourceCount = new Map<string, number>();
-  for (const { handler } of selected) {
+  const handlerFileIds = new Map<string, string[]>();
+  for (const { handler, cfg } of selected) {
     handlerSourceCount.set(handler, (handlerSourceCount.get(handler) ?? 0) + 1);
+    const ids = handlerFileIds.get(handler) ?? [];
+    if (!ids.includes(cfg.fileId)) ids.push(cfg.fileId);
+    handlerFileIds.set(handler, ids);
   }
 
   for (const { handler, cfg } of selected) {
@@ -809,7 +909,7 @@ export async function pullData(
         })
         .returning();
       if (b) batches.push(toSummary(b, false));
-      diags.push(failedDiag(cfg, handler, null));
+      diags.push(failedDiag(cfg, handler, null, handlerFileIds.get(handler) ?? [cfg.fileId]));
       continue;
     }
 
@@ -834,7 +934,7 @@ export async function pullData(
         })
         .returning();
       if (b) batches.push(toSummary(b, false));
-      diags.push(failedDiag(cfg, handler, tab));
+      diags.push(failedDiag(cfg, handler, tab, handlerFileIds.get(handler) ?? [cfg.fileId]));
       continue;
     }
 
@@ -862,13 +962,28 @@ export async function pullData(
     const prevRows = prevBatch[0]
       ? (prevBatch[0].added ?? 0) + (prevBatch[0].updated ?? 0)
       : null;
-    const prevDistinct =
-      (handlerSourceCount.get(handler) ?? 1) > 1
-        ? null
-        : await prevDistinctInTable(handler, division);
+    const multiSource = (handlerSourceCount.get(handler) ?? 1) > 1;
+    const prevDistinct = multiSource ? null : await prevDistinctInTable(handler, division);
+    // Previous in-window footprint (pre-upsert) — only for single-source
+    // windowed handlers; sales spans two workbooks so a per-file in-window
+    // comparison would be misleading.
+    const win = windowFor(handler, pmFrom);
+    const prevInWindow =
+      multiSource || !win ? null : await prevInWindowInTable(handler, division, win);
 
     diags.push(
-      buildDiag(cfg, handler, cfg.fileId, tab, { ...mapped, rows }, pmFrom, prevRows, prevDistinct),
+      buildDiag(
+        cfg,
+        handler,
+        cfg.fileId,
+        tab,
+        { ...mapped, rows },
+        pmFrom,
+        prevRows,
+        prevDistinct,
+        handlerFileIds.get(handler) ?? [cfg.fileId],
+        prevInWindow,
+      ),
     );
 
     // Identical content since the last pull -> skip as 'no change' (no new batch,
