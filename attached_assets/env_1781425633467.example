@@ -1,0 +1,11 @@
+# Replit Secrets (do not commit real values)
+DATABASE_URL=                 # auto-provided by the Replit PostgreSQL database
+ANTHROPIC_API_KEY=            # required for the sanity check and PDF reports
+
+# Model tiering (language calls only)
+ANTHROPIC_MODEL_FAST=claude-sonnet-4-6
+ANTHROPIC_MODEL_DEEP=claude-opus-4-8
+MAX_TOKENS_FAST=1500
+MAX_TOKENS_DEEP=4000
+
+# Google connector is configured via Replit's connector UI (read-only Sheets)
