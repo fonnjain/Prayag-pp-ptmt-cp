@@ -111,20 +111,108 @@ function mkAdd(out: Finding[], source: string) {
 // pending_orders_count). Collapse them to a single finding by type alone.
 const SINGLETON_TYPES = new Set(["no_stock", "no_pending"]);
 
-// De-dup safety net over the merged Layer A + Layer B findings. The prompt is
-// responsible for SEMANTIC de-dup within Layer B; this collapses cross-layer
-// repeats: singleton types (no_stock/no_pending) by type, everything else when
-// byte-identical in severity+type+message. Layer A is listed first, so its
-// deterministic wording wins.
+const SEV_RANK: Record<Severity, number> = { info: 1, warning: 2, blocker: 3 };
+
+// A stray full-history note sometimes comes back typed wrong_month/partial; these
+// describe EXPECTED full-history breadth, not a real fetch problem.
+const FULL_HISTORY_RE =
+  /full[- ]history|out[- ]of[- ]window|out of window|filtered downstream|two[- ]file/i;
+
+// Hard-failure signals that mean a wrong_month/partial finding is a REAL problem
+// (the in-window data is actually missing) even if it also mentions full history.
+// When present we must NOT demote — err toward keeping a real blocker over hiding
+// it. Targets explicit zero-in-window assertions, not generic "in-window" prose.
+const HARD_FAIL_RE =
+  /nothing to plan|no rows inside|0 rows inside|no in[- ]?window|in[- ]?window rows?\D{0,4}\b0\b|in_window_rows\s*[=:]\s*0/i;
+
+// The set of numbers cited in a finding's evidence (commas stripped), joined as a
+// stable signature. Two findings citing the SAME number(s) describe the same fact.
+function evidenceSig(s: string | null): string {
+  return (String(s ?? "").match(/-?\d[\d,]*\.?\d*/g) || [])
+    .map((x) => x.replace(/,/g, ""))
+    .join("|");
+}
+
+// A signature is only a reliable identity when it cites a SPECIFIC number. Bare
+// zero ("0") is ambiguous — no_stock and no_pending both cite 0 yet are distinct
+// facts — so it must never collapse two findings on its own.
+function specificSig(sig: string): boolean {
+  return sig !== "" && !/^0(\|0)*$/.test(sig);
+}
+
+// Deterministic backstop over Claude's (Layer B) findings — don't trust the
+// prompt alone. Demote full-history-worded wrong_month/partial notes to an info
+// `full_history`, and never let a stock/pending condition hide under `empty`.
+function normalizeClaudeTypes(findings: Finding[]): Finding[] {
+  return findings.map((f) => {
+    // Only demote when the message has POSITIVE full-history context AND no
+    // hard-failure signal. A wrong_month/partial that actually proves the
+    // in-window data is missing must stay a real finding, never become info.
+    if (
+      (f.type === "wrong_month" || f.type === "partial") &&
+      FULL_HISTORY_RE.test(f.message) &&
+      !HARD_FAIL_RE.test(f.message)
+    ) {
+      return {
+        ...f,
+        type: "full_history",
+        severity: "info" as Severity,
+        suggestedFix: f.suggestedFix || "none — expected for full-history source",
+      };
+    }
+    if (f.type === "empty" && /stock/i.test(f.message)) return { ...f, type: "no_stock" };
+    if (f.type === "empty" && /pending/i.test(f.message)) return { ...f, type: "no_pending" };
+    return f;
+  });
+}
+
+// Collapse Claude's own redundancy (it can restate one problem under several
+// sources despite the prompt). Merge by TYPE only — never across types on a
+// coincidental shared number (e.g. missing_codes=19 vs an unrelated outlier=19);
+// alias types like empty->no_stock are already unified by normalizeClaudeTypes.
+function dedupeClaudeIssues(findings: Finding[]): Finding[] {
+  const out: Finding[] = [];
+  for (const f of findings) {
+    const idx = out.findIndex((x) => x.type === f.type);
+    if (idx === -1) {
+      out.push(f);
+      continue;
+    }
+    const cur = out[idx];
+    // Severity DOMINATES: a lower-severity finding can never replace a higher
+    // one. A longer (more actionable) fix only breaks ties at equal severity.
+    const fRank = SEV_RANK[f.severity];
+    const curRank = SEV_RANK[cur.severity];
+    const better =
+      fRank > curRank ||
+      (fRank === curRank &&
+        (f.suggestedFix?.length ?? 0) > (cur.suggestedFix?.length ?? 0));
+    if (better) out[idx] = f;
+  }
+  return out;
+}
+
+// De-dup safety net over the merged Layer A + Layer B findings. Collapses
+// cross-layer repeats: singleton types (no_stock/no_pending) by type; anything
+// byte-identical in severity+type+message; and same-type findings that cite the
+// same SPECIFIC number (e.g. Layer A "orphan codes = 19" vs Claude
+// "orphan_item_codes=19"). Layer A is listed first, so its deterministic wording
+// wins. Blanket same-type collapse is intentionally NOT done here — distinct
+// Layer A findings legitimately share a type (e.g. two `outlier`s).
 function dedupeFindings(findings: Finding[]): Finding[] {
   const seen = new Set<string>();
+  const sigSeen = new Set<string>();
   const out: Finding[] = [];
   for (const f of findings) {
     const key = SINGLETON_TYPES.has(f.type)
       ? `type:${f.type}`
       : `${f.severity}|${f.type}|${f.message.trim().toLowerCase()}`;
     if (seen.has(key)) continue;
+    const sig = evidenceSig(f.evidence);
+    const sigKey = `${f.type}|${sig}`;
+    if (specificSig(sig) && sigSeen.has(sigKey)) continue;
     seen.add(key);
+    if (specificSig(sig)) sigSeen.add(sigKey);
     out.push(f);
   }
   return out;
@@ -557,7 +645,12 @@ export async function runSanity(
   const stats = await gatherStats(division, planMonth);
   const aFindings = [...layerAPerSource(diags), ...layerAAggregate(stats)];
   const b = await layerB(division, planMonth, stats, diags, aFindings);
-  const findings = dedupeFindings([...aFindings, ...b.findings]);
+  // Deterministic cleanup of Claude's reply (don't rely on the prompt alone):
+  // normalize stray types, then collapse its internal redundancy, then merge with
+  // the deterministic findings and de-dup cross-layer. Verdict is recomputed from
+  // the cleaned set so it stays consistent with what's shown.
+  const bClean = dedupeClaudeIssues(normalizeClaudeTypes(b.findings));
+  const findings = dedupeFindings([...aFindings, ...bClean]);
   const verdict = verdictOf(findings);
   const summary = b.summary;
 

@@ -71,6 +71,31 @@ shifted_column | missing_codes | outlier | no_stock | no_pending. There is NO
 fact (e.g. a `no_stock` and an `empty` both citing stock=0). Exact-message
 de-dup can't catch cross-type/cross-layer repeats, hence the type-level collapse.
 
+# Deterministic cleanup of Claude's sanity reply (don't trust the prompt)
+
+The spec mandates Node-side backstops over Claude's JSON, applied to Layer B
+ONLY before merging with deterministic Layer A:
+- normalize: demote full-history-worded `wrong_month`/`partial` to an info
+  `full_history`; reclassify stray `empty` about stock/pending to no_stock/
+  no_pending.
+- dedupe Claude's output by TYPE only (keep more SEVERE finding; longer fix is
+  only a tiebreaker at equal severity). Then merge with Layer A and run the
+  cross-layer dedupe; recompute the verdict from the cleaned set.
+
+Three traps the spec's literal code hits — guard against them:
+1. Never merge two findings across DIFFERENT types just because they cite the
+   same number ("0" collides no_stock/no_pending; "19" could collide
+   missing_codes/outlier). Same-number merge is allowed only WITHIN a type.
+2. Severity must dominate replacement — a longer `suggested_fix` must never let a
+   lower-severity finding overwrite a higher-severity one (would hide a blocker).
+3. Full-history demotion must require POSITIVE full-history wording AND the
+   ABSENCE of a hard-failure signal (in_window_rows=0 / "nothing to plan" /
+   "no rows inside"). Otherwise a real in-window-missing blocker silently
+   becomes info. When in doubt, do NOT demote — a false alarm beats hidden bad data.
+
+**Why:** these are the high-impact regressions an architect review caught in the
+naive port of the spec's normalizeTypes/dedupeIssues.
+
 # Connector access gotchas
 
 - Accept connection status `healthy`/`authorized` (not only connected/active/
