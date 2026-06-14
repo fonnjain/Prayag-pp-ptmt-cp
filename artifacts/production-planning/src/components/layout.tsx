@@ -3,12 +3,14 @@ import { Link, useLocation } from "wouter";
 import { useData } from "@/lib/data-provider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { LayoutDashboard, FileSpreadsheet, Database, FileText, Settings, History, LogOut, Menu, X } from "lucide-react";
+import { LayoutDashboard, FileSpreadsheet, Database, FileText, Settings, History, LogOut, Menu, X, Lock } from "lucide-react";
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const { division, setDivision, planMonth, setPlanMonth, role, user, logout } = useData();
+  const { division, setDivision, planMonth, setPlanMonth, role, user, logout, importBatches } = useData();
   const [location, setLocation] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const hasData = importBatches.length > 0;
 
   const handleLogout = async () => {
     setMobileMenuOpen(false);
@@ -16,13 +18,16 @@ export function Layout({ children }: { children: React.ReactNode }) {
     setLocation("/login");
   };
 
+  // Sequence: Data → Plan → Reports. Dashboard always available and unchanged.
+  // Everything that consumes pulled data is locked until a pull exists for the
+  // current division/month.
   const navItems = [
-    { label: "Dashboard", href: "/", icon: LayoutDashboard, roles: ["admin", "planner", "viewer"] },
-    { label: "Plan", href: "/plan", icon: FileSpreadsheet, roles: ["admin", "planner", "viewer"] },
-    { label: "Data", href: "/data", icon: Database, roles: ["admin", "planner"] },
-    { label: "Reports", href: "/reports", icon: FileText, roles: ["admin", "planner", "viewer"] },
-    { label: "Settings", href: "/settings", icon: Settings, roles: ["admin"] },
-    { label: "Legacy Import", href: "/legacy", icon: History, roles: ["admin"] },
+    { label: "Dashboard", href: "/", icon: LayoutDashboard, roles: ["admin", "planner", "viewer"], requiresData: false },
+    { label: "Data", href: "/data", icon: Database, roles: ["admin", "planner"], requiresData: false },
+    { label: "Plan", href: "/plan", icon: FileSpreadsheet, roles: ["admin", "planner", "viewer"], requiresData: true },
+    { label: "Reports", href: "/reports", icon: FileText, roles: ["admin", "planner", "viewer"], requiresData: true },
+    { label: "Settings", href: "/settings", icon: Settings, roles: ["admin"], requiresData: true },
+    { label: "Legacy Import", href: "/legacy", icon: History, roles: ["admin"], requiresData: true },
   ];
 
   return (
@@ -73,6 +78,20 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
           {navItems.filter(item => item.roles.includes(role)).map(item => {
             const isActive = location === item.href;
+            const locked = item.requiresData && !hasData;
+            if (locked) {
+              return (
+                <div
+                  key={item.href}
+                  title="Pull data first to unlock"
+                  className="flex items-center gap-3 px-3 py-2 rounded-md text-muted-foreground/50 cursor-not-allowed select-none"
+                >
+                  <item.icon className="h-4 w-4" />
+                  <span className="flex-1">{item.label}</span>
+                  <Lock className="h-3.5 w-3.5" />
+                </div>
+              );
+            }
             return (
               <Link key={item.href} href={item.href}>
                 <div className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors cursor-pointer ${isActive ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:bg-muted hover:text-foreground'}`} onClick={() => setMobileMenuOpen(false)}>

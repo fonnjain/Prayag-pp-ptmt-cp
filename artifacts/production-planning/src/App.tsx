@@ -25,27 +25,56 @@ function RoleGuard({ allow, children }: { allow: Role[]; children: React.ReactNo
   return <>{children}</>;
 }
 
+// Pages that consume pulled data are gated until a pull exists for the current
+// division/month. Sequence is Data → Plan → Reports; Dashboard stays open.
+function DataGuard({ children }: { children: React.ReactNode }) {
+  const { importBatches, batchesLoading } = useData();
+  if (batchesLoading) {
+    return (
+      <div className="flex items-center justify-center py-20 text-muted-foreground">
+        Loading…
+      </div>
+    );
+  }
+  if (importBatches.length === 0) {
+    return <Redirect to="/data" />;
+  }
+  return <>{children}</>;
+}
+
 function ProtectedRoutes() {
   return (
     <Layout>
       <Switch>
         <Route path="/" component={Dashboard} />
-        <Route path="/plan" component={Plan} />
         <Route path="/data">
           <RoleGuard allow={["admin", "planner"]}>
             <DataPage />
           </RoleGuard>
         </Route>
-        <Route path="/reports" component={Reports} />
+        <Route path="/plan">
+          <DataGuard>
+            <Plan />
+          </DataGuard>
+        </Route>
+        <Route path="/reports">
+          <DataGuard>
+            <Reports />
+          </DataGuard>
+        </Route>
         <Route path="/settings">
-          <RoleGuard allow={["admin"]}>
-            <Settings />
-          </RoleGuard>
+          <DataGuard>
+            <RoleGuard allow={["admin"]}>
+              <Settings />
+            </RoleGuard>
+          </DataGuard>
         </Route>
         <Route path="/legacy">
-          <RoleGuard allow={["admin"]}>
-            <Legacy />
-          </RoleGuard>
+          <DataGuard>
+            <RoleGuard allow={["admin"]}>
+              <Legacy />
+            </RoleGuard>
+          </DataGuard>
         </Route>
         <Route component={NotFound} />
       </Switch>

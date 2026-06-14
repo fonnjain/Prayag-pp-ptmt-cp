@@ -72,6 +72,7 @@ interface DataContextType {
   planRuns: PlanRun[];
   sanityResult: SanityResult | null;
   importBatches: ImportBatch[];
+  batchesLoading: boolean;
   sourceConfigs: SourceConfig[];
   legacyScopes: LegacyScope[];
   reports: Report[];
@@ -457,6 +458,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         planRuns,
         sanityResult,
         importBatches,
+        batchesLoading: batchesQuery.isLoading,
         sourceConfigs,
         legacyScopes,
         reports,
