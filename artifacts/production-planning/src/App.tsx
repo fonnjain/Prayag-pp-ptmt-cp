@@ -1,27 +1,63 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, Redirect } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
+import { DataProvider, useData } from "@/lib/data-provider";
+import { Role } from "@/lib/types";
+import { Layout } from "@/components/layout";
+
+import Dashboard from "@/pages/dashboard";
+import Plan from "@/pages/plan";
+import DataPage from "@/pages/data";
+import Reports from "@/pages/reports";
+import Settings from "@/pages/settings";
+import Legacy from "@/pages/legacy";
+import Login from "@/pages/login";
 
 const queryClient = new QueryClient();
 
-function Home() {
+function RoleGuard({ allow, children }: { allow: Role[]; children: React.ReactNode }) {
+  const { role } = useData();
+  if (!allow.includes(role)) {
+    return <Redirect to="/" />;
+  }
+  return <>{children}</>;
+}
+
+function ProtectedRoutes() {
   return (
-    <div className="min-h-screen w-full flex items-center justify-center bg-gray-50">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900">Replit Agent is building...</h1>
-        <p className="mt-2 text-sm text-gray-600">Your app will appear here once it's ready.</p>
-      </div>
-    </div>
+    <Layout>
+      <Switch>
+        <Route path="/" component={Dashboard} />
+        <Route path="/plan" component={Plan} />
+        <Route path="/data">
+          <RoleGuard allow={["admin", "planner"]}>
+            <DataPage />
+          </RoleGuard>
+        </Route>
+        <Route path="/reports" component={Reports} />
+        <Route path="/settings">
+          <RoleGuard allow={["admin"]}>
+            <Settings />
+          </RoleGuard>
+        </Route>
+        <Route path="/legacy">
+          <RoleGuard allow={["admin"]}>
+            <Legacy />
+          </RoleGuard>
+        </Route>
+        <Route component={NotFound} />
+      </Switch>
+    </Layout>
   );
 }
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Home} />
-      <Route component={NotFound} />
+      <Route path="/login" component={Login} />
+      <Route component={ProtectedRoutes} />
     </Switch>
   );
 }
@@ -30,9 +66,11 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router />
-        </WouterRouter>
+        <DataProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <Router />
+          </WouterRouter>
+        </DataProvider>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

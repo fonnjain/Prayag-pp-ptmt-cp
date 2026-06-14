@@ -1,0 +1,1 @@
+- [wouter catch-all](wouter-catchall.md) — a pathless `<Route component={...}/>` is the catch-all; `path="/:rest*"` silently fails to match `/`.
