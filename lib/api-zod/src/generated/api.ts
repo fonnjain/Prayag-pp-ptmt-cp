@@ -214,6 +214,12 @@ export const GetSanityResponse = zod.union([zod.object({
 }),zod.null()])
 
 
+export const DownloadSanityReportQueryParams = zod.object({
+  "division": zod.coerce.string(),
+  "planMonth": zod.coerce.string()
+})
+
+
 export const BuildPlanBody = zod.object({
   "division": zod.string(),
   "planMonth": zod.string(),

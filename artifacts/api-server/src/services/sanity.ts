@@ -1,3 +1,4 @@
+import PDFDocument from "pdfkit";
 import { sql, eq } from "drizzle-orm";
 import { db, validationFindings } from "@workspace/db";
 import {
@@ -509,4 +510,113 @@ export async function getLatestSanity(
     downgraded: false,
     findings,
   };
+}
+
+const VERDICT_LABEL: Record<string, string> = {
+  ok: "OK — data looks complete and correct",
+  warn: "WARN — review the warnings below before planning",
+  block: "BLOCK — do not plan; fix the issues below and re-pull",
+};
+
+const SEVERITY_COLOR: Record<Severity, string> = {
+  blocker: "#b91c1c",
+  warning: "#b45309",
+  info: "#1d4ed8",
+};
+
+// Render the latest sanity-check result for a scope as a downloadable PDF.
+export async function renderSanityPdf(
+  division: string,
+  planMonth: string,
+): Promise<{ buffer: Buffer; filename: string } | null> {
+  const result = await getLatestSanity(division, planMonth);
+  if (!result) return null;
+
+  const pm = planMonth.slice(0, 7);
+  const buffer = await new Promise<Buffer>((resolve, reject) => {
+    const doc = new PDFDocument({ size: "A4", margin: 50 });
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    doc.fontSize(20).fillColor("#000").text("Prayag Production Planning");
+    doc.moveDown(0.3);
+    doc
+      .fontSize(14)
+      .fillColor("#444")
+      .text(`Data Sanity Check — ${division} ${pm}`);
+    doc.moveDown(0.6);
+
+    const verdictColor = SEVERITY_COLOR[
+      result.verdict === "block"
+        ? "blocker"
+        : result.verdict === "warn"
+          ? "warning"
+          : "info"
+    ];
+    doc
+      .fontSize(13)
+      .fillColor(verdictColor)
+      .text(VERDICT_LABEL[result.verdict] ?? result.verdict.toUpperCase());
+    doc.moveDown(0.3);
+    doc.fontSize(10).fillColor("#000").text(result.summary || "No summary.");
+    doc.moveDown(0.8);
+
+    const counts = {
+      blocker: result.findings.filter((f) => f.severity === "blocker").length,
+      warning: result.findings.filter((f) => f.severity === "warning").length,
+      info: result.findings.filter((f) => f.severity === "info").length,
+    };
+    doc
+      .fontSize(9)
+      .fillColor("#555")
+      .text(
+        `Findings: ${result.findings.length} total — ${counts.blocker} blocker, ${counts.warning} warning, ${counts.info} info`,
+      );
+    doc.moveDown(0.6);
+
+    if (result.findings.length === 0) {
+      doc.fontSize(11).fillColor("#15803d").text("No issues found.");
+    } else {
+      doc
+        .fontSize(13)
+        .fillColor("#1a1a1a")
+        .text("Identified Issues");
+      doc.moveDown(0.4);
+      result.findings.forEach((f, i) => {
+        const color = SEVERITY_COLOR[f.severity];
+        doc
+          .fontSize(11)
+          .fillColor(color)
+          .text(
+            `${i + 1}. [${f.severity.toUpperCase()}] ${f.type.replace(/_/g, " ")}`,
+          );
+        doc.fontSize(10).fillColor("#000").text(f.message);
+        if (f.evidence) {
+          doc.fontSize(9).fillColor("#555").text(`Evidence: ${f.evidence}`);
+        }
+        if (f.suggestedFix) {
+          doc.fontSize(9).fillColor("#555").text(`Fix: ${f.suggestedFix}`);
+        }
+        doc.moveDown(0.6);
+      });
+    }
+
+    const footer =
+      `Verdict: ${result.verdict} | Model: ${result.model ?? "n/a"} | Tier: ${result.tier ?? "n/a"}` +
+      ` | Generated: ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+    doc
+      .fontSize(8)
+      .fillColor("#888")
+      .text(footer, 50, doc.page.height - 40, {
+        width: doc.page.width - 100,
+        align: "center",
+      });
+
+    doc.end();
+  });
+
+  const filename = `sanity-${division}-${pm}.pdf`;
+  return { buffer, filename };
 }

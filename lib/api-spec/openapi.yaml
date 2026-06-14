@@ -198,6 +198,24 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SanityResultNullable"
+  /data/sanity/report:
+    get:
+      operationId: downloadSanityReport
+      tags: [data]
+      parameters:
+        - { in: query, name: division, required: true, schema: { type: string } }
+        - { in: query, name: planMonth, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Sanity-check report as a PDF file
+          content:
+            application/pdf: {}
+        "404":
+          description: No sanity result for this division and month
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /plan/build:
     post:
       operationId: buildPlan

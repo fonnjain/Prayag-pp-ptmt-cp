@@ -25,18 +25,19 @@ function RoleGuard({ allow, children }: { allow: Role[]; children: React.ReactNo
   return <>{children}</>;
 }
 
-// Pages that consume pulled data are gated until a pull exists for the current
-// division/month. Sequence is Data → Plan → Reports; Dashboard stays open.
+// Pages that consume pulled data are gated until the division has any pulled
+// data. Sequence is Data → Plan → Reports; Dashboard stays open. Gating is
+// division-level (not month) so changing the month never forces a re-pull.
 function DataGuard({ children }: { children: React.ReactNode }) {
-  const { importBatches, batchesLoading } = useData();
-  if (batchesLoading) {
+  const { divisionHasData, divisionDataLoading } = useData();
+  if (divisionDataLoading) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground">
         Loading…
       </div>
     );
   }
-  if (importBatches.length === 0) {
+  if (!divisionHasData) {
     return <Redirect to="/data" />;
   }
   return <>{children}</>;

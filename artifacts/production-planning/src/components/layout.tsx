@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button";
 import { LayoutDashboard, FileSpreadsheet, Database, FileText, Settings, History, LogOut, Menu, X, Lock } from "lucide-react";
 
 export function Layout({ children }: { children: React.ReactNode }) {
-  const { division, setDivision, planMonth, setPlanMonth, role, user, logout, importBatches } = useData();
+  const { division, setDivision, planMonth, setPlanMonth, role, user, logout, divisionHasData } = useData();
   const [location, setLocation] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const hasData = importBatches.length > 0;
+  // Gate on whether the division has ANY pulled data — not the selected month —
+  // because a pull loads full history and changing the month just re-runs the engine.
+  const hasData = divisionHasData;
 
   const handleLogout = async () => {
     setMobileMenuOpen(false);

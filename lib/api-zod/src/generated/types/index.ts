@@ -10,6 +10,7 @@ export * from './acknowledgeInput';
 export * from './categorySummary';
 export * from './dashboardData';
 export * from './diagnostics';
+export * from './downloadSanityReportParams';
 export * from './error';
 export * from './getBatchesParams';
 export * from './getDashboardParams';

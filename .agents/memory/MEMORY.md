@@ -4,3 +4,4 @@
 - [orval query options](orval-query-options.md) — generated react-query hooks require `queryKey` in the options type; pass `enabled` via an `any`-cast helper.
 - [Live data setup](live-data-setup.md) — sheet reads need the `google-sheet` connector (not Drive); re-seed `source_config` after task-agent merges (DB rows don't carry over).
 - [Prod reference-data seeding](prod-reference-data-seeding.md) — publish copies schema not rows; seed `source_config` idempotently on boot before listen, or prod pulls/plans/exports come back blank.
+- [Data-gating scope](gating-and-pull-scope.md) — gate Plan/Reports on division-level data, not the month; a pull loads full history and the engine date-filters per month.

@@ -305,6 +305,11 @@ division?: string;
 planMonth?: string;
 };
 
+export type DownloadSanityReportParams = {
+division: string;
+planMonth: string;
+};
+
 export type GetPlanRunsParams = {
 division?: string;
 planMonth?: string;

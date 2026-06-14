@@ -73,6 +73,8 @@ interface DataContextType {
   sanityResult: SanityResult | null;
   importBatches: ImportBatch[];
   batchesLoading: boolean;
+  divisionHasData: boolean;
+  divisionDataLoading: boolean;
   sourceConfigs: SourceConfig[];
   legacyScopes: LegacyScope[];
   reports: Report[];
@@ -293,6 +295,13 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     { division, planMonth: apiMonth },
     enabledOpt(enabled),
   );
+  // Division-level batches (any month). The data pull loads full multi-year
+  // history, so once a division has been pulled at all, the engine can run for
+  // any month — gating must NOT force a re-pull just because the month changed.
+  const divisionBatchesQuery = useGetBatches(
+    { division },
+    enabledOpt(enabled),
+  );
   const sourceConfigsQuery = useGetSourceConfigs(
     { division },
     enabledOpt(enabled && role === "admin"),
@@ -393,6 +402,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     await pullMutation.mutateAsync({ data: { division, planMonth: apiMonth } });
     await Promise.all([
       qc.invalidateQueries({ queryKey: getGetBatchesQueryKey({ division, planMonth: apiMonth }) }),
+      qc.invalidateQueries({ queryKey: getGetBatchesQueryKey({ division }) }),
       qc.invalidateQueries({ queryKey: getGetSanityQueryKey({ division, planMonth: apiMonth }) }),
       invalidatePlanData(),
     ]);
@@ -459,6 +469,10 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         sanityResult,
         importBatches,
         batchesLoading: batchesQuery.isLoading,
+        divisionHasData:
+          ((divisionBatchesQuery.data as ApiImportBatch[] | undefined) ?? [])
+            .length > 0,
+        divisionDataLoading: divisionBatchesQuery.isLoading,
         sourceConfigs,
         legacyScopes,
         reports,

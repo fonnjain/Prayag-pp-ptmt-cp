@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { PullDataBody, AcknowledgeDataBody } from "@workspace/api-zod";
-import { asyncHandler } from "../lib/http";
+import { asyncHandler, HttpError } from "../lib/http";
 import { requireAuth, requireRole, type AuthedRequest } from "../lib/auth";
 import {
   pullData,
@@ -8,7 +8,7 @@ import {
   acknowledgeLatest,
   setSanityOnLatestBatch,
 } from "../services/ingestion";
-import { runSanity, getLatestSanity } from "../services/sanity";
+import { runSanity, getLatestSanity, renderSanityPdf } from "../services/sanity";
 
 const router: IRouter = Router();
 
@@ -86,6 +86,31 @@ router.get(
       return;
     }
     res.json(await getLatestSanity(division, planMonth));
+  }),
+);
+
+router.get(
+  "/data/sanity/report",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const division = req.query["division"] as string | undefined;
+    const planMonth = req.query["planMonth"] as string | undefined;
+    if (!division || !planMonth) {
+      throw new HttpError(400, "division and planMonth are required");
+    }
+    const out = await renderSanityPdf(division, planMonth);
+    if (!out) {
+      throw new HttpError(
+        404,
+        "No sanity result for this division and month. Pull data first.",
+      );
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${out.filename}"`,
+    );
+    res.send(out.buffer);
   }),
 );
 

@@ -23,6 +23,7 @@ import type {
   AcknowledgeInput,
   DashboardData,
   Diagnostics,
+  DownloadSanityReportParams,
   Error,
   GetBatchesParams,
   GetDashboardParams,
@@ -836,6 +837,84 @@ export function useGetSanity<TData = Awaited<ReturnType<typeof getSanity>>, TErr
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetSanityQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getDownloadSanityReportUrl = (params: DownloadSanityReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/data/sanity/report?${stringifiedParams}` : `/api/data/sanity/report`
+}
+
+export const downloadSanityReport = async (params: DownloadSanityReportParams, options?: RequestInit): Promise<Blob> => {
+
+  return customFetch<Blob>(getDownloadSanityReportUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getDownloadSanityReportQueryKey = (params?: DownloadSanityReportParams,) => {
+    return [
+    `/api/data/sanity/report`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getDownloadSanityReportQueryOptions = <TData = Awaited<ReturnType<typeof downloadSanityReport>>, TError = ErrorType<Error>>(params: DownloadSanityReportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadSanityReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getDownloadSanityReportQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof downloadSanityReport>>> = ({ signal }) => downloadSanityReport(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof downloadSanityReport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type DownloadSanityReportQueryResult = NonNullable<Awaited<ReturnType<typeof downloadSanityReport>>>
+export type DownloadSanityReportQueryError = ErrorType<Error>
+
+
+
+export function useDownloadSanityReport<TData = Awaited<ReturnType<typeof downloadSanityReport>>, TError = ErrorType<Error>>(
+ params: DownloadSanityReportParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof downloadSanityReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getDownloadSanityReportQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

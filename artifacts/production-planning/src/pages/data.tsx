@@ -3,7 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Database, Download, AlertTriangle, CheckCircle2, XCircle, ChevronRight, Activity } from "lucide-react";
+import { Database, Download, AlertTriangle, CheckCircle2, XCircle, ChevronRight, Activity, FileDown } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ValidationFinding } from "@/lib/types";
 
@@ -35,6 +35,24 @@ function FindingRow({ finding }: { finding: ValidationFinding }) {
 export default function DataPage() {
   const { division, planMonth, importBatches, sanityResult, pullData, acknowledgeWarnings, role, isPulling } = useData();
   const { toast } = useToast();
+
+  const sanityReportHref = `/api/data/sanity/report?division=${encodeURIComponent(division)}&planMonth=${encodeURIComponent(`${planMonth}-01`)}`;
+  const canDownloadSanity = Boolean(sanityResult);
+
+  const SanityReportButton = ({ className }: { className?: string }) =>
+    canDownloadSanity ? (
+      <a href={sanityReportHref} target="_blank" rel="noopener noreferrer" className={className}>
+        <Button variant="outline" className="gap-2 w-full">
+          <FileDown className="h-4 w-4" />
+          Download Sanity Report (PDF)
+        </Button>
+      </a>
+    ) : (
+      <Button variant="outline" className={`gap-2 ${className ?? ""}`} disabled title="Pull data to generate a sanity report">
+        <FileDown className="h-4 w-4" />
+        Download Sanity Report (PDF)
+      </Button>
+    );
 
   const handlePull = async () => {
     try {
@@ -75,12 +93,15 @@ export default function DataPage() {
           <p className="text-muted-foreground">Source integration & sanity checks for {division}</p>
         </div>
         
-        {role !== "viewer" && (
-          <Button onClick={handlePull} disabled={isPulling} className="gap-2 shrink-0">
-            <Download className="h-4 w-4" />
-            {isPulling ? "Pulling..." : "Pull Latest Data"}
-          </Button>
-        )}
+        <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+          <SanityReportButton />
+          {role !== "viewer" && (
+            <Button onClick={handlePull} disabled={isPulling} className="gap-2 shrink-0">
+              <Download className="h-4 w-4" />
+              {isPulling ? "Pulling..." : "Pull Latest Data"}
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -194,6 +215,10 @@ export default function DataPage() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      <div className="flex justify-end pt-2">
+        <SanityReportButton className="w-full sm:w-auto" />
       </div>
     </div>
   );
