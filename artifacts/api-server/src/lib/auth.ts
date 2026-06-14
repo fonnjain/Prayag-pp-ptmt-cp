@@ -65,12 +65,30 @@ export async function resolveUser(req: Request): Promise<User | null> {
 
 export type AuthedRequest = Request & { user?: User };
 
+// Login is temporarily disabled: every request is treated as this admin user so
+// the app is fully usable without signing in. To re-enable auth, delete
+// AUTH_DISABLED / BYPASS_USER and restore the resolveUser-only body below.
+const AUTH_DISABLED = true;
+const BYPASS_USER: User = {
+  id: 1,
+  email: "admin@prayag.test",
+  name: "Admin",
+  role: "admin",
+  passwordHash: null,
+  createdAt: new Date(),
+} as User;
+
 export async function attachUser(
   req: Request,
   _res: Response,
   next: NextFunction,
 ): Promise<void> {
   try {
+    if (AUTH_DISABLED) {
+      (req as AuthedRequest).user = BYPASS_USER;
+      next();
+      return;
+    }
     (req as AuthedRequest).user = (await resolveUser(req)) ?? undefined;
     next();
   } catch (err) {
