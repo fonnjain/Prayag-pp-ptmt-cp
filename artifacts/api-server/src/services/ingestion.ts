@@ -87,7 +87,7 @@ const ALIASES: Record<string, Record<string, string[]>> = {
   },
   production: {
     prodDate: ["date", "production date", "prod date"],
-    itemCode: ["item code", "code", "item", "sku"],
+    itemCode: ["item code", "code", "item", "sku", "cat no"],
     colour: ["colour", "color"],
     qty: ["qty", "quantity", "nos", "produced"],
     subGroup: ["sub group", "subgroup"],
@@ -118,7 +118,7 @@ const ALIASES: Record<string, Record<string, string[]>> = {
     altUnit: ["alt unit", "alternate unit"],
     materialCenter: ["material center", "material centre"],
     mrp: ["mrp"],
-    saleRate: ["rate", "sale rate", "price"],
+    saleRate: ["sale rate", "sale price", "rate", "price"],
     hsn: ["hsn", "hsn code"],
     gst: ["gst", "gst%", "tax"],
   },
@@ -135,27 +135,41 @@ const REQUIRED_COLUMNS: Record<string, string[]> = {
 };
 
 function norm(s: unknown): string {
-  return String(s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  // Lowercase, drop dots/underscores (e.g. "Document No." / "Item.Color"),
+  // collapse whitespace. Real sheet headers use inconsistent punctuation.
+  return String(s ?? "")
+    .toLowerCase()
+    .replace(/[._]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function detectHeader(
   rows: string[][],
   aliasMap: Record<string, string[]>,
 ): { headerIdx: number; colIndex: Record<string, number> } {
-  const wanted = Object.values(aliasMap).flat();
+  // A cell matches an alias if it equals it (exact) or contains it as a
+  // substring, e.g. "old erp code" contains "code", "bal qty" contains "qty".
+  const fuzzy = (cell: string, aliases: string[]): boolean =>
+    aliases.some((a) => cell === a || cell.includes(a));
   let best = { idx: -1, score: 0 };
   const scan = Math.min(rows.length, 15);
   for (let i = 0; i < scan; i++) {
     const cells = (rows[i] ?? []).map(norm);
     let score = 0;
-    for (const c of cells) if (wanted.includes(c)) score++;
+    for (const aliases of Object.values(aliasMap)) {
+      if (cells.some((c) => fuzzy(c, aliases))) score++;
+    }
     if (score > best.score) best = { idx: i, score };
   }
   const colIndex: Record<string, number> = {};
   if (best.idx >= 0) {
     const cells = (rows[best.idx] ?? []).map(norm);
     for (const [field, aliases] of Object.entries(aliasMap)) {
-      const idx = cells.findIndex((c) => aliases.includes(c));
+      // Prefer an exact header match; fall back to a substring match so dotted
+      // / prefixed headers ("Item.Color", "Old ERP Code") still resolve.
+      let idx = cells.findIndex((c) => aliases.includes(c));
+      if (idx < 0) idx = cells.findIndex((c) => aliases.some((a) => c.includes(a)));
       if (idx >= 0) colIndex[field] = idx;
     }
   }
@@ -569,38 +583,20 @@ function monthApplies(cfg: Cfg, pmFrom: string): boolean {
   return true;
 }
 
-// Specificity: a fully-bounded window (e.g. the April-only fiscal file) beats an
-// open-ended one, so for April the FY25-26 file wins over the FY26-27 file.
-function specificity(cfg: Cfg): number {
-  const hasFrom = cfg.appliesFrom != null;
-  const hasTo = cfg.appliesTo != null;
-  if (hasFrom && hasTo) return 3;
-  if (hasTo) return 2;
-  if (hasFrom) return 1;
-  return 0;
-}
-
-// Choose exactly one source_config per handler for this division+month, honoring
-// the fiscal-year rule via applies_from/applies_to (April -> Sale 25-26;
-// May/Jun -> Sale 26-27).
-function selectConfigs(configs: Cfg[], pmFrom: string): Map<string, Cfg> {
-  const chosen = new Map<string, Cfg>();
+// Select every source_config that applies to this division+month. Multiple
+// configs can share a handler (e.g. both fiscal-year sales workbooks map to
+// "sales") and are all ingested — the engine date-filters sales over windows up
+// to 12 months, so the full multi-year history must be loaded; the windows, not
+// the source choice, do the selection.
+function selectConfigs(configs: Cfg[], pmFrom: string): { handler: string; cfg: Cfg }[] {
+  const out: { handler: string; cfg: Cfg }[] = [];
   for (const cfg of configs) {
     const handler = handlerKey(cfg.dataType);
     if (!handler) continue;
     if (!monthApplies(cfg, pmFrom)) continue;
-    const cur = chosen.get(handler);
-    if (!cur) {
-      chosen.set(handler, cfg);
-      continue;
-    }
-    const better =
-      specificity(cfg) > specificity(cur) ||
-      (specificity(cfg) === specificity(cur) &&
-        String(cfg.appliesFrom ?? "") > String(cur.appliesFrom ?? ""));
-    if (better) chosen.set(handler, cfg);
+    out.push({ handler, cfg });
   }
-  return chosen;
+  return out;
 }
 
 function addMonthsYMD(pmFrom: string, n: number): string {
@@ -623,7 +619,9 @@ function windowFor(handler: string, pmFrom: string): { from: string; to: string 
   const prevDay = new Date(`${pm}T00:00:00Z`);
   prevDay.setUTCDate(prevDay.getUTCDate() - 1);
   const beforePlan = prevDay.toISOString().slice(0, 10);
-  if (handler === "sales") return { from: addMonthsYMD(pm, -3), to: beforePlan };
+  // 12 months: the widest window the engine reads (annual avg). Sales sources
+  // are intentionally full-history, so anything within a year is "in-window".
+  if (handler === "sales") return { from: addMonthsYMD(pm, -12), to: beforePlan };
   if (handler === "orders" || handler === "production")
     return { from: dayBefore, to: endOfMonthYMD(pm) };
   return null;
@@ -721,6 +719,35 @@ function buildDiag(
   };
 }
 
+// A SourceDiag for a fetch that failed before any rows could be mapped (no tab
+// resolved, or the read threw). Marked empty so the sanity layer treats the
+// CURRENT fetch as a failure (blocker for core series) instead of silently
+// relying on stale rows already in the table from a previous pull.
+function failedDiag(cfg: Cfg, handler: string, tab: string | null): SourceDiag {
+  return {
+    dataType: cfg.dataType,
+    handler,
+    fileId: cfg.fileId,
+    expectedFileId: cfg.fileId,
+    fileMatches: true,
+    tab,
+    empty: true,
+    rows: 0,
+    rejected: 0,
+    distinctCodes: 0,
+    prevRows: null,
+    prevDistinct: null,
+    dateMin: null,
+    dateMax: null,
+    windowFrom: null,
+    windowTo: null,
+    outOfWindow: 0,
+    missingColumns: [],
+    negQty: 0,
+    amountMismatch: 0,
+  };
+}
+
 export interface PullOutcome {
   batches: BatchSummary[];
   diags: SourceDiag[];
@@ -752,7 +779,15 @@ export async function pullData(
   const diags: SourceDiag[] = [];
   let anyChange = false;
 
-  for (const [handler, cfg] of selected) {
+  // Count source files per handler: a handler with several workbooks (e.g. two
+  // fiscal-year sales files) makes the table-wide distinct-code comparison
+  // misleading, so we skip prevDistinct for those.
+  const handlerSourceCount = new Map<string, number>();
+  for (const { handler } of selected) {
+    handlerSourceCount.set(handler, (handlerSourceCount.get(handler) ?? 0) + 1);
+  }
+
+  for (const { handler, cfg } of selected) {
     if (onlyHandler && handler !== onlyHandler && cfg.dataType !== onlyHandler) continue;
 
     const tab = await resolveTab(cfg.fileId, cfg.tabPattern, pmFrom);
@@ -774,12 +809,13 @@ export async function pullData(
         })
         .returning();
       if (b) batches.push(toSummary(b, false));
+      diags.push(failedDiag(cfg, handler, null));
       continue;
     }
 
     let values: string[][] = [];
     try {
-      values = await readRange(cfg.fileId, `${tab}!A1:Z5000`);
+      values = await readRange(cfg.fileId, `${tab}!A1:Z200000`);
     } catch (err) {
       const [b] = await db
         .insert(importBatches)
@@ -798,6 +834,7 @@ export async function pullData(
         })
         .returning();
       if (b) batches.push(toSummary(b, false));
+      diags.push(failedDiag(cfg, handler, tab));
       continue;
     }
 
@@ -806,6 +843,9 @@ export async function pullData(
     const hash = contentHash(rows);
 
     // previous accepted batch row count + previous distinct codes (pre-upsert).
+    // Scope to THIS source file: a handler can have multiple workbooks (e.g. two
+    // fiscal-year sales files). Comparing one workbook's row count against a
+    // different workbook's last pull produced false "partial drop" blockers.
     const prevBatch = await db
       .select({ added: importBatches.rowsAdded, updated: importBatches.rowsUpdated })
       .from(importBatches)
@@ -814,6 +854,7 @@ export async function pullData(
           eq(importBatches.division, division),
           eq(importBatches.dataType, cfg.dataType),
           eq(importBatches.planMonth, pmFrom),
+          eq(importBatches.sourceFileId, cfg.fileId),
         ),
       )
       .orderBy(sql`pulled_at DESC NULLS LAST`, sql`id DESC`)
@@ -821,7 +862,10 @@ export async function pullData(
     const prevRows = prevBatch[0]
       ? (prevBatch[0].added ?? 0) + (prevBatch[0].updated ?? 0)
       : null;
-    const prevDistinct = await prevDistinctInTable(handler, division);
+    const prevDistinct =
+      (handlerSourceCount.get(handler) ?? 1) > 1
+        ? null
+        : await prevDistinctInTable(handler, division);
 
     diags.push(
       buildDiag(cfg, handler, cfg.fileId, tab, { ...mapped, rows }, pmFrom, prevRows, prevDistinct),

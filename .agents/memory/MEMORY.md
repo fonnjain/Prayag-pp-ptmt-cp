@@ -1,4 +1,5 @@
 - [wouter catch-all](wouter-catchall.md) — a pathless `<Route component={...}/>` is the catch-all; `path="/:rest*"` silently fails to match `/`.
-- [Ingestion source selection](ingestion-source-selection.md) — pick one source/handler by month+specificity (fiscal rule); count added/updated via `(xmax=0)`; never mutate the content hash for no-change.
+- [Ingestion source selection](ingestion-source-selection.md) — load ALL applicable sales workbooks (full history); scope per-source checks by sourceFileId; xmax=0 added/updated; no-change keeps hash.
+- [Sanity full-history semantics](sanity-full-history.md) — engine date-filters all, so out-of-window/multi-workbook/optional-empty = warnings not blockers; clean live pull = `warn`.
 - [orval query options](orval-query-options.md) — generated react-query hooks require `queryKey` in the options type; pass `enabled` via an `any`-cast helper.
-- [Live data setup](live-data-setup.md) — sheet reads need the `google-sheet` connector (Drive auth is insufficient); DB seeds don't survive task-agent merges, re-seed `source_config` from `lib/db/seeds/source_config.sql`.
+- [Live data setup](live-data-setup.md) — sheet reads need the `google-sheet` connector (not Drive); re-seed `source_config` after task-agent merges (DB rows don't carry over).

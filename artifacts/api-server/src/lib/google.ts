@@ -3,6 +3,28 @@ import { ReplitConnectors } from "@replit/connectors-sdk";
 const connectors = new ReplitConnectors();
 const CONNECTOR = "google-sheet";
 
+type ProxyResp = Awaited<ReturnType<typeof connectors.proxy>>;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Proxy GET with retry/backoff. The connector proxy intermittently returns 429
+// or 5xx (and occasionally throws) when many ranges are read back-to-back, e.g.
+// right after a large multi-hundred-thousand-row pull. Retry those.
+async function proxyGet(path: string): Promise<ProxyResp> {
+  let lastResp: ProxyResp | undefined;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const resp = await connectors.proxy(CONNECTOR, path);
+      if (resp.ok || (resp.status !== 429 && resp.status < 500)) return resp;
+      lastResp = resp;
+    } catch (err) {
+      if (attempt === 2) throw err;
+    }
+    await sleep(700 * (attempt + 1));
+  }
+  return lastResp!;
+}
+
 export interface GoogleStatus {
   connected: boolean;
   message: string;
@@ -21,7 +43,12 @@ export async function googleStatus(): Promise<GoogleStatus> {
       };
     }
     const status = (conns[0]!.status || "").toLowerCase();
-    const ok = status === "connected" || status === "active" || status === "ready";
+    const ok =
+      status === "connected" ||
+      status === "active" ||
+      status === "ready" ||
+      status === "healthy" ||
+      status === "authorized";
     return {
       connected: ok,
       message: ok
@@ -47,8 +74,7 @@ export async function readRange(
   fileId: string,
   range: string,
 ): Promise<string[][]> {
-  const resp = await connectors.proxy(
-    CONNECTOR,
+  const resp = await proxyGet(
     `/v4/spreadsheets/${encodeURIComponent(fileId)}/values/${encodeURIComponent(range)}?majorDimension=ROWS&valueRenderOption=UNFORMATTED_VALUE`,
   );
   if (!resp.ok) {
@@ -63,8 +89,7 @@ export async function readRange(
 
 // List tab/sheet titles in a spreadsheet.
 export async function listTabs(fileId: string): Promise<string[]> {
-  const resp = await connectors.proxy(
-    CONNECTOR,
+  const resp = await proxyGet(
     `/v4/spreadsheets/${encodeURIComponent(fileId)}?fields=sheets.properties.title`,
   );
   if (!resp.ok) {

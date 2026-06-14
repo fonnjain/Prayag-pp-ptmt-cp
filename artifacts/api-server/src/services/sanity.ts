@@ -183,10 +183,15 @@ function layerAPerSource(diags: SourceDiag[]): Finding[] {
     const src = d.dataType;
 
     if (d.empty) {
+      // pending and stock are optional inputs: empty just means demand excludes
+      // pending / opening stock is assumed zero. Only the core series block.
+      const optional = src === "pending" || src === "stock";
       add(
-        "blocker",
+        optional ? (src === "pending" ? "info" : "warning") : "blocker",
         "empty",
-        `Source "${src}" returned 0 usable rows.`,
+        optional
+          ? `Source "${src}" returned 0 rows; the plan will proceed assuming none.`
+          : `Source "${src}" returned 0 usable rows.`,
         `${src}: rows=0, rejected=${d.rejected}, tab=${d.tab ?? "?"}`,
         `Re-fetch "${src}" and check the file ID, tab pattern, and column headers.`,
       );
@@ -214,9 +219,12 @@ function layerAPerSource(diags: SourceDiag[]): Finding[] {
     }
 
     if (d.windowFrom && d.windowTo && d.outOfWindow > 0) {
-      const frac = d.rows > 0 ? d.outOfWindow / d.rows : 0;
+      // The engine date-filters every time-series, so out-of-window rows are
+      // harmless noise unless NONE fall in-window — that signals a wrong-file or
+      // wrong-month pull that leaves the engine nothing usable.
+      const inWindow = d.rows - d.outOfWindow;
       add(
-        frac > 0.2 ? "blocker" : "warning",
+        inWindow === 0 ? "blocker" : "warning",
         "wrong_month",
         `Source "${src}" has ${d.outOfWindow} rows with dates outside the expected window ${d.windowFrom}..${d.windowTo}.`,
         `out_of_window=${d.outOfWindow}/${d.rows}, date_range=${d.dateMin ?? "?"}..${d.dateMax ?? "?"}`,
@@ -295,6 +303,11 @@ async function layerB(
     "After a Google connector fetch for one DIVISION and PLAN MONTH you receive a NUMBERS-ONLY summary of the fetch (never the full data). " +
     "Judge whether the fetch looks COMPLETE and CORRECT and catch: empty, partial (drop vs previous pull), wrong_month (dates outside window), wrong_file (fiscal-year file rule), shifted_column, missing_codes, unit_mismatch/outlier, duplicates. " +
     "You ASSESS ONLY — never modify, clean, or recompute data, and never do the planning math. Base conclusions strictly on the summary. " +
+    "IMPORTANT context about this system's INTENDED design (do NOT flag these as errors): " +
+    "(1) Sales is deliberately loaded as FULL multi-year history and is often split across MULTIPLE fiscal-year workbooks — seeing two or more 'sales' sources with different file_ids and different date ranges is EXPECTED and correct, NOT a duplicate or partial-drop error. Compare a source only against its OWN file_id history, never one workbook against another. " +
+    "(2) The planning engine date-FILTERS every time series downstream, so rows outside expected_window are harmless and should be at most a 'warning'. Only raise a wrong_month/wrong_file BLOCKER when essentially NONE of a source's rows fall inside the window (the fetch is unusable). " +
+    "(3) Production may also be a full-history tab; out-of-window production rows are filtered by the engine — warning, not blocker. " +
+    "(4) amount != qty x rate often reflects tax-inclusive amounts or rounding — treat as a 'warning' unit_mismatch unless the mismatch is pervasive AND extreme. " +
     "Respond with STRICT JSON only, no prose, no markdown fences. " +
     'Schema: {"verdict":"ok|warn|block","summary":"<=400 chars","issues":[{"severity":"info|warning|blocker","type":"empty|partial|wrong_month|wrong_file|shifted_column|missing_codes|unit_mismatch|outlier","message":"string","evidence":"string","suggested_fix":"string"}]}. ' +
     "Use blocker only when the data must not be used (empty, wrong file, wrong month, clearly partial).";
