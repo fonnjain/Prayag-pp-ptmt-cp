@@ -17,10 +17,10 @@ export default function Plan() {
   const { division, planMonth, planLines, planRuns, buildPlan, role, categorySummaries, isBuilding } = useData();
   const { toast } = useToast();
   
-  const [multiplierMode, setMultiplierMode] = useState<"single"|"minmax"|"overrides">("single");
+  const [multiplierMode, setMultiplierMode] = useState<"single"|"minmax"|"overrides">("minmax");
   const [singleVal, setSingleVal] = useState<string>("1.5");
-  const [minVal, setMinVal] = useState<string>("1.0");
-  const [maxVal, setMaxVal] = useState<string>("2.0");
+  const [minVal, setMinVal] = useState<string>("1.1");
+  const [maxVal, setMaxVal] = useState<string>("1.5");
   const [overrideVals, setOverrideVals] = useState<Record<string, string>>({});
   
   const activeRun = planRuns[0];

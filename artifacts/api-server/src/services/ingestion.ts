@@ -408,55 +408,90 @@ function mapRows(
   return { rows: out, rejected, colIndex, headerIdx };
 }
 
-// Interim stock importer (C1.1). Opening stock is not in the upstream source
-// files yet — the planner pastes it into the monthly MASTER workbook, so we read
-// the stock column straight from there using FIXED column positions. These
-// master tabs have no clean header row, so the alias-based detector in mapRows
-// can't resolve them. The pull reads the whole tab from A1, so the indices below
-// are ABSOLUTE A1 column positions (A=0, B=1, ... Z=25):
-//   PTMT 'TOP ITEM' : data from row 4 — item_code=B(1), colour=C(2), qty=K(10)
-//   CP   'Sheet3'   : data from row 3 — item_code=Q(16), qty=S(18), no colour
-// CP keys on item_code only (colour=''); PTMT keys on item_code+colour. Rows
-// with a blank item_code are skipped. as_on is pinned to the first day of the
-// plan month. When a real opening-stock sheet/export arrives, swap the
-// division's 'stock' source_config row to that file and retire this path —
-// stock_opening and the engine do not change.
-// Sanity references (June 2026): PTMT stock sum ~26,566; CP ~42,381.
-function mapStockFromMaster(
+// Interim master-derived sources (C1.1 + corrected logic). Opening stock and —
+// for PTMT — last-month pending are not in the upstream source files yet: the
+// planner maintains them in the monthly MASTER workbook. We read them straight
+// from there using FIXED column positions. These master tabs have no clean
+// header row, so the alias-based detector in mapRows can't resolve them. The
+// pull reads the whole tab from A1, so the indices below are ABSOLUTE A1 column
+// positions (A=0, B=1, ... Z=25):
+//   PTMT 'TOP ITEM' : data from row 4 — item_code=B(1), colour=C(2),
+//                     pending(last)=J(9), stock=K(10)
+//   CP   'Sheet3'   : data from row 3 — item_code=Q(16), stock=S(18), no colour
+// The PTMT 'TOP ITEM' tab (and CP 'Sheet3') also DEFINES the planning roster:
+// every row with an item_code is a catalogue line, so the engine plans exactly
+// this curated set — NOT every sold code. Blank qty cells are therefore kept as
+// 0 (a real "no stock / no pending" value) so the roster stays complete.
+// CP keys item_code only (colour=''); PTMT keys item_code+colour. Rows with a
+// blank item_code are skipped. as_on / plan_month are pinned to the first day of
+// the plan month. CP pending is a REAL per-month sheet (alias mapper), so it is
+// intentionally NOT a master source. When a real stock/pending export arrives,
+// drop the relevant entry below and point the source_config row at that file —
+// stock_opening / pending_orders and the engine do not change.
+// Sanity references (June 2026): PTMT stock ~26,566, pending(last) ~72,263;
+// CP stock ~42,381.
+interface MasterCol {
+  startIdx: number;
+  code: number;
+  colour: number | null;
+  qty: number;
+}
+const MASTER_SOURCES: Record<string, Record<string, MasterCol>> = {
+  PTMT: {
+    stock: { startIdx: 3, code: 1, colour: 2, qty: 10 },
+    pending: { startIdx: 3, code: 1, colour: 2, qty: 9 },
+  },
+  CP: {
+    stock: { startIdx: 2, code: 16, colour: null, qty: 18 },
+  },
+};
+
+function masterColFor(division: string, handler: string): MasterCol | null {
+  return MASTER_SOURCES[division]?.[handler] ?? null;
+}
+
+function mapFromMaster(
   values: string[][],
   division: string,
   planMonth: string,
+  handler: string,
+  cfg: MasterCol,
 ): MappedResult {
-  const cfg =
-    division === "PTMT"
-      ? { startIdx: 3, code: 1, colour: 2 as number | null, qty: 10 }
-      : { startIdx: 2, code: 16, colour: null as number | null, qty: 18 };
-  const asOn = `${planMonth.slice(0, 7)}-01`; // first day of the plan month
+  const firstOfMonth = `${planMonth.slice(0, 7)}-01`; // first day of plan month
   const out: Row[] = [];
-  let rejected = 0;
   for (let i = cfg.startIdx; i < values.length; i++) {
     const row = values[i] ?? [];
     const itemCode = String(row[cfg.code] ?? "").trim();
-    if (!itemCode) continue; // blank item_code => not a stock row
-    const qty = toNum(row[cfg.qty]);
-    if (qty === null) {
-      rejected++;
-      continue;
-    }
+    if (!itemCode) continue; // blank item_code => not a catalogue row
+    // A blank/non-numeric qty cell is a real 0 here (no stock / no pending).
+    // Keep the row so the master roster stays complete.
+    const qty = toNum(row[cfg.qty]) ?? 0;
     const colour =
       cfg.colour === null ? "" : String(row[cfg.colour] ?? "").trim();
-    out.push({
-      itemCode,
-      colour,
-      qty: nstr(qty),
-      center: null,
-      asOn,
-      division,
-    });
+    if (handler === "pending") {
+      out.push({
+        itemCode,
+        colour,
+        qty: nstr(qty),
+        amount: null,
+        period: "last_month",
+        planMonth: firstOfMonth,
+        division,
+      });
+    } else {
+      out.push({
+        itemCode,
+        colour,
+        qty: nstr(qty),
+        center: null,
+        asOn: firstOfMonth,
+        division,
+      });
+    }
   }
   const colIndex: Record<string, number> = { itemCode: cfg.code, qty: cfg.qty };
   if (cfg.colour !== null) colIndex.colour = cfg.colour;
-  return { rows: out, rejected, colIndex, headerIdx: cfg.startIdx };
+  return { rows: out, rejected: 0, colIndex, headerIdx: cfg.startIdx };
 }
 
 function nstr(v: number | null): string | null {
@@ -989,10 +1024,10 @@ export async function pullData(
       continue;
     }
 
-    const mapped =
-      handler === "stock"
-        ? mapStockFromMaster(values, division, planMonth)
-        : mapRows(values, handler, division, planMonth);
+    const masterCol = masterColFor(division, handler);
+    const mapped = masterCol
+      ? mapFromMaster(values, division, planMonth, handler, masterCol)
+      : mapRows(values, handler, division, planMonth);
     const rows = dedupe(handler, mapped.rows);
     const hash = contentHash(rows);
 

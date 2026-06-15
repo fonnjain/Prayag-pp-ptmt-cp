@@ -37,4 +37,7 @@ INSERT INTO source_config (division, data_type, file_id, tab_pattern, applies_fr
   -- (fixed columns; update file_id each month). CP=Sheet3 Q/S (NOT Sheet8);
   -- PTMT=TOP ITEM B/C/K.
   ('CP',   'stock',      '1AkCWb20qLSjPdQ51nTOi2jZ5vM9FXjVr2bDBpIdrNTw', 'Sheet3',   NULL, NULL, 'interim: opening stock from current month MASTER (Production Plan CP JUN 2026), Sheet3 col S'),
-  ('PTMT', 'stock',      '170xrcWDdTMvTLSJyCw3yGBWxqOOSfZkesGWunqKr8Rw', 'TOP ITEM', NULL, NULL, 'interim: opening stock from current month MASTER (Daily Production PTMT JUN 2026), TOP ITEM col K');
+  ('PTMT', 'stock',      '170xrcWDdTMvTLSJyCw3yGBWxqOOSfZkesGWunqKr8Rw', 'TOP ITEM', NULL, NULL, 'interim: opening stock from current month MASTER (Daily Production PTMT JUN 2026), TOP ITEM col K'),
+  -- Corrected logic interim PTMT last-month pending: same MASTER TOP ITEM tab,
+  -- col J. CP pending is a real per-month sheet (above), NOT a master source.
+  ('PTMT', 'pending',    '170xrcWDdTMvTLSJyCw3yGBWxqOOSfZkesGWunqKr8Rw', 'TOP ITEM', NULL, NULL, 'interim: last-month pending from current month MASTER (Daily Production PTMT JUN 2026), TOP ITEM col J');

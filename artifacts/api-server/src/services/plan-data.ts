@@ -42,13 +42,26 @@ interface Agg {
   orderAsOn: number;
 }
 
-function keyOf(itemCode: string, colour: string): string {
-  return `${itemCode}||${colour ?? ""}`;
-}
-
 function num(v: unknown): number {
   const n = Number(v);
   return Number.isFinite(n) ? n : 0;
+}
+
+function newAgg(itemCode: string, colour: string): Agg {
+  return {
+    itemCode,
+    colour: colour ?? "",
+    last3Sale: 0,
+    lastMonthSale: 0,
+    avgSaleAnnual: 0,
+    sale2m: 0,
+    sale10m: 0,
+    openingStock: 0,
+    pendingLast: 0,
+    pendingCurrent: 0,
+    produced: 0,
+    orderAsOn: 0,
+  };
 }
 
 // Gather aggregated per-item inputs for the deterministic engine.
@@ -84,29 +97,41 @@ export async function gatherInputs(
   const m2from = ymd(addMonths(pm, -2));
   const m10from = ymd(addMonths(pm, -10));
 
+  // The plan covers ONLY the curated master catalogue (roster), not every sold
+  // code. The roster is the set of item keys in stock_opening (read from the
+  // master TOP ITEM / Sheet3 tab). PTMT keys item_code+colour; CP rolls up to
+  // item_code (colour collapsed to ''). Sales / pending / production / orders are
+  // INNER-joined onto this roster: rows whose key is not in the roster are
+  // dropped, and (for CP) multiple colours of the same code accumulate into one
+  // line. This is the fix for the prior "scope explosion" where the roster was
+  // seeded from sales and every sold/trading code inflated the plan ~4-6x.
+  const isPTMT = division === "PTMT";
+  const rosterKey = (itemCode: string, colour: string): string =>
+    isPTMT ? `${itemCode}||${colour ?? ""}` : `${itemCode}||`;
+
   const map = new Map<string, Agg>();
-  const ensure = (itemCode: string, colour: string): Agg => {
-    const k = keyOf(itemCode, colour);
+  // Roster + opening stock (most recent snapshot at/before stock_as_on).
+  const stockRes = await db.execute(sql`
+    SELECT DISTINCT ON (item_code, COALESCE(colour,'')) item_code, COALESCE(colour,'') AS colour, qty
+    FROM stock_opening WHERE division = ${division} AND as_on <= ${stockAsOn}
+    ORDER BY item_code, COALESCE(colour,''), as_on DESC
+  `);
+  for (const r of stockRes.rows as Record<string, unknown>[]) {
+    const itemCode = String(r["item_code"]);
+    const colour = isPTMT ? String(r["colour"] ?? "") : "";
+    const k = rosterKey(itemCode, colour);
     let a = map.get(k);
     if (!a) {
-      a = {
-        itemCode,
-        colour: colour ?? "",
-        last3Sale: 0,
-        lastMonthSale: 0,
-        avgSaleAnnual: 0,
-        sale2m: 0,
-        sale10m: 0,
-        openingStock: 0,
-        pendingLast: 0,
-        pendingCurrent: 0,
-        produced: 0,
-        orderAsOn: 0,
-      };
+      a = newAgg(itemCode, colour);
       map.set(k, a);
     }
-    return a;
-  };
+    a.openingStock += num(r["qty"]);
+  }
+
+  // Join helper: returns the roster bucket for a key, or undefined if the key is
+  // not in the roster (inner join — non-roster rows are ignored).
+  const join = (itemCode: string, colour: string): Agg | undefined =>
+    map.get(rosterKey(itemCode, colour));
 
   // Sales windows (conditional sums in one pass)
   const salesRes = await db.execute(sql`
@@ -120,23 +145,13 @@ export async function gatherInputs(
     GROUP BY item_code, COALESCE(colour,'')
   `);
   for (const r of salesRes.rows as Record<string, unknown>[]) {
-    const a = ensure(String(r["item_code"]), String(r["colour"] ?? ""));
-    a.last3Sale = num(r["last3"]);
-    a.lastMonthSale = num(r["last_month"]);
-    a.avgSaleAnnual = num(r["annual"]) / 12;
-    a.sale2m = num(r["s2m"]);
-    a.sale10m = num(r["s10m"]);
-  }
-
-  // Opening stock (most recent snapshot at/before stock_as_on)
-  const stockRes = await db.execute(sql`
-    SELECT DISTINCT ON (item_code, COALESCE(colour,'')) item_code, COALESCE(colour,'') AS colour, qty
-    FROM stock_opening WHERE division = ${division} AND as_on <= ${stockAsOn}
-    ORDER BY item_code, COALESCE(colour,''), as_on DESC
-  `);
-  for (const r of stockRes.rows as Record<string, unknown>[]) {
-    const a = ensure(String(r["item_code"]), String(r["colour"] ?? ""));
-    a.openingStock = num(r["qty"]);
+    const a = join(String(r["item_code"]), String(r["colour"] ?? ""));
+    if (!a) continue;
+    a.last3Sale += num(r["last3"]);
+    a.lastMonthSale += num(r["last_month"]);
+    a.avgSaleAnnual += num(r["annual"]) / 12;
+    a.sale2m += num(r["s2m"]);
+    a.sale10m += num(r["s10m"]);
   }
 
   // Pending orders for this plan month
@@ -148,9 +163,10 @@ export async function gatherInputs(
     GROUP BY item_code, COALESCE(colour,'')
   `);
   for (const r of pendRes.rows as Record<string, unknown>[]) {
-    const a = ensure(String(r["item_code"]), String(r["colour"] ?? ""));
-    a.pendingLast = num(r["p_last"]);
-    a.pendingCurrent = num(r["p_current"]);
+    const a = join(String(r["item_code"]), String(r["colour"] ?? ""));
+    if (!a) continue;
+    a.pendingLast += num(r["p_last"]);
+    a.pendingCurrent += num(r["p_current"]);
   }
 
   // Production already done in plan month
@@ -160,8 +176,9 @@ export async function gatherInputs(
     GROUP BY item_code, COALESCE(colour,'')
   `);
   for (const r of prodRes.rows as Record<string, unknown>[]) {
-    const a = ensure(String(r["item_code"]), String(r["colour"] ?? ""));
-    a.produced = num(r["produced"]);
+    const a = join(String(r["item_code"]), String(r["colour"] ?? ""));
+    if (!a) continue;
+    a.produced += num(r["produced"]);
   }
 
   // Open orders snapshot (order as on)
@@ -171,8 +188,9 @@ export async function gatherInputs(
     GROUP BY item_code, COALESCE(colour,'')
   `);
   for (const r of orderRes.rows as Record<string, unknown>[]) {
-    const a = ensure(String(r["item_code"]), String(r["colour"] ?? ""));
-    a.orderAsOn = num(r["order_qty"]);
+    const a = join(String(r["item_code"]), String(r["colour"] ?? ""));
+    if (!a) continue;
+    a.orderAsOn += num(r["order_qty"]);
   }
 
   // Items master attributes

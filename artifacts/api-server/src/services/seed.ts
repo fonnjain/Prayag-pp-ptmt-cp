@@ -38,6 +38,10 @@ const BASE_SOURCE_CONFIG: InsertSourceConfig[] = [
   // (Q/S — NOT Sheet8, which is pending-last-month).
   { division: "CP", dataType: "stock", fileId: "1AkCWb20qLSjPdQ51nTOi2jZ5vM9FXjVr2bDBpIdrNTw", tabPattern: "Sheet3", notes: "interim: opening stock from current month's MASTER (Production Plan CP JUN'2026), Sheet3 col S (STOCK-QTY) — update file_id each month" },
   { division: "PTMT", dataType: "stock", fileId: "170xrcWDdTMvTLSJyCw3yGBWxqOOSfZkesGWunqKr8Rw", tabPattern: "TOP ITEM", notes: "interim: opening stock from current month's MASTER (Daily Production PTMT JUN'2026), TOP ITEM col K (STOCK) — update file_id each month" },
+  // Corrected logic — interim PTMT last-month pending: read from the same MASTER
+  // TOP ITEM tab, col J. CP pending is a real per-month sheet (above), so it is
+  // NOT a master source. Update file_id to the new master each month.
+  { division: "PTMT", dataType: "pending", fileId: "170xrcWDdTMvTLSJyCw3yGBWxqOOSfZkesGWunqKr8Rw", tabPattern: "TOP ITEM", notes: "interim: last-month pending from current month's MASTER (Daily Production PTMT JUN'2026), TOP ITEM col J (PENDING) — update file_id each month" },
 ];
 
 export async function seedSourceConfig(): Promise<void> {

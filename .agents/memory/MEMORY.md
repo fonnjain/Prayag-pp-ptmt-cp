@@ -6,4 +6,5 @@
 - [Prod reference-data seeding](prod-reference-data-seeding.md) — publish copies schema not rows; seed `source_config` idempotently on boot before listen, or prod pulls/plans/exports come back blank.
 - [Data-gating scope](gating-and-pull-scope.md) — gate Plan/Reports on division-level data, not the month; a pull loads full history and the engine date-filters per month.
 - [Sanity model provenance](sanity-provenance.md) — store sanity_model/tier/downgraded on import_batches; footer resolves finding→batch→default so it never shows "n/a".
-- [Interim stock import](interim-stock-import.md) — stock read from monthly master via fixed ABSOLUTE A1 col indices (pull reads whole A1:Z tab); PTMT TOP ITEM B/C/K, CP Sheet3 Q/S not Sheet8.
+- [Interim stock + PTMT pending import](interim-stock-import.md) — master-derived via MASTER_SOURCES[div][handler], fixed ABSOLUTE A1 indices; PTMT TOP ITEM stock=K(10)/pending=J(9), CP Sheet3 Q/S; blank qty→0.
+- [Plan roster scope](roster-scope.md) — plan covers the stock_opening master catalogue (inner-join sales/pending), NOT every sold code; PTMT keys item+colour, CP collapses colour.
