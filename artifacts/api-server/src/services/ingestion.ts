@@ -408,6 +408,57 @@ function mapRows(
   return { rows: out, rejected, colIndex, headerIdx };
 }
 
+// Interim stock importer (C1.1). Opening stock is not in the upstream source
+// files yet — the planner pastes it into the monthly MASTER workbook, so we read
+// the stock column straight from there using FIXED column positions. These
+// master tabs have no clean header row, so the alias-based detector in mapRows
+// can't resolve them. The pull reads the whole tab from A1, so the indices below
+// are ABSOLUTE A1 column positions (A=0, B=1, ... Z=25):
+//   PTMT 'TOP ITEM' : data from row 4 — item_code=B(1), colour=C(2), qty=K(10)
+//   CP   'Sheet3'   : data from row 3 — item_code=Q(16), qty=S(18), no colour
+// CP keys on item_code only (colour=''); PTMT keys on item_code+colour. Rows
+// with a blank item_code are skipped. as_on is pinned to the first day of the
+// plan month. When a real opening-stock sheet/export arrives, swap the
+// division's 'stock' source_config row to that file and retire this path —
+// stock_opening and the engine do not change.
+// Sanity references (June 2026): PTMT stock sum ~26,566; CP ~42,381.
+function mapStockFromMaster(
+  values: string[][],
+  division: string,
+  planMonth: string,
+): MappedResult {
+  const cfg =
+    division === "PTMT"
+      ? { startIdx: 3, code: 1, colour: 2 as number | null, qty: 10 }
+      : { startIdx: 2, code: 16, colour: null as number | null, qty: 18 };
+  const asOn = `${planMonth.slice(0, 7)}-01`; // first day of the plan month
+  const out: Row[] = [];
+  let rejected = 0;
+  for (let i = cfg.startIdx; i < values.length; i++) {
+    const row = values[i] ?? [];
+    const itemCode = String(row[cfg.code] ?? "").trim();
+    if (!itemCode) continue; // blank item_code => not a stock row
+    const qty = toNum(row[cfg.qty]);
+    if (qty === null) {
+      rejected++;
+      continue;
+    }
+    const colour =
+      cfg.colour === null ? "" : String(row[cfg.colour] ?? "").trim();
+    out.push({
+      itemCode,
+      colour,
+      qty: nstr(qty),
+      center: null,
+      asOn,
+      division,
+    });
+  }
+  const colIndex: Record<string, number> = { itemCode: cfg.code, qty: cfg.qty };
+  if (cfg.colour !== null) colIndex.colour = cfg.colour;
+  return { rows: out, rejected, colIndex, headerIdx: cfg.startIdx };
+}
+
 function nstr(v: number | null): string | null {
   return v === null ? null : String(v);
 }
@@ -938,7 +989,10 @@ export async function pullData(
       continue;
     }
 
-    const mapped = mapRows(values, handler, division, planMonth);
+    const mapped =
+      handler === "stock"
+        ? mapStockFromMaster(values, division, planMonth)
+        : mapRows(values, handler, division, planMonth);
     const rows = dedupe(handler, mapped.rows);
     const hash = contentHash(rows);
 

@@ -32,4 +32,9 @@ INSERT INTO source_config (division, data_type, file_id, tab_pattern, applies_fr
   ('PTMT', 'sales',      '1chx0hL67Vpz_uQMxFfQe1JBUVrCmdBFxfFaMvcd_-vE', 'Combined', NULL, NULL, 'Sale 25-26 — sales FY25-26 (Combined, history tail for 12-month window)'),
   ('PTMT', 'orders',     '1HFBAtvbAskejVkjuO8zHoEsE-pBAFij2ERMKFEvt64A', 'Combined', NULL, NULL, 'Order Sheet 26-27 — Combined open order book'),
   ('PTMT', 'production', '1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw', '',         NULL, NULL, 'PTMT ANUJ — daily actual production on first Production tab'),
-  ('PTMT', 'rate_list',  '1njO-srsS29qiE4t45-zr5njbB7R2Zb-oSnv2NL1ONY4', '',         NULL, NULL, 'rate list — item master / rates (reference)');
+  ('PTMT', 'rate_list',  '1njO-srsS29qiE4t45-zr5njbB7R2Zb-oSnv2NL1ONY4', '',         NULL, NULL, 'rate list — item master / rates (reference)'),
+  -- C1.1 interim opening-stock: read from the current month's MASTER workbook
+  -- (fixed columns; update file_id each month). CP=Sheet3 Q/S (NOT Sheet8);
+  -- PTMT=TOP ITEM B/C/K.
+  ('CP',   'stock',      '1AkCWb20qLSjPdQ51nTOi2jZ5vM9FXjVr2bDBpIdrNTw', 'Sheet3',   NULL, NULL, 'interim: opening stock from current month MASTER (Production Plan CP JUN 2026), Sheet3 col S'),
+  ('PTMT', 'stock',      '170xrcWDdTMvTLSJyCw3yGBWxqOOSfZkesGWunqKr8Rw', 'TOP ITEM', NULL, NULL, 'interim: opening stock from current month MASTER (Daily Production PTMT JUN 2026), TOP ITEM col K');

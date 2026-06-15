@@ -31,6 +31,13 @@ const BASE_SOURCE_CONFIG: InsertSourceConfig[] = [
   { division: "PTMT", dataType: "orders", fileId: "1HFBAtvbAskejVkjuO8zHoEsE-pBAFij2ERMKFEvt64A", tabPattern: "Combined", notes: "Order Sheet 26-27 — Combined open order book" },
   { division: "PTMT", dataType: "production", fileId: "1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw", tabPattern: "", notes: "PTMT ANUJ — daily actual production on first Production tab" },
   { division: "PTMT", dataType: "rate_list", fileId: "1njO-srsS29qiE4t45-zr5njbB7R2Zb-oSnv2NL1ONY4", tabPattern: "", notes: "rate list — item master / rates (reference)" },
+  // C1.1 — interim opening-stock source: stock is not in the upstream files yet,
+  // so it is read from the CURRENT MONTH's MASTER workbook (fixed columns; see
+  // mapStockFromMaster). Update file_id to the new master each month. PTMT keys
+  // item_code+colour from TOP ITEM (B/C/K); CP keys item_code only from Sheet3
+  // (Q/S — NOT Sheet8, which is pending-last-month).
+  { division: "CP", dataType: "stock", fileId: "1AkCWb20qLSjPdQ51nTOi2jZ5vM9FXjVr2bDBpIdrNTw", tabPattern: "Sheet3", notes: "interim: opening stock from current month's MASTER (Production Plan CP JUN'2026), Sheet3 col S (STOCK-QTY) — update file_id each month" },
+  { division: "PTMT", dataType: "stock", fileId: "170xrcWDdTMvTLSJyCw3yGBWxqOOSfZkesGWunqKr8Rw", tabPattern: "TOP ITEM", notes: "interim: opening stock from current month's MASTER (Daily Production PTMT JUN'2026), TOP ITEM col K (STOCK) — update file_id each month" },
 ];
 
 export async function seedSourceConfig(): Promise<void> {
