@@ -268,7 +268,10 @@ function buildLatestBatches(
 export const DataProvider = ({ children }: { children: ReactNode }) => {
   const qc = useQueryClient();
   const [division, setDivision] = useState<Division>("PTMT");
-  const [planMonth, setPlanMonth] = useState<string>("2026-06");
+  const [planMonth, setPlanMonth] = useState<string>(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
 
   const apiMonth = toApiMonth(planMonth);
 

@@ -1,6 +1,6 @@
 import { pool, db } from "@workspace/db";
 import { importBatches } from "@workspace/db/schema";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { pullData, setSanityOnLatestBatch, getLatestBatchId } from "./ingestion";
 import { runSanity } from "./sanity";
@@ -93,10 +93,14 @@ async function runSync(reason: string): Promise<void> {
   }
 }
 
-async function doSync(reason: string, monthFirst: string): Promise<void> {
-  logger.info({ reason, monthFirst }, "scheduler: sync started");
+async function doSync(
+  reason: string,
+  monthFirst: string,
+  divisions: readonly string[] = DIVISIONS,
+): Promise<void> {
+  logger.info({ reason, monthFirst, divisions }, "scheduler: sync started");
   try {
-    for (const division of DIVISIONS) {
+    for (const division of divisions) {
       try {
         const outcome = await pullData(division, monthFirst, "scheduler", undefined);
         const batchId = await getLatestBatchId(division, monthFirst);
@@ -123,17 +127,25 @@ async function doSync(reason: string, monthFirst: string): Promise<void> {
   }
 }
 
-// On first boot (empty DB) pull all divisions immediately so the app is useful
-// without waiting for the next scheduled slot. Fire-and-forget; never throws.
+// On boot, pull any divisions that have no data for the current month so the
+// app is immediately useful. Handles both a completely fresh DB and the case
+// where only one division was pulled before (e.g. PTMT present but CP missing).
+// Fire-and-forget; never throws into the caller.
 async function bootPullIfEmpty(): Promise<void> {
   try {
-    const [{ count }] = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(importBatches);
-    if (count > 0) return; // already has data — nothing to do
     const { monthFirst } = nowIST();
-    logger.info({ monthFirst }, "scheduler: empty DB on boot — triggering initial pull");
-    await doSync("boot", monthFirst);
+    const existing = await db
+      .selectDistinct({ division: importBatches.division })
+      .from(importBatches)
+      .where(eq(importBatches.planMonth, monthFirst));
+    const pulledDivisions = new Set(existing.map((r) => r.division));
+    const missing = DIVISIONS.filter((d) => !pulledDivisions.has(d));
+    if (missing.length === 0) return; // all divisions already have data for this month
+    logger.info(
+      { monthFirst, missing },
+      "scheduler: divisions missing data on boot — triggering pull",
+    );
+    await doSync("boot", monthFirst, missing);
   } catch (err) {
     logger.warn({ err }, "scheduler: boot pull failed (non-fatal)");
   }
