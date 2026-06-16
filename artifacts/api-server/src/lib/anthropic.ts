@@ -46,6 +46,10 @@ export interface ClaudeCallArgs {
   system: string;
   user: string;
   tier: Tier;
+  // Optional per-call output budget override. Used when a caller (e.g. the
+  // advisory coverage pass) returns JSON arrays larger than the tier default,
+  // which would otherwise truncate the response and produce malformed JSON.
+  maxTokens?: number;
 }
 
 // Call Claude with a fallback to the other tier if the primary model errors
@@ -62,7 +66,7 @@ export async function callClaude(args: ClaudeCallArgs): Promise<ClaudeResult> {
     try {
       const resp = await client.messages.create({
         model: choice.model,
-        max_tokens: choice.maxTokens,
+        max_tokens: args.maxTokens ?? choice.maxTokens,
         system: args.system,
         messages: [{ role: "user", content: args.user }],
       });
@@ -100,5 +104,69 @@ export function extractJSON<T>(text: string): T {
   if (end === -1 || end < begin) {
     throw new Error("Malformed JSON in model response");
   }
-  return JSON.parse(candidate.slice(begin, end + 1)) as T;
+  const slice = candidate.slice(begin, end + 1);
+  try {
+    return JSON.parse(slice) as T;
+  } catch {
+    // Tolerate a common model slip: trailing commas before a closing } or ].
+    try {
+      return JSON.parse(slice.replace(/,\s*([}\]])/g, "$1")) as T;
+    } catch {
+      // Last resort: the response was truncated mid-structure (hit the output
+      // token cap). Salvage by cutting back to the last complete top-level
+      // element and closing any still-open arrays/objects.
+      return JSON.parse(closeTruncatedJSON(candidate.slice(begin))) as T;
+    }
+  }
+}
+
+// Best-effort repair of JSON truncated mid-stream: walk the text tracking the
+// bracket/brace stack (ignoring string contents), drop any dangling partial
+// element after the last completed one, then append the missing closers.
+function closeTruncatedJSON(text: string): string {
+  const stack: string[] = [];
+  let inStr = false;
+  let escaped = false;
+  let lastSafe = -1; // index (exclusive) just after the last balanced top-level-ish element
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    if (inStr) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') {
+      inStr = true;
+    } else if (ch === "{" || ch === "[") {
+      stack.push(ch);
+    } else if (ch === "}" || ch === "]") {
+      stack.pop();
+      // A closed element at array/object depth 1 is a safe truncation point.
+      if (stack.length === 1) lastSafe = i + 1;
+    } else if (ch === "," && stack.length === 1) {
+      lastSafe = i; // safe to cut at a separator inside the outer container
+    }
+  }
+  let out = lastSafe > 0 ? text.slice(0, lastSafe) : text;
+  // Recompute the open stack for the trimmed output and close it.
+  const closers: string[] = [];
+  let s = false;
+  let esc = false;
+  for (let i = 0; i < out.length; i++) {
+    const ch = out[i]!;
+    if (s) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') s = false;
+      continue;
+    }
+    if (ch === '"') s = true;
+    else if (ch === "{") closers.push("}");
+    else if (ch === "[") closers.push("]");
+    else if (ch === "}" || ch === "]") closers.pop();
+  }
+  out = out.replace(/,\s*$/, "");
+  while (closers.length) out += closers.pop();
+  return out;
 }

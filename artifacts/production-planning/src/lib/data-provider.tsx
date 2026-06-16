@@ -18,6 +18,9 @@ import {
   useGenerateReport,
   useUpdateSourceConfig,
   useRunLegacyImport,
+  useGetCoverage,
+  useAddCoverageSource,
+  useDismissCoverageCandidate,
   getGetMeQueryKey,
   getGetDashboardQueryKey,
   getGetPlanRunsQueryKey,
@@ -27,6 +30,7 @@ import {
   getGetReportsQueryKey,
   getGetLegacyScopesQueryKey,
   getGetSourceConfigsQueryKey,
+  getGetCoverageQueryKey,
 } from "@workspace/api-client-react";
 import type {
   PlanLine as ApiPlanLine,
@@ -39,6 +43,7 @@ import type {
   LegacyScope as ApiLegacyScope,
   Report as ApiReport,
   User as ApiUser,
+  CoverageResult as ApiCoverageResult,
 } from "@workspace/api-client-react";
 import {
   Division,
@@ -78,6 +83,8 @@ interface DataContextType {
   sourceConfigs: SourceConfig[];
   legacyScopes: LegacyScope[];
   reports: Report[];
+  coverage: ApiCoverageResult | null;
+  coverageLoading: boolean;
 
   buildPlan: (
     mode: "single" | "minmax" | "overrides",
@@ -90,10 +97,18 @@ interface DataContextType {
   generateReport: () => Promise<void>;
   updateSourceConfig: (id: string, updates: Partial<SourceConfig>) => Promise<void>;
   runLegacyImport: (scope: string) => Promise<void>;
+  addCoverageSource: (input: {
+    dataType: string;
+    fileId: string;
+    tabPattern?: string | null;
+    appliesFrom?: string | null;
+  }) => Promise<void>;
+  dismissCoverageCandidate: (fileId: string) => Promise<void>;
 
   isPulling: boolean;
   isBuilding: boolean;
   isGeneratingReport: boolean;
+  isUpdatingCoverage: boolean;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -314,6 +329,10 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     { division, planMonth: apiMonth },
     enabledOpt(enabled),
   );
+  const coverageQuery = useGetCoverage(
+    { division, planMonth: apiMonth },
+    enabledOpt(enabled),
+  );
 
   const pullMutation = usePullData();
   const buildMutation = useBuildPlan();
@@ -321,6 +340,8 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   const reportMutation = useGenerateReport();
   const sourceConfigMutation = useUpdateSourceConfig();
   const legacyMutation = useRunLegacyImport();
+  const addCoverageSourceMutation = useAddCoverageSource();
+  const dismissCoverageMutation = useDismissCoverageCandidate();
   const loginMutation = useLogin();
   const logoutMutation = useLogout();
 
@@ -358,6 +379,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     () => ((reportsQuery.data as ApiReport[] | undefined) ?? []).map(mapReport),
     [reportsQuery.data],
   );
+  const coverage = (coverageQuery.data as ApiCoverageResult | null | undefined) ?? null;
 
   const invalidatePlanData = async () => {
     await Promise.all([
@@ -450,6 +472,32 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     await qc.invalidateQueries({ queryKey: getGetLegacyScopesQueryKey({ division }) });
   };
 
+  const addCoverageSource = async (input: {
+    dataType: string;
+    fileId: string;
+    tabPattern?: string | null;
+    appliesFrom?: string | null;
+  }) => {
+    await addCoverageSourceMutation.mutateAsync({
+      data: {
+        division,
+        dataType: input.dataType,
+        fileId: input.fileId,
+        tabPattern: input.tabPattern ?? null,
+        appliesFrom: input.appliesFrom ?? null,
+      },
+    });
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: getGetCoverageQueryKey({ division, planMonth: apiMonth }) }),
+      qc.invalidateQueries({ queryKey: getGetSourceConfigsQueryKey({ division }) }),
+    ]);
+  };
+
+  const dismissCoverageCandidate = async (fileId: string) => {
+    await dismissCoverageMutation.mutateAsync({ data: { division, fileId } });
+    await qc.invalidateQueries({ queryKey: getGetCoverageQueryKey({ division, planMonth: apiMonth }) });
+  };
+
   return (
     <DataContext.Provider
       value={{
@@ -476,15 +524,21 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         sourceConfigs,
         legacyScopes,
         reports,
+        coverage,
+        coverageLoading: coverageQuery.isLoading,
         buildPlan,
         pullData,
         acknowledgeWarnings,
         generateReport,
         updateSourceConfig,
         runLegacyImport,
+        addCoverageSource,
+        dismissCoverageCandidate,
         isPulling: pullMutation.isPending,
         isBuilding: buildMutation.isPending,
         isGeneratingReport: reportMutation.isPending,
+        isUpdatingCoverage:
+          addCoverageSourceMutation.isPending || dismissCoverageMutation.isPending,
       }}
     >
       {children}

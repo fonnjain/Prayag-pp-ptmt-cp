@@ -220,6 +220,72 @@ export const DownloadSanityReportQueryParams = zod.object({
 })
 
 
+export const GetCoverageQueryParams = zod.object({
+  "division": zod.coerce.string(),
+  "planMonth": zod.coerce.string()
+})
+
+export const GetCoverageResponse = zod.union([zod.object({
+  "division": zod.string(),
+  "planMonth": zod.string(),
+  "model": zod.string().nullish(),
+  "tier": zod.string().nullish(),
+  "looksComplete": zod.boolean(),
+  "notes": zod.string().nullish(),
+  "staleOrPartial": zod.array(zod.object({
+  "fileId": zod.string(),
+  "division": zod.string().nullish(),
+  "dataType": zod.string().nullish(),
+  "month": zod.string().nullish(),
+  "type": zod.string(),
+  "evidence": zod.string(),
+  "suggestedAction": zod.string(),
+  "confidence": zod.string()
+})),
+  "drift": zod.array(zod.object({
+  "fileId": zod.string(),
+  "type": zod.string(),
+  "evidence": zod.string(),
+  "suggestedAction": zod.string(),
+  "confidence": zod.string()
+})),
+  "unaccountedFiles": zod.array(zod.object({
+  "fileId": zod.string(),
+  "title": zod.string(),
+  "guessedDivision": zod.string().nullish(),
+  "guessedDataType": zod.string().nullish(),
+  "guessedMonth": zod.string().nullish(),
+  "reason": zod.string(),
+  "shouldIngest": zod.string(),
+  "confidence": zod.string()
+})),
+  "createdAt": zod.string().nullish()
+}),zod.null()])
+
+
+export const AddCoverageSourceBody = zod.object({
+  "division": zod.string(),
+  "dataType": zod.string(),
+  "fileId": zod.string(),
+  "tabPattern": zod.string().nullish(),
+  "appliesFrom": zod.string().nullish()
+})
+
+export const AddCoverageSourceResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+export const DismissCoverageCandidateBody = zod.object({
+  "division": zod.string(),
+  "fileId": zod.string()
+})
+
+export const DismissCoverageCandidateResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
 export const BuildPlanBody = zod.object({
   "division": zod.string(),
   "planMonth": zod.string(),

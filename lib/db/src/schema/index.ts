@@ -9,4 +9,5 @@ export * from "./settings";
 export * from "./source-config";
 export * from "./plan";
 export * from "./ingestion";
+export * from "./coverage";
 export * from "./users";

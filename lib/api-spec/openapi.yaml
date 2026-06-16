@@ -216,6 +216,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /data/coverage:
+    get:
+      operationId: getCoverage
+      tags: [data]
+      parameters:
+        - { in: query, name: division, required: true, schema: { type: string } }
+        - { in: query, name: planMonth, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Latest advisory coverage result (or null)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CoverageResultNullable"
+  /data/coverage/add-source:
+    post:
+      operationId: addCoverageSource
+      tags: [data]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddSourceInput"
+      responses:
+        "200":
+          description: Source added
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+  /data/coverage/dismiss:
+    post:
+      operationId: dismissCoverageCandidate
+      tags: [data]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DismissCandidateInput"
+      responses:
+        "200":
+          description: Candidate dismissed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
   /plan/build:
     post:
       operationId: buildPlan
@@ -534,6 +582,86 @@ components:
           $ref: "#/components/schemas/SanityResult"
         noChange: { type: boolean }
       required: [batches, sanity, noChange]
+    OkResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+      required: [ok]
+    CoverageStaleItem:
+      type: object
+      properties:
+        fileId: { type: string }
+        division: { type: ["string", "null"] }
+        dataType: { type: ["string", "null"] }
+        month: { type: ["string", "null"] }
+        type: { type: string }
+        evidence: { type: string }
+        suggestedAction: { type: string }
+        confidence: { type: string }
+      required: [fileId, type, evidence, suggestedAction, confidence]
+    CoverageDriftItem:
+      type: object
+      properties:
+        fileId: { type: string }
+        type: { type: string }
+        evidence: { type: string }
+        suggestedAction: { type: string }
+        confidence: { type: string }
+      required: [fileId, type, evidence, suggestedAction, confidence]
+    CoverageCandidate:
+      type: object
+      properties:
+        fileId: { type: string }
+        title: { type: string }
+        guessedDivision: { type: ["string", "null"] }
+        guessedDataType: { type: ["string", "null"] }
+        guessedMonth: { type: ["string", "null"] }
+        reason: { type: string }
+        shouldIngest: { type: string }
+        confidence: { type: string }
+      required: [fileId, title, reason, shouldIngest, confidence]
+    CoverageResult:
+      type: object
+      properties:
+        division: { type: string }
+        planMonth: { type: string }
+        model: { type: ["string", "null"] }
+        tier: { type: ["string", "null"] }
+        looksComplete: { type: boolean }
+        notes: { type: ["string", "null"] }
+        staleOrPartial:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoverageStaleItem"
+        drift:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoverageDriftItem"
+        unaccountedFiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/CoverageCandidate"
+        createdAt: { type: ["string", "null"] }
+      required: [division, planMonth, looksComplete, staleOrPartial, drift, unaccountedFiles]
+    CoverageResultNullable:
+      oneOf:
+        - $ref: "#/components/schemas/CoverageResult"
+        - type: "null"
+    AddSourceInput:
+      type: object
+      properties:
+        division: { type: string }
+        dataType: { type: string }
+        fileId: { type: string }
+        tabPattern: { type: ["string", "null"] }
+        appliesFrom: { type: ["string", "null"] }
+      required: [division, dataType, fileId]
+    DismissCandidateInput:
+      type: object
+      properties:
+        division: { type: string }
+        fileId: { type: string }
+      required: [division, fileId]
     PlanBuildInput:
       type: object
       properties:

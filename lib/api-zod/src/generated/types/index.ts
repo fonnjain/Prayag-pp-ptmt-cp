@@ -7,12 +7,20 @@
  */
 
 export * from './acknowledgeInput';
+export * from './addSourceInput';
 export * from './categorySummary';
+export * from './coverageCandidate';
+export * from './coverageDriftItem';
+export * from './coverageResult';
+export * from './coverageResultNullable';
+export * from './coverageStaleItem';
 export * from './dashboardData';
 export * from './diagnostics';
+export * from './dismissCandidateInput';
 export * from './downloadSanityReportParams';
 export * from './error';
 export * from './getBatchesParams';
+export * from './getCoverageParams';
 export * from './getDashboardParams';
 export * from './getLegacyScopesParams';
 export * from './getPlanRunsParams';
@@ -26,6 +34,7 @@ export * from './legacyImportResult';
 export * from './legacyScope';
 export * from './loginInput';
 export * from './ok';
+export * from './okResult';
 export * from './planBuildInput';
 export * from './planBuildInputOverrides';
 export * from './planLine';

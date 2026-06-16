@@ -1,5 +1,10 @@
 import { Router, type IRouter } from "express";
-import { PullDataBody, AcknowledgeDataBody } from "@workspace/api-zod";
+import {
+  PullDataBody,
+  AcknowledgeDataBody,
+  AddCoverageSourceBody,
+  DismissCoverageCandidateBody,
+} from "@workspace/api-zod";
 import { asyncHandler, HttpError } from "../lib/http";
 import { requireAuth, requireRole, type AuthedRequest } from "../lib/auth";
 import {
@@ -10,6 +15,12 @@ import {
   getLatestBatchId,
 } from "../services/ingestion";
 import { runSanity, getLatestSanity, renderSanityPdf } from "../services/sanity";
+import {
+  runCoverageReview,
+  getLatestCoverage,
+  addSourceFromCandidate,
+  dismissCandidate,
+} from "../services/coverage";
 
 const router: IRouter = Router();
 
@@ -41,6 +52,10 @@ router.post(
       { model: sanity.model, tier: sanity.tier, downgraded: sanity.downgraded },
     );
     res.json({ batches: outcome.batches, sanity, noChange: outcome.noChange });
+    // Advisory fuzzy-coverage pass runs AFTER the response is sent: it is
+    // strictly best-effort, must never delay the pull/gate, and self-contains
+    // its own error handling (so this floating promise can never reject).
+    void runCoverageReview(body.division, body.planMonth, outcome.diags);
   }),
 );
 
@@ -110,6 +125,48 @@ router.get(
       `attachment; filename="${out.filename}"`,
     );
     res.send(out.buffer);
+  }),
+);
+
+router.get(
+  "/data/coverage",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const division = req.query["division"] as string | undefined;
+    const planMonth = req.query["planMonth"] as string | undefined;
+    if (!division || !planMonth) {
+      res.json(null);
+      return;
+    }
+    res.json(await getLatestCoverage(division, planMonth));
+  }),
+);
+
+router.post(
+  "/data/coverage/add-source",
+  requireAuth,
+  requireRole("admin", "planner"),
+  asyncHandler(async (req, res) => {
+    const body = AddCoverageSourceBody.parse(req.body);
+    await addSourceFromCandidate({
+      division: body.division,
+      dataType: body.dataType,
+      fileId: body.fileId,
+      tabPattern: body.tabPattern ?? null,
+      appliesFrom: body.appliesFrom ?? null,
+    });
+    res.json({ ok: true });
+  }),
+);
+
+router.post(
+  "/data/coverage/dismiss",
+  requireAuth,
+  requireRole("admin", "planner"),
+  asyncHandler(async (req, res) => {
+    const body = DismissCoverageCandidateBody.parse(req.body);
+    await dismissCandidate(body.division, body.fileId);
+    res.json({ ok: true });
   }),
 );
 

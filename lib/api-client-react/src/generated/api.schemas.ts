@@ -135,6 +135,80 @@ export interface PullResult {
   noChange: boolean;
 }
 
+export interface OkResult {
+  ok: boolean;
+}
+
+export interface CoverageStaleItem {
+  fileId: string;
+  /** @nullable */
+  division?: string | null;
+  /** @nullable */
+  dataType?: string | null;
+  /** @nullable */
+  month?: string | null;
+  type: string;
+  evidence: string;
+  suggestedAction: string;
+  confidence: string;
+}
+
+export interface CoverageDriftItem {
+  fileId: string;
+  type: string;
+  evidence: string;
+  suggestedAction: string;
+  confidence: string;
+}
+
+export interface CoverageCandidate {
+  fileId: string;
+  title: string;
+  /** @nullable */
+  guessedDivision?: string | null;
+  /** @nullable */
+  guessedDataType?: string | null;
+  /** @nullable */
+  guessedMonth?: string | null;
+  reason: string;
+  shouldIngest: string;
+  confidence: string;
+}
+
+export interface CoverageResult {
+  division: string;
+  planMonth: string;
+  /** @nullable */
+  model?: string | null;
+  /** @nullable */
+  tier?: string | null;
+  looksComplete: boolean;
+  /** @nullable */
+  notes?: string | null;
+  staleOrPartial: CoverageStaleItem[];
+  drift: CoverageDriftItem[];
+  unaccountedFiles: CoverageCandidate[];
+  /** @nullable */
+  createdAt?: string | null;
+}
+
+export type CoverageResultNullable = CoverageResult | null;
+
+export interface AddSourceInput {
+  division: string;
+  dataType: string;
+  fileId: string;
+  /** @nullable */
+  tabPattern?: string | null;
+  /** @nullable */
+  appliesFrom?: string | null;
+}
+
+export interface DismissCandidateInput {
+  division: string;
+  fileId: string;
+}
+
 export type PlanBuildInputOverrides = {[key: string]: number};
 
 export interface PlanBuildInput {
@@ -306,6 +380,11 @@ planMonth?: string;
 };
 
 export type DownloadSanityReportParams = {
+division: string;
+planMonth: string;
+};
+
+export type GetCoverageParams = {
 division: string;
 planMonth: string;
 };

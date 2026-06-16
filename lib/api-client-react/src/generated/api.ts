@@ -21,11 +21,15 @@ import type {
 
 import type {
   AcknowledgeInput,
+  AddSourceInput,
+  CoverageResultNullable,
   DashboardData,
   Diagnostics,
+  DismissCandidateInput,
   DownloadSanityReportParams,
   Error,
   GetBatchesParams,
+  GetCoverageParams,
   GetDashboardParams,
   GetLegacyScopesParams,
   GetPlanRunsParams,
@@ -39,6 +43,7 @@ import type {
   LegacyScope,
   LoginInput,
   Ok,
+  OkResult,
   PlanBuildInput,
   PlanLine,
   PlanRun,
@@ -926,6 +931,214 @@ export function useDownloadSanityReport<TData = Awaited<ReturnType<typeof downlo
 
 
 
+
+export const getGetCoverageUrl = (params: GetCoverageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/data/coverage?${stringifiedParams}` : `/api/data/coverage`
+}
+
+export const getCoverage = async (params: GetCoverageParams, options?: RequestInit): Promise<CoverageResultNullable> => {
+
+  return customFetch<CoverageResultNullable>(getGetCoverageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCoverageQueryKey = (params?: GetCoverageParams,) => {
+    return [
+    `/api/data/coverage`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetCoverageQueryOptions = <TData = Awaited<ReturnType<typeof getCoverage>>, TError = ErrorType<unknown>>(params: GetCoverageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCoverage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCoverageQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCoverage>>> = ({ signal }) => getCoverage(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCoverage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCoverageQueryResult = NonNullable<Awaited<ReturnType<typeof getCoverage>>>
+export type GetCoverageQueryError = ErrorType<unknown>
+
+
+
+export function useGetCoverage<TData = Awaited<ReturnType<typeof getCoverage>>, TError = ErrorType<unknown>>(
+ params: GetCoverageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCoverage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCoverageQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getAddCoverageSourceUrl = () => {
+
+
+
+
+  return `/api/data/coverage/add-source`
+}
+
+export const addCoverageSource = async (addSourceInput: AddSourceInput, options?: RequestInit): Promise<OkResult> => {
+
+  return customFetch<OkResult>(getAddCoverageSourceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      addSourceInput,)
+  }
+);}
+
+
+
+
+export const getAddCoverageSourceMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCoverageSource>>, TError,{data: BodyType<AddSourceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addCoverageSource>>, TError,{data: BodyType<AddSourceInput>}, TContext> => {
+
+const mutationKey = ['addCoverageSource'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addCoverageSource>>, {data: BodyType<AddSourceInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  addCoverageSource(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddCoverageSourceMutationResult = NonNullable<Awaited<ReturnType<typeof addCoverageSource>>>
+    export type AddCoverageSourceMutationBody = BodyType<AddSourceInput>
+    export type AddCoverageSourceMutationError = ErrorType<unknown>
+
+    export const useAddCoverageSource = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCoverageSource>>, TError,{data: BodyType<AddSourceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addCoverageSource>>,
+        TError,
+        {data: BodyType<AddSourceInput>},
+        TContext
+      > => {
+      return useMutation(getAddCoverageSourceMutationOptions(options));
+    }
+
+export const getDismissCoverageCandidateUrl = () => {
+
+
+
+
+  return `/api/data/coverage/dismiss`
+}
+
+export const dismissCoverageCandidate = async (dismissCandidateInput: DismissCandidateInput, options?: RequestInit): Promise<OkResult> => {
+
+  return customFetch<OkResult>(getDismissCoverageCandidateUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      dismissCandidateInput,)
+  }
+);}
+
+
+
+
+export const getDismissCoverageCandidateMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissCoverageCandidate>>, TError,{data: BodyType<DismissCandidateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof dismissCoverageCandidate>>, TError,{data: BodyType<DismissCandidateInput>}, TContext> => {
+
+const mutationKey = ['dismissCoverageCandidate'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof dismissCoverageCandidate>>, {data: BodyType<DismissCandidateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  dismissCoverageCandidate(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DismissCoverageCandidateMutationResult = NonNullable<Awaited<ReturnType<typeof dismissCoverageCandidate>>>
+    export type DismissCoverageCandidateMutationBody = BodyType<DismissCandidateInput>
+    export type DismissCoverageCandidateMutationError = ErrorType<unknown>
+
+    export const useDismissCoverageCandidate = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof dismissCoverageCandidate>>, TError,{data: BodyType<DismissCandidateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof dismissCoverageCandidate>>,
+        TError,
+        {data: BodyType<DismissCandidateInput>},
+        TContext
+      > => {
+      return useMutation(getDismissCoverageCandidateMutationOptions(options));
+    }
 
 export const getBuildPlanUrl = () => {
 

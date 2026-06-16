@@ -2,6 +2,7 @@ import { pool } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { pullData, setSanityOnLatestBatch, getLatestBatchId } from "./ingestion";
 import { runSanity } from "./sanity";
+import { runCoverageReview } from "./coverage";
 
 // Automatic work-hours data sync. Designed for the always-on Reserved VM
 // deployment: a single long-lived process where an in-memory timer is reliable.
@@ -103,6 +104,8 @@ async function doSync(reason: string, monthFirst: string): Promise<void> {
           tier: sanity.tier,
           downgraded: sanity.downgraded,
         });
+        // Advisory fuzzy-coverage pass (best-effort; never affects the gate).
+        await runCoverageReview(division, monthFirst, outcome.diags);
         logger.info(
           { division, monthFirst, verdict: sanity.verdict, noChange: outcome.noChange },
           "scheduler: division sync done",
