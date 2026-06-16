@@ -1075,8 +1075,13 @@ export async function pullData(
       ),
     );
 
-    // Identical content since the last pull -> skip as 'no change' (no new batch,
-    // no re-upsert, original content hash preserved).
+    // Identical content since the last pull -> 'no change': skip the re-upsert
+    // (no data churn). A UNIQUE (division, data_type, plan_month, content_hash)
+    // constraint means we cannot insert a second row for this content, so we
+    // instead bump the existing batch's pulled_at. This makes "last synced"
+    // reflect when we last CHECKED (not just when the data last changed) while
+    // preserving the original row counts, the sanity verdict, and the human
+    // acknowledgement on the unchanged content.
     const existing = await db
       .select()
       .from(importBatches)
@@ -1091,14 +1096,12 @@ export async function pullData(
       .limit(1);
 
     if (existing[0]) {
-      const e = existing[0];
-      batches.push({
-        ...toSummary(e, true),
-        rowsAdded: 0,
-        rowsUpdated: 0,
-        rowsSkipped: rows.length,
-        rowsRejected: mapped.rejected,
-      });
+      const [b] = await db
+        .update(importBatches)
+        .set({ pulledAt: new Date(), pulledBy })
+        .where(eq(importBatches.id, existing[0].id))
+        .returning();
+      if (b) batches.push(toSummary(b, true));
       continue;
     }
 
@@ -1157,6 +1160,25 @@ export async function listBatches(
     .orderBy(sql`pulled_at DESC NULLS LAST`, sql`id DESC`)
     .limit(100);
   return rows.map((r) => toSummary(r, (r.rowsAdded ?? 0) === 0 && (r.rowsSkipped ?? 0) > 0));
+}
+
+// Resolve the single "latest" batch row for a scope using the SAME ordering that
+// setSanityOnLatestBatch and getLatestSanity use. Sanity findings, the verdict,
+// and retrieval must all key off this row. max(id) is NOT a safe proxy: a
+// no-change pull bumps an existing (older-id) row's pulled_at, so the most
+// recently pulled row can have a smaller id than a changed row in the same pull.
+export async function getLatestBatchId(
+  division: string,
+  planMonth: string,
+): Promise<number | undefined> {
+  const pm = planMonth.slice(0, 10);
+  const rows = await db
+    .select({ id: importBatches.id })
+    .from(importBatches)
+    .where(and(eq(importBatches.division, division), eq(importBatches.planMonth, pm)))
+    .orderBy(sql`pulled_at DESC NULLS LAST`, sql`id DESC`)
+    .limit(1);
+  return rows[0]?.id;
 }
 
 export async function setSanityOnLatestBatch(

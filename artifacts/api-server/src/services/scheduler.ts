@@ -1,6 +1,6 @@
 import { pool } from "@workspace/db";
 import { logger } from "../lib/logger";
-import { pullData, setSanityOnLatestBatch } from "./ingestion";
+import { pullData, setSanityOnLatestBatch, getLatestBatchId } from "./ingestion";
 import { runSanity } from "./sanity";
 
 // Automatic work-hours data sync. Designed for the always-on Reserved VM
@@ -96,10 +96,7 @@ async function doSync(reason: string, monthFirst: string): Promise<void> {
     for (const division of DIVISIONS) {
       try {
         const outcome = await pullData(division, monthFirst, "scheduler", undefined);
-        const batchId = outcome.batches.reduce<number | undefined>(
-          (max, b) => (max === undefined || b.id > max ? b.id : max),
-          undefined,
-        );
+        const batchId = await getLatestBatchId(division, monthFirst);
         const sanity = await runSanity(division, monthFirst, batchId, outcome.diags);
         await setSanityOnLatestBatch(division, monthFirst, sanity.verdict, sanity.summary, {
           model: sanity.model,

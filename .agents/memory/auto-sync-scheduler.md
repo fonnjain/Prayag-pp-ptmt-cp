@@ -24,3 +24,17 @@ Reserved VM.
 **Cross-instance safety:** a Postgres session advisory lock wraps each sync so
 that even if multiple instances are ever live (autoscale), exactly one performs
 the pull per slot. In-memory flags alone only protect a single process.
+
+**No-change sync timestamp + sanity batch identity:** "last synced / as of" must
+reflect the last CHECK, not the last data change. A `UNIQUE(division, data_type,
+plan_month, content_hash)` constraint on `import_batches` forbids inserting a
+duplicate-hash "nothing changed" row, so on no-change the pull UPDATEs the
+existing batch's `pulled_at` (keeping counts, verdict, and the `acknowledged`
+flag). **Consequence:** the most-recently-pulled row can have a SMALLER id than a
+changed row from the same pull, so `max(id)` is NOT a valid "latest batch".
+Resolve the latest batch ONCE via `getLatestBatchId` (`ORDER BY pulled_at DESC,
+id DESC`) and use that single id for sanity findings persistence, the verdict
+update, AND retrieval — otherwise findings attach to one row while the verdict /
+`getLatestSanity` read another, showing empty/stale findings. **How to apply:**
+never reintroduce `max(id)` for sanity batch selection in the pull route or
+scheduler.

@@ -7,6 +7,7 @@ import {
   listBatches,
   acknowledgeLatest,
   setSanityOnLatestBatch,
+  getLatestBatchId,
 } from "../services/ingestion";
 import { runSanity, getLatestSanity, renderSanityPdf } from "../services/sanity";
 
@@ -25,10 +26,7 @@ router.post(
       user?.email ?? null,
       body.source,
     );
-    const batchId = outcome.batches.reduce<number | undefined>(
-      (max, b) => (max === undefined || b.id > max ? b.id : max),
-      undefined,
-    );
+    const batchId = await getLatestBatchId(body.division, body.planMonth);
     const sanity = await runSanity(
       body.division,
       body.planMonth,
