@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { seedSourceConfig } from "./services/seed";
+import { startScheduler } from "./services/scheduler";
 
 const rawPort = process.env["PORT"];
 
@@ -28,6 +29,8 @@ async function main(): Promise<void> {
     }
 
     logger.info({ port }, "Server listening");
+    // Start the work-hours auto-sync timer only after we are serving traffic.
+    startScheduler();
   });
 }
 

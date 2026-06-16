@@ -8,3 +8,4 @@
 - [Sanity model provenance](sanity-provenance.md) — store sanity_model/tier/downgraded on import_batches; footer resolves finding→batch→default so it never shows "n/a".
 - [Interim stock + PTMT pending import](interim-stock-import.md) — master-derived via MASTER_SOURCES[div][handler], fixed ABSOLUTE A1 indices; PTMT TOP ITEM stock=K(10)/pending=J(9), CP Sheet3 Q/S; blank qty→0.
 - [Plan roster scope](roster-scope.md) — plan covers the stock_opening master catalogue (inner-join sales/pending), NOT every sold code; PTMT keys item+colour, CP collapses colour.
+- [Auto-sync scheduler](auto-sync-scheduler.md) — in-process timer auto-pulls both divisions at IST work hours + runs sanity; NEVER auto-acknowledges/builds; needs the always-on Reserved VM.
