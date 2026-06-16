@@ -1,4 +1,6 @@
-import { pool } from "@workspace/db";
+import { pool, db } from "@workspace/db";
+import { importBatches } from "@workspace/db/schema";
+import { sql } from "drizzle-orm";
 import { logger } from "../lib/logger";
 import { pullData, setSanityOnLatestBatch, getLatestBatchId } from "./ingestion";
 import { runSanity } from "./sanity";
@@ -121,11 +123,31 @@ async function doSync(reason: string, monthFirst: string): Promise<void> {
   }
 }
 
+// On first boot (empty DB) pull all divisions immediately so the app is useful
+// without waiting for the next scheduled slot. Fire-and-forget; never throws.
+async function bootPullIfEmpty(): Promise<void> {
+  try {
+    const [{ count }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(importBatches);
+    if (count > 0) return; // already has data — nothing to do
+    const { monthFirst } = nowIST();
+    logger.info({ monthFirst }, "scheduler: empty DB on boot — triggering initial pull");
+    await doSync("boot", monthFirst);
+  } catch (err) {
+    logger.warn({ err }, "scheduler: boot pull failed (non-fatal)");
+  }
+}
+
 export function startScheduler(): void {
   if (process.env["DISABLE_SCHEDULER"] === "1") {
     logger.info("scheduler: disabled via DISABLE_SCHEDULER=1");
     return;
   }
+
+  // Kick off a pull immediately if no data exists yet (first deploy, fresh DB).
+  void bootPullIfEmpty();
+
   setInterval(() => {
     const { hour, minute, ymd } = nowIST();
     if (!SYNC_HOURS_IST.includes(hour)) return;
