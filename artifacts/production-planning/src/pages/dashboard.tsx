@@ -1,4 +1,5 @@
 import { useData } from "@/lib/data-provider";
+import { SnapshotStatus } from "@/components/snapshot-status";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CheckCircle2, XCircle, Activity, BarChart3, AlertOctagon } from "lucide-react";
@@ -26,6 +27,8 @@ export default function Dashboard() {
         <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground">Overview for {division} • {planMonth}</p>
       </div>
+
+      <SnapshotStatus />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>

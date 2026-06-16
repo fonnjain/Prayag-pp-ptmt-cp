@@ -7,6 +7,7 @@ import { Database, Download, AlertTriangle, CheckCircle2, XCircle, ChevronRight,
 import { useToast } from "@/hooks/use-toast";
 import { ValidationFinding } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
+import { SnapshotStatus } from "@/components/snapshot-status";
 
 function FindingRow({ finding }: { finding: ValidationFinding }) {
   const Icon = finding.severity === 'block' ? XCircle : finding.severity === 'warn' ? AlertTriangle : CheckCircle2;
@@ -104,6 +105,8 @@ export default function DataPage() {
           )}
         </div>
       </div>
+
+      <SnapshotStatus />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
