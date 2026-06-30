@@ -286,6 +286,70 @@ export const DismissCoverageCandidateResponse = zod.object({
 })
 
 
+export const GetReconciliationQueryParams = zod.object({
+  "month": zod.coerce.string()
+})
+
+export const GetReconciliationResponse = zod.union([zod.object({
+  "month": zod.string(),
+  "fileId": zod.string(),
+  "pipeEmpty": zod.boolean(),
+  "computedAt": zod.string(),
+  "pipe": zod.object({
+  "expected": zod.array(zod.string()),
+  "inR5": zod.array(zod.string()),
+  "inR11OrR12": zod.array(zod.string()),
+  "bothAgreeRan": zod.array(zod.string()),
+  "missingBoth": zod.array(zod.string()),
+  "r5Only": zod.array(zod.string()),
+  "r11OrR12Only": zod.array(zod.string()),
+  "unlisted": zod.array(zod.string())
+}),
+  "mould": zod.object({
+  "expected": zod.array(zod.string()),
+  "inR5": zod.array(zod.string()),
+  "inR11OrR12": zod.array(zod.string()),
+  "bothAgreeRan": zod.array(zod.string()),
+  "missingBoth": zod.array(zod.string()),
+  "r5Only": zod.array(zod.string()),
+  "r11OrR12Only": zod.array(zod.string()),
+  "unlisted": zod.array(zod.string())
+})
+}),zod.null()])
+
+
+export const RunReconciliationBody = zod.object({
+  "month": zod.string()
+})
+
+export const RunReconciliationResponse = zod.union([zod.object({
+  "month": zod.string(),
+  "fileId": zod.string(),
+  "pipeEmpty": zod.boolean(),
+  "computedAt": zod.string(),
+  "pipe": zod.object({
+  "expected": zod.array(zod.string()),
+  "inR5": zod.array(zod.string()),
+  "inR11OrR12": zod.array(zod.string()),
+  "bothAgreeRan": zod.array(zod.string()),
+  "missingBoth": zod.array(zod.string()),
+  "r5Only": zod.array(zod.string()),
+  "r11OrR12Only": zod.array(zod.string()),
+  "unlisted": zod.array(zod.string())
+}),
+  "mould": zod.object({
+  "expected": zod.array(zod.string()),
+  "inR5": zod.array(zod.string()),
+  "inR11OrR12": zod.array(zod.string()),
+  "bothAgreeRan": zod.array(zod.string()),
+  "missingBoth": zod.array(zod.string()),
+  "r5Only": zod.array(zod.string()),
+  "r11OrR12Only": zod.array(zod.string()),
+  "unlisted": zod.array(zod.string())
+})
+}),zod.null()])
+
+
 export const BuildPlanBody = zod.object({
   "division": zod.string(),
   "planMonth": zod.string(),

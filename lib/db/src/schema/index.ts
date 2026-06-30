@@ -10,4 +10,5 @@ export * from "./source-config";
 export * from "./plan";
 export * from "./ingestion";
 export * from "./coverage";
+export * from "./reconciliation";
 export * from "./users";

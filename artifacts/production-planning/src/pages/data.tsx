@@ -11,6 +11,7 @@ import { ValidationFinding } from "@/lib/types";
 import type { CoverageCandidate } from "@workspace/api-client-react";
 import { formatDateTime } from "@/lib/utils";
 import { SnapshotStatus } from "@/components/snapshot-status";
+import { RosterPanel } from "@/components/roster-panel";
 
 function FindingRow({ finding }: { finding: ValidationFinding }) {
   const Icon = finding.severity === 'block' ? XCircle : finding.severity === 'warn' ? AlertTriangle : CheckCircle2;
@@ -379,6 +380,10 @@ export default function DataPage() {
           </Card>
 
           <CoverageCard />
+
+          {division === "CP" && (
+            <RosterPanel planMonth={planMonth} role={role} />
+          )}
         </div>
 
         <div className="space-y-6">

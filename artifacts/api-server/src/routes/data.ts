@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import z from "zod";
 import {
   PullDataBody,
   AcknowledgeDataBody,
@@ -21,6 +22,14 @@ import {
   addSourceFromCandidate,
   dismissCandidate,
 } from "../services/coverage";
+import {
+  runReconciliation,
+  persistReconciliation,
+  persistReconciliationError,
+  getLatestReconciliation,
+} from "../services/roster-reconciliation";
+
+const ReconciliationRunBody = z.object({ month: z.string() });
 
 const router: IRouter = Router();
 
@@ -52,9 +61,6 @@ router.post(
       { model: sanity.model, tier: sanity.tier, downgraded: sanity.downgraded },
     );
     res.json({ batches: outcome.batches, sanity, noChange: outcome.noChange });
-    // Advisory fuzzy-coverage pass runs AFTER the response is sent: it is
-    // strictly best-effort, must never delay the pull/gate, and self-contains
-    // its own error handling (so this floating promise can never reject).
     void runCoverageReview(body.division, body.planMonth, outcome.diags);
   }),
 );
@@ -167,6 +173,34 @@ router.post(
     const body = DismissCoverageCandidateBody.parse(req.body);
     await dismissCandidate(body.division, body.fileId);
     res.json({ ok: true });
+  }),
+);
+
+router.get(
+  "/data/reconciliation",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const month = req.query["month"] as string | undefined;
+    if (!month) { res.json(null); return; }
+    res.json(await getLatestReconciliation(month));
+  }),
+);
+
+router.post(
+  "/data/reconciliation/run",
+  requireAuth,
+  requireRole("admin", "planner"),
+  asyncHandler(async (req, res) => {
+    const body = ReconciliationRunBody.parse(req.body);
+    let result = null;
+    try {
+      result = await runReconciliation(body.month);
+      await persistReconciliation(body.month, result);
+    } catch (err) {
+      await persistReconciliationError(body.month, err);
+      throw err;
+    }
+    res.json(result);
   }),
 );
 

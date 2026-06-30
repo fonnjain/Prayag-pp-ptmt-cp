@@ -264,6 +264,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OkResult"
+  /data/reconciliation:
+    get:
+      operationId: getReconciliation
+      tags: [data]
+      parameters:
+        - { in: query, name: month, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Latest machine roster reconciliation result (or null)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReconciliationResultNullable"
+  /data/reconciliation/run:
+    post:
+      operationId: runReconciliation
+      tags: [data]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReconciliationRunInput"
+      responses:
+        "200":
+          description: Reconciliation run complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReconciliationResultNullable"
   /plan/build:
     post:
       operationId: buildPlan
@@ -647,6 +677,55 @@ components:
       oneOf:
         - $ref: "#/components/schemas/CoverageResult"
         - type: "null"
+    MachineCoverageGroup:
+      type: object
+      properties:
+        expected:
+          type: array
+          items: { type: string }
+        inR5:
+          type: array
+          items: { type: string }
+        inR11OrR12:
+          type: array
+          items: { type: string }
+        bothAgreeRan:
+          type: array
+          items: { type: string }
+        missingBoth:
+          type: array
+          items: { type: string }
+        r5Only:
+          type: array
+          items: { type: string }
+        r11OrR12Only:
+          type: array
+          items: { type: string }
+        unlisted:
+          type: array
+          items: { type: string }
+      required: [expected, inR5, inR11OrR12, bothAgreeRan, missingBoth, r5Only, r11OrR12Only, unlisted]
+    ReconciliationResult:
+      type: object
+      properties:
+        month: { type: string }
+        fileId: { type: string }
+        pipeEmpty: { type: boolean }
+        computedAt: { type: string }
+        pipe:
+          $ref: "#/components/schemas/MachineCoverageGroup"
+        mould:
+          $ref: "#/components/schemas/MachineCoverageGroup"
+      required: [month, fileId, pipeEmpty, computedAt, pipe, mould]
+    ReconciliationResultNullable:
+      oneOf:
+        - $ref: "#/components/schemas/ReconciliationResult"
+        - type: "null"
+    ReconciliationRunInput:
+      type: object
+      properties:
+        month: { type: string }
+      required: [month]
     AddSourceInput:
       type: object
       properties:

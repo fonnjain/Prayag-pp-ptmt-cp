@@ -194,6 +194,32 @@ export interface CoverageResult {
 
 export type CoverageResultNullable = CoverageResult | null;
 
+export interface MachineCoverageGroup {
+  expected: string[];
+  inR5: string[];
+  inR11OrR12: string[];
+  bothAgreeRan: string[];
+  missingBoth: string[];
+  r5Only: string[];
+  r11OrR12Only: string[];
+  unlisted: string[];
+}
+
+export interface ReconciliationResult {
+  month: string;
+  fileId: string;
+  pipeEmpty: boolean;
+  computedAt: string;
+  pipe: MachineCoverageGroup;
+  mould: MachineCoverageGroup;
+}
+
+export type ReconciliationResultNullable = ReconciliationResult | null;
+
+export interface ReconciliationRunInput {
+  month: string;
+}
+
 export interface AddSourceInput {
   division: string;
   dataType: string;
@@ -387,6 +413,10 @@ planMonth: string;
 export type GetCoverageParams = {
 division: string;
 planMonth: string;
+};
+
+export type GetReconciliationParams = {
+month: string;
 };
 
 export type GetPlanRunsParams = {

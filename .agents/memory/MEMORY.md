@@ -10,3 +10,5 @@
 - [Plan roster scope](roster-scope.md) — plan covers the stock_opening master catalogue (inner-join sales/pending), NOT every sold code; PTMT keys item+colour, CP collapses colour.
 - [Auto-sync scheduler](auto-sync-scheduler.md) — in-process timer auto-pulls both divisions at IST work hours + runs sanity; NEVER auto-acknowledges/builds; needs the always-on Reserved VM.
 - [Fuzzy coverage reviewer](coverage-fuzzy-reviewer.md) — advisory layer; never touches gate; fire-and-forget after res.json; unaccounted RANKED not hard-dropped; manifest carries counts not full file list.
+- [api-server zod dep](api-server-zod.md) — zod is not in the pnpm workspace catalog; add it explicitly with `pnpm --filter @workspace/api-server add zod`; logger is a named export `{ logger }`, not default.
+- [CP Machine Roster Reconciliation](cp-roster-reconciliation.md) — PIPE-1..9 + MOULD-A01..D07 canonical keys; Report-5/11/12 parsed from per-month PIPE daily workbooks; reconciliation_runs table; RosterPanel shows CP-only in data.tsx.
