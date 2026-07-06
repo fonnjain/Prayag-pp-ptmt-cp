@@ -12,4 +12,5 @@ export type UploadKind = typeof UploadKind[keyof typeof UploadKind];
 export const UploadKind = {
   pending_orders: 'pending_orders',
   last_month_pending: 'last_month_pending',
+  current_stock: 'current_stock',
 } as const;

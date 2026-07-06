@@ -42,7 +42,7 @@ export const updateBufferCategoryResponse = zod.object({
 
 export const listUploadsResponseItem = zod.object({
   "id": zod.number(),
-  "kind": zod.enum(['pending_orders', 'last_month_pending']),
+  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock']),
   "filename": zod.string(),
   "uploadedAt": zod.string().datetime({}),
   "rowCount": zod.number()
@@ -51,7 +51,7 @@ export const listUploadsResponse = zod.array(listUploadsResponseItem)
 
 
 export const createUploadParams = zod.object({
-  "kind": zod.enum(['pending_orders', 'last_month_pending'])
+  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock'])
 })
 
 export const createUploadBody = zod.object({

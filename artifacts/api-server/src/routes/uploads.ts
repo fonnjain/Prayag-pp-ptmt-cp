@@ -96,15 +96,50 @@ function sheetToObjects(sheet: XLSX.WorkSheet): Record<string, unknown>[] {
   return out;
 }
 
+/**
+ * The ERP records several pending-order variants under a renamed suffix +
+ * placeholder colour that does not match the planning Cat-no catalogue. An
+ * exact-match join on the raw ERP code silently drops these items (they
+ * simply produce no match), which understates Production Plan for the
+ * affected codes. Apply the known ERP -> planning aliasing before joining.
+ *
+ * Suffix aliases: -LSBB -> -LSB, -LSTBB -> -LSTB, -LSQBB -> -LSQB, all
+ * recorded as colour BLACK in the ERP but BLUE in the planning catalogue.
+ */
+function applyPendingOrderAlias(code: string, colour: string): { code: string; colour: string } {
+  const trimmedCode = code.trim();
+  const trimmedColour = colour.trim().toUpperCase();
+
+  const suffixAliasMap: [RegExp, string][] = [
+    [/LSTBB$/i, "LSTB"],
+    [/LSQBB$/i, "LSQB"],
+    [/LSBB$/i, "LSB"],
+  ];
+  for (const [pattern, replacement] of suffixAliasMap) {
+    if (pattern.test(trimmedCode) && trimmedColour === "BLACK") {
+      return { code: trimmedCode.replace(pattern, replacement), colour: "BLUE" };
+    }
+  }
+
+  return { code: trimmedCode, colour: trimmedColour };
+}
+
 function extractRows(workbook: XLSX.WorkBook, kind: string): Record<string, unknown>[] {
   if (kind === "pending_orders") {
     const sheetName = workbook.SheetNames.find((name) => /pending/i.test(name)) ?? workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
     const json = sheetToObjects(sheet);
-    return json.filter((row) => {
-      const segment = String(row["Segment"] ?? "").trim().toUpperCase();
-      return segment === "PTMT" || segment === "PT";
-    });
+    return json
+      .filter((row) => {
+        const segment = String(row["Segment"] ?? "").trim().toUpperCase();
+        return segment === "PTMT" || segment === "PT";
+      })
+      .map((row) => {
+        const rawCode = String(row["Old Item Code"] ?? row["Item No."] ?? "");
+        const rawColour = String(row["Color"] ?? row["Colour"] ?? "");
+        const { code, colour } = applyPendingOrderAlias(rawCode, rawColour);
+        return { ...row, "Old Item Code": code, "Item No.": code, Colour: colour, Color: colour };
+      });
   }
 
   if (kind === "current_stock") {

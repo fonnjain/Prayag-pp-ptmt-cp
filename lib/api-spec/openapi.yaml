@@ -227,7 +227,7 @@ components:
 
     UploadKind:
       type: string
-      enum: [pending_orders, last_month_pending]
+      enum: [pending_orders, last_month_pending, current_stock]
 
     BufferCategory:
       type: object
