@@ -12,3 +12,4 @@
 - [Fuzzy coverage reviewer](coverage-fuzzy-reviewer.md) — advisory layer; never touches gate; fire-and-forget after res.json; unaccounted RANKED not hard-dropped; manifest carries counts not full file list.
 - [api-server zod dep](api-server-zod.md) — zod is not in the pnpm workspace catalog; add it explicitly with `pnpm --filter @workspace/api-server add zod`; logger is a named export `{ logger }`, not default.
 - [CP Machine Roster Reconciliation](cp-roster-reconciliation.md) — PIPE-1..9 + MOULD-A01..D07 canonical keys; Report-5/11/12 parsed from per-month PIPE daily workbooks; reconciliation_runs table; RosterPanel shows CP-only in data.tsx.
+- [orval fetch-client response shape](orval-fetch-response-shape.md) — generated hook `data` types are wrapped `{data,status}&{headers}` but our customFetch mutator returns the raw body; cast with `as unknown as <SchemaType>`, never access `.data`.

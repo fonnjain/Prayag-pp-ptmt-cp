@@ -23,6 +23,8 @@ import type {
   BufferCategoryUpdate,
   CreateUploadBody,
   DashboardSnapshot,
+  ExportMonitoringExcelParams,
+  ExportMonitoringPdfParams,
   ExportPlanExcelParams,
   ExportPlanPdfParams,
   GetMonitoringActionsParams,
@@ -1616,6 +1618,186 @@ export function useGetMonitoringBacklog<TData = Awaited<ReturnType<typeof getMon
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetMonitoringBacklogQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type exportMonitoringExcelResponse200 = {
+  data: Blob
+  status: 200
+}
+    
+export type exportMonitoringExcelResponseSuccess = (exportMonitoringExcelResponse200) & {
+  headers: Headers;
+};
+;
+
+export type exportMonitoringExcelResponse = (exportMonitoringExcelResponseSuccess)
+
+export const getExportMonitoringExcelUrl = (params: ExportMonitoringExcelParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/monitoring/export/excel?${stringifiedParams}` : `/api/monitoring/export/excel`
+}
+
+export const exportMonitoringExcel = async (params: ExportMonitoringExcelParams, options?: RequestInit): Promise<exportMonitoringExcelResponse> => {
+  
+  return customFetch<exportMonitoringExcelResponse>(getExportMonitoringExcelUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getExportMonitoringExcelQueryKey = (params?: ExportMonitoringExcelParams,) => {
+    return [
+    `/api/monitoring/export/excel`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getExportMonitoringExcelQueryOptions = <TData = Awaited<ReturnType<typeof exportMonitoringExcel>>, TError = unknown>(params: ExportMonitoringExcelParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportMonitoringExcel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportMonitoringExcelQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportMonitoringExcel>>> = ({ signal }) => exportMonitoringExcel(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportMonitoringExcel>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportMonitoringExcelQueryResult = NonNullable<Awaited<ReturnType<typeof exportMonitoringExcel>>>
+export type ExportMonitoringExcelQueryError = unknown
+
+
+
+export function useExportMonitoringExcel<TData = Awaited<ReturnType<typeof exportMonitoringExcel>>, TError = unknown>(
+ params: ExportMonitoringExcelParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportMonitoringExcel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportMonitoringExcelQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type exportMonitoringPdfResponse200 = {
+  data: Blob
+  status: 200
+}
+    
+export type exportMonitoringPdfResponseSuccess = (exportMonitoringPdfResponse200) & {
+  headers: Headers;
+};
+;
+
+export type exportMonitoringPdfResponse = (exportMonitoringPdfResponseSuccess)
+
+export const getExportMonitoringPdfUrl = (params: ExportMonitoringPdfParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/monitoring/export/pdf?${stringifiedParams}` : `/api/monitoring/export/pdf`
+}
+
+export const exportMonitoringPdf = async (params: ExportMonitoringPdfParams, options?: RequestInit): Promise<exportMonitoringPdfResponse> => {
+  
+  return customFetch<exportMonitoringPdfResponse>(getExportMonitoringPdfUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getExportMonitoringPdfQueryKey = (params?: ExportMonitoringPdfParams,) => {
+    return [
+    `/api/monitoring/export/pdf`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getExportMonitoringPdfQueryOptions = <TData = Awaited<ReturnType<typeof exportMonitoringPdf>>, TError = unknown>(params: ExportMonitoringPdfParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportMonitoringPdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportMonitoringPdfQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportMonitoringPdf>>> = ({ signal }) => exportMonitoringPdf(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportMonitoringPdf>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportMonitoringPdfQueryResult = NonNullable<Awaited<ReturnType<typeof exportMonitoringPdf>>>
+export type ExportMonitoringPdfQueryError = unknown
+
+
+
+export function useExportMonitoringPdf<TData = Awaited<ReturnType<typeof exportMonitoringPdf>>, TError = unknown>(
+ params: ExportMonitoringPdfParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportMonitoringPdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportMonitoringPdfQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

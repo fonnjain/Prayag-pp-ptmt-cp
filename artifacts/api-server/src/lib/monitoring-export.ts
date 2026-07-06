@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import puppeteer from "puppeteer";
-import type { PaceMetrics, Warning, RecommendedAction, MachineQualityResult } from "./monitoring-calc";
+import type { PaceMetrics, Warning, RecommendedAction, MachineQuality } from "./monitoring-calc";
 
 export interface MonitoringExportData {
   month: string;
@@ -10,7 +10,7 @@ export interface MonitoringExportData {
   categories: { category: string; target: number; requiredPerDay: number; ragBand: string | null }[];
   warnings: Warning[];
   actions: RecommendedAction[];
-  machines: MachineQualityResult[];
+  machines: MachineQuality[];
   stockoutItems: { itemCode: string; colour: string; category: string; stock: number; pendingOrder: number }[];
 }
 
@@ -109,7 +109,7 @@ function addActionsSheet(workbook: ExcelJS.Workbook, actions: RecommendedAction[
   }
 }
 
-function addQualitySheet(workbook: ExcelJS.Workbook, machines: MachineQualityResult[]): void {
+function addQualitySheet(workbook: ExcelJS.Workbook, machines: MachineQuality[]): void {
   const sheet = workbook.addWorksheet("Machine Quality");
   sheet.columns = [
     { header: "Machine", key: "machineId", width: 14 },

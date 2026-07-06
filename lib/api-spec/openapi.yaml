@@ -319,6 +319,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/MonitoringBacklog"
 
+  /monitoring/export/excel:
+    get:
+      operationId: exportMonitoringExcel
+      tags: [monitoring]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Excel workbook of the monitoring snapshot
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /monitoring/export/pdf:
+    get:
+      operationId: exportMonitoringPdf
+      tags: [monitoring]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: PDF report of the monitoring snapshot
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
   /monitoring/weights:
     get:
       operationId: listItemWeights

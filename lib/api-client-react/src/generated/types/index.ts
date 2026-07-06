@@ -13,6 +13,8 @@ export * from './createUploadBody';
 export * from './dashboardSnapshot';
 export * from './dashboardSnapshotLastSyncedAt';
 export * from './dashboardSnapshotLatestMonth';
+export * from './exportMonitoringExcelParams';
+export * from './exportMonitoringPdfParams';
 export * from './exportPlanExcelParams';
 export * from './exportPlanPdfParams';
 export * from './getMonitoringActionsParams';

@@ -6,28 +6,41 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { useMonth } from "@/hooks/use-month";
 import NotFound from "@/pages/not-found";
 
-const queryClient = new QueryClient();
+import Dashboard from "@/pages/dashboard";
+import Velocity from "@/pages/velocity";
+import Warnings from "@/pages/warnings";
+import Actions from "@/pages/actions";
+import Quality from "@/pages/quality";
+import Backlog from "@/pages/backlog";
+import Settings from "@/pages/settings";
 
-// Placeholder components for pages
-function Dashboard() { return <div className="text-2xl font-bold font-sans">Dashboard View</div>; }
-function Velocity() { return <div className="text-2xl font-bold font-sans">Velocity View</div>; }
-function Warnings() { return <div className="text-2xl font-bold font-sans">Warnings View</div>; }
-function Actions() { return <div className="text-2xl font-bold font-sans">Actions View</div>; }
-function Quality() { return <div className="text-2xl font-bold font-sans">Quality View</div>; }
-function Backlog() { return <div className="text-2xl font-bold font-sans">Backlog View</div>; }
-function Settings() { return <div className="text-2xl font-bold font-sans">Settings View</div>; }
+const queryClient = new QueryClient();
 
 function Router({ month, setMonth }: { month: string, setMonth: (m: string) => void }) {
   return (
     <AppLayout month={month} setMonth={setMonth}>
       <Switch>
-        <Route path="/" component={Dashboard} />
-        <Route path="/velocity" component={Velocity} />
-        <Route path="/warnings" component={Warnings} />
-        <Route path="/actions" component={Actions} />
-        <Route path="/quality" component={Quality} />
-        <Route path="/backlog" component={Backlog} />
-        <Route path="/settings" component={Settings} />
+        <Route path="/">
+          <Dashboard month={month} />
+        </Route>
+        <Route path="/velocity">
+          <Velocity month={month} />
+        </Route>
+        <Route path="/warnings">
+          <Warnings month={month} />
+        </Route>
+        <Route path="/actions">
+          <Actions month={month} />
+        </Route>
+        <Route path="/quality">
+          <Quality month={month} />
+        </Route>
+        <Route path="/backlog">
+          <Backlog month={month} />
+        </Route>
+        <Route path="/settings">
+          <Settings month={month} />
+        </Route>
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

@@ -295,6 +295,16 @@ export const getMonitoringBacklogResponse = zod.object({
 })
 
 
+export const exportMonitoringExcelQueryParams = zod.object({
+  "month": zod.string()
+})
+
+
+export const exportMonitoringPdfQueryParams = zod.object({
+  "month": zod.string()
+})
+
+
 export const listItemWeightsResponseItem = zod.object({
   "id": zod.number(),
   "itemCode": zod.string(),

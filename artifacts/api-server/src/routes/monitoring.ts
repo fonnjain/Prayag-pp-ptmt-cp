@@ -28,6 +28,7 @@ import {
   type Warning,
 } from "../lib/monitoring-calc";
 import { logger } from "../lib/logger";
+import { exportMonitoringExcel, exportMonitoringPdf, type MonitoringExportData } from "../lib/monitoring-export";
 
 const router: IRouter = Router();
 
@@ -200,13 +201,7 @@ router.get("/monitoring/velocity", async (req, res): Promise<void> => {
   });
 });
 
-router.get("/monitoring/warnings", async (req, res): Promise<void> => {
-  const month = String(req.query.month ?? "");
-  if (!month) {
-    res.status(400).json({ error: "month is required" });
-    return;
-  }
-  const bundle = await buildMonitoringBundle(month);
+function buildWarningsList(month: string, bundle: MonitoringBundle): Warning[] {
   const warnings: Warning[] = [
     ...buildBehindPaceAndWillMissWarnings("Plant", bundle.plantPace, bundle.thresholds),
     ...bundle.categoryPaces.flatMap((c) => buildBehindPaceAndWillMissWarnings(c.category, c.pace, bundle.thresholds)),
@@ -235,7 +230,17 @@ router.get("/monitoring/warnings", async (req, res): Promise<void> => {
   }
   const severityOrder = { critical: 0, high: 1, medium: 2, info: 3 };
   warnings.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
-  res.json({ month, warnings });
+  return warnings;
+}
+
+router.get("/monitoring/warnings", async (req, res): Promise<void> => {
+  const month = String(req.query.month ?? "");
+  if (!month) {
+    res.status(400).json({ error: "month is required" });
+    return;
+  }
+  const bundle = await buildMonitoringBundle(month);
+  res.json({ month, warnings: buildWarningsList(month, bundle) });
 });
 
 router.get("/monitoring/actions", async (req, res): Promise<void> => {
@@ -267,6 +272,64 @@ router.get("/monitoring/backlog", async (req, res): Promise<void> => {
   }
   const bundle = await buildMonitoringBundle(month);
   res.json({ month, stockoutItems: bundle.stockoutItems });
+});
+
+router.get("/monitoring/export/excel", async (req, res): Promise<void> => {
+  const month = String(req.query.month ?? "");
+  if (!month) {
+    res.status(400).json({ error: "month is required" });
+    return;
+  }
+  const bundle = await buildMonitoringBundle(month);
+  const data: MonitoringExportData = {
+    month,
+    dataAvailable: bundle.dataAvailable,
+    lastDataDate: bundle.lastDataDate,
+    plant: { ...bundle.plantPace, ragBand: ragBand(bundle.plantPace.paceIndex) },
+    categories: bundle.categoryPaces.map((c) => ({
+      category: c.category,
+      target: c.pace.targetKg,
+      requiredPerDay: c.pace.requiredPerDay,
+      ragBand: ragBand(c.pace.attainmentPct),
+    })),
+    warnings: buildWarningsList(month, bundle),
+    actions: buildRecommendedActions(bundle.plantPace, bundle.categoryPaces, bundle.stockoutItems, bundle.thresholds),
+    machines: bundle.machineQuality,
+    stockoutItems: bundle.stockoutItems,
+  };
+  const buffer = await exportMonitoringExcel(data);
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="PTMT_Monitoring_${month}.xlsx"`);
+  res.send(buffer);
+});
+
+router.get("/monitoring/export/pdf", async (req, res): Promise<void> => {
+  const month = String(req.query.month ?? "");
+  if (!month) {
+    res.status(400).json({ error: "month is required" });
+    return;
+  }
+  const bundle = await buildMonitoringBundle(month);
+  const data: MonitoringExportData = {
+    month,
+    dataAvailable: bundle.dataAvailable,
+    lastDataDate: bundle.lastDataDate,
+    plant: { ...bundle.plantPace, ragBand: ragBand(bundle.plantPace.paceIndex) },
+    categories: bundle.categoryPaces.map((c) => ({
+      category: c.category,
+      target: c.pace.targetKg,
+      requiredPerDay: c.pace.requiredPerDay,
+      ragBand: ragBand(c.pace.attainmentPct),
+    })),
+    warnings: buildWarningsList(month, bundle),
+    actions: buildRecommendedActions(bundle.plantPace, bundle.categoryPaces, bundle.stockoutItems, bundle.thresholds),
+    machines: bundle.machineQuality,
+    stockoutItems: bundle.stockoutItems,
+  };
+  const buffer = await exportMonitoringPdf(data);
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="PTMT_Monitoring_${month}.pdf"`);
+  res.send(buffer);
 });
 
 // --- Data-input CRUD: item weights, ideal-hours overrides, thresholds ---
