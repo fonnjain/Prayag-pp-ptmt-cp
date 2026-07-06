@@ -4,6 +4,7 @@ import uploadsRouter from "./uploads";
 import syncRouter from "./sync";
 import planRouter from "./plan";
 import dashboardRouter from "./dashboard";
+import monitoringRouter from "./monitoring";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(uploadsRouter);
 router.use(syncRouter);
 router.use(planRouter);
 router.use(dashboardRouter);
+router.use(monitoringRouter);
 
 export default router;

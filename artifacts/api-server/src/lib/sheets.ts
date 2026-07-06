@@ -22,6 +22,18 @@ export const SHEET_LABELS: Record<keyof typeof SHEET_IDS, string> = {
   rateList: "rate list",
 };
 
+/**
+ * PTMT monthly daily-production workbook file IDs (tab "Report-5"), used by the
+ * production-monitoring app. Pinned by ID per the build spec — when a new month's
+ * file is created, its ID must be added here.
+ */
+export const PTMT_DAILY_WORKBOOK_IDS: Record<string, string> = {
+  "2026-04": "16zsh5x4MdY8DX3H5_hw5iaOdkGixlUsPzesDVnwgfYo",
+  "2026-05": "1T1M5MT47P3D4wCwi7tX7KcL_sHVtx43NSuXFDP9Oq78",
+  "2026-06": "1nEDFjrVu6pnNkzZ9tJhvGvBDMUHjLStcc0RP2uHig4g",
+  "2026-07": "1AjMLfcBkI0rGY8JdYP3MO8Ocn8lO-HIpol1tHgvK9O8",
+};
+
 async function proxyJson(path: string): Promise<any> {
   const res = await connectors.proxy("google-sheet", path, { method: "GET" });
   if (!res.ok) {

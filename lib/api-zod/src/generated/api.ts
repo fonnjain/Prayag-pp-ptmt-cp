@@ -135,3 +135,261 @@ export const exportPlanExcelQueryParams = zod.object({
 export const exportPlanPdfQueryParams = zod.object({
   "month": zod.string()
 })
+
+
+export const getMonitoringDashboardQueryParams = zod.object({
+  "month": zod.string()
+})
+
+export const getMonitoringDashboardResponse = zod.object({
+  "month": zod.string(),
+  "dataAvailable": zod.boolean(),
+  "lastDataDate": zod.string().nullable(),
+  "calendar": zod.object({
+  "workingDays": zod.number(),
+  "elapsed": zod.number(),
+  "remaining": zod.number()
+}),
+  "plant": zod.object({
+  "targetKg": zod.number(),
+  "outputToDateKg": zod.number(),
+  "requiredPerDay": zod.number(),
+  "expectedCumulative": zod.number(),
+  "paceIndex": zod.number().nullable(),
+  "actualPerDay": zod.number().nullable(),
+  "projectedMonthEnd": zod.number().nullable(),
+  "projectedAttainmentPct": zod.number().nullable(),
+  "daysAheadBehind": zod.number().nullable(),
+  "catchUpPerDay": zod.number().nullable(),
+  "catchUpVsPlanPct": zod.number().nullable(),
+  "attainmentPct": zod.number().nullable()
+}).and(zod.object({
+  "ragBand": zod.union([zod.literal('green'),zod.literal('amber'),zod.literal('red'),zod.literal(null)]).nullish()
+})),
+  "categories": zod.array(zod.object({
+  "category": zod.string(),
+  "target": zod.number(),
+  "requiredPerDay": zod.number(),
+  "ragBand": zod.union([zod.literal('green'),zod.literal('amber'),zod.literal('red'),zod.literal(null)]).nullable()
+})),
+  "needsReviewItems": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "category": zod.string()
+})),
+  "warningCount": zod.number(),
+  "utilisationHeadline": zod.number().nullable()
+})
+
+
+export const getMonitoringVelocityQueryParams = zod.object({
+  "month": zod.string()
+})
+
+export const getMonitoringVelocityResponse = zod.object({
+  "month": zod.string(),
+  "plant": zod.object({
+  "targetKg": zod.number(),
+  "outputToDateKg": zod.number(),
+  "requiredPerDay": zod.number(),
+  "expectedCumulative": zod.number(),
+  "paceIndex": zod.number().nullable(),
+  "actualPerDay": zod.number().nullable(),
+  "projectedMonthEnd": zod.number().nullable(),
+  "projectedAttainmentPct": zod.number().nullable(),
+  "daysAheadBehind": zod.number().nullable(),
+  "catchUpPerDay": zod.number().nullable(),
+  "catchUpVsPlanPct": zod.number().nullable(),
+  "attainmentPct": zod.number().nullable()
+}).and(zod.object({
+  "ragBand": zod.union([zod.literal('green'),zod.literal('amber'),zod.literal('red'),zod.literal(null)]).nullish()
+})),
+  "categories": zod.array(zod.object({
+  "targetKg": zod.number(),
+  "outputToDateKg": zod.number(),
+  "requiredPerDay": zod.number(),
+  "expectedCumulative": zod.number(),
+  "paceIndex": zod.number().nullable(),
+  "actualPerDay": zod.number().nullable(),
+  "projectedMonthEnd": zod.number().nullable(),
+  "projectedAttainmentPct": zod.number().nullable(),
+  "daysAheadBehind": zod.number().nullable(),
+  "catchUpPerDay": zod.number().nullable(),
+  "catchUpVsPlanPct": zod.number().nullable(),
+  "attainmentPct": zod.number().nullable()
+}).and(zod.object({
+  "category": zod.string(),
+  "ragBand": zod.union([zod.literal('green'),zod.literal('amber'),zod.literal('red'),zod.literal(null)]).nullable()
+})))
+})
+
+
+export const getMonitoringWarningsQueryParams = zod.object({
+  "month": zod.string()
+})
+
+export const getMonitoringWarningsResponse = zod.object({
+  "month": zod.string(),
+  "warnings": zod.array(zod.object({
+  "code": zod.string(),
+  "severity": zod.enum(['info', 'medium', 'high', 'critical']),
+  "scope": zod.string(),
+  "message": zod.string(),
+  "value": zod.number().nullable(),
+  "threshold": zod.number().nullable(),
+  "source": zod.string()
+}))
+})
+
+
+export const getMonitoringActionsQueryParams = zod.object({
+  "month": zod.string()
+})
+
+export const getMonitoringActionsResponse = zod.object({
+  "month": zod.string(),
+  "actions": zod.array(zod.object({
+  "priority": zod.number(),
+  "code": zod.string(),
+  "scope": zod.string(),
+  "message": zod.string(),
+  "suggestedQty": zod.number().nullable()
+}))
+})
+
+
+export const getMonitoringQualityQueryParams = zod.object({
+  "month": zod.string()
+})
+
+export const getMonitoringQualityResponse = zod.object({
+  "month": zod.string(),
+  "dataAvailable": zod.boolean(),
+  "machines": zod.array(zod.object({
+  "machineId": zod.string(),
+  "isGrinder": zod.boolean(),
+  "runHours": zod.number(),
+  "idealHours": zod.number().nullable(),
+  "utilisationPct": zod.number().nullable(),
+  "outputKg": zod.number(),
+  "rejectionKg": zod.number().nullable(),
+  "rejectionPct": zod.number().nullable(),
+  "goodOutputKg": zod.number().nullable()
+}))
+})
+
+
+export const getMonitoringBacklogQueryParams = zod.object({
+  "month": zod.string()
+})
+
+export const getMonitoringBacklogResponse = zod.object({
+  "month": zod.string(),
+  "stockoutItems": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "category": zod.string(),
+  "stock": zod.number(),
+  "pendingOrder": zod.number()
+}))
+})
+
+
+export const listItemWeightsResponseItem = zod.object({
+  "id": zod.number(),
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "weightKg": zod.string().nullable()
+})
+export const listItemWeightsResponse = zod.array(listItemWeightsResponseItem)
+
+
+export const upsertItemWeightBody = zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string().optional(),
+  "weightKg": zod.number().nullable()
+})
+
+export const upsertItemWeightResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+export const listIdealHoursOverridesQueryParams = zod.object({
+  "month": zod.string().optional()
+})
+
+export const listIdealHoursOverridesResponseItem = zod.object({
+  "id": zod.number(),
+  "machineId": zod.string(),
+  "month": zod.string(),
+  "hours": zod.string()
+})
+export const listIdealHoursOverridesResponse = zod.array(listIdealHoursOverridesResponseItem)
+
+
+export const upsertIdealHoursOverrideBody = zod.object({
+  "machineId": zod.string(),
+  "month": zod.string(),
+  "hours": zod.number()
+})
+
+export const upsertIdealHoursOverrideResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+export const getMonitoringThresholdsResponse = zod.object({
+  "behindPaceHigh": zod.number(),
+  "behindPaceCritical": zod.number(),
+  "catchupInfeasibleRatio": zod.number(),
+  "stockoutDaysCover": zod.number(),
+  "noProductionDays": zod.number(),
+  "highRejectionHigh": zod.number(),
+  "highRejectionCritical": zod.number(),
+  "lowUtilisation": zod.number(),
+  "backlogAgedDays": zod.number()
+})
+
+
+export const updateMonitoringThresholdsBody = zod.object({
+  "behindPaceHigh": zod.number(),
+  "behindPaceCritical": zod.number(),
+  "catchupInfeasibleRatio": zod.number(),
+  "stockoutDaysCover": zod.number(),
+  "noProductionDays": zod.number(),
+  "highRejectionHigh": zod.number(),
+  "highRejectionCritical": zod.number(),
+  "lowUtilisation": zod.number(),
+  "backlogAgedDays": zod.number()
+})
+
+export const updateMonitoringThresholdsResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+export const getMonitoringConfigQueryParams = zod.object({
+  "month": zod.string()
+})
+
+export const getMonitoringConfigResponse = zod.object({
+  "month": zod.string(),
+  "workingDays": zod.number(),
+  "shiftsPerDay": zod.number(),
+  "shiftHours": zod.number(),
+  "snapshotDate": zod.string().nullable()
+})
+
+
+export const updateMonitoringConfigBody = zod.object({
+  "month": zod.string(),
+  "workingDays": zod.number().optional(),
+  "shiftsPerDay": zod.number().optional(),
+  "shiftHours": zod.number().optional(),
+  "snapshotDate": zod.string().nullish()
+})
+
+export const updateMonitoringConfigResponse = zod.object({
+  "ok": zod.boolean()
+})

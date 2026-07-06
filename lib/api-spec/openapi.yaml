@@ -217,6 +217,234 @@ paths:
                 type: string
                 format: binary
 
+  /monitoring/dashboard:
+    get:
+      operationId: getMonitoringDashboard
+      tags: [monitoring]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Monitoring top-level snapshot for the month
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitoringDashboard"
+
+  /monitoring/velocity:
+    get:
+      operationId: getMonitoringVelocity
+      tags: [monitoring]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Plant and per-category pace/attainment metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitoringVelocity"
+
+  /monitoring/warnings:
+    get:
+      operationId: getMonitoringWarnings
+      tags: [monitoring]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Ranked list of warnings for the month
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitoringWarnings"
+
+  /monitoring/actions:
+    get:
+      operationId: getMonitoringActions
+      tags: [monitoring]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Recommended actions for the month
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitoringActions"
+
+  /monitoring/quality:
+    get:
+      operationId: getMonitoringQuality
+      tags: [monitoring]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Per-machine utilisation/rejection quality data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitoringQuality"
+
+  /monitoring/backlog:
+    get:
+      operationId: getMonitoringBacklog
+      tags: [monitoring]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Items where stock is below pending orders
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitoringBacklog"
+
+  /monitoring/weights:
+    get:
+      operationId: listItemWeights
+      tags: [monitoring]
+      responses:
+        "200":
+          description: All configured item weights
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ItemWeight"
+    put:
+      operationId: upsertItemWeight
+      tags: [monitoring]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ItemWeightUpsert"
+      responses:
+        "200":
+          description: Weight saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+
+  /monitoring/ideal-hours-overrides:
+    get:
+      operationId: listIdealHoursOverrides
+      tags: [monitoring]
+      parameters:
+        - name: month
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Ideal-hours overrides
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/IdealHoursOverride"
+    put:
+      operationId: upsertIdealHoursOverride
+      tags: [monitoring]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IdealHoursOverrideUpsert"
+      responses:
+        "200":
+          description: Override saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+
+  /monitoring/thresholds:
+    get:
+      operationId: getMonitoringThresholds
+      tags: [monitoring]
+      responses:
+        "200":
+          description: Current warning thresholds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WarningThresholds"
+    put:
+      operationId: updateMonitoringThresholds
+      tags: [monitoring]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WarningThresholds"
+      responses:
+        "200":
+          description: Thresholds saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+
+  /monitoring/config:
+    get:
+      operationId: getMonitoringConfig
+      tags: [monitoring]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Calendar/config settings for the month
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MonitoringConfig"
+    put:
+      operationId: updateMonitoringConfig
+      tags: [monitoring]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MonitoringConfigUpdate"
+      responses:
+        "200":
+          description: Config saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+
 components:
   schemas:
     HealthStatus:
@@ -332,3 +560,304 @@ components:
         grandMinTotal: { type: number }
         grandMaxTotal: { type: number }
         lastSyncedAt: { type: ["string", "null"], format: date-time }
+
+    OkResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+
+    RagBand:
+      type: ["string", "null"]
+      enum: [green, amber, red, null]
+
+    CalendarModel:
+      type: object
+      required: [workingDays, elapsed, remaining]
+      properties:
+        workingDays: { type: integer }
+        elapsed: { type: integer }
+        remaining: { type: integer }
+
+    PaceMetrics:
+      type: object
+      required:
+        - targetKg
+        - outputToDateKg
+        - requiredPerDay
+        - expectedCumulative
+        - paceIndex
+        - actualPerDay
+        - projectedMonthEnd
+        - projectedAttainmentPct
+        - daysAheadBehind
+        - catchUpPerDay
+        - catchUpVsPlanPct
+        - attainmentPct
+      properties:
+        targetKg: { type: number }
+        outputToDateKg: { type: number }
+        requiredPerDay: { type: number }
+        expectedCumulative: { type: number }
+        paceIndex: { type: ["number", "null"] }
+        actualPerDay: { type: ["number", "null"] }
+        projectedMonthEnd: { type: ["number", "null"] }
+        projectedAttainmentPct: { type: ["number", "null"] }
+        daysAheadBehind: { type: ["number", "null"] }
+        catchUpPerDay: { type: ["number", "null"] }
+        catchUpVsPlanPct: { type: ["number", "null"] }
+        attainmentPct: { type: ["number", "null"] }
+
+    NeedsReviewItem:
+      type: object
+      required: [itemCode, colour, category]
+      properties:
+        itemCode: { type: string }
+        colour: { type: string }
+        category: { type: string }
+
+    MonitoringDashboardCategory:
+      type: object
+      required: [category, target, requiredPerDay, ragBand]
+      properties:
+        category: { type: string }
+        target: { type: number }
+        requiredPerDay: { type: number }
+        ragBand:
+          $ref: "#/components/schemas/RagBand"
+
+    MonitoringDashboard:
+      type: object
+      required:
+        - month
+        - dataAvailable
+        - lastDataDate
+        - calendar
+        - plant
+        - categories
+        - needsReviewItems
+        - warningCount
+        - utilisationHeadline
+      properties:
+        month: { type: string }
+        dataAvailable: { type: boolean }
+        lastDataDate: { type: ["string", "null"] }
+        calendar:
+          $ref: "#/components/schemas/CalendarModel"
+        plant:
+          allOf:
+            - $ref: "#/components/schemas/PaceMetrics"
+            - type: object
+              properties:
+                ragBand:
+                  $ref: "#/components/schemas/RagBand"
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/MonitoringDashboardCategory"
+        needsReviewItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/NeedsReviewItem"
+        warningCount: { type: integer }
+        utilisationHeadline: { type: ["number", "null"] }
+
+    MonitoringVelocityCategory:
+      allOf:
+        - $ref: "#/components/schemas/PaceMetrics"
+        - type: object
+          required: [category, ragBand]
+          properties:
+            category: { type: string }
+            ragBand:
+              $ref: "#/components/schemas/RagBand"
+
+    MonitoringVelocity:
+      type: object
+      required: [month, plant, categories]
+      properties:
+        month: { type: string }
+        plant:
+          allOf:
+            - $ref: "#/components/schemas/PaceMetrics"
+            - type: object
+              properties:
+                ragBand:
+                  $ref: "#/components/schemas/RagBand"
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/MonitoringVelocityCategory"
+
+    Warning:
+      type: object
+      required: [code, severity, scope, message, value, threshold, source]
+      properties:
+        code: { type: string }
+        severity: { type: string, enum: [info, medium, high, critical] }
+        scope: { type: string }
+        message: { type: string }
+        value: { type: ["number", "null"] }
+        threshold: { type: ["number", "null"] }
+        source: { type: string }
+
+    MonitoringWarnings:
+      type: object
+      required: [month, warnings]
+      properties:
+        month: { type: string }
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Warning"
+
+    RecommendedAction:
+      type: object
+      required: [priority, code, scope, message, suggestedQty]
+      properties:
+        priority: { type: integer }
+        code: { type: string }
+        scope: { type: string }
+        message: { type: string }
+        suggestedQty: { type: ["number", "null"] }
+
+    MonitoringActions:
+      type: object
+      required: [month, actions]
+      properties:
+        month: { type: string }
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/RecommendedAction"
+
+    MachineQuality:
+      type: object
+      required:
+        - machineId
+        - isGrinder
+        - runHours
+        - idealHours
+        - utilisationPct
+        - outputKg
+        - rejectionKg
+        - rejectionPct
+        - goodOutputKg
+      properties:
+        machineId: { type: string }
+        isGrinder: { type: boolean }
+        runHours: { type: number }
+        idealHours: { type: ["number", "null"] }
+        utilisationPct: { type: ["number", "null"] }
+        outputKg: { type: number }
+        rejectionKg: { type: ["number", "null"] }
+        rejectionPct: { type: ["number", "null"] }
+        goodOutputKg: { type: ["number", "null"] }
+
+    MonitoringQuality:
+      type: object
+      required: [month, dataAvailable, machines]
+      properties:
+        month: { type: string }
+        dataAvailable: { type: boolean }
+        machines:
+          type: array
+          items:
+            $ref: "#/components/schemas/MachineQuality"
+
+    StockoutItem:
+      type: object
+      required: [itemCode, colour, category, stock, pendingOrder]
+      properties:
+        itemCode: { type: string }
+        colour: { type: string }
+        category: { type: string }
+        stock: { type: number }
+        pendingOrder: { type: number }
+
+    MonitoringBacklog:
+      type: object
+      required: [month, stockoutItems]
+      properties:
+        month: { type: string }
+        stockoutItems:
+          type: array
+          items:
+            $ref: "#/components/schemas/StockoutItem"
+
+    ItemWeight:
+      type: object
+      required: [id, itemCode, colour, weightKg]
+      properties:
+        id: { type: integer }
+        itemCode: { type: string }
+        colour: { type: string }
+        weightKg: { type: ["string", "null"] }
+
+    ItemWeightUpsert:
+      type: object
+      required: [itemCode, weightKg]
+      properties:
+        itemCode: { type: string }
+        colour: { type: string }
+        weightKg: { type: ["number", "null"] }
+
+    IdealHoursOverride:
+      type: object
+      required: [id, machineId, month, hours]
+      properties:
+        id: { type: integer }
+        machineId: { type: string }
+        month: { type: string }
+        hours: { type: string }
+
+    IdealHoursOverrideUpsert:
+      type: object
+      required: [machineId, month, hours]
+      properties:
+        machineId: { type: string }
+        month: { type: string }
+        hours: { type: number }
+
+    WarningThresholds:
+      type: object
+      required:
+        - behindPaceHigh
+        - behindPaceCritical
+        - catchupInfeasibleRatio
+        - stockoutDaysCover
+        - noProductionDays
+        - highRejectionHigh
+        - highRejectionCritical
+        - lowUtilisation
+        - backlogAgedDays
+      properties:
+        behindPaceHigh: { type: number }
+        behindPaceCritical: { type: number }
+        catchupInfeasibleRatio: { type: number }
+        stockoutDaysCover: { type: number }
+        noProductionDays: { type: number }
+        highRejectionHigh: { type: number }
+        highRejectionCritical: { type: number }
+        lowUtilisation: { type: number }
+        backlogAgedDays: { type: number }
+
+    MonitoringConfig:
+      type: object
+      required: [month, workingDays, shiftsPerDay, shiftHours, snapshotDate]
+      properties:
+        month: { type: string }
+        workingDays: { type: integer }
+        shiftsPerDay: { type: integer }
+        shiftHours: { type: integer }
+        snapshotDate: { type: ["string", "null"] }
+
+    MonitoringConfigUpdate:
+      type: object
+      required: [month]
+      properties:
+        month: { type: string }
+        workingDays: { type: integer }
+        shiftsPerDay: { type: integer }
+        shiftHours: { type: integer }
+        snapshotDate: { type: ["string", "null"] }

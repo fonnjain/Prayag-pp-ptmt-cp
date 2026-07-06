@@ -25,14 +25,36 @@ import type {
   DashboardSnapshot,
   ExportPlanExcelParams,
   ExportPlanPdfParams,
+  GetMonitoringActionsParams,
+  GetMonitoringBacklogParams,
+  GetMonitoringConfigParams,
+  GetMonitoringDashboardParams,
+  GetMonitoringQualityParams,
+  GetMonitoringVelocityParams,
+  GetMonitoringWarningsParams,
   GetPlanSummaryParams,
   HealthStatus,
+  IdealHoursOverride,
+  IdealHoursOverrideUpsert,
+  ItemWeight,
+  ItemWeightUpsert,
+  ListIdealHoursOverridesParams,
   ListPlanItemsParams,
+  MonitoringActions,
+  MonitoringBacklog,
+  MonitoringConfig,
+  MonitoringConfigUpdate,
+  MonitoringDashboard,
+  MonitoringQuality,
+  MonitoringVelocity,
+  MonitoringWarnings,
+  OkResult,
   PlanItem,
   PlanSummary,
   SyncSource,
   UploadKind,
-  UploadedFile
+  UploadedFile,
+  WarningThresholds
 } from './types';
 
 import { customFetch } from '../custom-fetch';
@@ -1061,3 +1083,1205 @@ export function useExportPlanPdf<TData = Awaited<ReturnType<typeof exportPlanPdf
 
   return query;
 }
+
+
+
+
+
+export type getMonitoringDashboardResponse200 = {
+  data: MonitoringDashboard
+  status: 200
+}
+    
+export type getMonitoringDashboardResponseSuccess = (getMonitoringDashboardResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getMonitoringDashboardResponse = (getMonitoringDashboardResponseSuccess)
+
+export const getGetMonitoringDashboardUrl = (params: GetMonitoringDashboardParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/monitoring/dashboard?${stringifiedParams}` : `/api/monitoring/dashboard`
+}
+
+export const getMonitoringDashboard = async (params: GetMonitoringDashboardParams, options?: RequestInit): Promise<getMonitoringDashboardResponse> => {
+  
+  return customFetch<getMonitoringDashboardResponse>(getGetMonitoringDashboardUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetMonitoringDashboardQueryKey = (params?: GetMonitoringDashboardParams,) => {
+    return [
+    `/api/monitoring/dashboard`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetMonitoringDashboardQueryOptions = <TData = Awaited<ReturnType<typeof getMonitoringDashboard>>, TError = unknown>(params: GetMonitoringDashboardParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMonitoringDashboardQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMonitoringDashboard>>> = ({ signal }) => getMonitoringDashboard(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMonitoringDashboard>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMonitoringDashboardQueryResult = NonNullable<Awaited<ReturnType<typeof getMonitoringDashboard>>>
+export type GetMonitoringDashboardQueryError = unknown
+
+
+
+export function useGetMonitoringDashboard<TData = Awaited<ReturnType<typeof getMonitoringDashboard>>, TError = unknown>(
+ params: GetMonitoringDashboardParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringDashboard>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMonitoringDashboardQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getMonitoringVelocityResponse200 = {
+  data: MonitoringVelocity
+  status: 200
+}
+    
+export type getMonitoringVelocityResponseSuccess = (getMonitoringVelocityResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getMonitoringVelocityResponse = (getMonitoringVelocityResponseSuccess)
+
+export const getGetMonitoringVelocityUrl = (params: GetMonitoringVelocityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/monitoring/velocity?${stringifiedParams}` : `/api/monitoring/velocity`
+}
+
+export const getMonitoringVelocity = async (params: GetMonitoringVelocityParams, options?: RequestInit): Promise<getMonitoringVelocityResponse> => {
+  
+  return customFetch<getMonitoringVelocityResponse>(getGetMonitoringVelocityUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetMonitoringVelocityQueryKey = (params?: GetMonitoringVelocityParams,) => {
+    return [
+    `/api/monitoring/velocity`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetMonitoringVelocityQueryOptions = <TData = Awaited<ReturnType<typeof getMonitoringVelocity>>, TError = unknown>(params: GetMonitoringVelocityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringVelocity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMonitoringVelocityQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMonitoringVelocity>>> = ({ signal }) => getMonitoringVelocity(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMonitoringVelocity>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMonitoringVelocityQueryResult = NonNullable<Awaited<ReturnType<typeof getMonitoringVelocity>>>
+export type GetMonitoringVelocityQueryError = unknown
+
+
+
+export function useGetMonitoringVelocity<TData = Awaited<ReturnType<typeof getMonitoringVelocity>>, TError = unknown>(
+ params: GetMonitoringVelocityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringVelocity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMonitoringVelocityQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getMonitoringWarningsResponse200 = {
+  data: MonitoringWarnings
+  status: 200
+}
+    
+export type getMonitoringWarningsResponseSuccess = (getMonitoringWarningsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getMonitoringWarningsResponse = (getMonitoringWarningsResponseSuccess)
+
+export const getGetMonitoringWarningsUrl = (params: GetMonitoringWarningsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/monitoring/warnings?${stringifiedParams}` : `/api/monitoring/warnings`
+}
+
+export const getMonitoringWarnings = async (params: GetMonitoringWarningsParams, options?: RequestInit): Promise<getMonitoringWarningsResponse> => {
+  
+  return customFetch<getMonitoringWarningsResponse>(getGetMonitoringWarningsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetMonitoringWarningsQueryKey = (params?: GetMonitoringWarningsParams,) => {
+    return [
+    `/api/monitoring/warnings`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetMonitoringWarningsQueryOptions = <TData = Awaited<ReturnType<typeof getMonitoringWarnings>>, TError = unknown>(params: GetMonitoringWarningsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringWarnings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMonitoringWarningsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMonitoringWarnings>>> = ({ signal }) => getMonitoringWarnings(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMonitoringWarnings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMonitoringWarningsQueryResult = NonNullable<Awaited<ReturnType<typeof getMonitoringWarnings>>>
+export type GetMonitoringWarningsQueryError = unknown
+
+
+
+export function useGetMonitoringWarnings<TData = Awaited<ReturnType<typeof getMonitoringWarnings>>, TError = unknown>(
+ params: GetMonitoringWarningsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringWarnings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMonitoringWarningsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getMonitoringActionsResponse200 = {
+  data: MonitoringActions
+  status: 200
+}
+    
+export type getMonitoringActionsResponseSuccess = (getMonitoringActionsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getMonitoringActionsResponse = (getMonitoringActionsResponseSuccess)
+
+export const getGetMonitoringActionsUrl = (params: GetMonitoringActionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/monitoring/actions?${stringifiedParams}` : `/api/monitoring/actions`
+}
+
+export const getMonitoringActions = async (params: GetMonitoringActionsParams, options?: RequestInit): Promise<getMonitoringActionsResponse> => {
+  
+  return customFetch<getMonitoringActionsResponse>(getGetMonitoringActionsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetMonitoringActionsQueryKey = (params?: GetMonitoringActionsParams,) => {
+    return [
+    `/api/monitoring/actions`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetMonitoringActionsQueryOptions = <TData = Awaited<ReturnType<typeof getMonitoringActions>>, TError = unknown>(params: GetMonitoringActionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringActions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMonitoringActionsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMonitoringActions>>> = ({ signal }) => getMonitoringActions(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMonitoringActions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMonitoringActionsQueryResult = NonNullable<Awaited<ReturnType<typeof getMonitoringActions>>>
+export type GetMonitoringActionsQueryError = unknown
+
+
+
+export function useGetMonitoringActions<TData = Awaited<ReturnType<typeof getMonitoringActions>>, TError = unknown>(
+ params: GetMonitoringActionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringActions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMonitoringActionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getMonitoringQualityResponse200 = {
+  data: MonitoringQuality
+  status: 200
+}
+    
+export type getMonitoringQualityResponseSuccess = (getMonitoringQualityResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getMonitoringQualityResponse = (getMonitoringQualityResponseSuccess)
+
+export const getGetMonitoringQualityUrl = (params: GetMonitoringQualityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/monitoring/quality?${stringifiedParams}` : `/api/monitoring/quality`
+}
+
+export const getMonitoringQuality = async (params: GetMonitoringQualityParams, options?: RequestInit): Promise<getMonitoringQualityResponse> => {
+  
+  return customFetch<getMonitoringQualityResponse>(getGetMonitoringQualityUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetMonitoringQualityQueryKey = (params?: GetMonitoringQualityParams,) => {
+    return [
+    `/api/monitoring/quality`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetMonitoringQualityQueryOptions = <TData = Awaited<ReturnType<typeof getMonitoringQuality>>, TError = unknown>(params: GetMonitoringQualityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringQuality>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMonitoringQualityQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMonitoringQuality>>> = ({ signal }) => getMonitoringQuality(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMonitoringQuality>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMonitoringQualityQueryResult = NonNullable<Awaited<ReturnType<typeof getMonitoringQuality>>>
+export type GetMonitoringQualityQueryError = unknown
+
+
+
+export function useGetMonitoringQuality<TData = Awaited<ReturnType<typeof getMonitoringQuality>>, TError = unknown>(
+ params: GetMonitoringQualityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringQuality>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMonitoringQualityQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getMonitoringBacklogResponse200 = {
+  data: MonitoringBacklog
+  status: 200
+}
+    
+export type getMonitoringBacklogResponseSuccess = (getMonitoringBacklogResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getMonitoringBacklogResponse = (getMonitoringBacklogResponseSuccess)
+
+export const getGetMonitoringBacklogUrl = (params: GetMonitoringBacklogParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/monitoring/backlog?${stringifiedParams}` : `/api/monitoring/backlog`
+}
+
+export const getMonitoringBacklog = async (params: GetMonitoringBacklogParams, options?: RequestInit): Promise<getMonitoringBacklogResponse> => {
+  
+  return customFetch<getMonitoringBacklogResponse>(getGetMonitoringBacklogUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetMonitoringBacklogQueryKey = (params?: GetMonitoringBacklogParams,) => {
+    return [
+    `/api/monitoring/backlog`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetMonitoringBacklogQueryOptions = <TData = Awaited<ReturnType<typeof getMonitoringBacklog>>, TError = unknown>(params: GetMonitoringBacklogParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringBacklog>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMonitoringBacklogQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMonitoringBacklog>>> = ({ signal }) => getMonitoringBacklog(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMonitoringBacklog>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMonitoringBacklogQueryResult = NonNullable<Awaited<ReturnType<typeof getMonitoringBacklog>>>
+export type GetMonitoringBacklogQueryError = unknown
+
+
+
+export function useGetMonitoringBacklog<TData = Awaited<ReturnType<typeof getMonitoringBacklog>>, TError = unknown>(
+ params: GetMonitoringBacklogParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringBacklog>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMonitoringBacklogQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type listItemWeightsResponse200 = {
+  data: ItemWeight[]
+  status: 200
+}
+    
+export type listItemWeightsResponseSuccess = (listItemWeightsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listItemWeightsResponse = (listItemWeightsResponseSuccess)
+
+export const getListItemWeightsUrl = () => {
+
+
+  
+
+  return `/api/monitoring/weights`
+}
+
+export const listItemWeights = async ( options?: RequestInit): Promise<listItemWeightsResponse> => {
+  
+  return customFetch<listItemWeightsResponse>(getListItemWeightsUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getListItemWeightsQueryKey = () => {
+    return [
+    `/api/monitoring/weights`
+    ] as const;
+    }
+
+    
+export const getListItemWeightsQueryOptions = <TData = Awaited<ReturnType<typeof listItemWeights>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listItemWeights>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListItemWeightsQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listItemWeights>>> = ({ signal }) => listItemWeights({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listItemWeights>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListItemWeightsQueryResult = NonNullable<Awaited<ReturnType<typeof listItemWeights>>>
+export type ListItemWeightsQueryError = unknown
+
+
+
+export function useListItemWeights<TData = Awaited<ReturnType<typeof listItemWeights>>, TError = unknown>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listItemWeights>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListItemWeightsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type upsertItemWeightResponse200 = {
+  data: OkResult
+  status: 200
+}
+    
+export type upsertItemWeightResponseSuccess = (upsertItemWeightResponse200) & {
+  headers: Headers;
+};
+;
+
+export type upsertItemWeightResponse = (upsertItemWeightResponseSuccess)
+
+export const getUpsertItemWeightUrl = () => {
+
+
+  
+
+  return `/api/monitoring/weights`
+}
+
+export const upsertItemWeight = async (itemWeightUpsert: ItemWeightUpsert, options?: RequestInit): Promise<upsertItemWeightResponse> => {
+  
+  return customFetch<upsertItemWeightResponse>(getUpsertItemWeightUrl(),
+  {      
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      itemWeightUpsert,)
+  }
+);}
+
+
+
+
+export const getUpsertItemWeightMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertItemWeight>>, TError,{data: ItemWeightUpsert}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertItemWeight>>, TError,{data: ItemWeightUpsert}, TContext> => {
+
+const mutationKey = ['upsertItemWeight'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertItemWeight>>, {data: ItemWeightUpsert}> = (props) => {
+          const {data} = props ?? {};
+
+          return  upsertItemWeight(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertItemWeightMutationResult = NonNullable<Awaited<ReturnType<typeof upsertItemWeight>>>
+    export type UpsertItemWeightMutationBody = ItemWeightUpsert
+    export type UpsertItemWeightMutationError = unknown
+
+    export const useUpsertItemWeight = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertItemWeight>>, TError,{data: ItemWeightUpsert}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertItemWeight>>,
+        TError,
+        {data: ItemWeightUpsert},
+        TContext
+      > => {
+
+      const mutationOptions = getUpsertItemWeightMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type listIdealHoursOverridesResponse200 = {
+  data: IdealHoursOverride[]
+  status: 200
+}
+    
+export type listIdealHoursOverridesResponseSuccess = (listIdealHoursOverridesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listIdealHoursOverridesResponse = (listIdealHoursOverridesResponseSuccess)
+
+export const getListIdealHoursOverridesUrl = (params?: ListIdealHoursOverridesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/monitoring/ideal-hours-overrides?${stringifiedParams}` : `/api/monitoring/ideal-hours-overrides`
+}
+
+export const listIdealHoursOverrides = async (params?: ListIdealHoursOverridesParams, options?: RequestInit): Promise<listIdealHoursOverridesResponse> => {
+  
+  return customFetch<listIdealHoursOverridesResponse>(getListIdealHoursOverridesUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getListIdealHoursOverridesQueryKey = (params?: ListIdealHoursOverridesParams,) => {
+    return [
+    `/api/monitoring/ideal-hours-overrides`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getListIdealHoursOverridesQueryOptions = <TData = Awaited<ReturnType<typeof listIdealHoursOverrides>>, TError = unknown>(params?: ListIdealHoursOverridesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listIdealHoursOverrides>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListIdealHoursOverridesQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listIdealHoursOverrides>>> = ({ signal }) => listIdealHoursOverrides(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listIdealHoursOverrides>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListIdealHoursOverridesQueryResult = NonNullable<Awaited<ReturnType<typeof listIdealHoursOverrides>>>
+export type ListIdealHoursOverridesQueryError = unknown
+
+
+
+export function useListIdealHoursOverrides<TData = Awaited<ReturnType<typeof listIdealHoursOverrides>>, TError = unknown>(
+ params?: ListIdealHoursOverridesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listIdealHoursOverrides>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListIdealHoursOverridesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type upsertIdealHoursOverrideResponse200 = {
+  data: OkResult
+  status: 200
+}
+    
+export type upsertIdealHoursOverrideResponseSuccess = (upsertIdealHoursOverrideResponse200) & {
+  headers: Headers;
+};
+;
+
+export type upsertIdealHoursOverrideResponse = (upsertIdealHoursOverrideResponseSuccess)
+
+export const getUpsertIdealHoursOverrideUrl = () => {
+
+
+  
+
+  return `/api/monitoring/ideal-hours-overrides`
+}
+
+export const upsertIdealHoursOverride = async (idealHoursOverrideUpsert: IdealHoursOverrideUpsert, options?: RequestInit): Promise<upsertIdealHoursOverrideResponse> => {
+  
+  return customFetch<upsertIdealHoursOverrideResponse>(getUpsertIdealHoursOverrideUrl(),
+  {      
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      idealHoursOverrideUpsert,)
+  }
+);}
+
+
+
+
+export const getUpsertIdealHoursOverrideMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertIdealHoursOverride>>, TError,{data: IdealHoursOverrideUpsert}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertIdealHoursOverride>>, TError,{data: IdealHoursOverrideUpsert}, TContext> => {
+
+const mutationKey = ['upsertIdealHoursOverride'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertIdealHoursOverride>>, {data: IdealHoursOverrideUpsert}> = (props) => {
+          const {data} = props ?? {};
+
+          return  upsertIdealHoursOverride(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertIdealHoursOverrideMutationResult = NonNullable<Awaited<ReturnType<typeof upsertIdealHoursOverride>>>
+    export type UpsertIdealHoursOverrideMutationBody = IdealHoursOverrideUpsert
+    export type UpsertIdealHoursOverrideMutationError = unknown
+
+    export const useUpsertIdealHoursOverride = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertIdealHoursOverride>>, TError,{data: IdealHoursOverrideUpsert}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertIdealHoursOverride>>,
+        TError,
+        {data: IdealHoursOverrideUpsert},
+        TContext
+      > => {
+
+      const mutationOptions = getUpsertIdealHoursOverrideMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type getMonitoringThresholdsResponse200 = {
+  data: WarningThresholds
+  status: 200
+}
+    
+export type getMonitoringThresholdsResponseSuccess = (getMonitoringThresholdsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getMonitoringThresholdsResponse = (getMonitoringThresholdsResponseSuccess)
+
+export const getGetMonitoringThresholdsUrl = () => {
+
+
+  
+
+  return `/api/monitoring/thresholds`
+}
+
+export const getMonitoringThresholds = async ( options?: RequestInit): Promise<getMonitoringThresholdsResponse> => {
+  
+  return customFetch<getMonitoringThresholdsResponse>(getGetMonitoringThresholdsUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetMonitoringThresholdsQueryKey = () => {
+    return [
+    `/api/monitoring/thresholds`
+    ] as const;
+    }
+
+    
+export const getGetMonitoringThresholdsQueryOptions = <TData = Awaited<ReturnType<typeof getMonitoringThresholds>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringThresholds>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMonitoringThresholdsQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMonitoringThresholds>>> = ({ signal }) => getMonitoringThresholds({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMonitoringThresholds>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMonitoringThresholdsQueryResult = NonNullable<Awaited<ReturnType<typeof getMonitoringThresholds>>>
+export type GetMonitoringThresholdsQueryError = unknown
+
+
+
+export function useGetMonitoringThresholds<TData = Awaited<ReturnType<typeof getMonitoringThresholds>>, TError = unknown>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringThresholds>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMonitoringThresholdsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type updateMonitoringThresholdsResponse200 = {
+  data: OkResult
+  status: 200
+}
+    
+export type updateMonitoringThresholdsResponseSuccess = (updateMonitoringThresholdsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateMonitoringThresholdsResponse = (updateMonitoringThresholdsResponseSuccess)
+
+export const getUpdateMonitoringThresholdsUrl = () => {
+
+
+  
+
+  return `/api/monitoring/thresholds`
+}
+
+export const updateMonitoringThresholds = async (warningThresholds: WarningThresholds, options?: RequestInit): Promise<updateMonitoringThresholdsResponse> => {
+  
+  return customFetch<updateMonitoringThresholdsResponse>(getUpdateMonitoringThresholdsUrl(),
+  {      
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      warningThresholds,)
+  }
+);}
+
+
+
+
+export const getUpdateMonitoringThresholdsMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMonitoringThresholds>>, TError,{data: WarningThresholds}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateMonitoringThresholds>>, TError,{data: WarningThresholds}, TContext> => {
+
+const mutationKey = ['updateMonitoringThresholds'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateMonitoringThresholds>>, {data: WarningThresholds}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateMonitoringThresholds(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateMonitoringThresholdsMutationResult = NonNullable<Awaited<ReturnType<typeof updateMonitoringThresholds>>>
+    export type UpdateMonitoringThresholdsMutationBody = WarningThresholds
+    export type UpdateMonitoringThresholdsMutationError = unknown
+
+    export const useUpdateMonitoringThresholds = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMonitoringThresholds>>, TError,{data: WarningThresholds}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateMonitoringThresholds>>,
+        TError,
+        {data: WarningThresholds},
+        TContext
+      > => {
+
+      const mutationOptions = getUpdateMonitoringThresholdsMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type getMonitoringConfigResponse200 = {
+  data: MonitoringConfig
+  status: 200
+}
+    
+export type getMonitoringConfigResponseSuccess = (getMonitoringConfigResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getMonitoringConfigResponse = (getMonitoringConfigResponseSuccess)
+
+export const getGetMonitoringConfigUrl = (params: GetMonitoringConfigParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/monitoring/config?${stringifiedParams}` : `/api/monitoring/config`
+}
+
+export const getMonitoringConfig = async (params: GetMonitoringConfigParams, options?: RequestInit): Promise<getMonitoringConfigResponse> => {
+  
+  return customFetch<getMonitoringConfigResponse>(getGetMonitoringConfigUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetMonitoringConfigQueryKey = (params?: GetMonitoringConfigParams,) => {
+    return [
+    `/api/monitoring/config`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetMonitoringConfigQueryOptions = <TData = Awaited<ReturnType<typeof getMonitoringConfig>>, TError = unknown>(params: GetMonitoringConfigParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMonitoringConfigQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMonitoringConfig>>> = ({ signal }) => getMonitoringConfig(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMonitoringConfig>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMonitoringConfigQueryResult = NonNullable<Awaited<ReturnType<typeof getMonitoringConfig>>>
+export type GetMonitoringConfigQueryError = unknown
+
+
+
+export function useGetMonitoringConfig<TData = Awaited<ReturnType<typeof getMonitoringConfig>>, TError = unknown>(
+ params: GetMonitoringConfigParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMonitoringConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMonitoringConfigQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type updateMonitoringConfigResponse200 = {
+  data: OkResult
+  status: 200
+}
+    
+export type updateMonitoringConfigResponseSuccess = (updateMonitoringConfigResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updateMonitoringConfigResponse = (updateMonitoringConfigResponseSuccess)
+
+export const getUpdateMonitoringConfigUrl = () => {
+
+
+  
+
+  return `/api/monitoring/config`
+}
+
+export const updateMonitoringConfig = async (monitoringConfigUpdate: MonitoringConfigUpdate, options?: RequestInit): Promise<updateMonitoringConfigResponse> => {
+  
+  return customFetch<updateMonitoringConfigResponse>(getUpdateMonitoringConfigUrl(),
+  {      
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      monitoringConfigUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateMonitoringConfigMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMonitoringConfig>>, TError,{data: MonitoringConfigUpdate}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateMonitoringConfig>>, TError,{data: MonitoringConfigUpdate}, TContext> => {
+
+const mutationKey = ['updateMonitoringConfig'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateMonitoringConfig>>, {data: MonitoringConfigUpdate}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateMonitoringConfig(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateMonitoringConfigMutationResult = NonNullable<Awaited<ReturnType<typeof updateMonitoringConfig>>>
+    export type UpdateMonitoringConfigMutationBody = MonitoringConfigUpdate
+    export type UpdateMonitoringConfigMutationError = unknown
+
+    export const useUpdateMonitoringConfig = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateMonitoringConfig>>, TError,{data: MonitoringConfigUpdate}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateMonitoringConfig>>,
+        TError,
+        {data: MonitoringConfigUpdate},
+        TContext
+      > => {
+
+      const mutationOptions = getUpdateMonitoringConfigMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
