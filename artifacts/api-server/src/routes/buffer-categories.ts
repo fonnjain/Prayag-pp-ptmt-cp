@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, bufferCategoriesTable } from "@workspace/db";
-import { BufferCategoryUpdate } from "@workspace/api-zod";
+import { updateBufferCategoryBody } from "@workspace/api-zod";
 
 const router: IRouter = Router();
 
@@ -21,7 +21,7 @@ router.patch("/buffer-categories/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const parsed = BufferCategoryUpdate.safeParse(req.body);
+  const parsed = updateBufferCategoryBody.safeParse(req.body);
   if (!parsed.success) {
     req.log.warn({ errors: parsed.error.message }, "Invalid buffer category update");
     res.status(400).json({ error: parsed.error.message });
