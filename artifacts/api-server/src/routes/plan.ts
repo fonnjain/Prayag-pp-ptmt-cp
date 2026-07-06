@@ -80,14 +80,19 @@ export async function buildPlanItems(month: string) {
   const pendingLastMoTotals = sumByKey(pendingLastMoRows, ["Item Code"], ["Colour", "Color"], ["Qty"]);
   const stockTotals = sumByKey(currentStockRows, ["Item Code"], ["Colour", "Color"], ["Qty"]);
 
+  // Scoped per category: the same item code can legitimately exist in two
+  // different categories (e.g. a code split by colour under one category,
+  // and re-listed as a single combined item with a placeholder colour under
+  // another). Counting codes globally would wrongly force exact colour
+  // matching on the single-variant side and break its byCode aggregation.
   const codeCounts = new Map<string, number>();
   for (const item of itemRows) {
-    const codeKey = normalizeCode(item.itemCode);
+    const codeKey = `${item.category}::${normalizeCode(item.itemCode)}`;
     codeCounts.set(codeKey, (codeCounts.get(codeKey) ?? 0) + 1);
   }
 
   const items = itemRows.map((item) => {
-    const isSingleVariant = (codeCounts.get(normalizeCode(item.itemCode)) ?? 0) <= 1;
+    const isSingleVariant = (codeCounts.get(`${item.category}::${normalizeCode(item.itemCode)}`) ?? 0) <= 1;
     const source: ItemSourceRow = {
       itemCode: item.itemCode,
       colour: item.colour,

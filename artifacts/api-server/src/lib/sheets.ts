@@ -141,7 +141,17 @@ function rowsToObjects(values: string[][]): Record<string, string>[] {
   });
 }
 
-/** Sum sale quantity by item+colour across the rolling 3-month tab in "Sale 26-27" for the target month. */
+/**
+ * Sum sale quantity by item+colour across the rolling 3-month tab in "Sale 26-27" for the target month.
+ *
+ * IMPORTANT: This tab has a sibling aggregated block (a colour-blind GROUP BY Item Code
+ * pivot living in other columns) with its OWN "Item Code" style header. Header-name based
+ * lookup (rowsToObjects) can pick up columns from that block instead of the real line-level
+ * data, silently truncating/undercounting rows. Per confirmed spec: read positionally —
+ * line-level data lives at Item Code=col D, Colour=col F, Qty=col H (range D1:H) — one row
+ * per sale line, keep rows where Qty (col H) is not null, no other filter, sum grouped by
+ * (Item Code, Colour), then divide by 3 for the average.
+ */
 export async function fetchAvg3MoSaleTotals(month: string): Promise<DualTotals> {
   const months = priorThreeMonths(month);
   const tabs = await listTabs(SHEET_IDS.sale2627);
@@ -150,14 +160,22 @@ export async function fetchAvg3MoSaleTotals(month: string): Promise<DualTotals> 
     logger.warn({ tabs, month }, "No rolling 3-month sale tab found in Sale 26-27; falling back to Combined");
   }
   const tab = matchTab ?? "Combined";
-  const values = await throttledGetTabValues(SHEET_IDS.sale2627, tab);
-  const rows = rowsToObjects(values);
+  // NOTE: this tab's line-level data can exceed 20,000 rows — do not cap the range
+  // at A1:Z20000 (the module default) or real sale rows get silently truncated.
+  const values = await throttledGetTabValues(SHEET_IDS.sale2627, tab, "D1:H300000");
   const totals: DualTotals = { exact: new Map(), byCode: new Map() };
-  for (const row of rows) {
-    const code = row["Item Code"] ?? row["CODE"];
-    const colour = row["COLOR"] ?? row["Color"] ?? row["Colour"];
-    const qty = toNumber(row["Quantity"] ?? row["QTY"]);
-    if (!code) continue;
+  const CODE_COL = 0; // D
+  const COLOUR_COL = 2; // F
+  const QTY_COL = 4; // H
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    if (!row) continue;
+    const qtyRaw = row[QTY_COL];
+    if (qtyRaw === undefined || qtyRaw === null || String(qtyRaw).trim() === "") continue;
+    const code = row[CODE_COL];
+    if (!code || String(code).trim() === "") continue;
+    const colour = row[COLOUR_COL];
+    const qty = toNumber(qtyRaw);
     addToDualTotals(totals, code, colour, qty);
   }
   return totals;
