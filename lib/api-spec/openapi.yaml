@@ -1,0 +1,334 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 1.0.0
+servers:
+  - url: /api
+paths:
+  /healthz:
+    get:
+      operationId: getHealthz
+      tags: [system]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /buffer-categories:
+    get:
+      operationId: listBufferCategories
+      tags: [bufferCategories]
+      responses:
+        "200":
+          description: List of buffer categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BufferCategory"
+
+  /buffer-categories/{id}:
+    patch:
+      operationId: updateBufferCategory
+      tags: [bufferCategories]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BufferCategoryUpdate"
+      responses:
+        "200":
+          description: Updated buffer category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BufferCategory"
+        "404":
+          description: Not found
+
+  /uploads:
+    get:
+      operationId: listUploads
+      tags: [uploads]
+      responses:
+        "200":
+          description: List of uploaded source files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UploadedFile"
+
+  /uploads/{kind}:
+    post:
+      operationId: createUpload
+      tags: [uploads]
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/UploadKind"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "201":
+          description: Uploaded file processed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadedFile"
+        "400":
+          description: Invalid file
+
+  /sync/sheets:
+    post:
+      operationId: syncSheets
+      tags: [sync]
+      responses:
+        "200":
+          description: Sync results per source
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SyncSource"
+
+  /sync/status:
+    get:
+      operationId: getSyncStatus
+      tags: [sync]
+      responses:
+        "200":
+          description: Current status of each live sheet source
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SyncSource"
+
+  /plan:
+    get:
+      operationId: listPlanItems
+      tags: [plan]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+        - name: category
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Computed production plan line items for the month
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlanItem"
+
+  /plan/summary:
+    get:
+      operationId: getPlanSummary
+      tags: [plan]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Per-category and grand totals for the month
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanSummary"
+
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [dashboard]
+      responses:
+        "200":
+          description: Top-level dashboard snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSnapshot"
+
+  /plan/export/excel:
+    get:
+      operationId: exportPlanExcel
+      tags: [plan]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Excel workbook of the production plan
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /plan/export/pdf:
+    get:
+      operationId: exportPlanPdf
+      tags: [plan]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: PDF report of the production plan
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+
+    UploadKind:
+      type: string
+      enum: [pending_orders, last_month_pending]
+
+    BufferCategory:
+      type: object
+      required: [id, name, multiplier, updatedAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        multiplier: { type: number }
+        updatedAt: { type: string, format: date-time }
+
+    BufferCategoryUpdate:
+      type: object
+      required: [multiplier]
+      properties:
+        multiplier: { type: number, minimum: 0 }
+
+    UploadedFile:
+      type: object
+      required: [id, kind, filename, uploadedAt, rowCount]
+      properties:
+        id: { type: integer }
+        kind:
+          $ref: "#/components/schemas/UploadKind"
+        filename: { type: string }
+        uploadedAt: { type: string, format: date-time }
+        rowCount: { type: integer }
+
+    SyncSource:
+      type: object
+      required: [id, name, status, lastSyncedAt, message]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        status:
+          type: string
+          enum: [idle, syncing, success, error]
+        lastSyncedAt: { type: ["string", "null"], format: date-time }
+        message: { type: ["string", "null"] }
+
+    PlanItem:
+      type: object
+      required:
+        - itemCode
+        - colour
+        - category
+        - avg3MoSale
+        - stock
+        - bufferReq
+        - minProduction
+        - maxProduction
+        - pendingOrderLastMonth
+        - pendingOrder
+        - order
+        - achievementPct
+      properties:
+        itemCode: { type: string }
+        colour: { type: string }
+        category: { type: string }
+        avg3MoSale: { type: number }
+        stock: { type: number }
+        bufferReq: { type: number }
+        minProduction: { type: number }
+        maxProduction: { type: number }
+        pendingOrderLastMonth: { type: number }
+        pendingOrder: { type: number }
+        order: { type: number }
+        achievementPct: { type: ["number", "null"] }
+
+    CategorySummary:
+      type: object
+      required: [category, minTotal, maxTotal]
+      properties:
+        category: { type: string }
+        minTotal: { type: number }
+        maxTotal: { type: number }
+
+    PlanSummary:
+      type: object
+      required: [month, categories, grandMinTotal, grandMaxTotal]
+      properties:
+        month: { type: string }
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategorySummary"
+        grandMinTotal: { type: number }
+        grandMaxTotal: { type: number }
+
+    DashboardSnapshot:
+      type: object
+      required:
+        - latestMonth
+        - itemCount
+        - categoryCount
+        - grandMinTotal
+        - grandMaxTotal
+        - lastSyncedAt
+      properties:
+        latestMonth: { type: ["string", "null"] }
+        itemCount: { type: integer }
+        categoryCount: { type: integer }
+        grandMinTotal: { type: number }
+        grandMaxTotal: { type: number }
+        lastSyncedAt: { type: ["string", "null"], format: date-time }
