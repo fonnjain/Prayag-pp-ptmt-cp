@@ -10,5 +10,9 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "tsx": "catalog:"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "mammoth": "^1.12.0"
   }
 }
