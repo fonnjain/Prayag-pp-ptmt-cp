@@ -13,6 +13,7 @@ import Actions from "@/pages/actions";
 import Quality from "@/pages/quality";
 import Backlog from "@/pages/backlog";
 import Settings from "@/pages/settings";
+import AiAnalytics from "@/pages/ai-analytics";
 
 const queryClient = new QueryClient();
 
@@ -40,6 +41,9 @@ function Router({ month, setMonth }: { month: string, setMonth: (m: string) => v
         </Route>
         <Route path="/settings">
           <Settings month={month} />
+        </Route>
+        <Route path="/ai-analytics">
+          <AiAnalytics month={month} />
         </Route>
         <Route component={NotFound} />
       </Switch>

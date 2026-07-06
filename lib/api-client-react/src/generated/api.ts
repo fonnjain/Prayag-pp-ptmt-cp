@@ -19,6 +19,8 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AiAnalysisDetail,
+  AiAnalysisSummary,
   BufferCategory,
   BufferCategoryUpdate,
   CreateUploadBody,
@@ -40,6 +42,7 @@ import type {
   IdealHoursOverrideUpsert,
   ItemWeight,
   ItemWeightUpsert,
+  ListAiAnalysesParams,
   ListIdealHoursOverridesParams,
   ListPlanItemsParams,
   MonitoringActions,
@@ -2467,3 +2470,255 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
       return useMutation(mutationOptions);
     }
+    
+export type listAiAnalysesResponse200 = {
+  data: AiAnalysisSummary[]
+  status: 200
+}
+    
+export type listAiAnalysesResponseSuccess = (listAiAnalysesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listAiAnalysesResponse = (listAiAnalysesResponseSuccess)
+
+export const getListAiAnalysesUrl = (params: ListAiAnalysesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/analyses?${stringifiedParams}` : `/api/ai/analyses`
+}
+
+export const listAiAnalyses = async (params: ListAiAnalysesParams, options?: RequestInit): Promise<listAiAnalysesResponse> => {
+  
+  return customFetch<listAiAnalysesResponse>(getListAiAnalysesUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getListAiAnalysesQueryKey = (params?: ListAiAnalysesParams,) => {
+    return [
+    `/api/ai/analyses`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getListAiAnalysesQueryOptions = <TData = Awaited<ReturnType<typeof listAiAnalyses>>, TError = unknown>(params: ListAiAnalysesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiAnalyses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAiAnalysesQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAiAnalyses>>> = ({ signal }) => listAiAnalyses(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAiAnalyses>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAiAnalysesQueryResult = NonNullable<Awaited<ReturnType<typeof listAiAnalyses>>>
+export type ListAiAnalysesQueryError = unknown
+
+
+
+export function useListAiAnalyses<TData = Awaited<ReturnType<typeof listAiAnalyses>>, TError = unknown>(
+ params: ListAiAnalysesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiAnalyses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAiAnalysesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getAiAnalysisResponse200 = {
+  data: AiAnalysisDetail
+  status: 200
+}
+    
+export type getAiAnalysisResponseSuccess = (getAiAnalysisResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getAiAnalysisResponse = (getAiAnalysisResponseSuccess)
+
+export const getGetAiAnalysisUrl = (id: number,) => {
+
+
+  
+
+  return `/api/ai/analyses/${id}`
+}
+
+export const getAiAnalysis = async (id: number, options?: RequestInit): Promise<getAiAnalysisResponse> => {
+  
+  return customFetch<getAiAnalysisResponse>(getGetAiAnalysisUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetAiAnalysisQueryKey = (id?: number,) => {
+    return [
+    `/api/ai/analyses/${id}`
+    ] as const;
+    }
+
+    
+export const getGetAiAnalysisQueryOptions = <TData = Awaited<ReturnType<typeof getAiAnalysis>>, TError = unknown>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiAnalysis>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiAnalysisQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiAnalysis>>> = ({ signal }) => getAiAnalysis(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiAnalysis>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiAnalysisQueryResult = NonNullable<Awaited<ReturnType<typeof getAiAnalysis>>>
+export type GetAiAnalysisQueryError = unknown
+
+
+
+export function useGetAiAnalysis<TData = Awaited<ReturnType<typeof getAiAnalysis>>, TError = unknown>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiAnalysis>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiAnalysisQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type exportAiAnalysisPdfResponse200 = {
+  data: Blob
+  status: 200
+}
+    
+export type exportAiAnalysisPdfResponseSuccess = (exportAiAnalysisPdfResponse200) & {
+  headers: Headers;
+};
+;
+
+export type exportAiAnalysisPdfResponse = (exportAiAnalysisPdfResponseSuccess)
+
+export const getExportAiAnalysisPdfUrl = (id: number,) => {
+
+
+  
+
+  return `/api/ai/analyses/${id}/export/pdf`
+}
+
+export const exportAiAnalysisPdf = async (id: number, options?: RequestInit): Promise<exportAiAnalysisPdfResponse> => {
+  
+  return customFetch<exportAiAnalysisPdfResponse>(getExportAiAnalysisPdfUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getExportAiAnalysisPdfQueryKey = (id?: number,) => {
+    return [
+    `/api/ai/analyses/${id}/export/pdf`
+    ] as const;
+    }
+
+    
+export const getExportAiAnalysisPdfQueryOptions = <TData = Awaited<ReturnType<typeof exportAiAnalysisPdf>>, TError = unknown>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAiAnalysisPdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportAiAnalysisPdfQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportAiAnalysisPdf>>> = ({ signal }) => exportAiAnalysisPdf(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportAiAnalysisPdf>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportAiAnalysisPdfQueryResult = NonNullable<Awaited<ReturnType<typeof exportAiAnalysisPdf>>>
+export type ExportAiAnalysisPdfQueryError = unknown
+
+
+
+export function useExportAiAnalysisPdf<TData = Awaited<ReturnType<typeof exportAiAnalysisPdf>>, TError = unknown>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAiAnalysisPdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportAiAnalysisPdfQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}

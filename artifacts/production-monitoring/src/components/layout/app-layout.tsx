@@ -6,7 +6,8 @@ import {
   CheckSquare, 
   ActivitySquare,
   PackageMinus,
-  Settings
+  Settings,
+  Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,7 @@ export function AppLayout({ children, month, setMonth }: { children: React.React
     { href: "/actions", label: "Actions", icon: CheckSquare },
     { href: "/quality", label: "Quality", icon: ActivitySquare },
     { href: "/backlog", label: "Backlog", icon: PackageMinus },
+    { href: "/ai-analytics", label: "AI Analytics", icon: Sparkles },
     { href: "/settings", label: "Settings", icon: Settings },
   ];
 

@@ -5,6 +5,22 @@
  * OpenAPI spec version: 1.0.0
  */
 
+export * from './aiAnalysisDetail';
+export * from './aiAnalysisDetailAllOf';
+export * from './aiAnalysisDetailAllOfResult';
+export * from './aiAnalysisMessage';
+export * from './aiAnalysisMessageRole';
+export * from './aiAnalysisResult';
+export * from './aiAnalysisResultKeyFindingsItem';
+export * from './aiAnalysisResultRecommendationsItem';
+export * from './aiAnalysisResultRecommendationsItemEffort';
+export * from './aiAnalysisResultRisksItem';
+export * from './aiAnalysisResultRisksItemSeverity';
+export * from './aiAnalysisResultRootCauseHypothesesItem';
+export * from './aiAnalysisResultRootCauseHypothesesItemConfidence';
+export * from './aiAnalysisSummary';
+export * from './aiAnalysisSummaryDepth';
+export * from './aiAnalysisSummarySnapshotDate';
 export * from './bufferCategory';
 export * from './bufferCategoryUpdate';
 export * from './calendarModel';
@@ -32,6 +48,7 @@ export * from './itemWeight';
 export * from './itemWeightUpsert';
 export * from './itemWeightUpsertWeightKg';
 export * from './itemWeightWeightKg';
+export * from './listAiAnalysesParams';
 export * from './listIdealHoursOverridesParams';
 export * from './listPlanItemsParams';
 export * from './machineQuality';

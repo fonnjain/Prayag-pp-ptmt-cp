@@ -5,6 +5,7 @@ import syncRouter from "./sync";
 import planRouter from "./plan";
 import dashboardRouter from "./dashboard";
 import monitoringRouter from "./monitoring";
+import aiRouter from "./ai";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(syncRouter);
 router.use(planRouter);
 router.use(dashboardRouter);
 router.use(monitoringRouter);
+router.use(aiRouter);
 
 export default router;

@@ -403,3 +403,71 @@ export const updateMonitoringConfigBody = zod.object({
 export const updateMonitoringConfigResponse = zod.object({
   "ok": zod.boolean()
 })
+
+
+export const listAiAnalysesQueryParams = zod.object({
+  "month": zod.string()
+})
+
+export const listAiAnalysesResponseItem = zod.object({
+  "id": zod.number(),
+  "month": zod.string(),
+  "snapshotDate": zod.string().nullable(),
+  "depth": zod.enum(['standard', 'deep']),
+  "model": zod.string(),
+  "createdAt": zod.string()
+})
+export const listAiAnalysesResponse = zod.array(listAiAnalysesResponseItem)
+
+
+export const getAiAnalysisParams = zod.object({
+  "id": zod.number()
+})
+
+export const getAiAnalysisResponse = zod.object({
+  "id": zod.number(),
+  "month": zod.string(),
+  "snapshotDate": zod.string().nullable(),
+  "depth": zod.enum(['standard', 'deep']),
+  "model": zod.string(),
+  "createdAt": zod.string()
+}).and(zod.object({
+  "result": zod.union([zod.object({
+  "executive_summary": zod.string(),
+  "key_findings": zod.array(zod.object({
+  "finding": zod.string(),
+  "evidence": zod.string(),
+  "scope": zod.string()
+})),
+  "root_cause_hypotheses": zod.array(zod.object({
+  "hypothesis": zod.string(),
+  "supporting_signal": zod.string(),
+  "confidence": zod.enum(['high', 'med', 'low'])
+})),
+  "risks": zod.array(zod.object({
+  "risk": zod.string(),
+  "severity": zod.enum(['Critical', 'High', 'Medium']),
+  "basis": zod.string()
+})),
+  "recommendations": zod.array(zod.object({
+  "action": zod.string(),
+  "rationale": zod.string(),
+  "quantified_impact": zod.string(),
+  "priority": zod.number(),
+  "effort": zod.enum(['low', 'med', 'high']),
+  "scope": zod.string()
+})),
+  "watch_items": zod.array(zod.string())
+}),zod.null()]),
+  "messages": zod.array(zod.object({
+  "id": zod.number(),
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string(),
+  "createdAt": zod.string()
+}))
+}))
+
+
+export const exportAiAnalysisPdfParams = zod.object({
+  "id": zod.number()
+})

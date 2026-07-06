@@ -481,6 +481,60 @@ paths:
               schema:
                 $ref: "#/components/schemas/OkResult"
 
+  /ai/analyses:
+    get:
+      operationId: listAiAnalyses
+      tags: [ai]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: History of AI analyses for the month
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiAnalysisSummary"
+
+  /ai/analyses/{id}:
+    get:
+      operationId: getAiAnalysis
+      tags: [ai]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: A single AI analysis with its follow-up messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiAnalysisDetail"
+
+  /ai/analyses/{id}/export/pdf:
+    get:
+      operationId: exportAiAnalysisPdf
+      tags: [ai]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: PDF export of the AI analysis
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
 components:
   schemas:
     HealthStatus:
@@ -897,3 +951,86 @@ components:
         shiftsPerDay: { type: integer }
         shiftHours: { type: integer }
         snapshotDate: { type: ["string", "null"] }
+
+    AiAnalysisResult:
+      type: object
+      required: [executive_summary, key_findings, root_cause_hypotheses, risks, recommendations, watch_items]
+      properties:
+        executive_summary: { type: string }
+        key_findings:
+          type: array
+          items:
+            type: object
+            required: [finding, evidence, scope]
+            properties:
+              finding: { type: string }
+              evidence: { type: string }
+              scope: { type: string }
+        root_cause_hypotheses:
+          type: array
+          items:
+            type: object
+            required: [hypothesis, supporting_signal, confidence]
+            properties:
+              hypothesis: { type: string }
+              supporting_signal: { type: string }
+              confidence: { type: string, enum: [high, med, low] }
+        risks:
+          type: array
+          items:
+            type: object
+            required: [risk, severity, basis]
+            properties:
+              risk: { type: string }
+              severity: { type: string, enum: [Critical, High, Medium] }
+              basis: { type: string }
+        recommendations:
+          type: array
+          items:
+            type: object
+            required: [action, rationale, quantified_impact, priority, effort, scope]
+            properties:
+              action: { type: string }
+              rationale: { type: string }
+              quantified_impact: { type: string }
+              priority: { type: integer }
+              effort: { type: string, enum: [low, med, high] }
+              scope: { type: string }
+        watch_items:
+          type: array
+          items: { type: string }
+
+    AiAnalysisSummary:
+      type: object
+      required: [id, month, snapshotDate, depth, model, createdAt]
+      properties:
+        id: { type: integer }
+        month: { type: string }
+        snapshotDate: { type: ["string", "null"] }
+        depth: { type: string, enum: [standard, deep] }
+        model: { type: string }
+        createdAt: { type: string }
+
+    AiAnalysisMessage:
+      type: object
+      required: [id, role, content, createdAt]
+      properties:
+        id: { type: integer }
+        role: { type: string, enum: [user, assistant] }
+        content: { type: string }
+        createdAt: { type: string }
+
+    AiAnalysisDetail:
+      allOf:
+        - $ref: "#/components/schemas/AiAnalysisSummary"
+        - type: object
+          required: [result, messages]
+          properties:
+            result:
+              anyOf:
+                - $ref: "#/components/schemas/AiAnalysisResult"
+                - type: "null"
+            messages:
+              type: array
+              items:
+                $ref: "#/components/schemas/AiAnalysisMessage"
