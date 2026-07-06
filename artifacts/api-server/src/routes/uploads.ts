@@ -7,7 +7,7 @@ import { desc } from "drizzle-orm";
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
-const VALID_KINDS = new Set(["pending_orders", "last_month_pending"]);
+const VALID_KINDS = new Set(["pending_orders", "last_month_pending", "current_stock"]);
 
 router.get("/uploads", async (_req, res): Promise<void> => {
   const rows = await db
@@ -105,6 +105,12 @@ function extractRows(workbook: XLSX.WorkBook, kind: string): Record<string, unkn
       const segment = String(row["Segment"] ?? "").trim().toUpperCase();
       return segment === "PTMT" || segment === "PT";
     });
+  }
+
+  if (kind === "current_stock") {
+    const sheetName = workbook.SheetNames.find((name) => /stock/i.test(name)) ?? workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    return sheetToObjects(sheet);
   }
 
   const sheetName = workbook.SheetNames.find((name) => /^ptmt$/i.test(name)) ?? workbook.SheetNames[0];

@@ -3,6 +3,7 @@ export interface ItemSourceRow {
   colour: string;
   avg3MoSaleTotal3Mo: number;
   stock: number;
+  stockNeedsReview: boolean;
   pendingOrderLastMonth: number;
   pendingOrder: number;
   order: number;
@@ -14,6 +15,7 @@ export interface CalcPlanItem {
   category: string;
   avg3MoSale: number;
   stock: number;
+  stockNeedsReview: boolean;
   bufferReq: number;
   minProduction: number;
   maxProduction: number;
@@ -64,6 +66,7 @@ export function computeItemPlan(
     category,
     avg3MoSale,
     stock: source.stock,
+    stockNeedsReview: source.stockNeedsReview,
     bufferReq,
     minProduction,
     maxProduction,

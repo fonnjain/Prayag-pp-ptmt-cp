@@ -163,20 +163,14 @@ export async function fetchAvg3MoSaleTotals(month: string): Promise<DualTotals> 
   return totals;
 }
 
-/** FG stock as-on-1st, from PTMT ANUJ "Production" tab columns N/O/P (Cat no, Colour, Stock Qty). */
-export async function fetchStockTotals(): Promise<DualTotals> {
-  const values = await throttledGetTabValues(SHEET_IDS.ptmtAnuj, "Production");
-  const totals: DualTotals = { exact: new Map(), byCode: new Map() };
-  for (let i = 2; i < values.length; i++) {
-    const row = values[i];
-    const code = row[13];
-    const colour = row[14];
-    const qty = row[15];
-    if (!code) continue;
-    addToDualTotals(totals, code, colour, toNumber(qty));
-  }
-  return totals;
-}
+/**
+ * Current FG stock is NOT sourced from PTMT ANUJ — that sheet's "Stock Qty"
+ * column (N/O/P on the "Production" tab) is a stale opening balance from
+ * 17-Apr-2024, not live stock. Current stock is a manually pasted monthly
+ * snapshot the user uploads via the "current_stock" upload kind instead
+ * (see routes/plan.ts). PTMT ANUJ stays wired only if/when production-done
+ * or rejection tracking is added later.
+ */
 
 /** Live order-book qty for the target month, from Order Sheet 26-27 "Combined" tab, GROUP=PTMT. */
 export async function fetchLiveOrderTotals(month: string): Promise<DualTotals> {

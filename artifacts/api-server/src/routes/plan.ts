@@ -4,7 +4,6 @@ import { desc, eq } from "drizzle-orm";
 import { computeItemPlan, summarizePlan, type ItemSourceRow } from "../lib/calc";
 import {
   fetchAvg3MoSaleTotals,
-  fetchStockTotals,
   fetchLiveOrderTotals,
   itemKey,
   normalizeCode,
@@ -52,15 +51,22 @@ function resolveTotal(totals: DualTotals, itemCode: string, colour: string, isSi
   return totals.exact.get(itemKey(itemCode, colour)) ?? 0;
 }
 
+function hasEntry(totals: DualTotals, itemCode: string, colour: string, isSingleVariant: boolean): boolean {
+  if (isSingleVariant) {
+    return totals.byCode.has(normalizeCode(itemCode));
+  }
+  return totals.exact.has(itemKey(itemCode, colour));
+}
+
 export async function buildPlanItems(month: string) {
-  const [itemRows, bufferRows, pendingOrderRows, pendingLastMoRows, avg3MoTotals, stockTotals, liveOrderTotals] =
+  const [itemRows, bufferRows, pendingOrderRows, pendingLastMoRows, currentStockRows, avg3MoTotals, liveOrderTotals] =
     await Promise.all([
       db.select().from(itemMasterTable),
       db.select().from(bufferCategoriesTable),
       loadLatestUploadRowsByKind("pending_orders"),
       loadLatestUploadRowsByKind("last_month_pending"),
+      loadLatestUploadRowsByKind("current_stock"),
       fetchAvg3MoSaleTotals(month),
-      fetchStockTotals(),
       fetchLiveOrderTotals(month),
     ]);
 
@@ -72,6 +78,7 @@ export async function buildPlanItems(month: string) {
     ["Balance_Qty"],
   );
   const pendingLastMoTotals = sumByKey(pendingLastMoRows, ["Item Code"], ["Colour", "Color"], ["Qty"]);
+  const stockTotals = sumByKey(currentStockRows, ["Item Code"], ["Colour", "Color"], ["Qty"]);
 
   const codeCounts = new Map<string, number>();
   for (const item of itemRows) {
@@ -86,6 +93,8 @@ export async function buildPlanItems(month: string) {
       colour: item.colour,
       avg3MoSaleTotal3Mo: resolveTotal(avg3MoTotals, item.itemCode, item.colour, isSingleVariant),
       stock: resolveTotal(stockTotals, item.itemCode, item.colour, isSingleVariant),
+      stockNeedsReview:
+        currentStockRows.length > 0 && !hasEntry(stockTotals, item.itemCode, item.colour, isSingleVariant),
       pendingOrderLastMonth: resolveTotal(pendingLastMoTotals, item.itemCode, item.colour, isSingleVariant),
       pendingOrder: resolveTotal(pendingOrderTotals, item.itemCode, item.colour, isSingleVariant),
       order: resolveTotal(liveOrderTotals, item.itemCode, item.colour, isSingleVariant),
