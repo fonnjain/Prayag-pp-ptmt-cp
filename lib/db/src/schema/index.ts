@@ -6,3 +6,4 @@ export * from "./item-weights";
 export * from "./ideal-hours-overrides";
 export * from "./monitoring-thresholds";
 export * from "./monitoring-config";
+export * from "./ai-analyses";

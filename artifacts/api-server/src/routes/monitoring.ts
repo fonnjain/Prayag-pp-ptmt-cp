@@ -74,7 +74,7 @@ async function loadOverridesForMonth(month: string): Promise<Map<string, number>
   return new Map(rows.map((r) => [r.machineId, Number(r.hours)]));
 }
 
-interface MonitoringBundle {
+export interface MonitoringBundle {
   month: string;
   calendarPlant: ReturnType<typeof buildCalendarModel>;
   plantPace: ReturnType<typeof computePaceMetrics>;
@@ -87,7 +87,7 @@ interface MonitoringBundle {
   dataAvailable: boolean;
 }
 
-async function buildMonitoringBundle(month: string): Promise<MonitoringBundle> {
+export async function buildMonitoringBundle(month: string): Promise<MonitoringBundle> {
   const sheetId = PTMT_DAILY_WORKBOOK_IDS[month];
   const [planItems, weightMap, config, thresholds, overrides] = await Promise.all([
     buildPlanItems(month),
@@ -201,7 +201,7 @@ router.get("/monitoring/velocity", async (req, res): Promise<void> => {
   });
 });
 
-function buildWarningsList(month: string, bundle: MonitoringBundle): Warning[] {
+export function buildWarningsList(month: string, bundle: MonitoringBundle): Warning[] {
   const warnings: Warning[] = [
     ...buildBehindPaceAndWillMissWarnings("Plant", bundle.plantPace, bundle.thresholds),
     ...bundle.categoryPaces.flatMap((c) => buildBehindPaceAndWillMissWarnings(c.category, c.pace, bundle.thresholds)),
