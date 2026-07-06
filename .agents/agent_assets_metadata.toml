@@ -1,0 +1,14 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "CVcUe_4oA2pYWoBjgDqCV"
+uri = "file://exports/PTMT_Pending_Order_Gap_Report.xlsx"
+type = "table"
+title = "Pending Order Gap Report (Excel)"
+
+[[outputs]]
+id = "gjBT2e9nBFnyMh3HSygmU"
+uri = "file://exports/PTMT_Pending_Order_Gap_Report.docx"
+type = "word_document"
+title = "Pending Order Gap Report (Word)"
