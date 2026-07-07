@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sparkles, Download, Send, Loader2, History, Factory, AlertCircle, DatabaseZap } from "lucide-react";
+import { Sparkles, Download, Send, Loader2, History, Factory, AlertCircle, DatabaseZap, TrendingUp } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 type Depth = "standard" | "deep";
@@ -39,6 +39,16 @@ interface AnalysisSummary {
   depth: Depth;
   model: string;
   createdAt: string;
+}
+
+interface PlantTrendRow {
+  id: number;
+  month: string;
+  snapshotDate: string | null;
+  depth: Depth;
+  model: string;
+  createdAt: string;
+  resultJson: PlantAnalysisResult | null;
 }
 
 interface ChatMessage {
@@ -559,6 +569,131 @@ function MachineLevelTab({ month }: { month: string }) {
   );
 }
 
+// ─────────────────────────── PLANT TREND TABLE ───────────────────────────
+
+function ragDot(rag: string | null | undefined) {
+  if (rag === "green") return <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 mr-1.5" />;
+  if (rag === "amber") return <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400 mr-1.5" />;
+  if (rag === "red") return <span className="inline-block w-2.5 h-2.5 rounded-full bg-red-500 mr-1.5" />;
+  return <span className="inline-block w-2.5 h-2.5 rounded-full bg-muted mr-1.5" />;
+}
+
+function PlantTrendTable({
+  onSelectAnalysis,
+}: {
+  onSelectAnalysis: (id: number) => void;
+}) {
+  const [rows, setRows] = useState<PlantTrendRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch("/api/ai/plant-analyses?all=true")
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Server error ${res.status}`);
+        const data = (await res.json()) as PlantTrendRow[];
+        setRows(data);
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to load trend data");
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground text-sm py-8 justify-center">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading trend data…
+      </div>
+    );
+  }
+
+  if (error) {
+    return <p className="text-sm text-red-500 py-4">{error}</p>;
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="text-center text-muted-foreground text-sm py-12">
+        No plant analyses found. Generate an analysis on the Analysis tab to start building the trend.
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-md border border-border/50" data-testid="plant-trend-table">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border/50 bg-muted/30">
+            <th className="text-left px-4 py-3 font-medium">Month</th>
+            <th className="text-left px-4 py-3 font-medium">RAG – Max PP</th>
+            <th className="text-left px-4 py-3 font-medium">RAG – Min PP</th>
+            <th className="text-left px-4 py-3 font-medium">Key risks</th>
+            <th className="text-left px-4 py-3 font-medium">Top rec scope</th>
+            <th className="text-left px-4 py-3 font-medium">Generated</th>
+            <th className="px-4 py-3" />
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const result = row.resultJson;
+            const maxRag = result?.pp_verdict?.max_pp?.rag ?? null;
+            const minRag = result?.pp_verdict?.min_pp?.rag ?? null;
+            const riskCount = result?.risks?.length ?? 0;
+            const topRec = result?.recommendations
+              ? [...result.recommendations].sort((a, b) => a.priority - b.priority)[0]
+              : null;
+            return (
+              <tr
+                key={row.id}
+                className="border-b border-border/30 hover:bg-muted/20 transition-colors cursor-pointer"
+                onClick={() => onSelectAnalysis(row.id)}
+                data-testid={`trend-row-${row.id}`}
+              >
+                <td className="px-4 py-3 font-medium">{row.month}</td>
+                <td className="px-4 py-3">
+                  <span className="flex items-center">
+                    {ragDot(maxRag)}
+                    <span className={maxRag ? ragColor(maxRag).split(" ").find((c) => c.startsWith("text-")) ?? "" : "text-muted-foreground"}>
+                      {maxRag ? maxRag.toUpperCase() : "—"}
+                    </span>
+                  </span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className="flex items-center">
+                    {ragDot(minRag)}
+                    <span className={minRag ? ragColor(minRag).split(" ").find((c) => c.startsWith("text-")) ?? "" : "text-muted-foreground"}>
+                      {minRag ? minRag.toUpperCase() : "—"}
+                    </span>
+                  </span>
+                </td>
+                <td className="px-4 py-3 tabular-nums">{riskCount > 0 ? riskCount : "—"}</td>
+                <td className="px-4 py-3 max-w-[200px] truncate text-muted-foreground">
+                  {topRec ? topRec.scope : "—"}
+                </td>
+                <td className="px-4 py-3 text-muted-foreground text-xs">
+                  {new Date(row.createdAt).toLocaleDateString()}
+                </td>
+                <td className="px-4 py-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => { e.stopPropagation(); onSelectAnalysis(row.id); }}
+                    className="text-xs"
+                  >
+                    View →
+                  </Button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ─────────────────────────── PLANT LEVEL TAB ───────────────────────────
 
 function PlantLevelTab({ month }: { month: string }) {
@@ -574,6 +709,7 @@ function PlantLevelTab({ month }: { month: string }) {
   const [question, setQuestion] = useState("");
   const [isAsking, setIsAsking] = useState(false);
   const [chatStreamText, setChatStreamText] = useState("");
+  const [innerTab, setInnerTab] = useState<"analysis" | "trend">("analysis");
 
   async function loadHistory() {
     try {
@@ -607,6 +743,7 @@ function PlantLevelTab({ month }: { month: string }) {
     setMessages(data.messages ?? []);
     setStreamingText("");
     setError(null);
+    setInnerTab("analysis");
   }
 
   async function handleGenerate() {
@@ -686,6 +823,36 @@ function PlantLevelTab({ month }: { month: string }) {
 
   return (
     <div className="space-y-6">
+      <Tabs value={innerTab} onValueChange={(v) => setInnerTab(v as "analysis" | "trend")}>
+        <TabsList className="mb-4">
+          <TabsTrigger value="analysis" className="flex items-center gap-2">
+            <Factory className="h-4 w-4" />
+            Analysis
+          </TabsTrigger>
+          <TabsTrigger value="trend" className="flex items-center gap-2" data-testid="plant-trend-tab">
+            <TrendingUp className="h-4 w-4" />
+            Trend
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="trend">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Cross-month trend
+              </CardTitle>
+              <CardDescription>
+                Latest plant AI verdict per month — click any row to load the full analysis.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <PlantTrendTable onSelectAnalysis={(id) => loadAnalysis(id)} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="analysis" className="space-y-6">
       <Card>
         <CardHeader>
           <CardTitle>Generate plant NOS analysis</CardTitle>
@@ -865,6 +1032,8 @@ function PlantLevelTab({ month }: { month: string }) {
           </CardContent>
         </Card>
       )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

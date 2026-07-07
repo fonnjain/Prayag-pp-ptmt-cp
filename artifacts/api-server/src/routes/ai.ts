@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, aiAnalysesTable, aiAnalysisMessagesTable, aiPlantAnalysesTable, aiPlantAnalysisMessagesTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { buildMonitoringBundle } from "./monitoring";
 import {
   buildAnalysisPacket,
@@ -439,6 +439,44 @@ router.post("/ai/plant-analyses/:id/followup", async (req, res): Promise<void> =
 
 router.get("/ai/plant-analyses", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");
+  const all = req.query.all === "true";
+
+  if (all) {
+    const rows = await db
+      .select({
+        id: aiPlantAnalysesTable.id,
+        month: aiPlantAnalysesTable.month,
+        snapshotDate: aiPlantAnalysesTable.snapshotDate,
+        depth: aiPlantAnalysesTable.depth,
+        model: aiPlantAnalysesTable.model,
+        createdAt: aiPlantAnalysesTable.createdAt,
+        resultJson: aiPlantAnalysesTable.resultJson,
+      })
+      .from(aiPlantAnalysesTable)
+      .where(sql`${aiPlantAnalysesTable.resultJson} is not null`)
+      .orderBy(desc(aiPlantAnalysesTable.month), desc(aiPlantAnalysesTable.createdAt));
+
+    const seen = new Set<string>();
+    const deduped = rows.filter((r) => {
+      if (seen.has(r.month)) return false;
+      seen.add(r.month);
+      return true;
+    });
+
+    res.json(
+      deduped.map((r) => ({
+        id: r.id,
+        month: r.month,
+        snapshotDate: r.snapshotDate,
+        depth: r.depth,
+        model: r.model,
+        createdAt: r.createdAt.toISOString(),
+        resultJson: r.resultJson,
+      })),
+    );
+    return;
+  }
+
   if (!month) {
     res.status(400).json({ error: "month is required" });
     return;
