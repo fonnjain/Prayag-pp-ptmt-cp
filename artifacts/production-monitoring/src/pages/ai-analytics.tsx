@@ -5,7 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sparkles, Download, Send, Loader2, History, Factory } from "lucide-react";
+import { Sparkles, Download, Send, Loader2, History, Factory, AlertCircle, DatabaseZap } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 type Depth = "standard" | "deep";
@@ -85,6 +85,10 @@ function confidenceColor(c: string) {
   if (c === "high") return "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
   if (c === "med") return "bg-amber-500/10 text-amber-500 border-amber-500/20";
   return "bg-muted text-muted-foreground border-muted";
+}
+
+function isNoDataError(err: string | null): boolean {
+  return !!err && err.toLowerCase().includes("no production data found");
 }
 
 function ragColor(rag: string | null | undefined) {
@@ -238,9 +242,28 @@ function MachineLevelTab({ month }: { month: string }) {
       </Card>
 
       {error && (
-        <Card className="border-red-500/30">
-          <CardContent className="pt-6 text-red-500 text-sm">{error}</CardContent>
-        </Card>
+        isNoDataError(error) ? (
+          <Card className="border-amber-500/30 bg-amber-500/5">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <DatabaseZap className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-amber-700 dark:text-amber-400">No data available for this month</p>
+                  <p className="text-sm text-amber-600/80 dark:text-amber-500/80 mt-1">{error}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-red-500/30">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
+                <p className="text-sm text-red-500">{error}</p>
+              </div>
+            </CardContent>
+          </Card>
+        )
       )}
 
       {isGenerating && !result && (
@@ -527,9 +550,28 @@ function PlantLevelTab({ month }: { month: string }) {
       </Card>
 
       {error && (
-        <Card className="border-red-500/30">
-          <CardContent className="pt-6 text-red-500 text-sm">{error}</CardContent>
-        </Card>
+        isNoDataError(error) ? (
+          <Card className="border-amber-500/30 bg-amber-500/5">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <DatabaseZap className="h-5 w-5 text-amber-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium text-amber-700 dark:text-amber-400">No data available for this month</p>
+                  <p className="text-sm text-amber-600/80 dark:text-amber-500/80 mt-1">{error}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-red-500/30">
+            <CardContent className="pt-6">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
+                <p className="text-sm text-red-500">{error}</p>
+              </div>
+            </CardContent>
+          </Card>
+        )
       )}
 
       {isGenerating && !result && (

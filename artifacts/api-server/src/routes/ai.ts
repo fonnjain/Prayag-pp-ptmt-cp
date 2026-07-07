@@ -57,13 +57,26 @@ router.post("/ai/analyze", async (req, res): Promise<void> => {
     return;
   }
 
+  let bundle: Awaited<ReturnType<typeof buildMonitoringBundle>>;
+  try {
+    bundle = await buildMonitoringBundle(month);
+  } catch (err) {
+    logger.error({ err, month }, "ai-analytics: failed to build monitoring bundle");
+    res.status(500).json({ error: "Failed to load production data" });
+    return;
+  }
+
+  if (!bundle.dataAvailable) {
+    res.status(400).json({ error: `No production data found for ${month} — sync the sheet first before running an analysis.` });
+    return;
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders?.();
 
   try {
-    const bundle = await buildMonitoringBundle(month);
     const packet = buildAnalysisPacket(month, bundle);
     const packetHash = hashPacket(packet);
     const model = modelForDepth(depth);
@@ -271,13 +284,26 @@ router.post("/ai/analyze-plant", async (req, res): Promise<void> => {
     return;
   }
 
+  let bundle: Awaited<ReturnType<typeof computePlantBundle>>;
+  try {
+    bundle = await computePlantBundle(month);
+  } catch (err) {
+    logger.error({ err, month }, "ai-analytics-plant: failed to build plant bundle");
+    res.status(500).json({ error: "Failed to load production data" });
+    return;
+  }
+
+  if (!bundle.dataAvailable) {
+    res.status(400).json({ error: `No production data found for ${month} — sync the sheet first before running an analysis.` });
+    return;
+  }
+
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders?.();
 
   try {
-    const bundle = await computePlantBundle(month);
     const packet = buildPlantPacket(bundle);
     const packetHash = hashPlantPacket(packet);
     const model = modelForDepth(depth);
