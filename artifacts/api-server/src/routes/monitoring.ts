@@ -181,9 +181,12 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
     })),
     needsReviewItems: bundle.needsReviewItems,
     warningCount: buildBehindPaceAndWillMissWarnings("Plant", bundle.plantPace, bundle.thresholds).length,
-    utilisationHeadline:
-      bundle.machineQuality.filter((m) => m.utilisationPct !== null).reduce((s, m) => s + (m.utilisationPct ?? 0), 0) /
-        Math.max(bundle.machineQuality.filter((m) => m.utilisationPct !== null).length, 1) || null,
+    utilisationHeadline: (() => {
+      const active = bundle.machineQuality.filter((m) => m.utilisationPct !== null);
+      if (active.length === 0) return null;
+      const avg = active.reduce((s, m) => s + (m.utilisationPct ?? 0), 0) / active.length;
+      return `${avg.toFixed(1)}%`;
+    })(),
   });
 });
 
