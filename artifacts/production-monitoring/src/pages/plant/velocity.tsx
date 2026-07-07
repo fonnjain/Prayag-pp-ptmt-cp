@@ -16,7 +16,7 @@ function fmt(n: number | null | undefined, d = 0) {
   return n.toLocaleString(undefined, { maximumFractionDigits: d });
 }
 
-export default function PlantVelocity({ month }: { month: string }) {
+export default function PlantVelocity({ month, selectedCategory }: { month: string; selectedCategory?: string | null }) {
   const { data, isLoading } = useGetPlantBundle(
     { month },
     { query: { queryKey: getGetPlantBundleQueryKey({ month }) } }
@@ -44,6 +44,7 @@ export default function PlantVelocity({ month }: { month: string }) {
             <h1 className="text-3xl font-bold tracking-tight mb-1">Plant Velocity</h1>
             <p className="text-muted-foreground text-sm">
               Daily output and burn-up chart in pieces (NOS) — {month} · {context.elapsed}/{context.workingDays} days elapsed
+              {selectedCategory && <span className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-amber-600 bg-amber-500/10 border border-amber-500/20 rounded px-1.5 py-0.5">⚠ Velocity is plant-level — category filter ({selectedCategory}) not applicable here</span>}
             </p>
           </div>
           <div className="flex items-center gap-2">

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,13 +8,18 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 function pct(n: number | null | undefined) { return n !== null && n !== undefined ? `${n.toFixed(1)}%` : "–"; }
 function fmt(n: number) { return n.toLocaleString(); }
 
-export default function PlantPareto({ month }: { month: string }) {
+export default function PlantPareto({ month, selectedCategory }: { month: string; selectedCategory?: string | null }) {
   const { data, isLoading } = useGetPlantBundle(
     { month },
     { query: { queryKey: getGetPlantBundleQueryKey({ month }) } }
   );
   const bundle = data ? (data as unknown as PlantBundle) : undefined;
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>(selectedCategory ?? "all");
+
+  // Sync local dropdown when global category filter changes
+  useEffect(() => {
+    setCategoryFilter(selectedCategory ?? "all");
+  }, [selectedCategory]);
 
   if (isLoading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
   if (!bundle) return <div className="text-red-500 p-4">Failed to load plant data.</div>;

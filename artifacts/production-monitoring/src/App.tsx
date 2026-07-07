@@ -87,19 +87,19 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
           <PlantDashboard month={month} selectedCategory={selectedCategory} />
         </Route>
         <Route path="/plant/velocity">
-          <PlantVelocity month={month} />
+          <PlantVelocity month={month} selectedCategory={selectedCategory} />
         </Route>
         <Route path="/plant/attainment">
           <PlantAttainment month={month} selectedCategory={selectedCategory} />
         </Route>
         <Route path="/plant/warnings">
-          <PlantWarnings month={month} />
+          <PlantWarnings month={month} selectedCategory={selectedCategory} />
         </Route>
         <Route path="/plant/recommendations">
-          <PlantRecommendations month={month} />
+          <PlantRecommendations month={month} selectedCategory={selectedCategory} />
         </Route>
         <Route path="/plant/trend">
-          <PlantTrend month={month} />
+          <PlantTrend month={month} selectedCategory={selectedCategory} />
         </Route>
         <Route path="/plant/config">
           <PlantConfig month={month} />

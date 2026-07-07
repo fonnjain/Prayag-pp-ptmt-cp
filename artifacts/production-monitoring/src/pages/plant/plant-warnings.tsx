@@ -41,7 +41,7 @@ interface PlantThresholds {
   noProductionDays?: number;
 }
 
-export default function PlantWarnings({ month }: { month: string }) {
+export default function PlantWarnings({ month, selectedCategory }: { month: string; selectedCategory?: string | null }) {
   const { data, isLoading } = useGetPlantBundle(
     { month },
     { query: { queryKey: getGetPlantBundleQueryKey({ month }) } }
@@ -66,11 +66,32 @@ export default function PlantWarnings({ month }: { month: string }) {
 
   const { warnings } = bundle;
 
+  // When a category filter is active, keep: warnings scoped to that category,
+  // item-level warnings whose item belongs to that category, and plant-level warnings.
+  const catItemCodes = selectedCategory
+    ? new Set(bundle.items.filter((i) => i.category === selectedCategory).map((i) => i.itemCode))
+    : null;
+
+  const filteredWarnings = selectedCategory
+    ? warnings.filter((w) => {
+        if (w.scope === selectedCategory) return true;
+        if (catItemCodes && catItemCodes.has(w.scope)) return true;
+        // Keep plant-level warnings (scope is not a known category or item code)
+        if (!catItemCodes?.has(w.scope) && w.scope !== selectedCategory) {
+          // Treat it as plant-level if scope isn't an item in any category
+          const isItemCode = bundle.items.some((i) => i.itemCode === w.scope);
+          const isCategoryScope = bundle.categories.some((c) => c.category === w.scope);
+          if (!isItemCode && !isCategoryScope) return true;
+        }
+        return false;
+      })
+    : warnings;
+
   const bySeverity = {
-    critical: warnings.filter((w) => w.severity === "critical"),
-    high: warnings.filter((w) => w.severity === "high"),
-    medium: warnings.filter((w) => w.severity === "medium"),
-    info: warnings.filter((w) => w.severity === "info"),
+    critical: filteredWarnings.filter((w) => w.severity === "critical"),
+    high: filteredWarnings.filter((w) => w.severity === "high"),
+    medium: filteredWarnings.filter((w) => w.severity === "medium"),
+    info: filteredWarnings.filter((w) => w.severity === "info"),
   };
 
   function handleThresholdChange(key: string, value: string) {
@@ -101,7 +122,8 @@ export default function PlantWarnings({ month }: { month: string }) {
           <div>
             <h1 className="text-3xl font-bold tracking-tight mb-1">Plant Warnings</h1>
             <p className="text-muted-foreground text-sm">
-              {warnings.length} warning{warnings.length !== 1 ? "s" : ""} for {month}
+              {filteredWarnings.length} warning{filteredWarnings.length !== 1 ? "s" : ""} for {month}
+              {selectedCategory && <span className="ml-1 text-xs text-muted-foreground">· filtered: {selectedCategory} ({warnings.length} total)</span>}
               {bySeverity.critical.length > 0 && <span className="ml-2 text-red-500 font-medium">{bySeverity.critical.length} critical</span>}
               {bySeverity.high.length > 0 && <span className="ml-2 text-amber-500 font-medium">{bySeverity.high.length} high</span>}
             </p>
@@ -163,7 +185,7 @@ export default function PlantWarnings({ month }: { month: string }) {
         </Card>
       )}
 
-      {warnings.length === 0 && (
+      {filteredWarnings.length === 0 && warnings.length === 0 && (
         <Card className="border-emerald-500/30 bg-emerald-500/5">
           <CardContent className="pt-6 flex items-center gap-3 text-emerald-600">
             <CheckCircle2 className="h-5 w-5" />

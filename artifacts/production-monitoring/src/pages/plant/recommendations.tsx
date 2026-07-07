@@ -20,7 +20,7 @@ const CODE_ICONS: Record<string, string> = {
   INFEASIBLE_RECOVERY: "🚨",
 };
 
-export default function PlantRecommendations({ month }: { month: string }) {
+export default function PlantRecommendations({ month, selectedCategory }: { month: string; selectedCategory?: string | null }) {
   const { data, isLoading } = useGetPlantBundle(
     { month },
     { query: { queryKey: getGetPlantBundleQueryKey({ month }) } }
@@ -31,6 +31,12 @@ export default function PlantRecommendations({ month }: { month: string }) {
   const bundle = data as unknown as PlantBundle;
   const { recommendations } = bundle;
 
+  // Filter by category: keep plant-level (scope = "plant" or not a known category) + matching category
+  const allCategoryNames = new Set(bundle.categories.map((c) => c.category));
+  const filteredRecs = selectedCategory
+    ? recommendations.filter((r) => r.scope === selectedCategory || !allCategoryNames.has(r.scope))
+    : recommendations;
+
   return (
     <div className="space-y-6 max-w-[1200px] mx-auto pb-10">
       <header className="mb-6 flex items-start justify-between">
@@ -39,7 +45,8 @@ export default function PlantRecommendations({ month }: { month: string }) {
             <CheckSquare className="h-7 w-7 text-primary" /> Recommended Actions
           </h1>
           <p className="text-muted-foreground text-sm">
-            Prioritised recovery actions for {month} — {recommendations.length} recommendation{recommendations.length !== 1 ? "s" : ""}
+            Prioritised recovery actions for {month} — {filteredRecs.length} recommendation{filteredRecs.length !== 1 ? "s" : ""}
+            {selectedCategory && <span className="ml-1 text-xs text-muted-foreground">· filtered: {selectedCategory} ({recommendations.length} total)</span>}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => exportXlsx(`recommendations-${month}`, [
@@ -49,14 +56,18 @@ export default function PlantRecommendations({ month }: { month: string }) {
         </Button>
       </header>
 
-      {recommendations.length === 0 && (
+      {filteredRecs.length === 0 && (
         <Card className="border-emerald-500/30 bg-emerald-500/5">
-          <CardContent className="pt-6 text-emerald-600 text-sm">No corrective actions needed — plant is on track.</CardContent>
+          <CardContent className="pt-6 text-emerald-600 text-sm">
+            {recommendations.length === 0
+              ? "No corrective actions needed — plant is on track."
+              : `No recommendations for ${selectedCategory} — all other categories may have actions.`}
+          </CardContent>
         </Card>
       )}
 
       <div className="space-y-4">
-        {recommendations.map((rec) => {
+        {filteredRecs.map((rec) => {
           const effort = EFFORT_CONFIG[rec.effort] ?? EFFORT_CONFIG.med;
           const icon = CODE_ICONS[rec.code] ?? "•";
           return (
@@ -85,7 +96,7 @@ export default function PlantRecommendations({ month }: { month: string }) {
         })}
       </div>
 
-      {recommendations.length > 0 && (
+      {filteredRecs.length > 0 && (
         <Card>
           <CardHeader><CardTitle className="text-sm">Summary Matrix</CardTitle></CardHeader>
           <CardContent>
@@ -100,7 +111,7 @@ export default function PlantRecommendations({ month }: { month: string }) {
                 </tr>
               </thead>
               <tbody>
-                {recommendations.map((rec) => {
+                {filteredRecs.map((rec) => {
                   const effort = EFFORT_CONFIG[rec.effort] ?? EFFORT_CONFIG.med;
                   return (
                     <tr key={`row-${rec.priority}-${rec.code}`} className="border-b border-border/20 hover:bg-muted/20">

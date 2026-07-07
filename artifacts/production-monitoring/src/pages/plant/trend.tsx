@@ -25,7 +25,7 @@ function fmt(n: number | null | undefined, d = 0) { return n !== null && n !== u
 function pct(n: number | null | undefined) { return n !== null && n !== undefined ? `${n.toFixed(1)}%` : "–"; }
 const RAG = { green: "#10b981", amber: "#f59e0b", red: "#ef4444", null: "#94a3b8" };
 
-export default function PlantTrend({ month }: { month: string }) {
+export default function PlantTrend({ month, selectedCategory }: { month: string; selectedCategory?: string | null }) {
   const { data, isLoading } = useGetPlantTrend(
     undefined,
     { query: { queryKey: getGetPlantTrendQueryKey() } }
@@ -65,6 +65,7 @@ export default function PlantTrend({ month }: { month: string }) {
           </h1>
           <p className="text-muted-foreground text-sm">
             Historical plant attainment, daily rate, and linearity · {summaries.length} month{summaries.length !== 1 ? "s" : ""} of data
+            {selectedCategory && <span className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-amber-600 bg-amber-500/10 border border-amber-500/20 rounded px-1.5 py-0.5">⚠ Trend is plant-level — category filter ({selectedCategory}) not applicable here</span>}
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => exportXlsx(`trend`, [
