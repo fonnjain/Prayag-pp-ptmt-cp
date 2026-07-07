@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { exec } from "node:child_process";
 import { existsSync } from "node:fs";
 import { logger } from "./logger";
 
@@ -9,14 +9,19 @@ export async function ensureBrowser(): Promise<void> {
     logger.info("Puppeteer Chrome already installed");
     return;
   }
-  logger.info("Puppeteer Chrome not found — installing (this may take a minute)…");
-  try {
-    execSync("npx puppeteer browsers install chrome", {
-      stdio: "inherit",
-      timeout: 120_000,
-    });
-    logger.info("Puppeteer Chrome installed successfully");
-  } catch (err) {
-    logger.warn({ err }, "Puppeteer Chrome install failed — PDF generation will be unavailable");
-  }
+  logger.info("Puppeteer Chrome not found — installing in background (this may take a minute)…");
+  await new Promise<void>((resolve) => {
+    exec(
+      "npx puppeteer browsers install chrome",
+      { timeout: 120_000 },
+      (err, _stdout, stderr) => {
+        if (err) {
+          logger.warn({ err, stderr }, "Puppeteer Chrome install failed — PDF generation will be unavailable");
+        } else {
+          logger.info("Puppeteer Chrome installed successfully");
+        }
+        resolve();
+      }
+    );
+  });
 }
