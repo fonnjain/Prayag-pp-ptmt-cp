@@ -20,6 +20,7 @@ import {
   buildPlantUserMessage,
   PLANT_SYSTEM_PROMPT,
   exportPlantAnalysisPdf,
+  exportPlantTrendPdf,
   type PlantAnalysisPacket,
   type PlantAnalysisResult,
 } from "../lib/plant-ai-analytics";
@@ -518,6 +519,51 @@ router.get("/ai/plant-analyses/:id", async (req, res): Promise<void> => {
     result: analysis.resultJson,
     messages: messages.map((m) => ({ id: m.id, role: m.role, content: m.content, createdAt: m.createdAt.toISOString() })),
   });
+});
+
+router.get("/ai/plant-trend/export/pdf", async (req, res): Promise<void> => {
+  try {
+    const rows = await db
+      .select({
+        id: aiPlantAnalysesTable.id,
+        month: aiPlantAnalysesTable.month,
+        createdAt: aiPlantAnalysesTable.createdAt,
+        resultJson: aiPlantAnalysesTable.resultJson,
+      })
+      .from(aiPlantAnalysesTable)
+      .where(sql`${aiPlantAnalysesTable.resultJson} is not null`)
+      .orderBy(desc(aiPlantAnalysesTable.month), desc(aiPlantAnalysesTable.createdAt));
+
+    const seen = new Set<string>();
+    const deduped = rows.filter((r) => {
+      if (seen.has(r.month)) return false;
+      seen.add(r.month);
+      return true;
+    });
+
+    const exportRows = deduped.map((r) => {
+      const result = r.resultJson as PlantAnalysisResult | null;
+      const topRec = result?.recommendations
+        ? [...result.recommendations].sort((a, b) => a.priority - b.priority)[0]?.scope ?? null
+        : null;
+      return {
+        month: r.month,
+        maxRag: result?.pp_verdict?.max_pp?.rag ?? null,
+        minRag: result?.pp_verdict?.min_pp?.rag ?? null,
+        riskCount: result?.risks?.length ?? 0,
+        topRecScope: topRec,
+        createdAt: r.createdAt,
+      };
+    });
+
+    const buffer = await exportPlantTrendPdf(exportRows);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="PTMT_Plant_AI_Trend.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    logger.error({ err }, "ai-analytics-plant: trend pdf export failed");
+    res.status(500).json({ error: "Failed to generate trend PDF" });
+  }
 });
 
 router.get("/ai/plant-analyses/:id/export/pdf", async (req, res): Promise<void> => {

@@ -625,6 +625,22 @@ function RiskDeltaBadge({ prevCount, currCount }: { prevCount: number | null; cu
   );
 }
 
+function downloadCsv(filename: string, headers: string[], csvRows: (string | number)[][]) {
+  const lines = [headers, ...csvRows].map((row) =>
+    row.map((v) => {
+      const s = String(v);
+      return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(",")
+  );
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${filename}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function PlantTrendTable({
   rows,
   loading,
@@ -636,6 +652,28 @@ function PlantTrendTable({
   error: string | null;
   onSelectAnalysis: (id: number) => void;
 }) {
+  function handleExportCsv() {
+    const headers = ["Month", "RAG Max PP", "RAG Min PP", "Risk count", "Top rec scope", "Date generated"];
+    const csvRows = rows.map((row) => {
+      const result = row.resultJson;
+      const maxRag = result?.pp_verdict?.max_pp?.rag ?? "";
+      const minRag = result?.pp_verdict?.min_pp?.rag ?? "";
+      const riskCount = result?.risks?.length ?? 0;
+      const topRec = result?.recommendations
+        ? ([...result.recommendations].sort((a, b) => a.priority - b.priority)[0]?.scope ?? "")
+        : "";
+      return [
+        row.month,
+        maxRag.toUpperCase(),
+        minRag.toUpperCase(),
+        riskCount,
+        topRec,
+        new Date(row.createdAt).toLocaleDateString(),
+      ];
+    });
+    downloadCsv("ptmt-plant-trend", headers, csvRows);
+  }
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-muted-foreground text-sm py-8 justify-center">
@@ -659,6 +697,17 @@ function PlantTrendTable({
   const sortedRows = [...rows].sort((a, b) => a.month.localeCompare(b.month));
 
   return (
+    <div className="space-y-3">
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={handleExportCsv} data-testid="trend-export-csv">
+          <Download className="h-4 w-4 mr-1.5" />
+          Export CSV
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => window.open("/api/ai/plant-trend/export/pdf", "_blank")} data-testid="trend-export-pdf">
+          <Download className="h-4 w-4 mr-1.5" />
+          Export PDF
+        </Button>
+      </div>
     <div className="overflow-x-auto rounded-md border border-border/50" data-testid="plant-trend-table">
       <table className="w-full text-sm">
         <thead>
@@ -743,6 +792,7 @@ function PlantTrendTable({
           })}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }

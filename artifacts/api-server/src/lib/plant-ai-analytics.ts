@@ -355,4 +355,82 @@ export async function exportPlantAnalysisPdf(params: {
   }
 }
 
+export interface PlantTrendExportRow {
+  month: string;
+  maxRag: string | null;
+  minRag: string | null;
+  riskCount: number;
+  topRecScope: string | null;
+  createdAt: Date;
+}
+
+export async function exportPlantTrendPdf(rows: PlantTrendExportRow[]): Promise<Buffer> {
+  const generated = new Date().toLocaleString("en-GB", { timeZone: "Asia/Kolkata" });
+  const ragCellStyle = (rag: string | null | undefined): string => {
+    if (rag === "green") return "background:#d9ead3;color:#274e13;";
+    if (rag === "amber") return "background:#fce5cd;color:#7f4f24;";
+    if (rag === "red") return "background:#f4cccc;color:#660000;";
+    return "color:#666;";
+  };
+
+  const tableRows = rows
+    .map(
+      (r) => `
+      <tr>
+        <td>${esc(r.month)}</td>
+        <td style="${ragCellStyle(r.maxRag)}">${r.maxRag ? esc(r.maxRag.toUpperCase()) : "—"}</td>
+        <td style="${ragCellStyle(r.minRag)}">${r.minRag ? esc(r.minRag.toUpperCase()) : "—"}</td>
+        <td>${r.riskCount > 0 ? r.riskCount : "—"}</td>
+        <td>${r.topRecScope ? esc(r.topRecScope) : "—"}</td>
+        <td>${r.createdAt.toLocaleDateString("en-GB")}</td>
+      </tr>`,
+    )
+    .join("");
+
+  const html = `<!doctype html>
+<html><head><meta charset="utf-8"><style>
+  body { font-family: Arial, sans-serif; padding: 24px; color: #1a1a1a; }
+  h1 { font-size: 18px; margin-bottom: 4px; }
+  .meta { color: #666; font-size: 11px; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; background: #f0f0f0; padding: 8px 10px; border-bottom: 2px solid #ccc; font-size: 11px; }
+  td { padding: 7px 10px; border-bottom: 1px solid #e0e0e0; }
+  tr:nth-child(even) td { background: #f9f9f9; }
+</style></head>
+<body>
+  <h1>PTMT Plant AI — Cross-month trend</h1>
+  <div class="meta">Exported: ${esc(generated)} IST · ${rows.length} month${rows.length !== 1 ? "s" : ""}</div>
+  ${
+    rows.length === 0
+      ? "<p>No trend data available.</p>"
+      : `<table>
+    <thead><tr>
+      <th>Month</th>
+      <th>RAG – Max PP</th>
+      <th>RAG – Min PP</th>
+      <th>Risk count</th>
+      <th>Top rec scope</th>
+      <th>Date generated</th>
+    </tr></thead>
+    <tbody>${tableRows}</tbody>
+  </table>`
+  }
+</body></html>`;
+
+  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: "networkidle0" });
+    const pdfUint8 = await page.pdf({
+      format: "A4",
+      landscape: true,
+      printBackground: true,
+      margin: { top: "12mm", bottom: "12mm", left: "10mm", right: "10mm" },
+    });
+    return Buffer.from(pdfUint8);
+  } finally {
+    await browser.close();
+  }
+}
+
 export { getAnthropicClient, modelForDepth };
