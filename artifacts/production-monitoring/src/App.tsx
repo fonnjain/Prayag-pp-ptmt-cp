@@ -15,6 +15,14 @@ import Backlog from "@/pages/backlog";
 import Settings from "@/pages/settings";
 import AiAnalytics from "@/pages/ai-analytics";
 
+import PlantDashboard from "@/pages/plant/dashboard";
+import PlantVelocity from "@/pages/plant/velocity";
+import PlantCategories from "@/pages/plant/categories";
+import PlantPareto from "@/pages/plant/pareto";
+import PlantWarnings from "@/pages/plant/plant-warnings";
+import PlantActions from "@/pages/plant/plant-actions";
+import PlantConfig from "@/pages/plant/plant-config";
+
 const queryClient = new QueryClient();
 
 function Router({ month, setMonth }: { month: string, setMonth: (m: string) => void }) {
@@ -44,6 +52,27 @@ function Router({ month, setMonth }: { month: string, setMonth: (m: string) => v
         </Route>
         <Route path="/ai-analytics">
           <AiAnalytics month={month} />
+        </Route>
+        <Route path="/plant">
+          <PlantDashboard month={month} />
+        </Route>
+        <Route path="/plant/velocity">
+          <PlantVelocity month={month} />
+        </Route>
+        <Route path="/plant/categories">
+          <PlantCategories month={month} />
+        </Route>
+        <Route path="/plant/pareto">
+          <PlantPareto month={month} />
+        </Route>
+        <Route path="/plant/warnings">
+          <PlantWarnings month={month} />
+        </Route>
+        <Route path="/plant/actions">
+          <PlantActions month={month} />
+        </Route>
+        <Route path="/plant/config">
+          <PlantConfig month={month} />
         </Route>
         <Route component={NotFound} />
       </Switch>

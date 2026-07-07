@@ -535,6 +535,95 @@ paths:
                 type: string
                 format: binary
 
+  /plant/bundle:
+    get:
+      operationId: getPlantBundle
+      tags: [plant]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Full plant-level production bundle for the month
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantBundle"
+
+  /plant/config:
+    get:
+      operationId: getPlantConfig
+      tags: [plant]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Plant configuration for the month
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantConfigData"
+    put:
+      operationId: updatePlantConfig
+      tags: [plant]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlantConfigUpdate"
+      responses:
+        "200":
+          description: Config saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+
+  /plant/source-config:
+    put:
+      operationId: upsertPlantSourceConfig
+      tags: [plant]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlantSourceConfigUpsert"
+      responses:
+        "200":
+          description: Source config saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+
+  /plant/cache/invalidate:
+    post:
+      operationId: invalidatePlantCache
+      tags: [plant]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [month]
+              properties:
+                month: { type: string }
+      responses:
+        "200":
+          description: Cache cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
+
 components:
   schemas:
     HealthStatus:
@@ -1034,3 +1123,227 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/AiAnalysisMessage"
+
+    PlantRagBand:
+      type: ["string", "null"]
+      enum: [green, amber, red, null]
+
+    PlantKPIs:
+      type: object
+      required:
+        - targetMax
+        - targetMin
+        - producedToDate
+        - requiredPerDay
+        - requiredCum
+        - attainmentCumPct
+        - attainmentMonthPct
+        - actualPerDay
+        - bestDayOutput
+        - projectedMonthEnd
+        - projectedAttainmentPct
+        - projectedMinAttainmentPct
+        - daysAheadBehind
+        - catchUpPerDay
+        - catchUpVsPlanPct
+        - linearityIndex
+        - ragBand
+      properties:
+        targetMax: { type: number }
+        targetMin: { type: number }
+        producedToDate: { type: number }
+        requiredPerDay: { type: number }
+        requiredCum: { type: number }
+        attainmentCumPct: { type: ["number", "null"] }
+        attainmentMonthPct: { type: ["number", "null"] }
+        actualPerDay: { type: ["number", "null"] }
+        bestDayOutput: { type: number }
+        projectedMonthEnd: { type: ["number", "null"] }
+        projectedAttainmentPct: { type: ["number", "null"] }
+        projectedMinAttainmentPct: { type: ["number", "null"] }
+        daysAheadBehind: { type: ["number", "null"] }
+        catchUpPerDay: { type: ["number", "null"] }
+        catchUpVsPlanPct: { type: ["number", "null"] }
+        linearityIndex: { type: ["number", "null"] }
+        ragBand:
+          $ref: "#/components/schemas/PlantRagBand"
+
+    PlantCategoryKPIs:
+      allOf:
+        - $ref: "#/components/schemas/PlantKPIs"
+        - type: object
+          required: [category, gapPcs]
+          properties:
+            category: { type: string }
+            gapPcs: { type: number }
+
+    PlantItemKPIs:
+      type: object
+      required: [itemCode, colour, category, targetMax, producedToDate, gapPcs, attainmentMonthPct, daysWithNoProduction]
+      properties:
+        itemCode: { type: string }
+        colour: { type: string }
+        category: { type: string }
+        targetMax: { type: number }
+        producedToDate: { type: number }
+        gapPcs: { type: number }
+        attainmentMonthPct: { type: ["number", "null"] }
+        daysWithNoProduction: { type: integer }
+
+    PlantDayRecord:
+      type: object
+      required: [date, workingDayNum, actualPcs, requiredPerDay, cumulativeActual, cumulativeRequired]
+      properties:
+        date: { type: string }
+        workingDayNum: { type: integer }
+        actualPcs: { type: number }
+        requiredPerDay: { type: number }
+        cumulativeActual: { type: number }
+        cumulativeRequired: { type: number }
+
+    PlantMixFlag:
+      type: object
+      required: [itemCode, colour, category, targetMax, producedToDate, reason]
+      properties:
+        itemCode: { type: string }
+        colour: { type: string }
+        category: { type: string }
+        targetMax: { type: number }
+        producedToDate: { type: number }
+        reason: { type: string }
+
+    PlantWarning:
+      type: object
+      required: [code, severity, scope, message, value, threshold, source]
+      properties:
+        code: { type: string }
+        severity: { type: string, enum: [info, medium, high, critical] }
+        scope: { type: string }
+        message: { type: string }
+        value: { type: ["number", "null"] }
+        threshold: { type: ["number", "null"] }
+        source: { type: string }
+
+    PlantRecommendation:
+      type: object
+      required: [priority, code, scope, action, rationale, quantifiedImpact, effort]
+      properties:
+        priority: { type: integer }
+        code: { type: string }
+        scope: { type: string }
+        action: { type: string }
+        rationale: { type: string }
+        quantifiedImpact: { type: string }
+        effort: { type: string, enum: [low, med, high] }
+
+    PlantContext:
+      type: object
+      required: [month, snapshotDate, workingDays, elapsed, remaining, shiftsPerDay, shiftHours]
+      properties:
+        month: { type: string }
+        snapshotDate: { type: ["string", "null"] }
+        workingDays: { type: integer }
+        elapsed: { type: integer }
+        remaining: { type: integer }
+        shiftsPerDay: { type: integer }
+        shiftHours: { type: integer }
+
+    PlantBundle:
+      type: object
+      required:
+        - month
+        - context
+        - plant
+        - categories
+        - items
+        - dailySeries
+        - variancePareto
+        - mixFlags
+        - warnings
+        - recommendations
+        - needsReview
+        - caveats
+        - dataAvailable
+      properties:
+        month: { type: string }
+        context:
+          $ref: "#/components/schemas/PlantContext"
+        plant:
+          $ref: "#/components/schemas/PlantKPIs"
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantCategoryKPIs"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantItemKPIs"
+        dailySeries:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantDayRecord"
+        variancePareto:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantItemKPIs"
+        mixFlags:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantMixFlag"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantWarning"
+        recommendations:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantRecommendation"
+        needsReview:
+          type: array
+          items:
+            $ref: "#/components/schemas/NeedsReviewItem"
+        caveats:
+          type: array
+          items: { type: string }
+        dataAvailable: { type: boolean }
+
+    PlantSourceConfigItem:
+      type: object
+      required: [month, fileId]
+      properties:
+        month: { type: string }
+        fileId: { type: string }
+        notes: { type: ["string", "null"] }
+        createdAt: { type: string }
+
+    PlantConfigData:
+      type: object
+      required: [month, workingDays, shiftsPerDay, shiftHours, snapshotDate, sourceConfigs]
+      properties:
+        month: { type: string }
+        workingDays: { type: integer }
+        shiftsPerDay: { type: integer }
+        shiftHours: { type: integer }
+        snapshotDate: { type: ["string", "null"] }
+        sourceConfigs:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantSourceConfigItem"
+
+    PlantConfigUpdate:
+      type: object
+      required: [month]
+      properties:
+        month: { type: string }
+        workingDays: { type: integer }
+        shiftsPerDay: { type: integer }
+        shiftHours: { type: integer }
+        snapshotDate: { type: ["string", "null"] }
+
+    PlantSourceConfigUpsert:
+      type: object
+      required: [month, fileId]
+      properties:
+        month: { type: string }
+        fileId: { type: string }
+        notes: { type: string }

@@ -471,3 +471,175 @@ export const getAiAnalysisResponse = zod.object({
 export const exportAiAnalysisPdfParams = zod.object({
   "id": zod.number()
 })
+
+
+export const getPlantBundleQueryParams = zod.object({
+  "month": zod.string()
+})
+
+export const getPlantBundleResponse = zod.object({
+  "month": zod.string(),
+  "context": zod.object({
+  "month": zod.string(),
+  "snapshotDate": zod.string().nullable(),
+  "workingDays": zod.number(),
+  "elapsed": zod.number(),
+  "remaining": zod.number(),
+  "shiftsPerDay": zod.number(),
+  "shiftHours": zod.number()
+}),
+  "plant": zod.object({
+  "targetMax": zod.number(),
+  "targetMin": zod.number(),
+  "producedToDate": zod.number(),
+  "requiredPerDay": zod.number(),
+  "requiredCum": zod.number(),
+  "attainmentCumPct": zod.number().nullable(),
+  "attainmentMonthPct": zod.number().nullable(),
+  "actualPerDay": zod.number().nullable(),
+  "bestDayOutput": zod.number(),
+  "projectedMonthEnd": zod.number().nullable(),
+  "projectedAttainmentPct": zod.number().nullable(),
+  "projectedMinAttainmentPct": zod.number().nullable(),
+  "daysAheadBehind": zod.number().nullable(),
+  "catchUpPerDay": zod.number().nullable(),
+  "catchUpVsPlanPct": zod.number().nullable(),
+  "linearityIndex": zod.number().nullable(),
+  "ragBand": zod.union([zod.literal('green'),zod.literal('amber'),zod.literal('red'),zod.literal(null)]).nullable()
+}),
+  "categories": zod.array(zod.object({
+  "targetMax": zod.number(),
+  "targetMin": zod.number(),
+  "producedToDate": zod.number(),
+  "requiredPerDay": zod.number(),
+  "requiredCum": zod.number(),
+  "attainmentCumPct": zod.number().nullable(),
+  "attainmentMonthPct": zod.number().nullable(),
+  "actualPerDay": zod.number().nullable(),
+  "bestDayOutput": zod.number(),
+  "projectedMonthEnd": zod.number().nullable(),
+  "projectedAttainmentPct": zod.number().nullable(),
+  "projectedMinAttainmentPct": zod.number().nullable(),
+  "daysAheadBehind": zod.number().nullable(),
+  "catchUpPerDay": zod.number().nullable(),
+  "catchUpVsPlanPct": zod.number().nullable(),
+  "linearityIndex": zod.number().nullable(),
+  "ragBand": zod.union([zod.literal('green'),zod.literal('amber'),zod.literal('red'),zod.literal(null)]).nullable()
+}).and(zod.object({
+  "category": zod.string(),
+  "gapPcs": zod.number()
+}))),
+  "items": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "category": zod.string(),
+  "targetMax": zod.number(),
+  "producedToDate": zod.number(),
+  "gapPcs": zod.number(),
+  "attainmentMonthPct": zod.number().nullable(),
+  "daysWithNoProduction": zod.number()
+})),
+  "dailySeries": zod.array(zod.object({
+  "date": zod.string(),
+  "workingDayNum": zod.number(),
+  "actualPcs": zod.number(),
+  "requiredPerDay": zod.number(),
+  "cumulativeActual": zod.number(),
+  "cumulativeRequired": zod.number()
+})),
+  "variancePareto": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "category": zod.string(),
+  "targetMax": zod.number(),
+  "producedToDate": zod.number(),
+  "gapPcs": zod.number(),
+  "attainmentMonthPct": zod.number().nullable(),
+  "daysWithNoProduction": zod.number()
+})),
+  "mixFlags": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "category": zod.string(),
+  "targetMax": zod.number(),
+  "producedToDate": zod.number(),
+  "reason": zod.string()
+})),
+  "warnings": zod.array(zod.object({
+  "code": zod.string(),
+  "severity": zod.enum(['info', 'medium', 'high', 'critical']),
+  "scope": zod.string(),
+  "message": zod.string(),
+  "value": zod.number().nullable(),
+  "threshold": zod.number().nullable(),
+  "source": zod.string()
+})),
+  "recommendations": zod.array(zod.object({
+  "priority": zod.number(),
+  "code": zod.string(),
+  "scope": zod.string(),
+  "action": zod.string(),
+  "rationale": zod.string(),
+  "quantifiedImpact": zod.string(),
+  "effort": zod.enum(['low', 'med', 'high'])
+})),
+  "needsReview": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "category": zod.string()
+})),
+  "caveats": zod.array(zod.string()),
+  "dataAvailable": zod.boolean()
+})
+
+
+export const getPlantConfigQueryParams = zod.object({
+  "month": zod.string()
+})
+
+export const getPlantConfigResponse = zod.object({
+  "month": zod.string(),
+  "workingDays": zod.number(),
+  "shiftsPerDay": zod.number(),
+  "shiftHours": zod.number(),
+  "snapshotDate": zod.string().nullable(),
+  "sourceConfigs": zod.array(zod.object({
+  "month": zod.string(),
+  "fileId": zod.string(),
+  "notes": zod.string().nullish(),
+  "createdAt": zod.string().optional()
+}))
+})
+
+
+export const updatePlantConfigBody = zod.object({
+  "month": zod.string(),
+  "workingDays": zod.number().optional(),
+  "shiftsPerDay": zod.number().optional(),
+  "shiftHours": zod.number().optional(),
+  "snapshotDate": zod.string().nullish()
+})
+
+export const updatePlantConfigResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+export const upsertPlantSourceConfigBody = zod.object({
+  "month": zod.string(),
+  "fileId": zod.string(),
+  "notes": zod.string().optional()
+})
+
+export const upsertPlantSourceConfigResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+export const invalidatePlantCacheBody = zod.object({
+  "month": zod.string()
+})
+
+export const invalidatePlantCacheResponse = zod.object({
+  "ok": zod.boolean()
+})

@@ -7,7 +7,14 @@ import {
   ActivitySquare,
   PackageMinus,
   Settings,
-  Sparkles
+  Sparkles,
+  Factory,
+  TrendingUp,
+  Layers,
+  BarChart2,
+  ShieldAlert,
+  ListChecks,
+  SlidersHorizontal
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -24,6 +31,16 @@ export function AppLayout({ children, month, setMonth }: { children: React.React
     { href: "/backlog", label: "Backlog", icon: PackageMinus },
     { href: "/ai-analytics", label: "AI Analytics", icon: Sparkles },
     { href: "/settings", label: "Settings", icon: Settings },
+  ];
+
+  const plantNavItems = [
+    { href: "/plant", label: "Plant Dashboard", icon: Factory },
+    { href: "/plant/velocity", label: "Velocity (NOS)", icon: TrendingUp },
+    { href: "/plant/categories", label: "Categories", icon: Layers },
+    { href: "/plant/pareto", label: "Pareto", icon: BarChart2 },
+    { href: "/plant/warnings", label: "Warnings", icon: ShieldAlert },
+    { href: "/plant/actions", label: "Actions", icon: ListChecks },
+    { href: "/plant/config", label: "Config", icon: SlidersHorizontal },
   ];
 
   return (
@@ -53,6 +70,28 @@ export function AppLayout({ children, month, setMonth }: { children: React.React
               );
             })}
           </nav>
+          <div className="mt-4 px-3">
+            <div className="flex items-center gap-2 px-3 py-1.5 mb-1">
+              <Factory className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Plant Level</span>
+            </div>
+            <nav className="space-y-1">
+              {plantNavItems.map((item) => {
+                const active = location === item.href;
+                return (
+                  <Link key={item.href} href={item.href} className={cn(
+                    "flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors",
+                    active 
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground border-l-2 border-sidebar-primary" 
+                      : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground border-l-2 border-transparent"
+                  )}>
+                    <item.icon className="h-4 w-4" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
         </div>
       </div>
 

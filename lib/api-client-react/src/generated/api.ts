@@ -37,9 +37,12 @@ import type {
   GetMonitoringVelocityParams,
   GetMonitoringWarningsParams,
   GetPlanSummaryParams,
+  GetPlantBundleParams,
+  GetPlantConfigParams,
   HealthStatus,
   IdealHoursOverride,
   IdealHoursOverrideUpsert,
+  InvalidatePlantCacheBody,
   ItemWeight,
   ItemWeightUpsert,
   ListAiAnalysesParams,
@@ -56,6 +59,10 @@ import type {
   OkResult,
   PlanItem,
   PlanSummary,
+  PlantBundle,
+  PlantConfigData,
+  PlantConfigUpdate,
+  PlantSourceConfigUpsert,
   SyncSource,
   UploadKind,
   UploadedFile,
@@ -2722,3 +2729,421 @@ export function useExportAiAnalysisPdf<TData = Awaited<ReturnType<typeof exportA
 
   return query;
 }
+
+
+
+
+
+export type getPlantBundleResponse200 = {
+  data: PlantBundle
+  status: 200
+}
+    
+export type getPlantBundleResponseSuccess = (getPlantBundleResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPlantBundleResponse = (getPlantBundleResponseSuccess)
+
+export const getGetPlantBundleUrl = (params: GetPlantBundleParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/plant/bundle?${stringifiedParams}` : `/api/plant/bundle`
+}
+
+export const getPlantBundle = async (params: GetPlantBundleParams, options?: RequestInit): Promise<getPlantBundleResponse> => {
+  
+  return customFetch<getPlantBundleResponse>(getGetPlantBundleUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetPlantBundleQueryKey = (params?: GetPlantBundleParams,) => {
+    return [
+    `/api/plant/bundle`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetPlantBundleQueryOptions = <TData = Awaited<ReturnType<typeof getPlantBundle>>, TError = unknown>(params: GetPlantBundleParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantBundle>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlantBundleQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlantBundle>>> = ({ signal }) => getPlantBundle(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlantBundle>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlantBundleQueryResult = NonNullable<Awaited<ReturnType<typeof getPlantBundle>>>
+export type GetPlantBundleQueryError = unknown
+
+
+
+export function useGetPlantBundle<TData = Awaited<ReturnType<typeof getPlantBundle>>, TError = unknown>(
+ params: GetPlantBundleParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantBundle>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlantBundleQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getPlantConfigResponse200 = {
+  data: PlantConfigData
+  status: 200
+}
+    
+export type getPlantConfigResponseSuccess = (getPlantConfigResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPlantConfigResponse = (getPlantConfigResponseSuccess)
+
+export const getGetPlantConfigUrl = (params: GetPlantConfigParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/plant/config?${stringifiedParams}` : `/api/plant/config`
+}
+
+export const getPlantConfig = async (params: GetPlantConfigParams, options?: RequestInit): Promise<getPlantConfigResponse> => {
+  
+  return customFetch<getPlantConfigResponse>(getGetPlantConfigUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetPlantConfigQueryKey = (params?: GetPlantConfigParams,) => {
+    return [
+    `/api/plant/config`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetPlantConfigQueryOptions = <TData = Awaited<ReturnType<typeof getPlantConfig>>, TError = unknown>(params: GetPlantConfigParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlantConfigQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlantConfig>>> = ({ signal }) => getPlantConfig(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlantConfig>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlantConfigQueryResult = NonNullable<Awaited<ReturnType<typeof getPlantConfig>>>
+export type GetPlantConfigQueryError = unknown
+
+
+
+export function useGetPlantConfig<TData = Awaited<ReturnType<typeof getPlantConfig>>, TError = unknown>(
+ params: GetPlantConfigParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlantConfigQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type updatePlantConfigResponse200 = {
+  data: OkResult
+  status: 200
+}
+    
+export type updatePlantConfigResponseSuccess = (updatePlantConfigResponse200) & {
+  headers: Headers;
+};
+;
+
+export type updatePlantConfigResponse = (updatePlantConfigResponseSuccess)
+
+export const getUpdatePlantConfigUrl = () => {
+
+
+  
+
+  return `/api/plant/config`
+}
+
+export const updatePlantConfig = async (plantConfigUpdate: PlantConfigUpdate, options?: RequestInit): Promise<updatePlantConfigResponse> => {
+  
+  return customFetch<updatePlantConfigResponse>(getUpdatePlantConfigUrl(),
+  {      
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      plantConfigUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdatePlantConfigMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePlantConfig>>, TError,{data: PlantConfigUpdate}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePlantConfig>>, TError,{data: PlantConfigUpdate}, TContext> => {
+
+const mutationKey = ['updatePlantConfig'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePlantConfig>>, {data: PlantConfigUpdate}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updatePlantConfig(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePlantConfigMutationResult = NonNullable<Awaited<ReturnType<typeof updatePlantConfig>>>
+    export type UpdatePlantConfigMutationBody = PlantConfigUpdate
+    export type UpdatePlantConfigMutationError = unknown
+
+    export const useUpdatePlantConfig = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePlantConfig>>, TError,{data: PlantConfigUpdate}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePlantConfig>>,
+        TError,
+        {data: PlantConfigUpdate},
+        TContext
+      > => {
+
+      const mutationOptions = getUpdatePlantConfigMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type upsertPlantSourceConfigResponse200 = {
+  data: OkResult
+  status: 200
+}
+    
+export type upsertPlantSourceConfigResponseSuccess = (upsertPlantSourceConfigResponse200) & {
+  headers: Headers;
+};
+;
+
+export type upsertPlantSourceConfigResponse = (upsertPlantSourceConfigResponseSuccess)
+
+export const getUpsertPlantSourceConfigUrl = () => {
+
+
+  
+
+  return `/api/plant/source-config`
+}
+
+export const upsertPlantSourceConfig = async (plantSourceConfigUpsert: PlantSourceConfigUpsert, options?: RequestInit): Promise<upsertPlantSourceConfigResponse> => {
+  
+  return customFetch<upsertPlantSourceConfigResponse>(getUpsertPlantSourceConfigUrl(),
+  {      
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      plantSourceConfigUpsert,)
+  }
+);}
+
+
+
+
+export const getUpsertPlantSourceConfigMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertPlantSourceConfig>>, TError,{data: PlantSourceConfigUpsert}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertPlantSourceConfig>>, TError,{data: PlantSourceConfigUpsert}, TContext> => {
+
+const mutationKey = ['upsertPlantSourceConfig'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertPlantSourceConfig>>, {data: PlantSourceConfigUpsert}> = (props) => {
+          const {data} = props ?? {};
+
+          return  upsertPlantSourceConfig(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertPlantSourceConfigMutationResult = NonNullable<Awaited<ReturnType<typeof upsertPlantSourceConfig>>>
+    export type UpsertPlantSourceConfigMutationBody = PlantSourceConfigUpsert
+    export type UpsertPlantSourceConfigMutationError = unknown
+
+    export const useUpsertPlantSourceConfig = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertPlantSourceConfig>>, TError,{data: PlantSourceConfigUpsert}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertPlantSourceConfig>>,
+        TError,
+        {data: PlantSourceConfigUpsert},
+        TContext
+      > => {
+
+      const mutationOptions = getUpsertPlantSourceConfigMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type invalidatePlantCacheResponse200 = {
+  data: OkResult
+  status: 200
+}
+    
+export type invalidatePlantCacheResponseSuccess = (invalidatePlantCacheResponse200) & {
+  headers: Headers;
+};
+;
+
+export type invalidatePlantCacheResponse = (invalidatePlantCacheResponseSuccess)
+
+export const getInvalidatePlantCacheUrl = () => {
+
+
+  
+
+  return `/api/plant/cache/invalidate`
+}
+
+export const invalidatePlantCache = async (invalidatePlantCacheBody: InvalidatePlantCacheBody, options?: RequestInit): Promise<invalidatePlantCacheResponse> => {
+  
+  return customFetch<invalidatePlantCacheResponse>(getInvalidatePlantCacheUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      invalidatePlantCacheBody,)
+  }
+);}
+
+
+
+
+export const getInvalidatePlantCacheMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof invalidatePlantCache>>, TError,{data: InvalidatePlantCacheBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof invalidatePlantCache>>, TError,{data: InvalidatePlantCacheBody}, TContext> => {
+
+const mutationKey = ['invalidatePlantCache'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof invalidatePlantCache>>, {data: InvalidatePlantCacheBody}> = (props) => {
+          const {data} = props ?? {};
+
+          return  invalidatePlantCache(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type InvalidatePlantCacheMutationResult = NonNullable<Awaited<ReturnType<typeof invalidatePlantCache>>>
+    export type InvalidatePlantCacheMutationBody = InvalidatePlantCacheBody
+    export type InvalidatePlantCacheMutationError = unknown
+
+    export const useInvalidatePlantCache = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof invalidatePlantCache>>, TError,{data: InvalidatePlantCacheBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof invalidatePlantCache>>,
+        TError,
+        {data: InvalidatePlantCacheBody},
+        TContext
+      > => {
+
+      const mutationOptions = getInvalidatePlantCacheMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
