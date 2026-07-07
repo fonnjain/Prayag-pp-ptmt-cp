@@ -34,14 +34,36 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
     return;
   }
 
+  let workbook: XLSX.WorkBook;
   let rows: Record<string, unknown>[];
   try {
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     rows = extractRows(workbook, raw);
   } catch (err) {
     req.log.warn({ err }, "Failed to parse uploaded workbook");
     res.status(400).json({ error: "Could not parse the uploaded Excel file" });
     return;
+  }
+
+  // When uploading the F.G. STOCK factory Excel as current_stock, also
+  // auto-extract the "LAST MONTH PENDING ITEMS" tab and save it so the user
+  // doesn't need a separate last_month_pending upload.
+  const sideInserts: Array<{ kind: string; filename: string; rowCount: number; rows: Record<string, unknown>[] }> = [];
+  if (raw === "current_stock") {
+    const lmSheetName = workbook.SheetNames.find((n) => /last.month.pending/i.test(n));
+    if (lmSheetName) {
+      try {
+        const lmRows = sheetToObjects(workbook.Sheets[lmSheetName]);
+        sideInserts.push({
+          kind: "last_month_pending",
+          filename: req.file.originalname,
+          rowCount: lmRows.length,
+          rows: lmRows,
+        });
+      } catch (err) {
+        req.log.warn({ err }, "Could not extract LAST MONTH PENDING ITEMS tab; skipping");
+      }
+    }
   }
 
   const [record] = await db
@@ -59,6 +81,13 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
       rowCount: uploadedFilesTable.rowCount,
       uploadedAt: uploadedFilesTable.uploadedAt,
     });
+
+  // Fire-and-forget the side inserts (last_month_pending extracted from the same file)
+  if (sideInserts.length > 0) {
+    db.insert(uploadedFilesTable).values(sideInserts).catch((err) => {
+      req.log.warn({ err }, "Failed to save auto-extracted last_month_pending rows");
+    });
+  }
 
   res.status(201).json(record);
 });
@@ -143,7 +172,34 @@ function extractRows(workbook: XLSX.WorkBook, kind: string): Record<string, unkn
   }
 
   if (kind === "current_stock") {
-    const sheetName = workbook.SheetNames.find((name) => /stock/i.test(name)) ?? workbook.SheetNames[0];
+    // F.G. STOCK factory Excel → "F.G Sheet" tab.
+    // Col A = Item Code, Col B = Colour, Col C = C/Stock.
+    // Normalize "C/Stock" → "Qty" so sumByKey in plan.ts works unchanged.
+    const fgSheetName =
+      workbook.SheetNames.find((n) => /f\.g\.?\s*sheet/i.test(n)) ??
+      workbook.SheetNames.find((n) => /f\.g/i.test(n)) ??
+      workbook.SheetNames.find((n) => /stock/i.test(n)) ??
+      workbook.SheetNames[0];
+    const fgSheet = workbook.Sheets[fgSheetName];
+    const rows = sheetToObjects(fgSheet);
+    return rows.map((row) => {
+      const normalized: Record<string, unknown> = { ...row };
+      // Rename "C/Stock" (and common variants) to "Qty" for downstream aggregation
+      const cstockKey = Object.keys(normalized).find((k) => /c[\s/\\]?stock/i.test(k));
+      if (cstockKey && cstockKey !== "Qty") {
+        normalized["Qty"] = normalized[cstockKey];
+        delete normalized[cstockKey];
+      }
+      return normalized;
+    });
+  }
+
+  if (kind === "last_month_pending") {
+    // Can come from a standalone file or is auto-extracted from the F.G. STOCK factory Excel.
+    const sheetName =
+      workbook.SheetNames.find((n) => /last.month.pending/i.test(n)) ??
+      workbook.SheetNames.find((n) => /pending/i.test(n)) ??
+      workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
     return sheetToObjects(sheet);
   }

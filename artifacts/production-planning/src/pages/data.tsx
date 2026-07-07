@@ -24,17 +24,12 @@ const UPLOAD_KINDS: { kind: (typeof UploadKind)[keyof typeof UploadKind]; label:
   {
     kind: UploadKind.pending_orders,
     label: "Current Pending Order",
-    hint: "Item Code · Colour · Qty (current open pending order, Cat-no keyed)",
-  },
-  {
-    kind: UploadKind.last_month_pending,
-    label: "Last Month Pending Order",
-    hint: "Item Code · Colour · Qty (previous month's pending snapshot)",
+    hint: "DATA.xlsx (raw ERP export) — PendingOrder sheet · filter Segment PTMT/PT · group by Item Code + Colour",
   },
   {
     kind: UploadKind.current_stock,
-    label: "Current Stock",
-    hint: "Item Code · Colour · Qty (finished-goods stock as on the 1st of the month)",
+    label: "F.G. STOCK Factory Excel",
+    hint: "F.G. STOCK <month>.xlsx — reads F.G Sheet for stock (col A Item Code, col B Colour, col C C/Stock) and auto-extracts Last Month Pending Items tab",
   },
 ];
 
