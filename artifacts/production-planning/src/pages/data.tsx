@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { cn, fmtDateTime } from "@/lib/utils";
 
 const UPLOAD_KINDS: { kind: (typeof UploadKind)[keyof typeof UploadKind]; label: string; hint: string }[] = [
   {
@@ -88,7 +88,7 @@ function UploadRow({ kind, label, hint }: (typeof UPLOAD_KINDS)[number]) {
         {latest ? (
           <p className="text-xs text-gray-600 mt-1">
             Latest: {latest.filename} — {latest.rowCount} rows —{" "}
-            {new Date(latest.uploadedAt).toLocaleString()}
+            {fmtDateTime(latest.uploadedAt)}
           </p>
         ) : (
           <p className="text-xs text-amber-600 mt-1">No file uploaded yet</p>
@@ -211,7 +211,7 @@ function GoogleSheetsStatus() {
             <div className="flex items-center gap-2">
               {src.lastSyncedAt && (
                 <span className="text-xs text-gray-500">
-                  {new Date(src.lastSyncedAt).toLocaleString()}
+                  {fmtDateTime(src.lastSyncedAt)}
                 </span>
               )}
               <Badge className={cn("capitalize", statusColor(src.status))}>{src.status}</Badge>

@@ -2,6 +2,7 @@ import { useGetMonitoringDashboard, getGetMonitoringDashboardQueryKey, type Moni
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Calendar as CalendarIcon, Activity } from "lucide-react";
+import { fmtDate } from "@/lib/utils";
 
 function RagBadge({ band }: { band: "green" | "amber" | "red" | null }) {
   if (!band) return <Badge variant="outline" className="text-muted-foreground border-muted">N/A</Badge>;
@@ -36,7 +37,7 @@ export default function Dashboard({ month }: { month: string }) {
         <h1 className="text-3xl font-bold tracking-tight mb-2">Plant Dashboard</h1>
         <p className="text-muted-foreground flex items-center gap-2">
           <CalendarIcon className="h-4 w-4" />
-          Data as of {data.lastDataDate ? new Date(data.lastDataDate).toLocaleDateString() : "No data"}
+          Data as of {data.lastDataDate ? fmtDate(data.lastDataDate) : "No data"}
         </p>
       </header>
 

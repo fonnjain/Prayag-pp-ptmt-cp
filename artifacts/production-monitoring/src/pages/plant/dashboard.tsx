@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Activity, Download } from "lucide-react";
+import { fmtDate } from "@/lib/utils";
 
 function downloadPdf(month: string, section: string) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -50,7 +51,7 @@ export default function PlantDashboard({ month }: { month: string }) {
             </h1>
             <p className="text-muted-foreground text-sm">
               NOS (pieces) against Production Plan — {month} · {context.elapsed}/{context.workingDays} working days elapsed
-              {context.snapshotDate ? ` · snapshot ${context.snapshotDate}` : ""}
+              {context.snapshotDate ? ` · snapshot ${fmtDate(context.snapshotDate)}` : ""}
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => downloadPdf(month, "control-board")}>

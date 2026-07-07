@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
 import { Download } from "lucide-react";
+import { fmtDate } from "@/lib/utils";
 
 function downloadPdf(month: string, section: string) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -76,7 +77,7 @@ export default function PlantVelocity({ month }: { month: string }) {
               <XAxis dataKey="day" tick={{ fontSize: 11 }} interval={3} />
               <YAxis yAxisId="cum" tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
               <YAxis yAxisId="daily" orientation="right" tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(1)}k`} />
-              <Tooltip formatter={(v: number) => v?.toLocaleString()} labelFormatter={(l, p) => `${l} (${p?.[0]?.payload?.date ?? ""})`} />
+              <Tooltip formatter={(v: number) => v?.toLocaleString()} labelFormatter={(l, p) => `${l} (${fmtDate(p?.[0]?.payload?.date) ?? ""})`} />
               <Legend />
               <Line yAxisId="cum" type="monotone" dataKey="cumRequired" name="Required Cumulative" stroke="#94a3b8" strokeDasharray="5 5" dot={false} strokeWidth={1.5} />
               <Line yAxisId="cum" type="monotone" dataKey="cumActual" name="Actual Cumulative" stroke="#3b82f6" dot={false} strokeWidth={2} connectNulls />
@@ -109,7 +110,7 @@ export default function PlantVelocity({ month }: { month: string }) {
                   return (
                     <tr key={d.date} className="border-b border-border/20 hover:bg-muted/20">
                       <td className="py-1.5 pr-4 font-mono">D{d.workingDayNum}</td>
-                      <td className="py-1.5 pr-4 text-muted-foreground">{d.date}</td>
+                      <td className="py-1.5 pr-4 text-muted-foreground">{fmtDate(d.date)}</td>
                       <td className="py-1.5 pr-4 text-right font-mono">{d.actualPcs.toLocaleString()}</td>
                       <td className="py-1.5 pr-4 text-right text-muted-foreground font-mono">{d.requiredPerDay.toLocaleString()}</td>
                       <td className="py-1.5 pr-4 text-right font-mono">{d.cumulativeActual.toLocaleString()}</td>
