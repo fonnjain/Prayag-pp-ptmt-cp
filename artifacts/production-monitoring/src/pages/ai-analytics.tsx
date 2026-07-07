@@ -796,6 +796,7 @@ function PlantLevelTab({ month }: { month: string }) {
 
   useEffect(() => {
     void loadHistory();
+    setTrendRows([]);
     loadTrend();
     setResult(null);
     setPartialResult(null);
