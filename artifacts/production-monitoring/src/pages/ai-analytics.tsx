@@ -75,6 +75,99 @@ async function consumeSse(
   }
 }
 
+function extractJsonValue(text: string, key: string): unknown {
+  const keyIdx = text.indexOf(`"${key}"`);
+  if (keyIdx === -1) return undefined;
+  let i = keyIdx + key.length + 2;
+  while (i < text.length && /[\s:]/.test(text[i])) i++;
+  if (i >= text.length) return undefined;
+  const firstChar = text[i];
+  if (firstChar === '"') {
+    let j = i + 1;
+    while (j < text.length) {
+      if (text[j] === '\\') { j += 2; continue; }
+      if (text[j] === '"') {
+        try { return JSON.parse(text.slice(i, j + 1)); } catch { return undefined; }
+      }
+      j++;
+    }
+    return undefined;
+  }
+  if (firstChar === '[' || firstChar === '{') {
+    const close = firstChar === '[' ? ']' : '}';
+    let depth = 0;
+    let inString = false;
+    let j = i;
+    while (j < text.length) {
+      const c = text[j];
+      if (inString) {
+        if (c === '\\') { j += 2; continue; }
+        if (c === '"') inString = false;
+      } else {
+        if (c === '"') inString = true;
+        else if (c === firstChar) depth++;
+        else if (c === close) {
+          depth--;
+          if (depth === 0) {
+            try { return JSON.parse(text.slice(i, j + 1)); } catch { return undefined; }
+          }
+        }
+      }
+      j++;
+    }
+    return undefined;
+  }
+  return undefined;
+}
+
+type Partial<T> = { [K in keyof T]?: T[K] };
+
+function parsePartialResult(text: string): Partial<AnalysisResult> {
+  const partial: Partial<AnalysisResult> = {};
+  const summary = extractJsonValue(text, "executive_summary");
+  if (typeof summary === "string") partial.executive_summary = summary;
+  const findings = extractJsonValue(text, "key_findings");
+  if (Array.isArray(findings)) partial.key_findings = findings as AnalysisResult["key_findings"];
+  const hypotheses = extractJsonValue(text, "root_cause_hypotheses");
+  if (Array.isArray(hypotheses)) partial.root_cause_hypotheses = hypotheses as AnalysisResult["root_cause_hypotheses"];
+  const risks = extractJsonValue(text, "risks");
+  if (Array.isArray(risks)) partial.risks = risks as AnalysisResult["risks"];
+  const recs = extractJsonValue(text, "recommendations");
+  if (Array.isArray(recs)) partial.recommendations = recs as AnalysisResult["recommendations"];
+  const watch = extractJsonValue(text, "watch_items");
+  if (Array.isArray(watch)) partial.watch_items = watch as string[];
+  return partial;
+}
+
+function parsePartialPlantResult(text: string): Partial<PlantAnalysisResult> {
+  const partial: Partial<PlantAnalysisResult> = {};
+  const summary = extractJsonValue(text, "executive_summary");
+  if (typeof summary === "string") partial.executive_summary = summary;
+  const verdict = extractJsonValue(text, "pp_verdict");
+  if (verdict && typeof verdict === "object" && !Array.isArray(verdict)) partial.pp_verdict = verdict as PlantAnalysisResult["pp_verdict"];
+  const findings = extractJsonValue(text, "key_findings");
+  if (Array.isArray(findings)) partial.key_findings = findings as PlantAnalysisResult["key_findings"];
+  const hypotheses = extractJsonValue(text, "root_cause_hypotheses");
+  if (Array.isArray(hypotheses)) partial.root_cause_hypotheses = hypotheses as PlantAnalysisResult["root_cause_hypotheses"];
+  const risks = extractJsonValue(text, "risks");
+  if (Array.isArray(risks)) partial.risks = risks as PlantAnalysisResult["risks"];
+  const recs = extractJsonValue(text, "recommendations");
+  if (Array.isArray(recs)) partial.recommendations = recs as PlantAnalysisResult["recommendations"];
+  const watch = extractJsonValue(text, "watch_items");
+  if (Array.isArray(watch)) partial.watch_items = watch as string[];
+  return partial;
+}
+
+function SkeletonLines({ lines = 3 }: { lines?: number }) {
+  return (
+    <div className="space-y-2 animate-pulse">
+      {Array.from({ length: lines }).map((_, i) => (
+        <div key={i} className={`h-3 bg-muted rounded ${i === lines - 1 ? "w-2/3" : "w-full"}`} />
+      ))}
+    </div>
+  );
+}
+
 function severityColor(sev: string) {
   if (sev === "Critical" || sev === "critical") return "bg-red-500/10 text-red-500 border-red-500/20";
   if (sev === "High" || sev === "high") return "bg-amber-500/10 text-amber-500 border-amber-500/20";
@@ -98,12 +191,128 @@ function ragColor(rag: string | null | undefined) {
   return "bg-muted text-muted-foreground border-muted";
 }
 
+// ─────────────── shared result card sets ───────────────
+
+function CommonResultCards({
+  result,
+  partial,
+  generating,
+  includeSummary = true,
+}: {
+  result: Partial<AnalysisResult>;
+  partial: boolean;
+  generating: boolean;
+  includeSummary?: boolean;
+}) {
+  return (
+    <>
+      {includeSummary && (
+        <Card>
+          <CardHeader><CardTitle>Executive Summary</CardTitle></CardHeader>
+          <CardContent>
+            {result.executive_summary
+              ? <p className="text-sm leading-relaxed">{result.executive_summary}</p>
+              : generating ? <SkeletonLines lines={4} /> : null}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader><CardTitle>Key Findings</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {result.key_findings
+            ? result.key_findings.map((f, i) => (
+                <div key={i} className="border-l-2 border-primary/40 pl-3">
+                  <div className="flex items-center gap-2 mb-1"><Badge variant="outline">{f.scope}</Badge></div>
+                  <p className="text-sm">{f.finding}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Evidence: {f.evidence}</p>
+                </div>
+              ))
+            : generating ? <SkeletonLines lines={5} /> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Root Cause Hypotheses</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {result.root_cause_hypotheses
+            ? result.root_cause_hypotheses.map((h, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <Badge variant="outline" className={confidenceColor(h.confidence)}>{h.confidence.toUpperCase()}</Badge>
+                  <div>
+                    <p className="text-sm">{h.hypothesis}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Signal: {h.supporting_signal}</p>
+                  </div>
+                </div>
+              ))
+            : generating ? <SkeletonLines lines={4} /> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Risks</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {result.risks
+            ? result.risks.map((r, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <Badge variant="outline" className={severityColor(r.severity)}>{r.severity}</Badge>
+                  <div>
+                    <p className="text-sm">{r.risk}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{r.basis}</p>
+                  </div>
+                </div>
+              ))
+            : generating ? <SkeletonLines lines={4} /> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Recommendations</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          {result.recommendations
+            ? [...result.recommendations].sort((a, b) => a.priority - b.priority).map((r, i) => (
+                <div key={i} className="border border-border/50 rounded-md p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium">#{r.priority} · {r.scope}</span>
+                    <Badge variant="outline">{r.effort} effort</Badge>
+                  </div>
+                  <p className="text-sm">{r.action}</p>
+                  <p className="text-xs text-muted-foreground mt-1">{r.rationale}</p>
+                  <p className="text-xs text-emerald-600 mt-1">Impact: {r.quantified_impact}</p>
+                </div>
+              ))
+            : generating ? <SkeletonLines lines={6} /> : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Watch Items</CardTitle>
+          <CardDescription>Data gaps or areas needing manual review</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {result.watch_items
+            ? (
+                <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                  {result.watch_items.map((w, i) => <li key={i}>{w}</li>)}
+                </ul>
+              )
+            : generating ? <SkeletonLines lines={3} /> : null}
+        </CardContent>
+      </Card>
+
+      {!generating && !partial && Object.keys(result).length === 0 && null}
+    </>
+  );
+}
+
 // ─────────────────────────── MACHINE LEVEL TAB ───────────────────────────
 
 function MachineLevelTab({ month }: { month: string }) {
   const [depth, setDepth] = useState<Depth>("standard");
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamingText, setStreamingText] = useState("");
+  const [partialResult, setPartialResult] = useState<Partial<AnalysisResult> | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [currentId, setCurrentId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +336,7 @@ function MachineLevelTab({ month }: { month: string }) {
   useEffect(() => {
     void loadHistory();
     setResult(null);
+    setPartialResult(null);
     setCurrentId(null);
     setMessages([]);
     setStreamingText("");
@@ -140,6 +350,7 @@ function MachineLevelTab({ month }: { month: string }) {
     const data = await res.json();
     setCurrentId(data.id);
     setResult(data.result ?? null);
+    setPartialResult(null);
     setMessages(data.messages ?? []);
     setStreamingText("");
     setError(null);
@@ -148,6 +359,7 @@ function MachineLevelTab({ month }: { month: string }) {
   async function handleGenerate() {
     setIsGenerating(true);
     setResult(null);
+    setPartialResult({});
     setStreamingText("");
     setError(null);
     setMessages([]);
@@ -162,12 +374,17 @@ function MachineLevelTab({ month }: { month: string }) {
         const body = await res.json().catch(() => ({}));
         throw new Error((body as { error?: string })?.error ?? `Request failed (${res.status})`);
       }
+      let accumulated = "";
       await consumeSse(res, (evt) => {
-        if (typeof evt.delta === "string") setStreamingText((prev) => prev + evt.delta);
-        if (evt.cached && evt.result) { setResult(evt.result as AnalysisResult); setCurrentId(Number(evt.id)); }
+        if (typeof evt.delta === "string") {
+          accumulated += evt.delta;
+          setStreamingText(accumulated);
+          setPartialResult(parsePartialResult(accumulated));
+        }
+        if (evt.cached && evt.result) { setResult(evt.result as AnalysisResult); setCurrentId(Number(evt.id)); setPartialResult(null); }
         if (evt.error) setError(String(evt.error));
         if (evt.done) {
-          if (evt.result) setResult(evt.result as AnalysisResult);
+          if (evt.result) { setResult(evt.result as AnalysisResult); setPartialResult(null); }
           if (evt.id) setCurrentId(Number(evt.id));
         }
       });
@@ -210,6 +427,9 @@ function MachineLevelTab({ month }: { month: string }) {
       setIsAsking(false);
     }
   }
+
+  const displayResult = result ?? partialResult;
+  const showCards = displayResult !== null && (isGenerating || result !== null);
 
   return (
     <div className="space-y-6">
@@ -266,121 +486,54 @@ function MachineLevelTab({ month }: { month: string }) {
         )
       )}
 
-      {isGenerating && !result && (
+      {isGenerating && !showCards && (
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-muted-foreground text-sm mb-3">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm">
               <Loader2 className="h-4 w-4 animate-spin" /> Claude is analyzing the data packet...
             </div>
-            <pre className="text-xs whitespace-pre-wrap text-muted-foreground max-h-64 overflow-auto bg-muted/30 p-3 rounded">
-              {streamingText || "Waiting for response..."}
-            </pre>
           </CardContent>
         </Card>
       )}
 
-      {result && (
+      {showCards && (
         <div className="space-y-6" data-testid="analysis-result">
-          <Card>
-            <CardHeader><CardTitle>Executive Summary</CardTitle></CardHeader>
-            <CardContent><p className="text-sm leading-relaxed">{result.executive_summary}</p></CardContent>
-          </Card>
+          {isGenerating && (
+            <div className="flex items-center gap-2 text-muted-foreground text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" /> Claude is analyzing — results appearing as they arrive...
+            </div>
+          )}
+          <CommonResultCards
+            result={displayResult as Partial<AnalysisResult>}
+            partial={result === null}
+            generating={isGenerating}
+          />
 
-          <Card>
-            <CardHeader><CardTitle>Key Findings</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              {result.key_findings.map((f, i) => (
-                <div key={i} className="border-l-2 border-primary/40 pl-3">
-                  <div className="flex items-center gap-2 mb-1"><Badge variant="outline">{f.scope}</Badge></div>
-                  <p className="text-sm">{f.finding}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Evidence: {f.evidence}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Root Cause Hypotheses</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              {result.root_cause_hypotheses.map((h, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <Badge variant="outline" className={confidenceColor(h.confidence)}>{h.confidence.toUpperCase()}</Badge>
-                  <div>
-                    <p className="text-sm">{h.hypothesis}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Signal: {h.supporting_signal}</p>
+          {!isGenerating && result && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Ask a follow-up question</CardTitle>
+                <CardDescription>Grounded in the same data packet used above.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {messages.map((m, i) => (
+                  <div key={i} className={m.role === "user" ? "text-sm font-medium" : "text-sm text-muted-foreground"}>
+                    <span className="mr-2">{m.role === "user" ? "You:" : "Claude:"}</span>{m.content}
                   </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Risks</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              {result.risks.map((r, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <Badge variant="outline" className={severityColor(r.severity)}>{r.severity}</Badge>
-                  <div>
-                    <p className="text-sm">{r.risk}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{r.basis}</p>
+                ))}
+                {isAsking && (
+                  <div className="text-sm text-muted-foreground">
+                    <span className="mr-2">Claude:</span>
+                    {chatStreamText || <Loader2 className="h-3 w-3 inline animate-spin" />}
                   </div>
+                )}
+                <div className="flex gap-2">
+                  <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="e.g. Why is utilisation low on Machine 3?" className="min-h-[44px]" data-testid="input-followup" />
+                  <Button onClick={handleAsk} disabled={isAsking || !question.trim()} data-testid="button-ask"><Send className="h-4 w-4" /></Button>
                 </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Recommendations</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              {[...result.recommendations].sort((a, b) => a.priority - b.priority).map((r, i) => (
-                <div key={i} className="border border-border/50 rounded-md p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium">#{r.priority} · {r.scope}</span>
-                    <Badge variant="outline">{r.effort} effort</Badge>
-                  </div>
-                  <p className="text-sm">{r.action}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{r.rationale}</p>
-                  <p className="text-xs text-emerald-600 mt-1">Impact: {r.quantified_impact}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Watch Items</CardTitle>
-              <CardDescription>Data gaps or areas needing manual review</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-                {result.watch_items.map((w, i) => <li key={i}>{w}</li>)}
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Ask a follow-up question</CardTitle>
-              <CardDescription>Grounded in the same data packet used above.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {messages.map((m, i) => (
-                <div key={i} className={m.role === "user" ? "text-sm font-medium" : "text-sm text-muted-foreground"}>
-                  <span className="mr-2">{m.role === "user" ? "You:" : "Claude:"}</span>{m.content}
-                </div>
-              ))}
-              {isAsking && (
-                <div className="text-sm text-muted-foreground">
-                  <span className="mr-2">Claude:</span>
-                  {chatStreamText || <Loader2 className="h-3 w-3 inline animate-spin" />}
-                </div>
-              )}
-              <div className="flex gap-2">
-                <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="e.g. Why is utilisation low on Machine 3?" className="min-h-[44px]" data-testid="input-followup" />
-                <Button onClick={handleAsk} disabled={isAsking || !question.trim()} data-testid="button-ask"><Send className="h-4 w-4" /></Button>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 
@@ -412,6 +565,7 @@ function PlantLevelTab({ month }: { month: string }) {
   const [depth, setDepth] = useState<Depth>("standard");
   const [isGenerating, setIsGenerating] = useState(false);
   const [streamingText, setStreamingText] = useState("");
+  const [partialResult, setPartialResult] = useState<Partial<PlantAnalysisResult> | null>(null);
   const [result, setResult] = useState<PlantAnalysisResult | null>(null);
   const [currentId, setCurrentId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -435,6 +589,7 @@ function PlantLevelTab({ month }: { month: string }) {
   useEffect(() => {
     void loadHistory();
     setResult(null);
+    setPartialResult(null);
     setCurrentId(null);
     setMessages([]);
     setStreamingText("");
@@ -448,6 +603,7 @@ function PlantLevelTab({ month }: { month: string }) {
     const data = await res.json();
     setCurrentId(data.id);
     setResult(data.result ?? null);
+    setPartialResult(null);
     setMessages(data.messages ?? []);
     setStreamingText("");
     setError(null);
@@ -456,6 +612,7 @@ function PlantLevelTab({ month }: { month: string }) {
   async function handleGenerate() {
     setIsGenerating(true);
     setResult(null);
+    setPartialResult({});
     setStreamingText("");
     setError(null);
     setMessages([]);
@@ -470,12 +627,17 @@ function PlantLevelTab({ month }: { month: string }) {
         const body = await res.json().catch(() => ({}));
         throw new Error((body as { error?: string })?.error ?? `Request failed (${res.status})`);
       }
+      let accumulated = "";
       await consumeSse(res, (evt) => {
-        if (typeof evt.delta === "string") setStreamingText((prev) => prev + evt.delta);
-        if (evt.cached && evt.result) { setResult(evt.result as PlantAnalysisResult); setCurrentId(Number(evt.id)); }
+        if (typeof evt.delta === "string") {
+          accumulated += evt.delta;
+          setStreamingText(accumulated);
+          setPartialResult(parsePartialPlantResult(accumulated));
+        }
+        if (evt.cached && evt.result) { setResult(evt.result as PlantAnalysisResult); setCurrentId(Number(evt.id)); setPartialResult(null); }
         if (evt.error) setError(String(evt.error));
         if (evt.done) {
-          if (evt.result) setResult(evt.result as PlantAnalysisResult);
+          if (evt.result) { setResult(evt.result as PlantAnalysisResult); setPartialResult(null); }
           if (evt.id) setCurrentId(Number(evt.id));
         }
       });
@@ -518,6 +680,9 @@ function PlantLevelTab({ month }: { month: string }) {
       setIsAsking(false);
     }
   }
+
+  const displayResult = result ?? partialResult;
+  const showCards = displayResult !== null && (isGenerating || result !== null);
 
   return (
     <div className="space-y-6">
@@ -574,24 +739,31 @@ function PlantLevelTab({ month }: { month: string }) {
         )
       )}
 
-      {isGenerating && !result && (
+      {isGenerating && !showCards && (
         <Card>
           <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-muted-foreground text-sm mb-3">
+            <div className="flex items-center gap-2 text-muted-foreground text-sm">
               <Loader2 className="h-4 w-4 animate-spin" /> Claude is analyzing the plant NOS packet...
             </div>
-            <pre className="text-xs whitespace-pre-wrap text-muted-foreground max-h-64 overflow-auto bg-muted/30 p-3 rounded">
-              {streamingText || "Waiting for response..."}
-            </pre>
           </CardContent>
         </Card>
       )}
 
-      {result && (
+      {showCards && (
         <div className="space-y-6" data-testid="plant-analysis-result">
+          {isGenerating && (
+            <div className="flex items-center gap-2 text-muted-foreground text-sm">
+              <Loader2 className="h-4 w-4 animate-spin" /> Claude is analyzing — results appearing as they arrive...
+            </div>
+          )}
+
           <Card>
             <CardHeader><CardTitle>Executive Summary</CardTitle></CardHeader>
-            <CardContent><p className="text-sm leading-relaxed">{result.executive_summary}</p></CardContent>
+            <CardContent>
+              {displayResult.executive_summary
+                ? <p className="text-sm leading-relaxed">{displayResult.executive_summary}</p>
+                : isGenerating ? <SkeletonLines lines={4} /> : null}
+            </CardContent>
           </Card>
 
           <Card>
@@ -600,137 +772,78 @@ function PlantLevelTab({ month }: { month: string }) {
               <CardDescription>Min PP and Max PP assessed separately against NOS attainment</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="border border-border/50 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="font-semibold text-sm">Max PP</span>
-                    <Badge variant="outline" className={ragColor(result.pp_verdict.max_pp.rag)}>
-                      {(result.pp_verdict.max_pp.rag ?? "n/a").toUpperCase()}
-                    </Badge>
-                  </div>
-                  <p className="text-sm mb-2">{result.pp_verdict.max_pp.verdict}</p>
-                  <div className="flex gap-4 text-xs text-muted-foreground">
-                    {result.pp_verdict.max_pp.attainment_pct !== null && (
-                      <span>Attainment: <strong>{result.pp_verdict.max_pp.attainment_pct}%</strong></span>
-                    )}
-                    {result.pp_verdict.max_pp.projected_attainment_pct !== null && (
-                      <span>Projected: <strong>{result.pp_verdict.max_pp.projected_attainment_pct}%</strong></span>
-                    )}
-                  </div>
-                </div>
-                <div className="border border-border/50 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="font-semibold text-sm">Min PP</span>
-                    <Badge variant="outline" className={ragColor(result.pp_verdict.min_pp.rag)}>
-                      {(result.pp_verdict.min_pp.rag ?? "n/a").toUpperCase()}
-                    </Badge>
-                  </div>
-                  <p className="text-sm mb-2">{result.pp_verdict.min_pp.verdict}</p>
-                  <div className="flex gap-4 text-xs text-muted-foreground">
-                    {result.pp_verdict.min_pp.projected_attainment_pct !== null && (
-                      <span>Projected: <strong>{result.pp_verdict.min_pp.projected_attainment_pct}%</strong></span>
-                    )}
-                  </div>
-                </div>
-              </div>
+              {displayResult.pp_verdict
+                ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="border border-border/50 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="font-semibold text-sm">Max PP</span>
+                          <Badge variant="outline" className={ragColor(displayResult.pp_verdict.max_pp.rag)}>
+                            {(displayResult.pp_verdict.max_pp.rag ?? "n/a").toUpperCase()}
+                          </Badge>
+                        </div>
+                        <p className="text-sm mb-2">{displayResult.pp_verdict.max_pp.verdict}</p>
+                        <div className="flex gap-4 text-xs text-muted-foreground">
+                          {displayResult.pp_verdict.max_pp.attainment_pct !== null && (
+                            <span>Attainment: <strong>{displayResult.pp_verdict.max_pp.attainment_pct}%</strong></span>
+                          )}
+                          {displayResult.pp_verdict.max_pp.projected_attainment_pct !== null && (
+                            <span>Projected: <strong>{displayResult.pp_verdict.max_pp.projected_attainment_pct}%</strong></span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="border border-border/50 rounded-lg p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="font-semibold text-sm">Min PP</span>
+                          <Badge variant="outline" className={ragColor(displayResult.pp_verdict.min_pp.rag)}>
+                            {(displayResult.pp_verdict.min_pp.rag ?? "n/a").toUpperCase()}
+                          </Badge>
+                        </div>
+                        <p className="text-sm mb-2">{displayResult.pp_verdict.min_pp.verdict}</p>
+                        <div className="flex gap-4 text-xs text-muted-foreground">
+                          {displayResult.pp_verdict.min_pp.projected_attainment_pct !== null && (
+                            <span>Projected: <strong>{displayResult.pp_verdict.min_pp.projected_attainment_pct}%</strong></span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                : isGenerating ? <SkeletonLines lines={3} /> : null}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader><CardTitle>Key Findings</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              {result.key_findings.map((f, i) => (
-                <div key={i} className="border-l-2 border-primary/40 pl-3">
-                  <div className="flex items-center gap-2 mb-1"><Badge variant="outline">{f.scope}</Badge></div>
-                  <p className="text-sm">{f.finding}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Evidence: {f.evidence}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
+          <CommonResultCards
+            result={displayResult as Partial<AnalysisResult>}
+            partial={result === null}
+            generating={isGenerating}
+            includeSummary={false}
+          />
 
-          <Card>
-            <CardHeader><CardTitle>Root Cause Hypotheses</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              {result.root_cause_hypotheses.map((h, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <Badge variant="outline" className={confidenceColor(h.confidence)}>{h.confidence.toUpperCase()}</Badge>
-                  <div>
-                    <p className="text-sm">{h.hypothesis}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Signal: {h.supporting_signal}</p>
+          {!isGenerating && result && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Ask a follow-up question</CardTitle>
+                <CardDescription>Grounded in the same plant NOS data packet used above.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {messages.map((m, i) => (
+                  <div key={i} className={m.role === "user" ? "text-sm font-medium" : "text-sm text-muted-foreground"}>
+                    <span className="mr-2">{m.role === "user" ? "You:" : "Claude:"}</span>{m.content}
                   </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Risks</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              {result.risks.map((r, i) => (
-                <div key={i} className="flex items-start gap-3">
-                  <Badge variant="outline" className={severityColor(r.severity)}>{r.severity}</Badge>
-                  <div>
-                    <p className="text-sm">{r.risk}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{r.basis}</p>
+                ))}
+                {isAsking && (
+                  <div className="text-sm text-muted-foreground">
+                    <span className="mr-2">Claude:</span>
+                    {chatStreamText || <Loader2 className="h-3 w-3 inline animate-spin" />}
                   </div>
+                )}
+                <div className="flex gap-2">
+                  <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="e.g. Which categories are most at risk of missing Min PP?" className="min-h-[44px]" data-testid="plant-input-followup" />
+                  <Button onClick={handleAsk} disabled={isAsking || !question.trim()} data-testid="plant-button-ask"><Send className="h-4 w-4" /></Button>
                 </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader><CardTitle>Recommendations</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              {[...result.recommendations].sort((a, b) => a.priority - b.priority).map((r, i) => (
-                <div key={i} className="border border-border/50 rounded-md p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium">#{r.priority} · {r.scope}</span>
-                    <Badge variant="outline">{r.effort} effort</Badge>
-                  </div>
-                  <p className="text-sm">{r.action}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{r.rationale}</p>
-                  <p className="text-xs text-emerald-600 mt-1">Impact: {r.quantified_impact}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Watch Items</CardTitle>
-              <CardDescription>Data gaps or areas needing manual review</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
-                {result.watch_items.map((w, i) => <li key={i}>{w}</li>)}
-              </ul>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Ask a follow-up question</CardTitle>
-              <CardDescription>Grounded in the same plant NOS data packet used above.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {messages.map((m, i) => (
-                <div key={i} className={m.role === "user" ? "text-sm font-medium" : "text-sm text-muted-foreground"}>
-                  <span className="mr-2">{m.role === "user" ? "You:" : "Claude:"}</span>{m.content}
-                </div>
-              ))}
-              {isAsking && (
-                <div className="text-sm text-muted-foreground">
-                  <span className="mr-2">Claude:</span>
-                  {chatStreamText || <Loader2 className="h-3 w-3 inline animate-spin" />}
-                </div>
-              )}
-              <div className="flex gap-2">
-                <Textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="e.g. Which categories are most at risk of missing Min PP?" className="min-h-[44px]" data-testid="plant-input-followup" />
-                <Button onClick={handleAsk} disabled={isAsking || !question.trim()} data-testid="plant-button-ask"><Send className="h-4 w-4" /></Button>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </div>
       )}
 
