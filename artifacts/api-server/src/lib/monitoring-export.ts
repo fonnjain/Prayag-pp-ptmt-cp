@@ -1,5 +1,4 @@
 import ExcelJS from "exceljs";
-import puppeteer from "puppeteer";
 import type { PaceMetrics, Warning, RecommendedAction, MachineQuality } from "./monitoring-calc";
 
 export interface MonitoringExportData {
@@ -284,6 +283,7 @@ function buildHtml(data: MonitoringExportData): string {
 
 export async function exportMonitoringPdf(data: MonitoringExportData): Promise<Buffer> {
   const html = buildHtml(data);
+  const puppeteer = (await import("puppeteer")).default;
   const browser = await puppeteer.launch({
     headless: true,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],

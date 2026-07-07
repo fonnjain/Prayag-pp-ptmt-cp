@@ -1,5 +1,4 @@
 import { createHash } from "crypto";
-import puppeteer from "puppeteer";
 import type { PlantBundle } from "./plant-engine";
 import { getAnthropicClient, modelForDepth, type AnalysisDepth } from "./ai-analytics";
 
@@ -340,6 +339,7 @@ export async function exportPlantAnalysisPdf(params: {
   }
 </body></html>`;
 
+  const puppeteer = (await import("puppeteer")).default;
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
   try {
     const page = await browser.newPage();
@@ -417,6 +417,7 @@ export async function exportPlantTrendPdf(rows: PlantTrendExportRow[]): Promise<
   }
 </body></html>`;
 
+  const puppeteer = (await import("puppeteer")).default;
   const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
   try {
     const page = await browser.newPage();

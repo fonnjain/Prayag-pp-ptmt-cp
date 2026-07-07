@@ -6,8 +6,6 @@ import { buildPlantBundle, type PlantBundle } from "../lib/plant-engine";
 import { buildPlantWarnings, DEFAULT_PLANT_WARNING_THRESHOLDS, type PlantWarningThresholds } from "../lib/plant-warnings";
 import { buildPlantRecommendations } from "../lib/plant-recommendations";
 import { logger } from "../lib/logger";
-import puppeteer from "puppeteer";
-
 const router: IRouter = Router();
 
 // In-memory bundle cache — keyed by month, invalidated after 5 min or on demand
@@ -228,6 +226,7 @@ ${section === "control-board" ? `
 <div style="margin-top: 30px; color: #999; font-size: 10px;">Generated ${new Date().toISOString()} · PTMT Production Performance &amp; Monitoring</div>
 </body></html>`;
 
+    const puppeteer = (await import("puppeteer")).default;
     const browser = await puppeteer.launch({ args: ["--no-sandbox", "--disable-setuid-sandbox"] });
     try {
       const page = await browser.newPage();
