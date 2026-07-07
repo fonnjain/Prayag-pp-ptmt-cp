@@ -147,6 +147,8 @@ router.get("/plant/trend", async (req, res) => {
 
 // --- GET /plant/export/pdf ---
 router.get("/plant/export/pdf", async (req, res): Promise<void> => {
+  res.status(503).json({ error: "PDF export is not available in this deployment" });
+  return;
   const month = String(req.query.month ?? "");
   const section = String(req.query.section ?? "control-board");
   if (!month) {

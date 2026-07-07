@@ -257,6 +257,8 @@ router.get("/ai/analyses/:id", async (req, res): Promise<void> => {
 });
 
 router.get("/ai/analyses/:id/export/pdf", async (req, res): Promise<void> => {
+  res.status(503).json({ error: "PDF export is not available in this deployment" });
+  return;
   const id = Number(req.params.id);
   const [analysis] = await db.select().from(aiAnalysesTable).where(eq(aiAnalysesTable.id, id));
   if (!analysis) {
@@ -522,6 +524,8 @@ router.get("/ai/plant-analyses/:id", async (req, res): Promise<void> => {
 });
 
 router.get("/ai/plant-trend/export/pdf", async (req, res): Promise<void> => {
+  res.status(503).json({ error: "PDF export is not available in this deployment" });
+  return;
   try {
     const rows = await db
       .select({
@@ -567,6 +571,8 @@ router.get("/ai/plant-trend/export/pdf", async (req, res): Promise<void> => {
 });
 
 router.get("/ai/plant-analyses/:id/export/pdf", async (req, res): Promise<void> => {
+  res.status(503).json({ error: "PDF export is not available in this deployment" });
+  return;
   const id = Number(req.params.id);
   const [analysis] = await db.select().from(aiPlantAnalysesTable).where(eq(aiPlantAnalysesTable.id, id));
   if (!analysis) {

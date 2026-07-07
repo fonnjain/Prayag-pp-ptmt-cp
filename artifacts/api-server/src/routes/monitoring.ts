@@ -307,6 +307,8 @@ router.get("/monitoring/export/excel", async (req, res): Promise<void> => {
 });
 
 router.get("/monitoring/export/pdf", async (req, res): Promise<void> => {
+  res.status(503).json({ error: "PDF export is not available in this deployment" });
+  return;
   const month = String(req.query.month ?? "");
   if (!month) {
     res.status(400).json({ error: "month is required" });

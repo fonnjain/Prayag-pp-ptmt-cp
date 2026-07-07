@@ -2,7 +2,6 @@ import { createApp } from "./app";
 import { logger } from "./lib/logger";
 import { ensureSeedData } from "./lib/seed";
 import { runMigrations } from "./lib/runMigrations";
-import { ensureBrowser } from "./lib/ensureBrowser";
 
 const port = Number(process.env.PORT ?? 8080);
 
@@ -30,12 +29,6 @@ async function main(): Promise<void> {
       logger.error({ err }, "Migrations/seeding failed — server continues; DB-backed routes may error until fixed");
     }
 
-    // Chrome install — non-blocking, non-fatal. PDF generation works once done.
-    try {
-      await ensureBrowser();
-    } catch (err) {
-      logger.warn({ err }, "Browser setup failed — PDF generation unavailable");
-    }
   })();
 }
 
