@@ -7,6 +7,7 @@ import dashboardRouter from "./dashboard";
 import monitoringRouter from "./monitoring";
 import aiRouter from "./ai";
 import plantRouter from "./plant";
+import reportsRouter from "./reports";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(dashboardRouter);
 router.use(monitoringRouter);
 router.use(aiRouter);
 router.use(plantRouter);
+router.use(reportsRouter);
 
 export default router;

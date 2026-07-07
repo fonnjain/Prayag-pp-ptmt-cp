@@ -22,6 +22,7 @@ import PlantWarnings from "@/pages/plant/plant-warnings";
 import PlantRecommendations from "@/pages/plant/recommendations";
 import PlantTrend from "@/pages/plant/trend";
 import PlantConfig from "@/pages/plant/plant-config";
+import PlantReports from "@/pages/plant/reports";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -82,6 +83,9 @@ function Router({ month, setMonth }: { month: string, setMonth: (m: string) => v
         </Route>
         <Route path="/plant/config">
           <PlantConfig month={month} />
+        </Route>
+        <Route path="/plant/reports">
+          <PlantReports month={month} />
         </Route>
         <Route component={NotFound} />
       </Switch>

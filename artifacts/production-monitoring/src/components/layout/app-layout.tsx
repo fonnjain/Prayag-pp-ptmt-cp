@@ -14,7 +14,8 @@ import {
   BarChart2,
   ShieldAlert,
   ListChecks,
-  SlidersHorizontal
+  SlidersHorizontal,
+  FileText
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -41,6 +42,7 @@ export function AppLayout({ children, month, setMonth }: { children: React.React
     { href: "/plant/recommendations", label: "Recommendations", icon: ListChecks },
     { href: "/plant/trend", label: "Trend", icon: BarChart2 },
     { href: "/plant/config", label: "Config", icon: SlidersHorizontal },
+    { href: "/plant/reports", label: "Reports", icon: FileText },
   ];
 
   return (
