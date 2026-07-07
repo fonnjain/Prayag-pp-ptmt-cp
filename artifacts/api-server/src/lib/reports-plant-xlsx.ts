@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
 import type { PlantBundle, CategoryKPIs, ItemKPIs, DayRecord } from "./plant-engine";
 import type { PlantWarning } from "./plant-warnings";
 import type { PlantRecommendation } from "./plant-recommendations";
@@ -40,6 +40,8 @@ function addTitleBlock(ws: ExcelJS.Worksheet, title: string, sub: string, colSpa
 }
 
 export async function generatePlantXlsx(bundle: FullBundle): Promise<Buffer> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ExcelJS = require("exceljs") as typeof import("exceljs").default;
   const { plant, categories, items, dailySeries, variancePareto, warnings, recommendations, context } = bundle;
   const wb = new ExcelJS.Workbook();
   wb.creator = "PTMT Production";

@@ -9,9 +9,6 @@ await esbuild.build({
   external: [
     "puppeteer",
     "exceljs",
-    "pino",
-    "pino-http",
-    "thread-stream",
     "pg-native",
     "*.node",
   ],

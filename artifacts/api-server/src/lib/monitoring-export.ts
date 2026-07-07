@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
 import type { PaceMetrics, Warning, RecommendedAction, MachineQuality } from "./monitoring-calc";
 
 export interface MonitoringExportData {
@@ -154,6 +154,8 @@ function addBacklogSheet(workbook: ExcelJS.Workbook, stockoutItems: MonitoringEx
 }
 
 export async function exportMonitoringExcel(data: MonitoringExportData): Promise<Buffer> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ExcelJS = require("exceljs") as typeof import("exceljs").default;
   const workbook = new ExcelJS.Workbook();
   addDashboardSheet(workbook, data);
   addWarningsSheet(workbook, data.warnings);

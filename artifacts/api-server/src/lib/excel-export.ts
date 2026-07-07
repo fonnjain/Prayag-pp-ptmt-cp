@@ -1,4 +1,4 @@
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
 import type { CalcPlanItem, PlanSummaryResult } from "./calc";
 
 const RED_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF4CCCC" } };
@@ -90,6 +90,8 @@ export async function exportPlanExcel(
   items: CalcPlanItem[],
   summary: PlanSummaryResult,
 ): Promise<Buffer> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ExcelJS = require("exceljs") as typeof import("exceljs").default;
   const workbook = new ExcelJS.Workbook();
   addSummarySheet(workbook, month, summary);
 

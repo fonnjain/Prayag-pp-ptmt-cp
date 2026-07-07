@@ -44,3 +44,4 @@ run = "node artifacts/api-server/dist/index.cjs"
 
 [services.env]
 PORT = "8080"
+NODE_ENV = "production"
