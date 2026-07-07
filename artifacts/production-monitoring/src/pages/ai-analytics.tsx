@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Sparkles, Download, Send, Loader2, History, Factory, AlertCircle, DatabaseZap, TrendingUp } from "lucide-react";
+import { Sparkles, Download, Send, Loader2, History, Factory, AlertCircle, DatabaseZap, TrendingUp, RefreshCw } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 type Depth = "standard" | "deep";
@@ -626,28 +626,16 @@ function RiskDeltaBadge({ prevCount, currCount }: { prevCount: number | null; cu
 }
 
 function PlantTrendTable({
+  rows,
+  loading,
+  error,
   onSelectAnalysis,
 }: {
+  rows: PlantTrendRow[];
+  loading: boolean;
+  error: string | null;
   onSelectAnalysis: (id: number) => void;
 }) {
-  const [rows, setRows] = useState<PlantTrendRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setLoading(true);
-    fetch("/api/ai/plant-analyses?all=true")
-      .then(async (res) => {
-        if (!res.ok) throw new Error(`Server error ${res.status}`);
-        const data = (await res.json()) as PlantTrendRow[];
-        setRows(data);
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err.message : "Failed to load trend data");
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-muted-foreground text-sm py-8 justify-center">
@@ -776,6 +764,25 @@ function PlantLevelTab({ month }: { month: string }) {
   const [chatStreamText, setChatStreamText] = useState("");
   const [innerTab, setInnerTab] = useState<"analysis" | "trend">("analysis");
 
+  const [trendRows, setTrendRows] = useState<PlantTrendRow[]>([]);
+  const [trendLoading, setTrendLoading] = useState(true);
+  const [trendError, setTrendError] = useState<string | null>(null);
+
+  const loadTrend = useCallback(() => {
+    setTrendLoading(true);
+    setTrendError(null);
+    fetch("/api/ai/plant-analyses?all=true")
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`Server error ${res.status}`);
+        const data = (await res.json()) as PlantTrendRow[];
+        setTrendRows(data);
+      })
+      .catch((err: unknown) => {
+        setTrendError(err instanceof Error ? err.message : "Failed to load trend data");
+      })
+      .finally(() => setTrendLoading(false));
+  }, []);
+
   async function loadHistory() {
     try {
       const res = await fetch(`/api/ai/plant-analyses?month=${encodeURIComponent(month)}`);
@@ -789,6 +796,7 @@ function PlantLevelTab({ month }: { month: string }) {
 
   useEffect(() => {
     void loadHistory();
+    loadTrend();
     setResult(null);
     setPartialResult(null);
     setCurrentId(null);
@@ -903,16 +911,35 @@ function PlantLevelTab({ month }: { month: string }) {
         <TabsContent value="trend">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4" />
-                Cross-month trend
-              </CardTitle>
-              <CardDescription>
-                Latest plant AI verdict per month — click any row to load the full analysis.
-              </CardDescription>
+              <div className="flex items-start justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4" />
+                    Cross-month trend
+                  </CardTitle>
+                  <CardDescription className="mt-1">
+                    Latest plant AI verdict per month — click any row to load the full analysis.
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadTrend}
+                  disabled={trendLoading}
+                  data-testid="trend-refresh-button"
+                >
+                  <RefreshCw className={`h-4 w-4 mr-2 ${trendLoading ? "animate-spin" : ""}`} />
+                  Refresh
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
-              <PlantTrendTable onSelectAnalysis={(id) => loadAnalysis(id)} />
+              <PlantTrendTable
+                rows={trendRows}
+                loading={trendLoading}
+                error={trendError}
+                onSelectAnalysis={(id) => loadAnalysis(id)}
+              />
             </CardContent>
           </Card>
         </TabsContent>
