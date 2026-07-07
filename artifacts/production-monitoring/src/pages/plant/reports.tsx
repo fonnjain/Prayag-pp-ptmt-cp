@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { FileText, FileSpreadsheet, Download, Loader2, AlertCircle, ClipboardList, Sparkles } from "lucide-react";
+import { FileText, FileSpreadsheet, Download, Loader2, AlertCircle, ClipboardList, Sparkles, CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,16 +37,22 @@ const TYPE_BADGE_VARIANT: Record<string, "default" | "secondary" | "outline"> = 
 };
 
 export default function PlantReports({ month }: { month: string }) {
+  const [selectedMonth, setSelectedMonth] = useState(month);
   const [generating, setGenerating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [includeAi, setIncludeAi] = useState(false);
   const [history, setHistory] = useState<ReportHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // Keep in sync if the global month changes
+  useEffect(() => {
+    setSelectedMonth(month);
+  }, [month]);
+
   const loadHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
-      const res = await fetch(`/api/reports/history?month=${month}`);
+      const res = await fetch(`/api/reports/history?month=${selectedMonth}`);
       if (!res.ok) throw new Error(`${res.status}`);
       const json = (await res.json()) as { data: ReportHistoryItem[] };
       setHistory(json.data ?? []);
@@ -55,7 +61,7 @@ export default function PlantReports({ month }: { month: string }) {
     } finally {
       setHistoryLoading(false);
     }
-  }, [month]);
+  }, [selectedMonth]);
 
   useEffect(() => {
     loadHistory();
@@ -65,7 +71,7 @@ export default function PlantReports({ month }: { month: string }) {
     setError(null);
     setGenerating(type);
     try {
-      const body: Record<string, unknown> = { month };
+      const body: Record<string, unknown> = { month: selectedMonth };
       if (type !== "plant-xlsx") body.includeAiNarrative = includeAi;
       const res = await fetch(`/api/reports/${type}`, {
         method: "POST",
@@ -154,17 +160,32 @@ export default function PlantReports({ month }: { month: string }) {
 
   return (
     <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
           <h1 className="text-2xl font-bold tracking-tight">Reports</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Generate plant-level reports for <span className="font-medium">{month}</span>. Reports are persisted and available for re-download.
+          <p className="text-sm text-muted-foreground">
+            Generate plant-level reports. Reports are persisted and available for re-download.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-purple-500" />
-          <Label htmlFor="include-ai" className="text-sm text-muted-foreground">Include AI narrative</Label>
-          <Switch id="include-ai" checked={includeAi} onCheckedChange={setIncludeAi} />
+        <div className="flex items-center gap-4 pt-1 shrink-0">
+          <div className="flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-muted-foreground" />
+            <Label htmlFor="report-month" className="text-sm text-muted-foreground whitespace-nowrap">
+              Report month
+            </Label>
+            <input
+              id="report-month"
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-purple-500" />
+            <Label htmlFor="include-ai" className="text-sm text-muted-foreground whitespace-nowrap">AI narrative</Label>
+            <Switch id="include-ai" checked={includeAi} onCheckedChange={setIncludeAi} />
+          </div>
         </div>
       </div>
 
@@ -225,14 +246,14 @@ export default function PlantReports({ month }: { month: string }) {
       </div>
 
       <div>
-        <h2 className="text-base font-semibold mb-3">Download History — {month}</h2>
+        <h2 className="text-base font-semibold mb-3">Download History — {selectedMonth}</h2>
         {historyLoading ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading history…
           </div>
         ) : history.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4">No reports generated yet for {month}.</p>
+          <p className="text-sm text-muted-foreground py-4">No reports generated yet for {selectedMonth}.</p>
         ) : (
           <div className="rounded-md border">
             <Table>
