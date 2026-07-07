@@ -177,19 +177,46 @@ export default function PlantDashboard({ month, selectedCategory }: { month: str
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2">
+          {/* column headers */}
+          <div className="flex items-center gap-3 mb-2 pb-1 border-b border-border/30">
+            <div className="w-44" />
+            <div className="flex-1" />
+            <div className="w-14 text-right text-xs text-muted-foreground font-medium">Cum Att%</div>
+            <div className="w-24 text-right text-xs text-muted-foreground font-medium">Produced</div>
+            <div className="w-28 text-right text-xs text-muted-foreground font-medium">Projected EOM</div>
+            <div className="w-24 text-right text-xs text-muted-foreground font-medium">Target (Max)</div>
+          </div>
+          <div className="space-y-2.5">
             {categories.map((cat) => {
               const cc = ragColors(cat.ragBand);
               const pct_val = cat.attainmentCumPct ?? 0;
+              const projectedPcs = cat.actualPerDay !== null && context.workingDays > 0
+                ? Math.round(cat.actualPerDay * context.workingDays)
+                : null;
+              const projOk = projectedPcs !== null && projectedPcs >= cat.targetMax;
+              const projPct = projectedPcs !== null && cat.targetMax > 0
+                ? (projectedPcs / cat.targetMax) * 100
+                : null;
               return (
                 <div key={cat.category} className="flex items-center gap-3">
                   <div className="w-44 text-sm font-medium truncate">{cat.category}</div>
                   <div className="flex-1 bg-muted/40 rounded-full h-2 overflow-hidden">
-                    <div className={`h-full rounded-full transition-all ${cat.ragBand === "green" ? "bg-emerald-500" : cat.ragBand === "amber" ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${Math.min(pct_val, 100)}%` }} />
+                    <div
+                      className={`h-full rounded-full transition-all ${cat.ragBand === "green" ? "bg-emerald-500" : cat.ragBand === "amber" ? "bg-amber-500" : "bg-red-500"}`}
+                      style={{ width: `${Math.min(pct_val, 100)}%` }}
+                    />
                   </div>
-                  <div className="w-16 text-right text-sm font-mono">{pct(cat.attainmentCumPct)}</div>
-                  <Badge variant="outline" className={`text-xs w-16 justify-center ${cc.badge}`}>{fmt(cat.producedToDate)} pcs</Badge>
-                  <div className="text-xs text-muted-foreground w-24 text-right">target {fmt(cat.targetMax)}</div>
+                  <div className="w-14 text-right text-sm font-mono text-muted-foreground">{pct(cat.attainmentCumPct)}</div>
+                  <Badge variant="outline" className={`text-xs w-24 justify-end font-mono ${cc.badge}`}>{fmt(cat.producedToDate)} pcs</Badge>
+                  {/* Projected EOM */}
+                  <div className={`w-28 text-right text-sm font-mono font-semibold ${projectedPcs === null ? "text-muted-foreground" : projOk ? "text-emerald-600" : "text-red-500"}`}>
+                    {projectedPcs !== null ? (
+                      <span title={`${projPct?.toFixed(1)}% of target at current pace`}>
+                        {projOk ? "▲" : "▼"} {fmt(projectedPcs)}
+                      </span>
+                    ) : "–"}
+                  </div>
+                  <div className="text-xs text-muted-foreground w-24 text-right">{fmt(cat.targetMax)}</div>
                 </div>
               );
             })}
