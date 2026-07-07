@@ -6,8 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AlertTriangle, AlertCircle, Info, CheckCircle2, ChevronDown, ChevronUp, Settings2 } from "lucide-react";
+import { AlertTriangle, AlertCircle, Info, CheckCircle2, ChevronDown, ChevronUp, Settings2, FileSpreadsheet } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { exportXlsx } from "@/lib/excel";
 
 const SEV_CONFIG = {
   critical: { icon: AlertCircle, border: "border-red-500/40 bg-red-500/5", badge: "text-red-600 border-red-500/30 bg-red-500/5", label: "Critical" },
@@ -105,10 +106,17 @@ export default function PlantWarnings({ month }: { month: string }) {
               {bySeverity.high.length > 0 && <span className="ml-2 text-amber-500 font-medium">{bySeverity.high.length} high</span>}
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setThresholdOpen((v) => !v)}>
-            <Settings2 className="h-4 w-4 mr-2" />
-            Thresholds {thresholdOpen ? <ChevronUp className="ml-1 h-3 w-3" /> : <ChevronDown className="ml-1 h-3 w-3" />}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => exportXlsx(`plant-warnings-${month}`, [
+              { name: "Warnings", rows: warnings.map((w: any) => ({ Severity: w.severity, Code: w.code, Scope: w.scope, Message: w.message, Value: w.value, Threshold: w.threshold })) },
+            ])}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setThresholdOpen((v) => !v)}>
+              <Settings2 className="h-4 w-4 mr-2" />
+              Thresholds {thresholdOpen ? <ChevronUp className="ml-1 h-3 w-3" /> : <ChevronDown className="ml-1 h-3 w-3" />}
+            </Button>
+          </div>
         </div>
       </header>
 

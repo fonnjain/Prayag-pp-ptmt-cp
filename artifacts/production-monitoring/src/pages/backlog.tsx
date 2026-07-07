@@ -1,7 +1,9 @@
 import { useGetMonitoringBacklog, getGetMonitoringBacklogQueryKey, type MonitoringBacklog } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PackageMinus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { PackageMinus, FileSpreadsheet } from "lucide-react";
+import { exportXlsx } from "@/lib/excel";
 
 export default function Backlog({ month }: { month: string }) {
   const { data: backlog, isLoading } = useGetMonitoringBacklog(
@@ -22,7 +24,14 @@ export default function Backlog({ month }: { month: string }) {
           <h1 className="text-3xl font-bold tracking-tight mb-2">Backlog Items</h1>
           <p className="text-muted-foreground">Items where pending orders exceed current stock for {month}</p>
         </div>
-        <Badge variant="destructive" className="text-lg px-4 py-1">{items.length} Stockouts</Badge>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => exportXlsx(`backlog-${month}`, [
+            { name: "Backlog", rows: items.map((i: any) => ({ ItemCode: i.itemCode, Colour: i.colour, Category: i.category, Stock: i.stock, PendingOrder: i.pendingOrder, Gap: i.pendingOrder - i.stock })) },
+          ])}>
+            <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+          </Button>
+          <Badge variant="destructive" className="text-lg px-4 py-1">{items.length} Stockouts</Badge>
+        </div>
       </header>
 
       {items.length === 0 ? (

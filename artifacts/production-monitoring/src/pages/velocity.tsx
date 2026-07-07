@@ -1,6 +1,9 @@
 import { useGetMonitoringVelocity, getGetMonitoringVelocityQueryKey, type MonitoringVelocity } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { FileSpreadsheet } from "lucide-react";
+import { exportXlsx } from "@/lib/excel";
 
 function RagBadge({ band }: { band: "green" | "amber" | "red" | null }) {
   if (!band) return <Badge variant="outline" className="text-muted-foreground border-muted">N/A</Badge>;
@@ -40,9 +43,16 @@ export default function Velocity({ month }: { month: string }) {
 
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto pb-10">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Production Velocity</h1>
-        <p className="text-muted-foreground">Pace and projection metrics for {month}</p>
+      <header className="mb-8 flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">Production Velocity</h1>
+          <p className="text-muted-foreground">Pace and projection metrics for {month}</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => exportXlsx(`velocity-${month}`, [
+          { name: "Velocity", rows: rows.map((r: any) => ({ Category: r.name, TargetKg: r.targetKg, OutputKg: r.outputToDateKg, Attainment: r.attainmentPct, RequiredPerDay: r.requiredPerDay, ActualPerDay: r.actualPerDay, DaysAheadBehind: r.daysAheadBehind, ProjectedEnd: r.projectedMonthEnd, RAG: r.ragBand })) },
+        ])}>
+          <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+        </Button>
       </header>
 
       <div className="border border-border/50 rounded-lg bg-card overflow-hidden shadow-sm">

@@ -1,7 +1,9 @@
 import { useGetMonitoringQuality, getGetMonitoringQualityQueryKey, type MonitoringQuality } from "@workspace/api-client-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AlertCircle, FileSpreadsheet } from "lucide-react";
+import { exportXlsx } from "@/lib/excel";
 
 function formatNum(val: number | null | undefined, maxDecimals = 1) {
   if (val == null) return "--";
@@ -29,9 +31,17 @@ export default function Quality({ month }: { month: string }) {
 
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto pb-10">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Machine Utilisation & Quality</h1>
-        <p className="text-muted-foreground">Performance by machine for {month}</p>
+      <header className="mb-8 flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">Machine Utilisation & Quality</h1>
+          <p className="text-muted-foreground">Performance by machine for {month}</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => exportXlsx(`quality-${month}`, [
+          { name: "Machines", rows: activeMachines.map((m: any) => ({ Machine: m.machineId, RunHours: m.runHours, IdealHours: m.idealHours, UtilisationPct: m.utilisationPct, OutputKg: m.outputKg, RejectionKg: m.rejectionKg, RejectionPct: m.rejectionPct, GoodOutputKg: m.goodOutputKg })) },
+          { name: "Grinders", rows: grinders.map((m: any) => ({ Machine: m.machineId, RunHours: m.runHours, OutputKg: m.outputKg })) },
+        ])}>
+          <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+        </Button>
       </header>
 
       {!data.dataAvailable && (

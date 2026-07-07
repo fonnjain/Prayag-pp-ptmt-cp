@@ -1,8 +1,10 @@
 import { useGetPlantTrend, getGetPlantTrendQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
-import { TrendingUp, TrendingDown } from "lucide-react";
+import { TrendingUp, TrendingDown, FileSpreadsheet } from "lucide-react";
+import { exportXlsx } from "@/lib/excel";
 
 interface PlantTrendSummary {
   month: string;
@@ -56,13 +58,20 @@ export default function PlantTrend({ month }: { month: string }) {
 
   return (
     <div className="space-y-6 max-w-[1300px] mx-auto pb-10">
-      <header className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight mb-1 flex items-center gap-2">
-          <TrendingUp className="h-7 w-7 text-primary" /> Month-over-Month Trend
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          Historical plant attainment, daily rate, and linearity · {summaries.length} month{summaries.length !== 1 ? "s" : ""} of data
-        </p>
+      <header className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-1 flex items-center gap-2">
+            <TrendingUp className="h-7 w-7 text-primary" /> Month-over-Month Trend
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Historical plant attainment, daily rate, and linearity · {summaries.length} month{summaries.length !== 1 ? "s" : ""} of data
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => exportXlsx(`trend`, [
+          { name: "Monthly Trend", rows: summaries.map((s) => ({ Month: s.month, AttainmentMaxPct: s.attainmentMaxPct, AttainmentMinPct: s.attainmentMinPct, AvgDailyPcs: s.avgDailyPcs, LinearityIndex: s.linearityIndex, ProducedTotal: s.producedTotal, TargetMax: s.targetMax, TargetMin: s.targetMin, WorkingDays: s.workingDays, BestCategory: s.bestCategory, WorstCategory: s.worstCategory, RAG: s.ragBand })) },
+        ])}>
+          <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+        </Button>
       </header>
 
       {/* Attainment trend */}

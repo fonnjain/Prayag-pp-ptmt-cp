@@ -1,8 +1,10 @@
 import { useGetMonitoringDashboard, getGetMonitoringDashboardQueryKey, type MonitoringDashboard } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, Calendar as CalendarIcon, Activity } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { AlertCircle, Calendar as CalendarIcon, Activity, FileSpreadsheet } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
+import { exportXlsx } from "@/lib/excel";
 
 function RagBadge({ band }: { band: "green" | "amber" | "red" | null }) {
   if (!band) return <Badge variant="outline" className="text-muted-foreground border-muted">N/A</Badge>;
@@ -33,12 +35,21 @@ export default function Dashboard({ month }: { month: string }) {
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-10">
-      <header className="mb-8">
-        <h1 className="text-3xl font-bold tracking-tight mb-2">Plant Dashboard</h1>
-        <p className="text-muted-foreground flex items-center gap-2">
-          <CalendarIcon className="h-4 w-4" />
-          Data as of {data.lastDataDate ? fmtDate(data.lastDataDate) : "No data"}
-        </p>
+      <header className="mb-8 flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">Plant Dashboard</h1>
+          <p className="text-muted-foreground flex items-center gap-2">
+            <CalendarIcon className="h-4 w-4" />
+            Data as of {data.lastDataDate ? fmtDate(data.lastDataDate) : "No data"}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => exportXlsx(`dashboard-${month}`, [
+          { name: "Plant Summary", rows: [{ Month: month, Attainment: data.plant?.attainmentPct, TargetKg: data.plant?.targetKg, RequiredPerDay: data.plant?.requiredPerDay, ActualPerDay: data.plant?.actualPerDay, DaysAheadBehind: data.plant?.daysAheadBehind, RAG: data.plant?.ragBand }] },
+          { name: "Categories", rows: (data.categories || []).map((c: any) => ({ Category: c.category, RequiredPerDay: c.requiredPerDay, RAG: c.ragBand })) },
+          { name: "Needs Review", rows: (data.needsReviewItems || []).map((i: any) => ({ ItemCode: i.itemCode, Colour: i.colour, Category: i.category })) },
+        ])}>
+          <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+        </Button>
       </header>
 
       {!data.dataAvailable && (

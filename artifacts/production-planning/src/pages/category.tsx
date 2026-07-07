@@ -2,6 +2,7 @@ import { useParams } from "wouter";
 import { useListPlanItems, type PlanItem } from "@workspace/api-client-react";
 import { AppLayout, CATEGORIES, categorySlug } from "@/components/layout/app-layout";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -12,6 +13,8 @@ import {
 } from "@/components/ui/table";
 import { currentMonth, formatMonthLabel } from "@/lib/month";
 import { cn } from "@/lib/utils";
+import { FileSpreadsheet } from "lucide-react";
+import { exportXlsx } from "@/lib/excel";
 
 export default function CategoryPage() {
   const { slug } = useParams<{ slug: string }>();
@@ -41,9 +44,18 @@ export default function CategoryPage() {
   return (
     <AppLayout>
       <div className="max-w-7xl mx-auto space-y-4">
-        <div>
-          <h2 className="text-xl font-semibold">{category}</h2>
-          <p className="text-sm text-gray-500">{formatMonthLabel(month)}</p>
+        <div className="flex items-start justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">{category}</h2>
+            <p className="text-sm text-gray-500">{formatMonthLabel(month)}</p>
+          </div>
+          {!isLoading && !isError && items.length > 0 && (
+            <Button variant="outline" size="sm" onClick={() => exportXlsx(`plan-${category?.toLowerCase().replace(/\s+/g, "-")}-${month}`, [
+              { name: "Items", rows: items.map((i) => ({ ItemCode: i.itemCode, Colour: i.colour, Avg3MoSale: i.avg3MoSale, PendingOrder: i.pendingOrder, PendingOrderLastMonth: i.pendingOrderLastMonth, BufferReq: i.bufferReq, Stock: i.stock, MinProduction: i.minProduction, MaxProduction: i.maxProduction, Order: i.order })) },
+            ])}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+            </Button>
+          )}
         </div>
 
         {!isLoading && !isError && (

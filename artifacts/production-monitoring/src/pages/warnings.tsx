@@ -1,7 +1,9 @@
 import { useGetMonitoringWarnings, getGetMonitoringWarningsQueryKey, type MonitoringWarnings } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { AlertTriangle, Info, AlertCircle, XOctagon } from "lucide-react";
+import { AlertTriangle, Info, AlertCircle, XOctagon, FileSpreadsheet } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { exportXlsx } from "@/lib/excel";
 
 const severityConfig: Record<string, { icon: any, color: string, bg: string, label: string }> = {
   info: { icon: Info, color: "text-blue-500", bg: "bg-blue-500/10 border-blue-500/20", label: "Info" },
@@ -27,7 +29,14 @@ export default function Warnings({ month }: { month: string }) {
           <h1 className="text-3xl font-bold tracking-tight mb-2">Active Warnings</h1>
           <p className="text-muted-foreground">Issues detected for {month}</p>
         </div>
-        <Badge variant="outline" className="text-lg px-4 py-1">{warnings.length} Total</Badge>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => exportXlsx(`warnings-${month}`, [
+            { name: "Warnings", rows: warnings.map((w: any) => ({ Severity: w.severity, Code: w.code, Scope: w.scope, Message: w.message, Value: w.value, Threshold: w.threshold, Source: w.source })) },
+          ])}>
+            <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+          </Button>
+          <Badge variant="outline" className="text-lg px-4 py-1">{warnings.length} Total</Badge>
+        </div>
       </header>
 
       {warnings.length === 0 ? (

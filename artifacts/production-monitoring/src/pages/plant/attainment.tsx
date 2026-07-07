@@ -2,9 +2,12 @@ import { useState } from "react";
 import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ComposedChart, Line } from "recharts";
+import { FileSpreadsheet } from "lucide-react";
+import { exportXlsx } from "@/lib/excel";
 
 function pct(n: number | null | undefined) { return n !== null && n !== undefined ? `${n.toFixed(1)}%` : "–"; }
 function fmt(n: number | null | undefined) { return n !== null && n !== undefined ? n.toLocaleString() : "–"; }
@@ -37,11 +40,20 @@ export default function PlantAttainment({ month }: { month: string }) {
 
   return (
     <div className="space-y-6 max-w-[1300px] mx-auto pb-10">
-      <header className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight mb-1">Plan vs Actual Attainment</h1>
-        <p className="text-muted-foreground text-sm">
-          Plant/category/item plan vs actual — {month} · {context.elapsed}/{context.workingDays} days elapsed
-        </p>
+      <header className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-1">Plan vs Actual Attainment</h1>
+          <p className="text-muted-foreground text-sm">
+            Plant/category/item plan vs actual — {month} · {context.elapsed}/{context.workingDays} days elapsed
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => exportXlsx(`attainment-${month}`, [
+          { name: "Categories", rows: categories.map((c) => ({ Category: c.category, TargetMax: c.targetMax, TargetMin: c.targetMin, ProducedToDate: c.producedToDate, GapPcs: c.gapPcs, AttainmentCumPct: c.attainmentCumPct, ProjectedAttainmentPct: c.projectedAttainmentPct, RAG: c.ragBand })) },
+          { name: "Variance Pareto", rows: variancePareto.map((i) => ({ ItemCode: i.itemCode, Colour: i.colour, Category: i.category, TargetMax: i.targetMax, ProducedToDate: i.producedToDate, GapPcs: i.gapPcs, AttainmentMonthPct: i.attainmentMonthPct, DaysNoProduction: i.daysWithNoProduction })) },
+          { name: "Mix Flags", rows: mixFlags.map((f) => ({ ItemCode: f.itemCode, Colour: f.colour, Category: f.category, TargetMax: f.targetMax })) },
+        ])}>
+          <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+        </Button>
       </header>
 
       <Tabs defaultValue="overview">

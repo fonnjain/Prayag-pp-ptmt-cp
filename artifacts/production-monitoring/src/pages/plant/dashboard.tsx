@@ -2,8 +2,9 @@ import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Activity, Download } from "lucide-react";
+import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Activity, Download, FileSpreadsheet } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
+import { exportXlsx } from "@/lib/excel";
 
 function downloadPdf(month: string, section: string) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -54,9 +55,17 @@ export default function PlantDashboard({ month }: { month: string }) {
               {context.snapshotDate ? ` · snapshot ${fmtDate(context.snapshotDate)}` : ""}
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => downloadPdf(month, "control-board")}>
-            <Download className="h-4 w-4 mr-2" /> Export PDF
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => exportXlsx(`plant-dashboard-${month}`, [
+              { name: "Plant Summary", rows: [{ Month: month, AttainmentCumPct: bundle.plant?.attainmentCumPct, ProducedToDate: bundle.plant?.producedToDate, TargetMax: bundle.plant?.targetMax, TargetMin: bundle.plant?.targetMin, ProjectedAttainmentPct: bundle.plant?.projectedAttainmentPct, RAG: bundle.plant?.ragBand }] },
+              { name: "Categories", rows: (bundle.categories || []).map((c: any) => ({ Category: c.category, ProducedToDate: c.producedToDate, TargetMax: c.targetMax, TargetMin: c.targetMin, AttainmentCumPct: c.attainmentCumPct, ProjectedAttainmentPct: c.projectedAttainmentPct, RAG: c.ragBand })) },
+            ])}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => downloadPdf(month, "control-board")}>
+              <Download className="h-4 w-4 mr-2" /> Export PDF
+            </Button>
+          </div>
         </div>
       </header>
 

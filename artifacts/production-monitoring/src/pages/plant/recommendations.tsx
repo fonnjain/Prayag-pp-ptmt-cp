@@ -1,7 +1,9 @@
 import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckSquare, Clock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { CheckSquare, Clock, FileSpreadsheet } from "lucide-react";
+import { exportXlsx } from "@/lib/excel";
 
 const EFFORT_CONFIG = {
   low: { label: "Low effort", className: "text-emerald-600 border-emerald-500/30 bg-emerald-500/5" },
@@ -31,13 +33,20 @@ export default function PlantRecommendations({ month }: { month: string }) {
 
   return (
     <div className="space-y-6 max-w-[1200px] mx-auto pb-10">
-      <header className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight mb-1 flex items-center gap-2">
-          <CheckSquare className="h-7 w-7 text-primary" /> Recommended Actions
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          Prioritised recovery actions for {month} — {recommendations.length} recommendation{recommendations.length !== 1 ? "s" : ""}
-        </p>
+      <header className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-1 flex items-center gap-2">
+            <CheckSquare className="h-7 w-7 text-primary" /> Recommended Actions
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Prioritised recovery actions for {month} — {recommendations.length} recommendation{recommendations.length !== 1 ? "s" : ""}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => exportXlsx(`recommendations-${month}`, [
+          { name: "Recommendations", rows: recommendations.map((r: any) => ({ Code: r.code, Title: r.title, Description: r.description, Effort: r.effort, Priority: r.priority, Scope: r.scope })) },
+        ])}>
+          <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+        </Button>
       </header>
 
       {recommendations.length === 0 && (

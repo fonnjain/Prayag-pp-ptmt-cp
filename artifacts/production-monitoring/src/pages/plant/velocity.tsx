@@ -2,8 +2,9 @@ import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
-import { Download } from "lucide-react";
+import { Download, FileSpreadsheet } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
+import { exportXlsx } from "@/lib/excel";
 
 function downloadPdf(month: string, section: string) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -45,9 +46,16 @@ export default function PlantVelocity({ month }: { month: string }) {
               Daily output and burn-up chart in pieces (NOS) — {month} · {context.elapsed}/{context.workingDays} days elapsed
             </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => downloadPdf(month, "velocity")}>
-            <Download className="h-4 w-4 mr-2" /> Export PDF
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => exportXlsx(`plant-velocity-${month}`, [
+              { name: "Daily Series", rows: (bundle.dailySeries || []).map((d: any) => ({ Date: d.date, DayOfMonth: d.dayOfMonth, DailyOutput: d.dailyOutput, CumulativeOutput: d.cumulativeOutput, RequiredCumulative: d.requiredCumulative, TargetMax: d.targetMax })) },
+            ])}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => downloadPdf(month, "velocity")}>
+              <Download className="h-4 w-4 mr-2" /> Export PDF
+            </Button>
+          </div>
         </div>
       </header>
 

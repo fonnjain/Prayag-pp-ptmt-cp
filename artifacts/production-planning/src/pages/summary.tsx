@@ -2,6 +2,7 @@ import { useGetPlanSummary, type PlanSummary } from "@workspace/api-client-react
 import { AppLayout, categorySlug } from "@/components/layout/app-layout";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -12,6 +13,8 @@ import {
 } from "@/components/ui/table";
 import { currentMonth, formatMonthLabel } from "@/lib/month";
 import { cn } from "@/lib/utils";
+import { FileSpreadsheet } from "lucide-react";
+import { exportXlsx } from "@/lib/excel";
 
 function achievementBand(pct: number): string {
   if (pct <= 75) return "bg-red-100 text-red-800";
@@ -34,8 +37,18 @@ export default function SummaryPage() {
   return (
     <AppLayout>
       <div className="max-w-6xl mx-auto space-y-4">
-        <div className="flex items-baseline justify-between">
+        <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Summary — {formatMonthLabel(month)}</h2>
+          {!isLoading && !isError && (
+            <Button variant="outline" size="sm" onClick={() => exportXlsx(`plan-summary-${month}`, [
+              { name: "Summary", rows: categories.map((cat) => {
+                const p = cat.maxTotal > 0 ? (cat.minTotal / cat.maxTotal) * 100 : 0;
+                return { Category: cat.category, MinRequired: cat.minTotal, MaxPlan: cat.maxTotal, AchievementPct: p };
+              }) },
+            ])}>
+              <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+            </Button>
+          )}
         </div>
 
         {isLoading && <p className="text-sm text-gray-500">Loading summary...</p>}

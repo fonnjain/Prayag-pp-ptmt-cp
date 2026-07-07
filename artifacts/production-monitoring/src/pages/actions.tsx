@@ -1,7 +1,9 @@
 import { useGetMonitoringActions, getGetMonitoringActionsQueryKey, type MonitoringActions } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckSquare, ArrowRightCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { CheckSquare, ArrowRightCircle, FileSpreadsheet } from "lucide-react";
+import { exportXlsx } from "@/lib/excel";
 
 export default function Actions({ month }: { month: string }) {
   const { data: monitoring, isLoading } = useGetMonitoringActions(
@@ -20,7 +22,14 @@ export default function Actions({ month }: { month: string }) {
           <h1 className="text-3xl font-bold tracking-tight mb-2">Recommended Actions</h1>
           <p className="text-muted-foreground">Prioritized operational recommendations for {month}</p>
         </div>
-        <Badge variant="outline" className="text-lg px-4 py-1">{actions.length} Actions</Badge>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => exportXlsx(`actions-${month}`, [
+            { name: "Actions", rows: actions.map((a: any) => ({ Priority: a.priority, Code: a.code, Scope: a.scope, Message: a.message, SuggestedQty: a.suggestedQty })) },
+          ])}>
+            <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+          </Button>
+          <Badge variant="outline" className="text-lg px-4 py-1">{actions.length} Actions</Badge>
+        </div>
       </header>
 
       {actions.length === 0 ? (
