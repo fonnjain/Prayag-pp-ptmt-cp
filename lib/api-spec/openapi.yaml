@@ -217,6 +217,102 @@ paths:
                 type: string
                 format: binary
 
+  /plan/runs:
+    post:
+      operationId: createPlanRun
+      tags: [plan]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePlanRunRequest"
+      responses:
+        "201":
+          description: Draft plan run created with frozen snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRunSummary"
+        "400":
+          description: Bad request
+    get:
+      operationId: listPlanRuns
+      tags: [plan]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: List of plan runs for the month, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PlanRunSummary"
+
+  /plan/runs/compare:
+    get:
+      operationId: comparePlanRuns
+      tags: [plan]
+      parameters:
+        - name: run1
+          in: query
+          required: true
+          schema: { type: integer }
+        - name: run2
+          in: query
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Per-item delta between two frozen runs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRunDiff"
+
+  /plan/runs/{id}:
+    get:
+      operationId: getPlanRun
+      tags: [plan]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Frozen plan run with all per-item results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRunDetail"
+        "404":
+          description: Not found
+
+  /plan/runs/{id}/finalize:
+    post:
+      operationId: finalizePlanRun
+      tags: [plan]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Run finalized (locked)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRunSummary"
+        "404":
+          description: Not found
+
   /monitoring/dashboard:
     get:
       operationId: getMonitoringDashboard
@@ -889,6 +985,78 @@ components:
             $ref: "#/components/schemas/CategorySummary"
         grandMinTotal: { type: number }
         grandMaxTotal: { type: number }
+
+    CreatePlanRunRequest:
+      type: object
+      required: [month]
+      properties:
+        month: { type: string }
+        note: { type: string }
+
+    PlanRunSummary:
+      type: object
+      required: [id, month, asOfAt, status, note, itemCount, grandMinTotal, grandMaxTotal, createdAt]
+      properties:
+        id: { type: integer }
+        month: { type: string }
+        asOfAt: { type: string, format: date-time }
+        status: { type: string, enum: [draft, finalized] }
+        note: { type: ["string", "null"] }
+        itemCount: { type: integer }
+        grandMinTotal: { type: number }
+        grandMaxTotal: { type: number }
+        createdAt: { type: string, format: date-time }
+
+    PlanRunItem:
+      type: object
+      required: [itemCode, colour, category, avg3MoSale, stock, pendingCurrent, pendingLastMonth, bufferReq, minProduction, productionPlan]
+      properties:
+        itemCode: { type: string }
+        colour: { type: string }
+        category: { type: string }
+        avg3MoSale: { type: number }
+        stock: { type: number }
+        pendingCurrent: { type: number }
+        pendingLastMonth: { type: number }
+        bufferReq: { type: number }
+        minProduction: { type: number }
+        productionPlan: { type: number }
+
+    PlanRunDetail:
+      type: object
+      required: [run, items]
+      properties:
+        run:
+          $ref: "#/components/schemas/PlanRunSummary"
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanRunItem"
+
+    PlanRunDiffItem:
+      type: object
+      required: [itemCode, colour, category, minProductionDelta, productionPlanDelta, pendingCurrentDelta, stockDelta]
+      properties:
+        itemCode: { type: string }
+        colour: { type: string }
+        category: { type: string }
+        minProductionDelta: { type: number }
+        productionPlanDelta: { type: number }
+        pendingCurrentDelta: { type: number }
+        stockDelta: { type: number }
+
+    PlanRunDiff:
+      type: object
+      required: [run1Id, run2Id, grandMinDelta, grandMaxDelta, items]
+      properties:
+        run1Id: { type: integer }
+        run2Id: { type: integer }
+        grandMinDelta: { type: number }
+        grandMaxDelta: { type: number }
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanRunDiffItem"
 
     DashboardSnapshot:
       type: object

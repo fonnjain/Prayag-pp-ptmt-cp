@@ -137,6 +137,100 @@ export const exportPlanPdfQueryParams = zod.object({
 })
 
 
+export const createPlanRunBody = zod.object({
+  "month": zod.string(),
+  "note": zod.string().optional()
+})
+
+
+export const listPlanRunsQueryParams = zod.object({
+  "month": zod.string()
+})
+
+export const listPlanRunsResponseItem = zod.object({
+  "id": zod.number(),
+  "month": zod.string(),
+  "asOfAt": zod.string().datetime({}),
+  "status": zod.enum(['draft', 'finalized']),
+  "note": zod.string().nullable(),
+  "itemCount": zod.number(),
+  "grandMinTotal": zod.number(),
+  "grandMaxTotal": zod.number(),
+  "createdAt": zod.string().datetime({})
+})
+export const listPlanRunsResponse = zod.array(listPlanRunsResponseItem)
+
+
+export const comparePlanRunsQueryParams = zod.object({
+  "run1": zod.number(),
+  "run2": zod.number()
+})
+
+export const comparePlanRunsResponse = zod.object({
+  "run1Id": zod.number(),
+  "run2Id": zod.number(),
+  "grandMinDelta": zod.number(),
+  "grandMaxDelta": zod.number(),
+  "items": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "category": zod.string(),
+  "minProductionDelta": zod.number(),
+  "productionPlanDelta": zod.number(),
+  "pendingCurrentDelta": zod.number(),
+  "stockDelta": zod.number()
+}))
+})
+
+
+export const getPlanRunParams = zod.object({
+  "id": zod.number()
+})
+
+export const getPlanRunResponse = zod.object({
+  "run": zod.object({
+  "id": zod.number(),
+  "month": zod.string(),
+  "asOfAt": zod.string().datetime({}),
+  "status": zod.enum(['draft', 'finalized']),
+  "note": zod.string().nullable(),
+  "itemCount": zod.number(),
+  "grandMinTotal": zod.number(),
+  "grandMaxTotal": zod.number(),
+  "createdAt": zod.string().datetime({})
+}),
+  "items": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "category": zod.string(),
+  "avg3MoSale": zod.number(),
+  "stock": zod.number(),
+  "pendingCurrent": zod.number(),
+  "pendingLastMonth": zod.number(),
+  "bufferReq": zod.number(),
+  "minProduction": zod.number(),
+  "productionPlan": zod.number()
+}))
+})
+
+
+export const finalizePlanRunParams = zod.object({
+  "id": zod.number()
+})
+
+export const finalizePlanRunResponse = zod.object({
+  "id": zod.number(),
+  "month": zod.string(),
+  "asOfAt": zod.string().datetime({}),
+  "status": zod.enum(['draft', 'finalized']),
+  "note": zod.string().nullable(),
+  "itemCount": zod.number(),
+  "grandMinTotal": zod.number(),
+  "grandMaxTotal": zod.number(),
+  "createdAt": zod.string().datetime({})
+})
+
+
 export const getMonitoringDashboardQueryParams = zod.object({
   "month": zod.string()
 })

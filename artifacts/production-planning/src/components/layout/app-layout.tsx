@@ -19,6 +19,7 @@ const NAV_LINKS = [
   { href: "/", label: "Data" },
   { href: "/summary", label: "Summary" },
   ...CATEGORIES.map((c) => ({ href: `/category/${categorySlug(c)}`, label: c })),
+  { href: "/runs", label: "Plan Runs" },
   { href: "/export", label: "Export" },
 ];
 

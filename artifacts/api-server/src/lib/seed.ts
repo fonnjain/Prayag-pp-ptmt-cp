@@ -64,8 +64,8 @@ async function seedItemMaster(): Promise<void> {
 }
 
 async function seedSyncSources(): Promise<void> {
-  const existing = await db.select({ id: syncSourcesTable.id }).from(syncSourcesTable).limit(1);
-  if (existing.length > 0) return;
+  // Upsert all known sources so new sheets added to SHEET_LABELS appear in
+  // existing deployments without requiring a manual DB seed.
   const values = Object.entries(SHEET_LABELS).map(([id, name]) => ({
     id,
     name,
@@ -74,7 +74,7 @@ async function seedSyncSources(): Promise<void> {
     rows: [],
     lastSyncedAt: null,
   }));
-  await db.insert(syncSourcesTable).values(values);
+  await db.insert(syncSourcesTable).values(values).onConflictDoNothing();
   logger.info({ count: values.length }, "Seeded sync sources");
 }
 

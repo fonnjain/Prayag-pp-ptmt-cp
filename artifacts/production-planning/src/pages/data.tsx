@@ -15,17 +15,11 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { cn, fmtDateTime } from "@/lib/utils";
 
 const UPLOAD_KINDS: { kind: (typeof UploadKind)[keyof typeof UploadKind]; label: string; hint: string }[] = [
-  {
-    kind: UploadKind.pending_orders,
-    label: "Current Pending Order",
-    hint: "DATA.xlsx (raw ERP export) — PendingOrder sheet · filter Segment PTMT/PT · group by Item Code + Colour",
-  },
   {
     kind: UploadKind.current_stock,
     label: "F.G. STOCK Factory Excel",
@@ -227,19 +221,29 @@ export default function DataPage() {
         <div>
           <h2 className="text-xl font-semibold">Data</h2>
           <p className="text-sm text-gray-500">
-            Upload the monthly snapshots, connect live Google Sheets sources, and set buffer-stock
+            Upload the monthly stock file, connect live Google Sheets sources, and set buffer-stock
             multipliers per category.
           </p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Monthly snapshot uploads</CardTitle>
+            <CardTitle className="text-base">Monthly file uploads</CardTitle>
           </CardHeader>
           <CardContent>
             {UPLOAD_KINDS.map((u) => (
               <UploadRow key={u.kind} {...u} />
             ))}
+            <div className="pt-3 text-xs text-gray-500 space-y-1">
+              <p>
+                <strong>Current Pending Order</strong> is read live from the "Pending order" Google Sheet
+                (report tab, Segment = PTMT, Old ERP Code + Colour, Bal. Qty) — no upload needed.
+              </p>
+              <p>
+                <strong>Last Month Pending</strong> is auto-extracted from the LAST MONTH PENDING ITEMS
+                tab inside the F.G. STOCK Excel — no separate upload needed.
+              </p>
+            </div>
           </CardContent>
         </Card>
 

@@ -5,6 +5,7 @@ import { computeItemPlan, summarizePlan, type ItemSourceRow } from "../lib/calc"
 import {
   fetchAvg3MoSaleTotals,
   fetchLiveOrderTotals,
+  fetchLivePendingOrderTotals,
   itemKey,
   normalizeCode,
   type DualTotals,
@@ -59,24 +60,18 @@ function hasEntry(totals: DualTotals, itemCode: string, colour: string, isSingle
 }
 
 export async function buildPlanItems(month: string) {
-  const [itemRows, bufferRows, pendingOrderRows, pendingLastMoRows, currentStockRows, avg3MoTotals, liveOrderTotals] =
+  const [itemRows, bufferRows, pendingLastMoRows, currentStockRows, avg3MoTotals, livePendingTotals, liveOrderTotals] =
     await Promise.all([
       db.select().from(itemMasterTable),
       db.select().from(bufferCategoriesTable),
-      loadLatestUploadRowsByKind("pending_orders"),
       loadLatestUploadRowsByKind("last_month_pending"),
       loadLatestUploadRowsByKind("current_stock"),
       fetchAvg3MoSaleTotals(month),
+      fetchLivePendingOrderTotals(),
       fetchLiveOrderTotals(month),
     ]);
 
   const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
-  const pendingOrderTotals = sumByKey(
-    pendingOrderRows,
-    ["Old Item Code", "Item No."],
-    ["Color", "Colour"],
-    ["Balance_Qty"],
-  );
   const pendingLastMoTotals = sumByKey(pendingLastMoRows, ["Item Code"], ["Colour", "Color"], ["Qty"]);
   const stockTotals = sumByKey(currentStockRows, ["Item Code"], ["Colour", "Color"], ["Qty"]);
 
@@ -101,7 +96,7 @@ export async function buildPlanItems(month: string) {
       stockNeedsReview:
         currentStockRows.length > 0 && !hasEntry(stockTotals, item.itemCode, item.colour, isSingleVariant),
       pendingOrderLastMonth: resolveTotal(pendingLastMoTotals, item.itemCode, item.colour, isSingleVariant),
-      pendingOrder: resolveTotal(pendingOrderTotals, item.itemCode, item.colour, isSingleVariant),
+      pendingOrder: resolveTotal(livePendingTotals, item.itemCode, item.colour, isSingleVariant),
       order: resolveTotal(liveOrderTotals, item.itemCode, item.colour, isSingleVariant),
     };
     const multiplier = bufferByCategory.get(item.category) ?? 1;
@@ -111,7 +106,7 @@ export async function buildPlanItems(month: string) {
   return items;
 }
 
-async function loadLatestUploadRowsByKind(kind: string): Promise<Record<string, unknown>[]> {
+export async function loadLatestUploadRowsByKind(kind: string): Promise<Record<string, unknown>[]> {
   const [file] = await db
     .select({ rows: uploadedFilesTable.rows })
     .from(uploadedFilesTable)

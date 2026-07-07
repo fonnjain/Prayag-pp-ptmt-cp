@@ -7,6 +7,7 @@ import DataPage from "@/pages/data";
 import SummaryPage from "@/pages/summary";
 import CategoryPage from "@/pages/category";
 import ExportPage from "@/pages/export";
+import RunsPage from "@/pages/runs";
 
 const queryClient = new QueryClient();
 
@@ -16,6 +17,7 @@ function Router() {
       <Route path="/" component={DataPage} />
       <Route path="/summary" component={SummaryPage} />
       <Route path="/category/:slug" component={CategoryPage} />
+      <Route path="/runs" component={RunsPage} />
       <Route path="/export" component={ExportPage} />
       <Route component={NotFound} />
     </Switch>

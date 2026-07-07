@@ -11,6 +11,7 @@ export const SHEET_IDS = {
   saleSheet2627: "19LQGpkbZiecGaXdBvl48rPZT2LUz3sKekeKX5fHu7Ps",
   codeWiseSale2526: "1kcPcre-iT7k6zH9RViqwajnhxQoppoUz2z46LdY29mg",
   rateList: "1njO-srsS29qiE4t45-zr5njbB7R2Zb-oSnv2NL1ONY4",
+  pendingOrder: "1dmt6uHOdZSIT0wgNkSfuK8W8d0YO8STW51PVOAAFHvY",
 } as const;
 
 export const SHEET_LABELS: Record<keyof typeof SHEET_IDS, string> = {
@@ -20,6 +21,7 @@ export const SHEET_LABELS: Record<keyof typeof SHEET_IDS, string> = {
   saleSheet2627: "SALE SHEET 26-27",
   codeWiseSale2526: "CODE WISE SALE 25-26",
   rateList: "rate list",
+  pendingOrder: "Pending order",
 };
 
 /**
@@ -221,4 +223,77 @@ export async function fetchLiveOrderTotals(month: string): Promise<DualTotals> {
     addToDualTotals(totals, code, colour, qty);
   }
   return totals;
+}
+
+/**
+ * Apply sheet-specific aliases for the "Pending order" report tab.
+ * Codes ending in -LSBB, -LSTBB, -LSQBB are aliased to -LSB, -LSTB, -LSQB
+ * and their colour is forced to BLUE.
+ * Verified: 123-LSB/BLUE = 184 (via alias from 123-LSBB/BLACK).
+ */
+function applyPendingOrderAlias(code: string, colour: string): { code: string; colour: string } {
+  // Order matters — check longer suffixes first to avoid partial replacement
+  const patterns: [RegExp, string][] = [
+    [/(-LSQBB)$/i, "-LSQB"],
+    [/(-LSTBB)$/i, "-LSTB"],
+    [/(-LSBB)$/i, "-LSB"],
+  ];
+  for (const [from, to] of patterns) {
+    if (from.test(code)) {
+      return { code: code.replace(from, to), colour: "BLUE" };
+    }
+  }
+  return { code, colour };
+}
+
+/**
+ * Live current pending order from "Pending order" Google Sheet → "report" tab.
+ * Filter Segment (col X) = PTMT, key on Old ERP Code (col F) + Colour (col H),
+ * sum Bal. Qty (col Q). Applies -LSBB/BLACK → -LSB/BLUE alias.
+ * Verified: PTMT total 15,906; 120-WS/WHITE = 180; 123-LSB/BLUE = 184 (via alias).
+ */
+export async function fetchLivePendingOrderTotals(): Promise<DualTotals> {
+  // Read enough columns to cover Segment at col X (index 23). Use "A1:X" to include
+  // all columns A through X without a hard row cap that would truncate large sheets.
+  const values = await throttledGetTabValues(SHEET_IDS.pendingOrder, "report", "A1:X50000");
+  const rows = rowsToObjects(values);
+  const totals: DualTotals = { exact: new Map(), byCode: new Map() };
+
+  for (const row of rows) {
+    const segment = String(row["Segment"] ?? "").trim().toUpperCase();
+    if (segment !== "PTMT") continue;
+    let code = String(row["Old ERP Code"] ?? "").trim();
+    let colour = String(row["Colour"] ?? "").trim();
+    const qty = toNumber(row["Bal. Qty"]);
+    if (!code) continue;
+    const aliased = applyPendingOrderAlias(code, colour);
+    code = aliased.code;
+    colour = aliased.colour;
+    addToDualTotals(totals, code, colour, qty);
+  }
+
+  return totals;
+}
+
+/**
+ * Snapshot the raw filtered rows from the "Pending order" sheet (for audit trail).
+ * Returns an array of { catNo, colour, qty } for all PTMT rows after aliasing.
+ */
+export async function snapshotPendingOrderRows(): Promise<{ catNo: string; colour: string; qty: number }[]> {
+  const values = await throttledGetTabValues(SHEET_IDS.pendingOrder, "report", "A1:X50000");
+  const rows = rowsToObjects(values);
+  const result: { catNo: string; colour: string; qty: number }[] = [];
+
+  for (const row of rows) {
+    const segment = String(row["Segment"] ?? "").trim().toUpperCase();
+    if (segment !== "PTMT") continue;
+    let code = String(row["Old ERP Code"] ?? "").trim();
+    let colour = String(row["Colour"] ?? "").trim();
+    const qty = toNumber(row["Bal. Qty"]);
+    if (!code) continue;
+    const aliased = applyPendingOrderAlias(code, colour);
+    result.push({ catNo: aliased.code, colour: aliased.colour, qty });
+  }
+
+  return result;
 }

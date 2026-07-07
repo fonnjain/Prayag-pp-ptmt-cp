@@ -25,6 +25,8 @@ import type {
   AnalyzeAiPlantBody,
   BufferCategory,
   BufferCategoryUpdate,
+  ComparePlanRunsParams,
+  CreatePlanRunRequest,
   CreateUploadBody,
   DashboardSnapshot,
   ExportMonitoringExcelParams,
@@ -55,6 +57,7 @@ import type {
   ListAiPlantAnalysesParams,
   ListIdealHoursOverridesParams,
   ListPlanItemsParams,
+  ListPlanRunsParams,
   MonitoringActions,
   MonitoringBacklog,
   MonitoringConfig,
@@ -65,6 +68,9 @@ import type {
   MonitoringWarnings,
   OkResult,
   PlanItem,
+  PlanRunDetail,
+  PlanRunDiff,
+  PlanRunSummary,
   PlanSummary,
   PlantBundle,
   PlantConfigData,
@@ -1107,6 +1113,445 @@ export function useExportPlanPdf<TData = Awaited<ReturnType<typeof exportPlanPdf
 
 
 
+export type createPlanRunResponse201 = {
+  data: PlanRunSummary
+  status: 201
+}
+
+export type createPlanRunResponse400 = {
+  data: void
+  status: 400
+}
+    
+export type createPlanRunResponseSuccess = (createPlanRunResponse201) & {
+  headers: Headers;
+};
+export type createPlanRunResponseError = (createPlanRunResponse400) & {
+  headers: Headers;
+};
+
+export type createPlanRunResponse = (createPlanRunResponseSuccess | createPlanRunResponseError)
+
+export const getCreatePlanRunUrl = () => {
+
+
+  
+
+  return `/api/plan/runs`
+}
+
+export const createPlanRun = async (createPlanRunRequest: CreatePlanRunRequest, options?: RequestInit): Promise<createPlanRunResponse> => {
+  
+  return customFetch<createPlanRunResponse>(getCreatePlanRunUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createPlanRunRequest,)
+  }
+);}
+
+
+
+
+export const getCreatePlanRunMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPlanRun>>, TError,{data: CreatePlanRunRequest}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createPlanRun>>, TError,{data: CreatePlanRunRequest}, TContext> => {
+
+const mutationKey = ['createPlanRun'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPlanRun>>, {data: CreatePlanRunRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createPlanRun(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePlanRunMutationResult = NonNullable<Awaited<ReturnType<typeof createPlanRun>>>
+    export type CreatePlanRunMutationBody = CreatePlanRunRequest
+    export type CreatePlanRunMutationError = void
+
+    export const useCreatePlanRun = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPlanRun>>, TError,{data: CreatePlanRunRequest}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createPlanRun>>,
+        TError,
+        {data: CreatePlanRunRequest},
+        TContext
+      > => {
+
+      const mutationOptions = getCreatePlanRunMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type listPlanRunsResponse200 = {
+  data: PlanRunSummary[]
+  status: 200
+}
+    
+export type listPlanRunsResponseSuccess = (listPlanRunsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listPlanRunsResponse = (listPlanRunsResponseSuccess)
+
+export const getListPlanRunsUrl = (params: ListPlanRunsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/plan/runs?${stringifiedParams}` : `/api/plan/runs`
+}
+
+export const listPlanRuns = async (params: ListPlanRunsParams, options?: RequestInit): Promise<listPlanRunsResponse> => {
+  
+  return customFetch<listPlanRunsResponse>(getListPlanRunsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getListPlanRunsQueryKey = (params?: ListPlanRunsParams,) => {
+    return [
+    `/api/plan/runs`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getListPlanRunsQueryOptions = <TData = Awaited<ReturnType<typeof listPlanRuns>>, TError = unknown>(params: ListPlanRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPlanRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPlanRunsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPlanRuns>>> = ({ signal }) => listPlanRuns(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPlanRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPlanRunsQueryResult = NonNullable<Awaited<ReturnType<typeof listPlanRuns>>>
+export type ListPlanRunsQueryError = unknown
+
+
+
+export function useListPlanRuns<TData = Awaited<ReturnType<typeof listPlanRuns>>, TError = unknown>(
+ params: ListPlanRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPlanRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPlanRunsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type comparePlanRunsResponse200 = {
+  data: PlanRunDiff
+  status: 200
+}
+    
+export type comparePlanRunsResponseSuccess = (comparePlanRunsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type comparePlanRunsResponse = (comparePlanRunsResponseSuccess)
+
+export const getComparePlanRunsUrl = (params: ComparePlanRunsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/plan/runs/compare?${stringifiedParams}` : `/api/plan/runs/compare`
+}
+
+export const comparePlanRuns = async (params: ComparePlanRunsParams, options?: RequestInit): Promise<comparePlanRunsResponse> => {
+  
+  return customFetch<comparePlanRunsResponse>(getComparePlanRunsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getComparePlanRunsQueryKey = (params?: ComparePlanRunsParams,) => {
+    return [
+    `/api/plan/runs/compare`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getComparePlanRunsQueryOptions = <TData = Awaited<ReturnType<typeof comparePlanRuns>>, TError = unknown>(params: ComparePlanRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof comparePlanRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getComparePlanRunsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof comparePlanRuns>>> = ({ signal }) => comparePlanRuns(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof comparePlanRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ComparePlanRunsQueryResult = NonNullable<Awaited<ReturnType<typeof comparePlanRuns>>>
+export type ComparePlanRunsQueryError = unknown
+
+
+
+export function useComparePlanRuns<TData = Awaited<ReturnType<typeof comparePlanRuns>>, TError = unknown>(
+ params: ComparePlanRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof comparePlanRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getComparePlanRunsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getPlanRunResponse200 = {
+  data: PlanRunDetail
+  status: 200
+}
+
+export type getPlanRunResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type getPlanRunResponseSuccess = (getPlanRunResponse200) & {
+  headers: Headers;
+};
+export type getPlanRunResponseError = (getPlanRunResponse404) & {
+  headers: Headers;
+};
+
+export type getPlanRunResponse = (getPlanRunResponseSuccess | getPlanRunResponseError)
+
+export const getGetPlanRunUrl = (id: number,) => {
+
+
+  
+
+  return `/api/plan/runs/${id}`
+}
+
+export const getPlanRun = async (id: number, options?: RequestInit): Promise<getPlanRunResponse> => {
+  
+  return customFetch<getPlanRunResponse>(getGetPlanRunUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetPlanRunQueryKey = (id?: number,) => {
+    return [
+    `/api/plan/runs/${id}`
+    ] as const;
+    }
+
+    
+export const getGetPlanRunQueryOptions = <TData = Awaited<ReturnType<typeof getPlanRun>>, TError = void>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlanRun>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlanRunQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlanRun>>> = ({ signal }) => getPlanRun(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlanRun>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlanRunQueryResult = NonNullable<Awaited<ReturnType<typeof getPlanRun>>>
+export type GetPlanRunQueryError = void
+
+
+
+export function useGetPlanRun<TData = Awaited<ReturnType<typeof getPlanRun>>, TError = void>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlanRun>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlanRunQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type finalizePlanRunResponse200 = {
+  data: PlanRunSummary
+  status: 200
+}
+
+export type finalizePlanRunResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type finalizePlanRunResponseSuccess = (finalizePlanRunResponse200) & {
+  headers: Headers;
+};
+export type finalizePlanRunResponseError = (finalizePlanRunResponse404) & {
+  headers: Headers;
+};
+
+export type finalizePlanRunResponse = (finalizePlanRunResponseSuccess | finalizePlanRunResponseError)
+
+export const getFinalizePlanRunUrl = (id: number,) => {
+
+
+  
+
+  return `/api/plan/runs/${id}/finalize`
+}
+
+export const finalizePlanRun = async (id: number, options?: RequestInit): Promise<finalizePlanRunResponse> => {
+  
+  return customFetch<finalizePlanRunResponse>(getFinalizePlanRunUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+
+
+
+
+export const getFinalizePlanRunMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finalizePlanRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof finalizePlanRun>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['finalizePlanRun'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof finalizePlanRun>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  finalizePlanRun(id,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type FinalizePlanRunMutationResult = NonNullable<Awaited<ReturnType<typeof finalizePlanRun>>>
+    
+    export type FinalizePlanRunMutationError = void
+
+    export const useFinalizePlanRun = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finalizePlanRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof finalizePlanRun>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+
+      const mutationOptions = getFinalizePlanRunMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
 export type getMonitoringDashboardResponse200 = {
   data: MonitoringDashboard
   status: 200
