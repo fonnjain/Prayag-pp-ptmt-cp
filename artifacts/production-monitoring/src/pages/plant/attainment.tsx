@@ -1,10 +1,11 @@
+import { useState, Fragment } from "react";
 import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ComposedChart, Line } from "recharts";
-import { FileSpreadsheet } from "lucide-react";
+import { FileSpreadsheet, ChevronDown, ChevronRight } from "lucide-react";
 import { exportXlsx } from "@/lib/excel";
 
 function pct(n: number | null | undefined) { return n !== null && n !== undefined ? `${n.toFixed(1)}%` : "–"; }
@@ -13,6 +14,8 @@ function fmt(n: number | null | undefined) { return n !== null && n !== undefine
 const RAG_COLORS = { green: "#10b981", amber: "#f59e0b", red: "#ef4444" };
 
 export default function PlantAttainment({ month, selectedCategory }: { month: string; selectedCategory?: string | null }) {
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+
   const { data, isLoading } = useGetPlantBundle(
     { month },
     { query: { queryKey: getGetPlantBundleQueryKey({ month }) } }
@@ -102,12 +105,16 @@ export default function PlantAttainment({ month, selectedCategory }: { month: st
           </Card>
 
           <Card>
-            <CardHeader><CardTitle>Category Detail</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle>Category Detail</CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">Click a row to expand item-level drill-down</p>
+            </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border/50 text-muted-foreground text-right">
+                      <th className="text-left py-2 pr-4 font-medium w-6"></th>
                       <th className="text-left py-2 pr-4 font-medium">Category</th>
                       <th className="py-2 pr-4 font-medium">Max PP</th>
                       <th className="py-2 pr-4 font-medium">Min PP</th>
@@ -119,24 +126,85 @@ export default function PlantAttainment({ month, selectedCategory }: { month: st
                     </tr>
                   </thead>
                   <tbody>
-                    {categories.map((cat) => (
-                      <tr key={cat.category} className="border-b border-border/20 hover:bg-muted/20 text-right">
-                        <td className="py-2 pr-4 text-left font-medium">{cat.category}</td>
-                        <td className="py-2 pr-4 font-mono">{fmt(cat.targetMax)}</td>
-                        <td className="py-2 pr-4 font-mono text-muted-foreground">{fmt(cat.targetMin)}</td>
-                        <td className="py-2 pr-4 font-mono">{fmt(cat.producedToDate)}</td>
-                        <td className={`py-2 pr-4 font-mono ${cat.gapPcs > 0 ? "text-red-500" : "text-emerald-600"}`}>{fmt(cat.gapPcs)}</td>
-                        <td className="py-2 pr-4 font-mono">{pct(cat.attainmentCumPct)}</td>
-                        <td className="py-2 pr-4 font-mono">{pct(cat.projectedAttainmentPct)}</td>
-                        <td className="py-2">
-                          <Badge variant="outline" className={`text-xs ${cat.ragBand === "green" ? "text-emerald-600 border-emerald-500/40" : cat.ragBand === "amber" ? "text-amber-600 border-amber-500/40" : "text-red-600 border-red-500/40"}`}>
-                            {cat.ragBand ?? "–"}
-                          </Badge>
-                        </td>
-                      </tr>
-                    ))}
+                    {categories.map((cat) => {
+                      const isOpen = expandedCategory === cat.category;
+                      const catItems = items
+                        .filter((i) => i.category === cat.category)
+                        .sort((a, b) => Math.max(b.gapPcs, 0) - Math.max(a.gapPcs, 0));
+                      return (
+                        <Fragment key={cat.category}>
+                          {/* Category row — clickable */}
+                          <tr
+                            className="border-b border-border/20 hover:bg-muted/30 text-right cursor-pointer select-none"
+                            onClick={() => setExpandedCategory(isOpen ? null : cat.category)}
+                          >
+                            <td className="py-2 pl-1 text-left text-muted-foreground">
+                              {isOpen
+                                ? <ChevronDown className="h-3.5 w-3.5" />
+                                : <ChevronRight className="h-3.5 w-3.5" />}
+                            </td>
+                            <td className="py-2 pr-4 text-left font-medium">{cat.category}</td>
+                            <td className="py-2 pr-4 font-mono">{fmt(cat.targetMax)}</td>
+                            <td className="py-2 pr-4 font-mono text-muted-foreground">{fmt(cat.targetMin)}</td>
+                            <td className="py-2 pr-4 font-mono">{fmt(cat.producedToDate)}</td>
+                            <td className={`py-2 pr-4 font-mono ${cat.gapPcs > 0 ? "text-red-500" : "text-emerald-600"}`}>{fmt(cat.gapPcs)}</td>
+                            <td className="py-2 pr-4 font-mono">{pct(cat.attainmentCumPct)}</td>
+                            <td className="py-2 pr-4 font-mono">{pct(cat.projectedAttainmentPct)}</td>
+                            <td className="py-2">
+                              <Badge variant="outline" className={`text-xs ${cat.ragBand === "green" ? "text-emerald-600 border-emerald-500/40" : cat.ragBand === "amber" ? "text-amber-600 border-amber-500/40" : "text-red-600 border-red-500/40"}`}>
+                                {cat.ragBand ?? "–"}
+                              </Badge>
+                            </td>
+                          </tr>
+
+                          {/* Expanded item rows */}
+                          {isOpen && (
+                            <>
+                              <tr className="bg-muted/20">
+                                <td colSpan={9} className="pt-2 pb-0 px-4">
+                                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b border-border/30 pb-1 mb-0">
+                                    {cat.category} — {catItems.length} items
+                                  </div>
+                                </td>
+                              </tr>
+                              <tr className="bg-muted/10">
+                                <td colSpan={2} />
+                                <td className="py-1.5 pr-3 text-right text-xs text-muted-foreground font-medium">Item Code</td>
+                                <td className="py-1.5 pr-3 text-left text-xs text-muted-foreground font-medium">Colour</td>
+                                <td className="py-1.5 pr-3 text-right text-xs text-muted-foreground font-medium">Plan (Max)</td>
+                                <td className="py-1.5 pr-3 text-right text-xs text-muted-foreground font-medium">Produced</td>
+                                <td className="py-1.5 pr-3 text-right text-xs text-muted-foreground font-medium">Gap</td>
+                                <td className="py-1.5 pr-3 text-right text-xs text-muted-foreground font-medium">Att %</td>
+                                <td className="py-1.5 text-right text-xs text-muted-foreground font-medium">0-day streak</td>
+                              </tr>
+                              {catItems.map((item, idx) => (
+                                <tr
+                                  key={`${item.itemCode}/${item.colour}/${idx}`}
+                                  className="bg-muted/10 border-b border-border/10 hover:bg-muted/25 text-right"
+                                >
+                                  <td colSpan={2} />
+                                  <td className="py-1.5 pr-3 font-mono text-xs font-medium">{item.itemCode}</td>
+                                  <td className="py-1.5 pr-3 text-left text-xs text-muted-foreground">{item.colour || "—"}</td>
+                                  <td className="py-1.5 pr-3 font-mono text-xs">{fmt(item.targetMax)}</td>
+                                  <td className="py-1.5 pr-3 font-mono text-xs">{fmt(item.producedToDate)}</td>
+                                  <td className={`py-1.5 pr-3 font-mono text-xs ${item.gapPcs > 0 ? "text-red-500" : "text-emerald-600"}`}>{fmt(Math.max(item.gapPcs, 0))}</td>
+                                  <td className="py-1.5 pr-3 font-mono text-xs">{pct(item.attainmentMonthPct)}</td>
+                                  <td className={`py-1.5 font-mono text-xs ${item.daysWithNoProduction > 3 ? "text-red-500 font-semibold" : "text-muted-foreground"}`}>
+                                    {item.daysWithNoProduction > 0 ? item.daysWithNoProduction : "–"}
+                                  </td>
+                                </tr>
+                              ))}
+                              <tr className="bg-muted/10">
+                                <td colSpan={9} className="py-2" />
+                              </tr>
+                            </>
+                          )}
+                        </Fragment>
+                      );
+                    })}
                     {!selectedCategory && (
                       <tr className="border-t-2 border-border font-bold text-right">
+                        <td className="py-2" />
                         <td className="py-2 pr-4 text-left">Plant Total</td>
                         <td className="py-2 pr-4 font-mono">{fmt(plant.targetMax)}</td>
                         <td className="py-2 pr-4 font-mono text-muted-foreground">{fmt(plant.targetMin)}</td>
