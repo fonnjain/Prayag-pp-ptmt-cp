@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -23,6 +24,7 @@ import PlantRecommendations from "@/pages/plant/recommendations";
 import PlantTrend from "@/pages/plant/trend";
 import PlantConfig from "@/pages/plant/plant-config";
 import PlantReports from "@/pages/plant/reports";
+import PlantCategories from "@/pages/plant/categories";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,16 +37,27 @@ const queryClient = new QueryClient({
   },
 });
 
-function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMonth }: {
+function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMonth, selectedCategory, setSelectedCategory }: {
   month: string;
   preset: import("@/hooks/use-date-filter").DatePreset;
   customMonth: string;
   dateRange: import("@/hooks/use-date-filter").DateRange;
   setPreset: (p: import("@/hooks/use-date-filter").DatePreset) => void;
   setCustomMonth: (m: string) => void;
+  selectedCategory: string | null;
+  setSelectedCategory: (c: string | null) => void;
 }) {
   return (
-    <AppLayout month={month} preset={preset} customMonth={customMonth} dateRange={dateRange} setPreset={setPreset} setCustomMonth={setCustomMonth}>
+    <AppLayout
+      month={month}
+      preset={preset}
+      customMonth={customMonth}
+      dateRange={dateRange}
+      setPreset={setPreset}
+      setCustomMonth={setCustomMonth}
+      selectedCategory={selectedCategory}
+      setSelectedCategory={setSelectedCategory}
+    >
       <Switch>
         <Route path="/">
           <Dashboard month={month} />
@@ -71,13 +84,13 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
           <AiAnalytics month={month} />
         </Route>
         <Route path="/plant">
-          <PlantDashboard month={month} />
+          <PlantDashboard month={month} selectedCategory={selectedCategory} />
         </Route>
         <Route path="/plant/velocity">
           <PlantVelocity month={month} />
         </Route>
         <Route path="/plant/attainment">
-          <PlantAttainment month={month} />
+          <PlantAttainment month={month} selectedCategory={selectedCategory} />
         </Route>
         <Route path="/plant/warnings">
           <PlantWarnings month={month} />
@@ -94,6 +107,9 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
         <Route path="/plant/reports">
           <PlantReports month={month} />
         </Route>
+        <Route path="/plant/categories">
+          <PlantCategories month={month} selectedCategory={selectedCategory} />
+        </Route>
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
@@ -102,6 +118,7 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
 
 function App() {
   const { month, preset, customMonth, dateRange, setPreset, setCustomMonth } = useDateFilter();
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -114,6 +131,8 @@ function App() {
             dateRange={dateRange}
             setPreset={setPreset}
             setCustomMonth={setCustomMonth}
+            selectedCategory={selectedCategory}
+            setSelectedCategory={setSelectedCategory}
           />
         </WouterRouter>
         <Toaster />
