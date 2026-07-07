@@ -617,10 +617,25 @@ export const updatePlantConfigBody = zod.object({
   "workingDays": zod.number().optional(),
   "shiftsPerDay": zod.number().optional(),
   "shiftHours": zod.number().optional(),
-  "snapshotDate": zod.string().nullish()
+  "snapshotDate": zod.string().nullish(),
+  "thresholds": zod.record(zod.string(), zod.unknown()).optional()
 })
 
 export const updatePlantConfigResponse = zod.object({
+  "ok": zod.boolean()
+})
+
+
+export const patchPlantConfigBody = zod.object({
+  "month": zod.string(),
+  "workingDays": zod.number().optional(),
+  "shiftsPerDay": zod.number().optional(),
+  "shiftHours": zod.number().optional(),
+  "snapshotDate": zod.string().nullish(),
+  "thresholds": zod.record(zod.string(), zod.unknown()).optional()
+})
+
+export const patchPlantConfigResponse = zod.object({
   "ok": zod.boolean()
 })
 
@@ -642,4 +657,30 @@ export const invalidatePlantCacheBody = zod.object({
 
 export const invalidatePlantCacheResponse = zod.object({
   "ok": zod.boolean()
+})
+
+
+export const getPlantTrendResponse = zod.object({
+  "data": zod.array(zod.object({
+  "month": zod.string(),
+  "workingDays": zod.number(),
+  "attainmentMaxPct": zod.number().nullish(),
+  "attainmentMinPct": zod.number().nullish(),
+  "avgDailyPcs": zod.number().nullish(),
+  "linearityIndex": zod.number().nullish(),
+  "producedTotal": zod.number().nullish(),
+  "targetMax": zod.number().nullish(),
+  "targetMin": zod.number().nullish(),
+  "bestCategory": zod.string().nullish(),
+  "worstCategory": zod.string().nullish(),
+  "ragBand": zod.string().nullish()
+}))
+})
+
+
+export const exportPlantPdfQuerySectionDefault = "control-board";
+
+export const exportPlantPdfQueryParams = zod.object({
+  "month": zod.string(),
+  "section": zod.enum(['control-board', 'velocity', 'warnings']).default(exportPlantPdfQuerySectionDefault)
 })

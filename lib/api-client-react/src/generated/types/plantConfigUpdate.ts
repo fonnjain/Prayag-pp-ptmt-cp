@@ -5,6 +5,7 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { PlantConfigUpdateSnapshotDate } from './plantConfigUpdateSnapshotDate';
+import type { PlantConfigUpdateThresholds } from './plantConfigUpdateThresholds';
 
 export interface PlantConfigUpdate {
   month: string;
@@ -12,4 +13,5 @@ export interface PlantConfigUpdate {
   shiftsPerDay?: number;
   shiftHours?: number;
   snapshotDate?: PlantConfigUpdateSnapshotDate;
+  thresholds?: PlantConfigUpdateThresholds;
 }

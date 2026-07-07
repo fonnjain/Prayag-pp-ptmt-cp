@@ -34,12 +34,12 @@ export function AppLayout({ children, month, setMonth }: { children: React.React
   ];
 
   const plantNavItems = [
-    { href: "/plant", label: "Plant Dashboard", icon: Factory },
-    { href: "/plant/velocity", label: "Velocity (NOS)", icon: TrendingUp },
-    { href: "/plant/categories", label: "Categories", icon: Layers },
-    { href: "/plant/pareto", label: "Pareto", icon: BarChart2 },
+    { href: "/plant", label: "Control Board", icon: Factory },
+    { href: "/plant/velocity", label: "Velocity", icon: TrendingUp },
+    { href: "/plant/attainment", label: "Attainment", icon: Layers },
     { href: "/plant/warnings", label: "Warnings", icon: ShieldAlert },
-    { href: "/plant/actions", label: "Actions", icon: ListChecks },
+    { href: "/plant/recommendations", label: "Recommendations", icon: ListChecks },
+    { href: "/plant/trend", label: "Trend", icon: BarChart2 },
     { href: "/plant/config", label: "Config", icon: SlidersHorizontal },
   ];
 

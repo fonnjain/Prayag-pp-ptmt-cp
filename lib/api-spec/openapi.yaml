@@ -584,6 +584,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OkResult"
+    patch:
+      operationId: patchPlantConfig
+      tags: [plant]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlantConfigUpdate"
+      responses:
+        "200":
+          description: Config patched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResult"
 
   /plant/source-config:
     put:
@@ -623,6 +639,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OkResult"
+
+  /plant/trend:
+    get:
+      operationId: getPlantTrend
+      tags: [plant]
+      parameters: []
+      responses:
+        "200":
+          description: Month-over-month plant trend summaries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/PlantTrendSummary"
+
+  /plant/export/pdf:
+    get:
+      operationId: exportPlantPdf
+      tags: [plant]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+        - name: section
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [control-board, velocity, warnings]
+            default: control-board
+      responses:
+        "200":
+          description: PDF export of the plant report
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
 
 components:
   schemas:
@@ -1307,6 +1367,23 @@ components:
           items: { type: string }
         dataAvailable: { type: boolean }
 
+    PlantTrendSummary:
+      type: object
+      required: [month, workingDays]
+      properties:
+        month: { type: string }
+        workingDays: { type: integer }
+        attainmentMaxPct: { type: ["number", "null"] }
+        attainmentMinPct: { type: ["number", "null"] }
+        avgDailyPcs: { type: ["number", "null"] }
+        linearityIndex: { type: ["number", "null"] }
+        producedTotal: { type: ["number", "null"] }
+        targetMax: { type: ["number", "null"] }
+        targetMin: { type: ["number", "null"] }
+        bestCategory: { type: ["string", "null"] }
+        worstCategory: { type: ["string", "null"] }
+        ragBand: { type: ["string", "null"] }
+
     PlantSourceConfigItem:
       type: object
       required: [month, fileId]
@@ -1339,6 +1416,7 @@ components:
         shiftsPerDay: { type: integer }
         shiftHours: { type: integer }
         snapshotDate: { type: ["string", "null"] }
+        thresholds: { type: object, additionalProperties: true }
 
     PlantSourceConfigUpsert:
       type: object

@@ -29,6 +29,7 @@ import type {
   ExportMonitoringPdfParams,
   ExportPlanExcelParams,
   ExportPlanPdfParams,
+  ExportPlantPdfParams,
   GetMonitoringActionsParams,
   GetMonitoringBacklogParams,
   GetMonitoringConfigParams,
@@ -39,6 +40,7 @@ import type {
   GetPlanSummaryParams,
   GetPlantBundleParams,
   GetPlantConfigParams,
+  GetPlantTrend200,
   HealthStatus,
   IdealHoursOverride,
   IdealHoursOverrideUpsert,
@@ -2992,6 +2994,84 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(mutationOptions);
     }
     
+export type patchPlantConfigResponse200 = {
+  data: OkResult
+  status: 200
+}
+    
+export type patchPlantConfigResponseSuccess = (patchPlantConfigResponse200) & {
+  headers: Headers;
+};
+;
+
+export type patchPlantConfigResponse = (patchPlantConfigResponseSuccess)
+
+export const getPatchPlantConfigUrl = () => {
+
+
+  
+
+  return `/api/plant/config`
+}
+
+export const patchPlantConfig = async (plantConfigUpdate: PlantConfigUpdate, options?: RequestInit): Promise<patchPlantConfigResponse> => {
+  
+  return customFetch<patchPlantConfigResponse>(getPatchPlantConfigUrl(),
+  {      
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      plantConfigUpdate,)
+  }
+);}
+
+
+
+
+export const getPatchPlantConfigMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof patchPlantConfig>>, TError,{data: PlantConfigUpdate}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof patchPlantConfig>>, TError,{data: PlantConfigUpdate}, TContext> => {
+
+const mutationKey = ['patchPlantConfig'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof patchPlantConfig>>, {data: PlantConfigUpdate}> = (props) => {
+          const {data} = props ?? {};
+
+          return  patchPlantConfig(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PatchPlantConfigMutationResult = NonNullable<Awaited<ReturnType<typeof patchPlantConfig>>>
+    export type PatchPlantConfigMutationBody = PlantConfigUpdate
+    export type PatchPlantConfigMutationError = unknown
+
+    export const usePatchPlantConfig = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof patchPlantConfig>>, TError,{data: PlantConfigUpdate}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof patchPlantConfig>>,
+        TError,
+        {data: PlantConfigUpdate},
+        TContext
+      > => {
+
+      const mutationOptions = getPatchPlantConfigMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
 export type upsertPlantSourceConfigResponse200 = {
   data: OkResult
   status: 200
@@ -3147,3 +3227,172 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
       return useMutation(mutationOptions);
     }
+    
+export type getPlantTrendResponse200 = {
+  data: GetPlantTrend200
+  status: 200
+}
+    
+export type getPlantTrendResponseSuccess = (getPlantTrendResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPlantTrendResponse = (getPlantTrendResponseSuccess)
+
+export const getGetPlantTrendUrl = () => {
+
+
+  
+
+  return `/api/plant/trend`
+}
+
+export const getPlantTrend = async ( options?: RequestInit): Promise<getPlantTrendResponse> => {
+  
+  return customFetch<getPlantTrendResponse>(getGetPlantTrendUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetPlantTrendQueryKey = () => {
+    return [
+    `/api/plant/trend`
+    ] as const;
+    }
+
+    
+export const getGetPlantTrendQueryOptions = <TData = Awaited<ReturnType<typeof getPlantTrend>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantTrend>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlantTrendQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlantTrend>>> = ({ signal }) => getPlantTrend({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlantTrend>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlantTrendQueryResult = NonNullable<Awaited<ReturnType<typeof getPlantTrend>>>
+export type GetPlantTrendQueryError = unknown
+
+
+
+export function useGetPlantTrend<TData = Awaited<ReturnType<typeof getPlantTrend>>, TError = unknown>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantTrend>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlantTrendQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type exportPlantPdfResponse200 = {
+  data: Blob
+  status: 200
+}
+    
+export type exportPlantPdfResponseSuccess = (exportPlantPdfResponse200) & {
+  headers: Headers;
+};
+;
+
+export type exportPlantPdfResponse = (exportPlantPdfResponseSuccess)
+
+export const getExportPlantPdfUrl = (params: ExportPlantPdfParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/plant/export/pdf?${stringifiedParams}` : `/api/plant/export/pdf`
+}
+
+export const exportPlantPdf = async (params: ExportPlantPdfParams, options?: RequestInit): Promise<exportPlantPdfResponse> => {
+  
+  return customFetch<exportPlantPdfResponse>(getExportPlantPdfUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getExportPlantPdfQueryKey = (params?: ExportPlantPdfParams,) => {
+    return [
+    `/api/plant/export/pdf`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getExportPlantPdfQueryOptions = <TData = Awaited<ReturnType<typeof exportPlantPdf>>, TError = unknown>(params: ExportPlantPdfParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportPlantPdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportPlantPdfQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportPlantPdf>>> = ({ signal }) => exportPlantPdf(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportPlantPdf>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportPlantPdfQueryResult = NonNullable<Awaited<ReturnType<typeof exportPlantPdf>>>
+export type ExportPlantPdfQueryError = unknown
+
+
+
+export function useExportPlantPdf<TData = Awaited<ReturnType<typeof exportPlantPdf>>, TError = unknown>(
+ params: ExportPlantPdfParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportPlantPdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportPlantPdfQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}

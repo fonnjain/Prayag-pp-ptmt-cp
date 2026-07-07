@@ -17,10 +17,10 @@ import AiAnalytics from "@/pages/ai-analytics";
 
 import PlantDashboard from "@/pages/plant/dashboard";
 import PlantVelocity from "@/pages/plant/velocity";
-import PlantCategories from "@/pages/plant/categories";
-import PlantPareto from "@/pages/plant/pareto";
+import PlantAttainment from "@/pages/plant/attainment";
 import PlantWarnings from "@/pages/plant/plant-warnings";
-import PlantActions from "@/pages/plant/plant-actions";
+import PlantRecommendations from "@/pages/plant/recommendations";
+import PlantTrend from "@/pages/plant/trend";
 import PlantConfig from "@/pages/plant/plant-config";
 
 const queryClient = new QueryClient();
@@ -59,17 +59,17 @@ function Router({ month, setMonth }: { month: string, setMonth: (m: string) => v
         <Route path="/plant/velocity">
           <PlantVelocity month={month} />
         </Route>
-        <Route path="/plant/categories">
-          <PlantCategories month={month} />
-        </Route>
-        <Route path="/plant/pareto">
-          <PlantPareto month={month} />
+        <Route path="/plant/attainment">
+          <PlantAttainment month={month} />
         </Route>
         <Route path="/plant/warnings">
           <PlantWarnings month={month} />
         </Route>
-        <Route path="/plant/actions">
-          <PlantActions month={month} />
+        <Route path="/plant/recommendations">
+          <PlantRecommendations month={month} />
+        </Route>
+        <Route path="/plant/trend">
+          <PlantTrend month={month} />
         </Route>
         <Route path="/plant/config">
           <PlantConfig month={month} />

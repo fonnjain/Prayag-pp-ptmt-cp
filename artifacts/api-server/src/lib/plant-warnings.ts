@@ -109,6 +109,18 @@ export function buildPlantWarnings(bundle: PlantBundle, thresholds: PlantWarning
     warnings.push({ code: "DATA_STALE", severity: "info", scope: "Plant", message: "Production data exists but no working days elapsed yet — KPIs unavailable", value: null, threshold: null, source: "data" });
   }
 
+  // TODAY_MISSED: today is a working day within the month but snapshot_date is behind today
+  if (context.elapsed > 0 && context.snapshotDate) {
+    const today = new Date().toISOString().slice(0, 10);
+    const [sy, sm] = bundle.month.split("-").map(Number);
+    const todayDate = new Date(today);
+    const monthYear = todayDate.getFullYear() * 100 + (todayDate.getMonth() + 1);
+    const bundleMonthYear = sy * 100 + sm;
+    if (monthYear === bundleMonthYear && context.snapshotDate < today && todayDate.getDay() !== 0 && todayDate.getDay() !== 6) {
+      warnings.push({ code: "TODAY_MISSED", severity: "medium", scope: "Plant", message: `No production data for today (${today}) — last snapshot is ${context.snapshotDate}. Today's output may not be captured yet.`, value: null, threshold: null, source: "data" });
+    }
+  }
+
   warnings.sort((a, b) => severityOrder(a.severity) - severityOrder(b.severity));
   return warnings;
 }
