@@ -39,7 +39,7 @@ localPort = 8080
 run = "pnpm --filter @workspace/api-server run dev"
 
 [services.production]
-build = [ "pnpm", "--filter", "@workspace/api-server", "run", "build" ]
+build = [ "sh", "-c", "cd artifacts/api-server && node esbuild.build.mjs" ]
 run = "node artifacts/api-server/dist/index.js"
 
 [services.env]

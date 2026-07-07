@@ -16,4 +16,5 @@
 - [Plant bundle in-memory cache](plant-bundle-cache.md) — 5-min Map cache in routes/plant.ts; invalidate it alongside DB cache on config save; React Query staleTime=5min keeps UI instant.
 - [Puppeteer Chrome auto-install](puppeteer-chrome.md) — puppeteer package is installed but Chrome binary needs explicit install; ensureBrowser.ts at startup handles this; API URL from monitoring app must be /api/... not ${base}/api/...
 - [API listen-before-browser](listen-before-browser.md) — ensureBrowser blocks app.listen; always listen first, run browser install in background callback.
+- [Prod API build command](prod-api-build.md) — pnpm build step in artifact.toml takes ~32s in prod (healthchecks fail); use direct esbuild instead.
 - [Plan runs + pending order source](plan-runs-system.md) — THREE uploads required (current_stock/pending_orders/last_month_pending); current pending MUST come from DATA.xlsx upload NOT live sheet (drifts daily); plan_runs schema in 003_plan_runs.sql; last_month_pending reads PTMT tab; F.G. STOCK reads F.G Sheet only.
