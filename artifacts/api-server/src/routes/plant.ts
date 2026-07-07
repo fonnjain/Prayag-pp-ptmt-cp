@@ -10,6 +10,16 @@ import puppeteer from "puppeteer";
 
 const router: IRouter = Router();
 
+// In-memory bundle cache — keyed by month, invalidated after 5 min or on demand
+type BundleCacheEntry = { result: Awaited<ReturnType<typeof computePlantBundle>>; ts: number };
+const bundleCache = new Map<string, BundleCacheEntry>();
+const BUNDLE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export function invalidatePlantBundleCache(month?: string) {
+  if (month) bundleCache.delete(month);
+  else bundleCache.clear();
+}
+
 async function loadPlantConfigRow(month: string) {
   const [row] = await db.select().from(plantConfigsTable).where(eq(plantConfigsTable.month, month));
   return row ?? null;
@@ -56,8 +66,14 @@ router.get("/plant/bundle", async (req, res) => {
     return;
   }
   try {
+    const cached = bundleCache.get(month);
+    if (cached && Date.now() - cached.ts < BUNDLE_CACHE_TTL_MS) {
+      res.set("Cache-Control", "private, max-age=300").json(cached.result);
+      return;
+    }
     const result = await computePlantBundle(month);
-    res.json(result);
+    bundleCache.set(month, { result, ts: Date.now() });
+    res.set("Cache-Control", "private, max-age=300").json(result);
   } catch (err) {
     logger.error({ err, month }, "plant/bundle failed");
     res.status(500).json({ error: "Failed to compute plant bundle" });
@@ -314,6 +330,7 @@ router.post("/plant/cache/invalidate", async (req, res) => {
     return;
   }
   await db.delete(plantIngestionCacheTable).where(eq(plantIngestionCacheTable.month, month));
+  invalidatePlantBundleCache(month);
   logger.info({ month }, "plant cache invalidated");
   res.json({ ok: true });
 });

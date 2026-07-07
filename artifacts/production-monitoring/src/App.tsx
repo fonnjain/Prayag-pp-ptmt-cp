@@ -23,7 +23,16 @@ import PlantRecommendations from "@/pages/plant/recommendations";
 import PlantTrend from "@/pages/plant/trend";
 import PlantConfig from "@/pages/plant/plant-config";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 function Router({ month, setMonth }: { month: string, setMonth: (m: string) => void }) {
   return (
