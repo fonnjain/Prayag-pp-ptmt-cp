@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/app-layout";
-import { useMonth } from "@/hooks/use-month";
+import { useDateFilter } from "@/hooks/use-date-filter";
 import NotFound from "@/pages/not-found";
 
 import Dashboard from "@/pages/dashboard";
@@ -35,9 +35,16 @@ const queryClient = new QueryClient({
   },
 });
 
-function Router({ month, setMonth }: { month: string, setMonth: (m: string) => void }) {
+function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMonth }: {
+  month: string;
+  preset: import("@/hooks/use-date-filter").DatePreset;
+  customMonth: string;
+  dateRange: import("@/hooks/use-date-filter").DateRange;
+  setPreset: (p: import("@/hooks/use-date-filter").DatePreset) => void;
+  setCustomMonth: (m: string) => void;
+}) {
   return (
-    <AppLayout month={month} setMonth={setMonth}>
+    <AppLayout month={month} preset={preset} customMonth={customMonth} dateRange={dateRange} setPreset={setPreset} setCustomMonth={setCustomMonth}>
       <Switch>
         <Route path="/">
           <Dashboard month={month} />
@@ -94,13 +101,20 @@ function Router({ month, setMonth }: { month: string, setMonth: (m: string) => v
 }
 
 function App() {
-  const { month, setMonth } = useMonth();
+  const { month, preset, customMonth, dateRange, setPreset, setCustomMonth } = useDateFilter();
 
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router month={month} setMonth={setMonth} />
+          <Router
+            month={month}
+            preset={preset}
+            customMonth={customMonth}
+            dateRange={dateRange}
+            setPreset={setPreset}
+            setCustomMonth={setCustomMonth}
+          />
         </WouterRouter>
         <Toaster />
       </TooltipProvider>
