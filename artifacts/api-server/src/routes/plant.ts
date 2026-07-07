@@ -67,12 +67,25 @@ router.get("/plant/bundle", async (req, res) => {
 // --- GET /plant/trend ---
 router.get("/plant/trend", async (req, res) => {
   try {
+    const rawMonths = req.query.months as string | undefined;
     const sourceRows = await db.select().from(plantSourceConfigsTable);
     const configRows = await db.select().from(plantConfigsTable);
-    const allMonths = [...new Set([
+    let allMonths = [...new Set([
       ...sourceRows.map((r) => r.month),
       ...configRows.map((r) => r.month),
     ])].sort();
+
+    if (rawMonths) {
+      if (/^\d+$/.test(rawMonths)) {
+        // Numeric: return last N months
+        const n = parseInt(rawMonths, 10);
+        allMonths = allMonths.slice(-n);
+      } else {
+        // Comma-separated month list
+        const requested = rawMonths.split(",").map((m) => m.trim()).filter(Boolean);
+        allMonths = allMonths.filter((m) => requested.includes(m));
+      }
+    }
 
     const summaries = await Promise.allSettled(allMonths.map(async (month) => {
       try {
@@ -130,7 +143,8 @@ router.get("/plant/export/pdf", async (req, res): Promise<void> => {
     const bundle = await computeBundle(month);
     const { plant, categories, warnings, recommendations, context } = bundle;
 
-    const htmlContent = `
+    const ragCss = (band: string | null) => band === "green" ? "color:#16a34a" : band === "amber" ? "color:#d97706" : "color:#dc2626";
+  const htmlContent = `
 <!DOCTYPE html><html><head>
 <meta charset="utf-8">
 <title>PTMT Plant ${section} — ${month}</title>
@@ -154,7 +168,7 @@ router.get("/plant/export/pdf", async (req, res): Promise<void> => {
 
 <div class="kpi-row">
   <div class="kpi"><div class="label">Produced to Date</div><div class="value">${plant.producedToDate.toLocaleString()} pcs</div></div>
-  <div class="kpi"><div class="label">Max PP Attainment</div><div class="value class="${plant.ragBand ?? ""}">${plant.attainmentMonthPct?.toFixed(1) ?? "–"}%</div></div>
+  <div class="kpi"><div class="label">Max PP Attainment</div><div class="value" style="${ragCss(plant.ragBand)}">${plant.attainmentMonthPct?.toFixed(1) ?? "–"}%</div></div>
   <div class="kpi"><div class="label">Cumulative Attainment</div><div class="value">${plant.attainmentCumPct?.toFixed(1) ?? "–"}%</div></div>
   <div class="kpi"><div class="label">Projected End</div><div class="value">${plant.projectedAttainmentPct?.toFixed(1) ?? "–"}%</div></div>
 </div>

@@ -46,6 +46,7 @@ export * from './getPlanSummaryParams';
 export * from './getPlantBundleParams';
 export * from './getPlantConfigParams';
 export * from './getPlantTrend200';
+export * from './getPlantTrendParams';
 export * from './healthStatus';
 export * from './idealHoursOverride';
 export * from './idealHoursOverrideUpsert';

@@ -41,6 +41,7 @@ import type {
   GetPlantBundleParams,
   GetPlantConfigParams,
   GetPlantTrend200,
+  GetPlantTrendParams,
   HealthStatus,
   IdealHoursOverride,
   IdealHoursOverrideUpsert,
@@ -3240,17 +3241,24 @@ export type getPlantTrendResponseSuccess = (getPlantTrendResponse200) & {
 
 export type getPlantTrendResponse = (getPlantTrendResponseSuccess)
 
-export const getGetPlantTrendUrl = () => {
+export const getGetPlantTrendUrl = (params?: GetPlantTrendParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
-  
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/plant/trend`
+  return stringifiedParams.length > 0 ? `/api/plant/trend?${stringifiedParams}` : `/api/plant/trend`
 }
 
-export const getPlantTrend = async ( options?: RequestInit): Promise<getPlantTrendResponse> => {
+export const getPlantTrend = async (params?: GetPlantTrendParams, options?: RequestInit): Promise<getPlantTrendResponse> => {
   
-  return customFetch<getPlantTrendResponse>(getGetPlantTrendUrl(),
+  return customFetch<getPlantTrendResponse>(getGetPlantTrendUrl(params),
   {      
     ...options,
     method: 'GET'
@@ -3263,23 +3271,23 @@ export const getPlantTrend = async ( options?: RequestInit): Promise<getPlantTre
 
 
 
-export const getGetPlantTrendQueryKey = () => {
+export const getGetPlantTrendQueryKey = (params?: GetPlantTrendParams,) => {
     return [
-    `/api/plant/trend`
+    `/api/plant/trend`, ...(params ? [params]: [])
     ] as const;
     }
 
     
-export const getGetPlantTrendQueryOptions = <TData = Awaited<ReturnType<typeof getPlantTrend>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantTrend>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetPlantTrendQueryOptions = <TData = Awaited<ReturnType<typeof getPlantTrend>>, TError = unknown>(params?: GetPlantTrendParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantTrend>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetPlantTrendQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetPlantTrendQueryKey(params);
 
   
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlantTrend>>> = ({ signal }) => getPlantTrend({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlantTrend>>> = ({ signal }) => getPlantTrend(params, { signal, ...requestOptions });
 
       
 
@@ -3294,11 +3302,11 @@ export type GetPlantTrendQueryError = unknown
 
 
 export function useGetPlantTrend<TData = Awaited<ReturnType<typeof getPlantTrend>>, TError = unknown>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantTrend>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: GetPlantTrendParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantTrend>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
   
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetPlantTrendQueryOptions(options)
+  const queryOptions = getGetPlantTrendQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

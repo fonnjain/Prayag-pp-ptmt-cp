@@ -289,9 +289,25 @@ export function buildPlantBundle(
   const avgTargetPerItem = plantTargetMax / Math.max(targets.length, 1);
   const highPlanThreshold = avgTargetPerItem * 0.75;
   const mixFlags: MixFlag[] = [];
+
+  // Categories that have at least one zero-output high-plan item
+  const zeroOutputCategories = new Set<string>();
+  for (const item of itemKPIs) {
+    if (item.targetMax >= highPlanThreshold && item.producedToDate === 0) {
+      zeroOutputCategories.add(item.category);
+    }
+  }
+
   for (const item of itemKPIs) {
     if (item.targetMax >= highPlanThreshold && item.producedToDate === 0) {
       mixFlags.push({ itemCode: item.itemCode, colour: item.colour, category: item.category, targetMax: item.targetMax, producedToDate: 0, reason: "zero_output_high_plan" });
+    } else if (
+      item.targetMax >= highPlanThreshold &&
+      item.producedToDate > item.targetMax * 1.1 &&
+      zeroOutputCategories.has(item.category)
+    ) {
+      // Over-producing (>110% of plan) in a category where other high-plan items sit at zero
+      mixFlags.push({ itemCode: item.itemCode, colour: item.colour, category: item.category, targetMax: item.targetMax, producedToDate: item.producedToDate, reason: "over_producing_high_plan" });
     }
   }
   mixFlags.sort((a, b) => b.targetMax - a.targetMax);

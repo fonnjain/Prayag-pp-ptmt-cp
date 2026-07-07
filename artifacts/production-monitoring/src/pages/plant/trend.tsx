@@ -25,6 +25,7 @@ const RAG = { green: "#10b981", amber: "#f59e0b", red: "#ef4444", null: "#94a3b8
 
 export default function PlantTrend({ month }: { month: string }) {
   const { data, isLoading } = useGetPlantTrend(
+    undefined,
     { query: { queryKey: getGetPlantTrendQueryKey() } }
   );
 

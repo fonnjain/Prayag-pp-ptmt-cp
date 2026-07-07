@@ -660,6 +660,10 @@ export const invalidatePlantCacheResponse = zod.object({
 })
 
 
+export const getPlantTrendQueryParams = zod.object({
+  "months": zod.string().optional().describe('Optional filter: a number (e.g. \'6\' = last 6 months) or comma-separated YYYY-MM list')
+})
+
 export const getPlantTrendResponse = zod.object({
   "data": zod.array(zod.object({
   "month": zod.string(),

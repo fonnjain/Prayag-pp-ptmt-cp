@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable } from "@workspace/db";
+import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable } from "@workspace/db";
 import { logger } from "./logger";
 import { SHEET_LABELS } from "./sheets";
 
@@ -78,8 +78,47 @@ async function seedSyncSources(): Promise<void> {
   logger.info({ count: values.length }, "Seeded sync sources");
 }
 
+const PLANT_SOURCE_CONFIGS: { month: string; fileId: string; notes: string }[] = [
+  { month: "2025-06", fileId: "1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw", notes: "PTMT ANUJ Production" },
+  { month: "2026-03", fileId: "1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw", notes: "PTMT ANUJ Production" },
+  { month: "2026-05", fileId: "1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw", notes: "PTMT ANUJ Production" },
+  { month: "2026-06", fileId: "1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw", notes: "PTMT ANUJ Production" },
+  { month: "2026-07", fileId: "1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw", notes: "PTMT ANUJ Production" },
+];
+
+const PLANT_CONFIGS: { month: string; workingDays: number; snapshotDate: string | null }[] = [
+  { month: "2026-07", workingDays: 27, snapshotDate: "2026-07-05" },
+];
+
+async function seedPlantSourceConfigs(): Promise<void> {
+  for (const cfg of PLANT_SOURCE_CONFIGS) {
+    await db.insert(plantSourceConfigsTable)
+      .values({ month: cfg.month, fileId: cfg.fileId, notes: cfg.notes })
+      .onConflictDoNothing();
+  }
+  logger.info({ count: PLANT_SOURCE_CONFIGS.length }, "Seeded plant source configs");
+}
+
+async function seedPlantConfigs(): Promise<void> {
+  for (const cfg of PLANT_CONFIGS) {
+    await db.insert(plantConfigsTable)
+      .values({
+        month: cfg.month,
+        workingDays: cfg.workingDays,
+        shiftsPerDay: 2,
+        shiftHours: 12,
+        snapshotDate: cfg.snapshotDate,
+        thresholdsJson: {},
+      })
+      .onConflictDoNothing();
+  }
+  logger.info({ count: PLANT_CONFIGS.length }, "Seeded plant configs");
+}
+
 export async function ensureSeedData(): Promise<void> {
   await seedBufferCategories();
   await seedItemMaster();
   await seedSyncSources();
+  await seedPlantSourceConfigs();
+  await seedPlantConfigs();
 }

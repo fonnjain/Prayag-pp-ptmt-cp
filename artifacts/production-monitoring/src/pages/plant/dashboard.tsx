@@ -1,7 +1,13 @@
 import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Activity, Zap } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Activity, Download } from "lucide-react";
+
+function downloadPdf(month: string, section: string) {
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  window.open(`${base}/api/plant/export/pdf?month=${month}&section=${section}`, "_blank");
+}
 
 function fmt(n: number | null | undefined, decimals = 0): string {
   if (n === null || n === undefined) return "–";
@@ -37,13 +43,20 @@ export default function PlantDashboard({ month }: { month: string }) {
   return (
     <div className="space-y-6 max-w-[1300px] mx-auto pb-10">
       <header className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight mb-1 flex items-center gap-2">
-          <Activity className="h-7 w-7 text-primary" /> Plant Dashboard
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          NOS (pieces) against Production Plan — {month} · {context.elapsed}/{context.workingDays} working days elapsed
-          {context.snapshotDate ? ` · snapshot ${context.snapshotDate}` : ""}
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight mb-1 flex items-center gap-2">
+              <Activity className="h-7 w-7 text-primary" /> Plant Dashboard
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              NOS (pieces) against Production Plan — {month} · {context.elapsed}/{context.workingDays} working days elapsed
+              {context.snapshotDate ? ` · snapshot ${context.snapshotDate}` : ""}
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => downloadPdf(month, "control-board")}>
+            <Download className="h-4 w-4 mr-2" /> Export PDF
+          </Button>
+        </div>
       </header>
 
       {!bundle.dataAvailable && (

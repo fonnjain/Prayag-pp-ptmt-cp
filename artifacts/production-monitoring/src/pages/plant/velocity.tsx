@@ -1,7 +1,13 @@
 import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
+import { Download } from "lucide-react";
+
+function downloadPdf(month: string, section: string) {
+  const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
+  window.open(`${base}/api/plant/export/pdf?month=${month}&section=${section}`, "_blank");
+}
 
 function fmt(n: number | null | undefined, d = 0) {
   if (n === null || n === undefined) return "–";
@@ -31,10 +37,17 @@ export default function PlantVelocity({ month }: { month: string }) {
   return (
     <div className="space-y-6 max-w-[1300px] mx-auto pb-10">
       <header className="mb-6">
-        <h1 className="text-3xl font-bold tracking-tight mb-1">Plant Velocity</h1>
-        <p className="text-muted-foreground text-sm">
-          Daily output and burn-up chart in pieces (NOS) — {month} · {context.elapsed}/{context.workingDays} days elapsed
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight mb-1">Plant Velocity</h1>
+            <p className="text-muted-foreground text-sm">
+              Daily output and burn-up chart in pieces (NOS) — {month} · {context.elapsed}/{context.workingDays} days elapsed
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => downloadPdf(month, "velocity")}>
+            <Download className="h-4 w-4 mr-2" /> Export PDF
+          </Button>
+        </div>
       </header>
 
       {/* Headline KPI row */}

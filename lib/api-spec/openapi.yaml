@@ -644,7 +644,12 @@ paths:
     get:
       operationId: getPlantTrend
       tags: [plant]
-      parameters: []
+      parameters:
+        - name: months
+          in: query
+          required: false
+          schema: { type: string }
+          description: "Optional filter: a number (e.g. '6' = last 6 months) or comma-separated YYYY-MM list"
       responses:
         "200":
           description: Month-over-month plant trend summaries
