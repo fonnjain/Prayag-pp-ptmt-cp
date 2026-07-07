@@ -17,6 +17,7 @@ import {
   SlidersHorizontal,
   FileText,
   Cpu,
+  Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -27,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { DatePreset, DateRange } from "@/hooks/use-date-filter";
+import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "@workspace/api-client-react";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -36,6 +38,8 @@ interface AppLayoutProps {
   dateRange: DateRange;
   setPreset: (p: DatePreset) => void;
   setCustomMonth: (m: string) => void;
+  selectedCategory: string | null;
+  setSelectedCategory: (c: string | null) => void;
 }
 
 const PRESET_LABELS: Record<DatePreset, string> = {
@@ -46,8 +50,24 @@ const PRESET_LABELS: Record<DatePreset, string> = {
   "month": "Month",
 };
 
-export function AppLayout({ children, preset, customMonth, dateRange, setPreset, setCustomMonth }: AppLayoutProps) {
+const PLANT_PATHS = new Set([
+  "/plant", "/plant/velocity", "/plant/attainment", "/plant/warnings",
+  "/plant/recommendations", "/plant/trend", "/plant/config", "/plant/reports", "/plant/categories",
+]);
+
+export function AppLayout({
+  children, month, preset, customMonth, dateRange,
+  setPreset, setCustomMonth, selectedCategory, setSelectedCategory,
+}: AppLayoutProps) {
   const [location] = useLocation();
+  const isPlantPage = PLANT_PATHS.has(location);
+
+  const { data: bundleRaw } = useGetPlantBundle(
+    { month },
+    { query: { queryKey: getGetPlantBundleQueryKey({ month }), enabled: isPlantPage } }
+  ) as { data: unknown };
+  const bundle = bundleRaw as PlantBundle | undefined;
+  const categoryOptions: string[] = bundle?.categories?.map((c) => c.category) ?? [];
 
   const plantNavItems = [
     { href: "/plant",                  label: "Control Board",    icon: Factory           },
@@ -123,6 +143,25 @@ export function AppLayout({ children, preset, customMonth, dateRange, setPreset,
           <h1 className="font-semibold text-lg">Production Performance &amp; Monitoring</h1>
 
           <div className="flex items-center gap-3">
+            {/* Type (category) filter — only on plant pages */}
+            {isPlantPage && categoryOptions.length > 0 && (
+              <Select
+                value={selectedCategory ?? "__all__"}
+                onValueChange={(v) => setSelectedCategory(v === "__all__" ? null : v)}
+              >
+                <SelectTrigger className="w-44 h-8 text-sm">
+                  <Tag className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                  <SelectValue placeholder="All Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">All Types</SelectItem>
+                  {categoryOptions.map((cat) => (
+                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
             {/* Date range dropdown */}
             <Select value={preset} onValueChange={(v) => setPreset(v as DatePreset)}>
               <SelectTrigger className="w-44 h-8 text-sm">

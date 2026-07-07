@@ -8,7 +8,7 @@ function fmt(n: number | null | undefined) { return n !== null && n !== undefine
 
 const RAG_COLORS = { green: "#10b981", amber: "#f59e0b", red: "#ef4444" };
 
-export default function PlantCategories({ month }: { month: string }) {
+export default function PlantCategories({ month, selectedCategory }: { month: string; selectedCategory?: string | null }) {
   const { data, isLoading } = useGetPlantBundle(
     { month },
     { query: { queryKey: getGetPlantBundleQueryKey({ month }) } }
@@ -18,7 +18,10 @@ export default function PlantCategories({ month }: { month: string }) {
   if (!data) return <div className="text-red-500 p-4">Failed to load plant data.</div>;
   const bundle = data as unknown as PlantBundle;
 
-  const { categories, context, plant } = bundle;
+  const { categories: allCategories, context, plant } = bundle;
+  const categories = selectedCategory
+    ? allCategories.filter((c) => c.category === selectedCategory)
+    : allCategories;
 
   const chartData = categories.map((c) => ({
     name: c.category.length > 14 ? c.category.slice(0, 14) + "…" : c.category,
@@ -36,6 +39,7 @@ export default function PlantCategories({ month }: { month: string }) {
         <h1 className="text-3xl font-bold tracking-tight mb-1">Category Breakdown</h1>
         <p className="text-muted-foreground text-sm">
           Output vs Plan per category in pieces (NOS) — {month} · {context.elapsed}/{context.workingDays} days elapsed
+          {selectedCategory ? ` · filtered: ${selectedCategory}` : ""}
         </p>
       </header>
 
@@ -43,7 +47,7 @@ export default function PlantCategories({ month }: { month: string }) {
       <Card>
         <CardHeader><CardTitle>Produced vs Target (Max PP) by Category</CardTitle></CardHeader>
         <CardContent>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={Math.max(200, categories.length * 44)}>
             <BarChart data={chartData} layout="vertical" margin={{ top: 5, right: 40, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.3} horizontal={false} />
               <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
@@ -123,22 +127,24 @@ export default function PlantCategories({ month }: { month: string }) {
                     </td>
                   </tr>
                 ))}
-                <tr className="border-t-2 border-border font-bold text-right">
-                  <td className="py-2 pr-4 text-left">Plant Total</td>
-                  <td className="py-2 pr-4 font-mono">{fmt(plant.targetMax)}</td>
-                  <td className="py-2 pr-4 font-mono text-muted-foreground">{fmt(plant.targetMin)}</td>
-                  <td className="py-2 pr-4 font-mono">{fmt(plant.producedToDate)}</td>
-                  <td className={`py-2 pr-4 font-mono ${(plant.targetMax - plant.producedToDate) > 0 ? "text-red-500" : "text-emerald-600"}`}>{fmt(plant.targetMax - plant.producedToDate)}</td>
-                  <td className="py-2 pr-4 font-mono">{pct(plant.attainmentCumPct)}</td>
-                  <td className="py-2 pr-4 font-mono text-muted-foreground">{fmt(plant.requiredPerDay)}</td>
-                  <td className="py-2 pr-4 font-mono">{fmt(plant.actualPerDay)}</td>
-                  <td className="py-2 pr-4 font-mono">{pct(plant.projectedAttainmentPct)}</td>
-                  <td className="py-2">
-                    <Badge variant="outline" className={`text-xs ${plant.ragBand === "green" ? "text-emerald-600 border-emerald-500/40" : plant.ragBand === "amber" ? "text-amber-600 border-amber-500/40" : "text-red-600 border-red-500/40"}`}>
-                      {plant.ragBand ?? "–"}
-                    </Badge>
-                  </td>
-                </tr>
+                {!selectedCategory && (
+                  <tr className="border-t-2 border-border font-bold text-right">
+                    <td className="py-2 pr-4 text-left">Plant Total</td>
+                    <td className="py-2 pr-4 font-mono">{fmt(plant.targetMax)}</td>
+                    <td className="py-2 pr-4 font-mono text-muted-foreground">{fmt(plant.targetMin)}</td>
+                    <td className="py-2 pr-4 font-mono">{fmt(plant.producedToDate)}</td>
+                    <td className={`py-2 pr-4 font-mono ${(plant.targetMax - plant.producedToDate) > 0 ? "text-red-500" : "text-emerald-600"}`}>{fmt(plant.targetMax - plant.producedToDate)}</td>
+                    <td className="py-2 pr-4 font-mono">{pct(plant.attainmentCumPct)}</td>
+                    <td className="py-2 pr-4 font-mono text-muted-foreground">{fmt(plant.requiredPerDay)}</td>
+                    <td className="py-2 pr-4 font-mono">{fmt(plant.actualPerDay)}</td>
+                    <td className="py-2 pr-4 font-mono">{pct(plant.projectedAttainmentPct)}</td>
+                    <td className="py-2">
+                      <Badge variant="outline" className={`text-xs ${plant.ragBand === "green" ? "text-emerald-600 border-emerald-500/40" : plant.ragBand === "amber" ? "text-amber-600 border-amber-500/40" : "text-red-600 border-red-500/40"}`}>
+                        {plant.ragBand ?? "–"}
+                      </Badge>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

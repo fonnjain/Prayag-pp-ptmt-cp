@@ -27,7 +27,7 @@ function ragColors(band: string | null | undefined) {
   return { bg: "bg-red-500/10 border-red-500/30", text: "text-red-600", badge: "bg-red-500/15 text-red-700 border-red-500/30" };
 }
 
-export default function PlantDashboard({ month }: { month: string }) {
+export default function PlantDashboard({ month, selectedCategory }: { month: string; selectedCategory?: string | null }) {
   const { data, isLoading } = useGetPlantBundle(
     { month },
     { query: { queryKey: getGetPlantBundleQueryKey({ month }) } }
@@ -37,7 +37,12 @@ export default function PlantDashboard({ month }: { month: string }) {
   if (!data) return <div className="text-red-500 p-4">Failed to load plant data.</div>;
   const bundle = data as unknown as PlantBundle;
 
-  const { plant, context, categories, warnings } = bundle;
+  const { plant, context, categories: allCategories, warnings } = bundle;
+
+  const categories = selectedCategory
+    ? allCategories.filter((c) => c.category === selectedCategory)
+    : allCategories;
+
   const colors = ragColors(plant.ragBand);
   const criticalWarnings = warnings.filter((w) => w.severity === "critical").length;
   const highWarnings = warnings.filter((w) => w.severity === "high").length;
@@ -53,12 +58,13 @@ export default function PlantDashboard({ month }: { month: string }) {
             <p className="text-muted-foreground text-sm">
               NOS (pieces) against Production Plan — {month} · {context.elapsed}/{context.workingDays} working days elapsed
               {context.snapshotDate ? ` · snapshot ${fmtDate(context.snapshotDate)}` : ""}
+              {selectedCategory ? ` · ${selectedCategory}` : ""}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => exportXlsx(`plant-dashboard-${month}`, [
               { name: "Plant Summary", rows: [{ Month: month, AttainmentCumPct: bundle.plant?.attainmentCumPct, ProducedToDate: bundle.plant?.producedToDate, TargetMax: bundle.plant?.targetMax, TargetMin: bundle.plant?.targetMin, ProjectedAttainmentPct: bundle.plant?.projectedAttainmentPct, RAG: bundle.plant?.ragBand }] },
-              { name: "Categories", rows: (bundle.categories || []).map((c: any) => ({ Category: c.category, ProducedToDate: c.producedToDate, TargetMax: c.targetMax, TargetMin: c.targetMin, AttainmentCumPct: c.attainmentCumPct, ProjectedAttainmentPct: c.projectedAttainmentPct, RAG: c.ragBand })) },
+              { name: "Categories", rows: categories.map((c: any) => ({ Category: c.category, ProducedToDate: c.producedToDate, TargetMax: c.targetMax, TargetMin: c.targetMin, AttainmentCumPct: c.attainmentCumPct, ProjectedAttainmentPct: c.projectedAttainmentPct, RAG: c.ragBand })) },
             ])}>
               <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
             </Button>
@@ -85,7 +91,7 @@ export default function PlantDashboard({ month }: { month: string }) {
         </div>
       )}
 
-      {/* Plant hero row */}
+      {/* Plant hero row — always plant-wide */}
       <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-lg border ${colors.bg}`}>
         <div>
           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Produced to Date</div>
@@ -162,10 +168,13 @@ export default function PlantDashboard({ month }: { month: string }) {
         </Card>
       </div>
 
-      {/* Category summary */}
+      {/* Category summary — filtered by selectedCategory */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Category Attainment Summary</CardTitle>
+          <CardTitle className="text-base">
+            Category Attainment Summary
+            {selectedCategory && <span className="ml-2 text-sm font-normal text-muted-foreground">— {selectedCategory}</span>}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
