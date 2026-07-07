@@ -1,7 +1,11 @@
 import { ReplitConnectors } from "@replit/connectors-sdk";
 import { logger } from "./logger";
 
-const connectors = new ReplitConnectors();
+let _connectors: ReplitConnectors | null = null;
+function getConnectors(): ReplitConnectors {
+  if (!_connectors) _connectors = new ReplitConnectors();
+  return _connectors;
+}
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const SHEET_IDS = {
@@ -37,7 +41,7 @@ export const PTMT_DAILY_WORKBOOK_IDS: Record<string, string> = {
 };
 
 async function proxyJson(path: string): Promise<any> {
-  const res = await connectors.proxy("google-sheet", path, { method: "GET" });
+  const res = await getConnectors().proxy("google-sheet", path, { method: "GET" });
   if (!res.ok) {
     const body = await res.text();
     throw new Error(`Sheets API error ${res.status}: ${body.slice(0, 300)}`);

@@ -17,4 +17,5 @@
 - [Puppeteer Chrome auto-install](puppeteer-chrome.md) — puppeteer package is installed but Chrome binary needs explicit install; ensureBrowser.ts at startup handles this; API URL from monitoring app must be /api/... not ${base}/api/...
 - [API listen-before-browser](listen-before-browser.md) — ensureBrowser blocks app.listen; always listen first, run browser install in background callback.
 - [Prod API build command](prod-api-build.md) — pnpm build step in artifact.toml takes ~32s in prod (healthchecks fail); use direct esbuild instead.
+- [Prod startup blocking — lazy init](prod-startup-blocking.md) — top-level `new ReplitConnectors()` and `import puppeteer` block module load for ~30s in prod; both must be lazy-initialized.
 - [Plan runs + pending order source](plan-runs-system.md) — THREE uploads required (current_stock/pending_orders/last_month_pending); current pending MUST come from DATA.xlsx upload NOT live sheet (drifts daily); plan_runs schema in 003_plan_runs.sql; last_month_pending reads PTMT tab; F.G. STOCK reads F.G Sheet only.
