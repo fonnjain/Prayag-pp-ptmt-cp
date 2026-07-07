@@ -578,6 +578,53 @@ function ragDot(rag: string | null | undefined) {
   return <span className="inline-block w-2.5 h-2.5 rounded-full bg-muted mr-1.5" />;
 }
 
+const RAG_RANK: Record<string, number> = { green: 2, amber: 1, red: 0 };
+
+function ragChangeArrow(
+  prev: string | null | undefined,
+  curr: string | null | undefined,
+): { dir: "up" | "down" | "same"; label: string } | null {
+  if (!prev || !curr) return null;
+  const p = RAG_RANK[prev] ?? -1;
+  const c = RAG_RANK[curr] ?? -1;
+  if (p < 0 || c < 0) return null;
+  if (c > p) return { dir: "up", label: "↑" };
+  if (c < p) return { dir: "down", label: "↓" };
+  return { dir: "same", label: "→" };
+}
+
+function RagChangeIndicator({ prev, curr }: { prev: string | null | undefined; curr: string | null | undefined }) {
+  const arrow = ragChangeArrow(prev, curr);
+  if (!arrow) return null;
+  const cls =
+    arrow.dir === "up"
+      ? "text-emerald-600 font-bold"
+      : arrow.dir === "down"
+        ? "text-red-500 font-bold"
+        : "text-muted-foreground";
+  return (
+    <span className={`ml-1.5 text-base leading-none ${cls}`} title={arrow.dir === "up" ? "Improved" : arrow.dir === "down" ? "Worsened" : "Unchanged"}>
+      {arrow.label}
+    </span>
+  );
+}
+
+function RiskDeltaBadge({ prevCount, currCount }: { prevCount: number | null; currCount: number | null }) {
+  if (prevCount === null || currCount === null) return null;
+  const delta = currCount - prevCount;
+  if (delta === 0) return (
+    <span className="ml-1.5 text-xs text-muted-foreground" title="No change in risk count">±0</span>
+  );
+  const sign = delta > 0 ? "+" : "";
+  const label = `${sign}${delta} risk${Math.abs(delta) === 1 ? "" : "s"}`;
+  const cls = delta > 0 ? "text-red-500" : "text-emerald-600";
+  return (
+    <span className={`ml-1.5 text-xs font-medium ${cls}`} title={delta > 0 ? "More risks than previous month" : "Fewer risks than previous month"}>
+      {label}
+    </span>
+  );
+}
+
 function PlantTrendTable({
   onSelectAnalysis,
 }: {
@@ -621,6 +668,8 @@ function PlantTrendTable({
     );
   }
 
+  const sortedRows = [...rows].sort((a, b) => a.month.localeCompare(b.month));
+
   return (
     <div className="overflow-x-auto rounded-md border border-border/50" data-testid="plant-trend-table">
       <table className="w-full text-sm">
@@ -636,14 +685,21 @@ function PlantTrendTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((row) => {
+          {sortedRows.map((row, idx) => {
             const result = row.resultJson;
             const maxRag = result?.pp_verdict?.max_pp?.rag ?? null;
             const minRag = result?.pp_verdict?.min_pp?.rag ?? null;
-            const riskCount = result?.risks?.length ?? 0;
+            const riskCount = result?.risks?.length ?? null;
             const topRec = result?.recommendations
               ? [...result.recommendations].sort((a, b) => a.priority - b.priority)[0]
               : null;
+
+            const prevRow = idx > 0 ? sortedRows[idx - 1] : null;
+            const prevResult = prevRow?.resultJson ?? null;
+            const prevMaxRag = prevResult?.pp_verdict?.max_pp?.rag ?? null;
+            const prevMinRag = prevResult?.pp_verdict?.min_pp?.rag ?? null;
+            const prevRiskCount = prevResult?.risks?.length ?? null;
+
             return (
               <tr
                 key={row.id}
@@ -653,22 +709,31 @@ function PlantTrendTable({
               >
                 <td className="px-4 py-3 font-medium">{row.month}</td>
                 <td className="px-4 py-3">
-                  <span className="flex items-center">
+                  <span className="flex items-center flex-wrap gap-y-0.5">
                     {ragDot(maxRag)}
                     <span className={maxRag ? ragColor(maxRag).split(" ").find((c) => c.startsWith("text-")) ?? "" : "text-muted-foreground"}>
                       {maxRag ? maxRag.toUpperCase() : "—"}
                     </span>
+                    <RagChangeIndicator prev={prevMaxRag} curr={maxRag} />
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <span className="flex items-center">
+                  <span className="flex items-center flex-wrap gap-y-0.5">
                     {ragDot(minRag)}
                     <span className={minRag ? ragColor(minRag).split(" ").find((c) => c.startsWith("text-")) ?? "" : "text-muted-foreground"}>
                       {minRag ? minRag.toUpperCase() : "—"}
                     </span>
+                    <RagChangeIndicator prev={prevMinRag} curr={minRag} />
                   </span>
                 </td>
-                <td className="px-4 py-3 tabular-nums">{riskCount > 0 ? riskCount : "—"}</td>
+                <td className="px-4 py-3 tabular-nums">
+                  <span className="flex items-center">
+                    <span>{riskCount !== null && riskCount > 0 ? riskCount : "—"}</span>
+                    {riskCount !== null && riskCount > 0 && (
+                      <RiskDeltaBadge prevCount={prevRiskCount} currCount={riskCount} />
+                    )}
+                  </span>
+                </td>
                 <td className="px-4 py-3 max-w-[200px] truncate text-muted-foreground">
                   {topRec ? topRec.scope : "—"}
                 </td>
