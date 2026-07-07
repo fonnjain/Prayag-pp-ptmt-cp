@@ -16,6 +16,8 @@
     "@workspace/db": "workspace:*",
     "cors": "^2.8.5",
     "drizzle-orm": "catalog:",
+    "drizzle-zod": "^0.5.1",
+    "pg": "^8.13.1",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "multer": "^1.4.5-lts.1",
