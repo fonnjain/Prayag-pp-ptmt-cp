@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable } from "@workspace/db";
 import { logger } from "./logger";
@@ -15,13 +14,10 @@ const DEFAULT_BUFFER_CATEGORIES: { name: string; multiplier: number }[] = [
   { name: "Ball Cock", multiplier: 1.5 },
 ];
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 function findSeedCsvPath(): string {
   const candidates = [
-    path.resolve(__dirname, "../../../../lib/db/seed-data/item_master.csv"),
-    path.resolve(process.cwd(), "../../lib/db/seed-data/item_master.csv"),
     path.resolve(process.cwd(), "lib/db/seed-data/item_master.csv"),
+    path.resolve(process.cwd(), "../../lib/db/seed-data/item_master.csv"),
   ];
   for (const candidate of candidates) {
     try {

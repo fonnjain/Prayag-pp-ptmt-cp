@@ -1,17 +1,13 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { logger } from "./logger";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 function findMigrationsDir(): string {
   const candidates = [
-    path.resolve(__dirname, "../../../../lib/db/migrations"),
-    path.resolve(process.cwd(), "../../lib/db/migrations"),
     path.resolve(process.cwd(), "lib/db/migrations"),
+    path.resolve(process.cwd(), "../../lib/db/migrations"),
   ];
   for (const candidate of candidates) {
     try {
