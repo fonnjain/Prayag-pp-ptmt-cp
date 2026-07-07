@@ -16,4 +16,4 @@
 - [Plant bundle in-memory cache](plant-bundle-cache.md) — 5-min Map cache in routes/plant.ts; invalidate it alongside DB cache on config save; React Query staleTime=5min keeps UI instant.
 - [Puppeteer Chrome auto-install](puppeteer-chrome.md) — puppeteer package is installed but Chrome binary needs explicit install; ensureBrowser.ts at startup handles this; API URL from monitoring app must be /api/... not ${base}/api/...
 - [API listen-before-browser](listen-before-browser.md) — ensureBrowser blocks app.listen; always listen first, run browser install in background callback.
-- [Plan runs + live pending order](plan-runs-system.md) — pending_orders upload removed; fetchLivePendingOrderTotals() reads sheet 1dmt6...HvY/"report"/Segment=PTMT; plan_runs schema in 003_plan_runs.sql; seedSyncSources uses onConflictDoNothing for idempotent upsert.
+- [Plan runs + pending order source](plan-runs-system.md) — THREE uploads required (current_stock/pending_orders/last_month_pending); current pending MUST come from DATA.xlsx upload NOT live sheet (drifts daily); plan_runs schema in 003_plan_runs.sql; last_month_pending reads PTMT tab; F.G. STOCK reads F.G Sheet only.

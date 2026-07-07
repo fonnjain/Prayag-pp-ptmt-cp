@@ -1,8 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, bufferCategoriesTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
-import { buildPlanItems } from "./plan";
-import { snapshotPendingOrderRows } from "../lib/sheets";
+import { buildPlanItems, loadLatestUploadRowsByKind } from "./plan";
 import { summarizePlan } from "../lib/calc";
 
 const router: IRouter = Router();
@@ -23,7 +22,7 @@ function makeSummary(run: typeof planRunsTable.$inferSelect, items: typeof planR
   };
 }
 
-/** POST /api/plan/runs — create a draft run, snapshot all live inputs & computed results */
+/** POST /api/plan/runs — create a draft run, snapshot all inputs & computed results */
 router.post("/plan/runs", async (req, res): Promise<void> => {
   const { month, note } = req.body ?? {};
   if (!month || typeof month !== "string") {
@@ -36,10 +35,14 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
   const factorsJson: Record<string, number> = {};
   for (const b of bufferRows) factorsJson[b.name] = b.multiplier;
 
-  // Compute plan from all live sources in parallel with pending snapshot
-  const [planItems, pendingRows] = await Promise.all([
+  // Compute plan from uploaded files + Google Sheets in parallel with loading
+  // the raw pending_orders rows for the audit snapshot.
+  // Per spec §4: current pending comes from DATA.xlsx (uploaded), not the live sheet.
+  const [planItems, pendingOrderRows] = await Promise.all([
     buildPlanItems(month),
-    snapshotPendingOrderRows(),
+    // Load the same rows used by buildPlanItems for pending_orders —
+    // these are the filtered+aliased rows from the uploaded DATA.xlsx file.
+    loadLatestUploadRowsByKind("pending_orders"),
   ]);
 
   // Create the plan run record
@@ -72,15 +75,27 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
     productionPlan: item.maxProduction,
   }));
 
-  // Insert pending snapshot rows
-  const snapshotValues = pendingRows.map((r) => ({
-    runId,
-    catNo: r.catNo,
-    colour: r.colour,
-    qty: r.qty,
-  }));
+  // Pending audit snapshot: store the raw filtered rows from the DATA.xlsx upload
+  // so the exact source data is preserved against this run forever.
+  const snapshotValues = pendingOrderRows
+    .map((row) => {
+      const catNo = String(
+        row["Old Item Code"] ?? row["Item Code"] ?? row["Item No."] ?? "",
+      ).trim();
+      const colour = String(row["Colour"] ?? row["Color"] ?? "").trim();
+      const qty =
+        typeof row["Balance_Qty"] === "number"
+          ? row["Balance_Qty"]
+          : typeof row["Qty"] === "number"
+            ? row["Qty"]
+            : Number(
+                String(row["Balance_Qty"] ?? row["Balance Qty"] ?? row["Bal.Qty"] ?? row["Qty"] ?? "0").replace(/,/g, ""),
+              ) || 0;
+      return { runId, catNo, colour, qty };
+    })
+    .filter((r) => r.catNo);
 
-  // Batch inserts
+  // Batch inserts (500 rows at a time to stay within PG limits)
   const BATCH = 500;
   for (let i = 0; i < inputValues.length; i += BATCH) {
     await db.insert(planRunInputsTable).values(inputValues.slice(i, i + BATCH));

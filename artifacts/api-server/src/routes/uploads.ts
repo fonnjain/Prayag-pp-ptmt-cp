@@ -45,27 +45,6 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
     return;
   }
 
-  // When uploading the F.G. STOCK factory Excel as current_stock, also
-  // auto-extract the "LAST MONTH PENDING ITEMS" tab and save it so the user
-  // doesn't need a separate last_month_pending upload.
-  const sideInserts: Array<{ kind: string; filename: string; rowCount: number; rows: Record<string, unknown>[] }> = [];
-  if (raw === "current_stock") {
-    const lmSheetName = workbook.SheetNames.find((n) => /last.month.pending/i.test(n));
-    if (lmSheetName) {
-      try {
-        const lmRows = sheetToObjects(workbook.Sheets[lmSheetName]);
-        sideInserts.push({
-          kind: "last_month_pending",
-          filename: req.file.originalname,
-          rowCount: lmRows.length,
-          rows: lmRows,
-        });
-      } catch (err) {
-        req.log.warn({ err }, "Could not extract LAST MONTH PENDING ITEMS tab; skipping");
-      }
-    }
-  }
-
   const [record] = await db
     .insert(uploadedFilesTable)
     .values({
@@ -81,13 +60,6 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
       rowCount: uploadedFilesTable.rowCount,
       uploadedAt: uploadedFilesTable.uploadedAt,
     });
-
-  // Fire-and-forget the side inserts (last_month_pending extracted from the same file)
-  if (sideInserts.length > 0) {
-    db.insert(uploadedFilesTable).values(sideInserts).catch((err) => {
-      req.log.warn({ err }, "Failed to save auto-extracted last_month_pending rows");
-    });
-  }
 
   res.status(201).json(record);
 });
@@ -195,8 +167,13 @@ function extractRows(workbook: XLSX.WorkBook, kind: string): Record<string, unkn
   }
 
   if (kind === "last_month_pending") {
-    // Can come from a standalone file or is auto-extracted from the F.G. STOCK factory Excel.
+    // LAST_MONTH_PENDING_ORDERS_<month> file → read the PTMT tab.
+    // Columns: Item Code, Colour, Qty (already Cat-no format).
+    // Per spec §4: do NOT take this from F.G. STOCK's LAST MONTH PENDING ITEMS tab
+    // — that contains all-segment data (total ~275,878) not the PTMT-only figure (137,939).
     const sheetName =
+      workbook.SheetNames.find((n) => /^ptmt$/i.test(n)) ??
+      workbook.SheetNames.find((n) => /ptmt/i.test(n)) ??
       workbook.SheetNames.find((n) => /last.month.pending/i.test(n)) ??
       workbook.SheetNames.find((n) => /pending/i.test(n)) ??
       workbook.SheetNames[0];

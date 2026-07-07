@@ -5,7 +5,6 @@ import { computeItemPlan, summarizePlan, type ItemSourceRow } from "../lib/calc"
 import {
   fetchAvg3MoSaleTotals,
   fetchLiveOrderTotals,
-  fetchLivePendingOrderTotals,
   itemKey,
   normalizeCode,
   type DualTotals,
@@ -60,19 +59,43 @@ function hasEntry(totals: DualTotals, itemCode: string, colour: string, isSingle
 }
 
 export async function buildPlanItems(month: string) {
-  const [itemRows, bufferRows, pendingLastMoRows, currentStockRows, avg3MoTotals, livePendingTotals, liveOrderTotals] =
+  const [itemRows, bufferRows, pendingOrderRows, pendingLastMoRows, currentStockRows, avg3MoTotals, liveOrderTotals] =
     await Promise.all([
       db.select().from(itemMasterTable),
       db.select().from(bufferCategoriesTable),
+      // Current pending: uploaded DATA.xlsx → PendingOrder sheet (Segment ∈ {PTMT, PT},
+      // Old Item Code + Color, Balance_Qty). Per spec §4: do NOT use the live
+      // "Pending order" Google Sheet — it drifts daily and breaks reproducibility.
+      loadLatestUploadRowsByKind("pending_orders"),
+      // Last-month pending: uploaded LAST_MONTH_PENDING_ORDERS file → PTMT tab.
       loadLatestUploadRowsByKind("last_month_pending"),
+      // Current stock: uploaded F.G. STOCK factory Excel → F.G Sheet (col A/B/C).
       loadLatestUploadRowsByKind("current_stock"),
       fetchAvg3MoSaleTotals(month),
-      fetchLivePendingOrderTotals(),
       fetchLiveOrderTotals(month),
     ]);
 
   const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
-  const pendingLastMoTotals = sumByKey(pendingLastMoRows, ["Item Code"], ["Colour", "Color"], ["Qty"]);
+
+  // Pending current: DATA.xlsx PendingOrder tab columns after alias transform:
+  //   "Old Item Code" / "Item No." → code; "Colour" / "Color" → colour;
+  //   "Balance_Qty" / "Balance Qty" / "Bal.Qty" → qty.
+  const pendingOrderTotals = sumByKey(
+    pendingOrderRows,
+    ["Old Item Code", "Item Code", "Item No."],
+    ["Colour", "Color"],
+    ["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"],
+  );
+
+  // Last-month pending: PTMT tab columns: "Item Code" / "Cat No" → code; "Colour" / "Color" → colour; "Qty" → qty.
+  const pendingLastMoTotals = sumByKey(
+    pendingLastMoRows,
+    ["Item Code", "Cat No", "Cat-No", "Old Item Code"],
+    ["Colour", "Color"],
+    ["Qty", "Balance_Qty", "Balance Qty"],
+  );
+
+  // Stock: F.G Sheet columns: "Item Code" → code; "Colour" / "Color" → colour; "Qty" (normalized from C/Stock) → qty.
   const stockTotals = sumByKey(currentStockRows, ["Item Code"], ["Colour", "Color"], ["Qty"]);
 
   // Scoped per category: the same item code can legitimately exist in two
@@ -96,7 +119,7 @@ export async function buildPlanItems(month: string) {
       stockNeedsReview:
         currentStockRows.length > 0 && !hasEntry(stockTotals, item.itemCode, item.colour, isSingleVariant),
       pendingOrderLastMonth: resolveTotal(pendingLastMoTotals, item.itemCode, item.colour, isSingleVariant),
-      pendingOrder: resolveTotal(livePendingTotals, item.itemCode, item.colour, isSingleVariant),
+      pendingOrder: resolveTotal(pendingOrderTotals, item.itemCode, item.colour, isSingleVariant),
       order: resolveTotal(liveOrderTotals, item.itemCode, item.colour, isSingleVariant),
     };
     const multiplier = bufferByCategory.get(item.category) ?? 1;

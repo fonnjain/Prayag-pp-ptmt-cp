@@ -19,11 +19,24 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { cn, fmtDateTime } from "@/lib/utils";
 
-const UPLOAD_KINDS: { kind: (typeof UploadKind)[keyof typeof UploadKind]; label: string; hint: string }[] = [
+const UPLOAD_KINDS: { kind: (typeof UploadKind)[keyof typeof UploadKind]; label: string; hint: string; required: boolean }[] = [
   {
     kind: UploadKind.current_stock,
-    label: "F.G. STOCK Factory Excel",
-    hint: "F.G. STOCK <month>.xlsx — reads F.G Sheet for stock (col A Item Code, col B Colour, col C C/Stock) and auto-extracts Last Month Pending Items tab",
+    label: "1 · F.G. STOCK Factory Excel",
+    hint: "F.G. STOCK <month>.xlsx — reads F.G Sheet only: col A = Item Code, col B = Colour, col C = C/Stock. Provides current stock figures.",
+    required: true,
+  },
+  {
+    kind: UploadKind.pending_orders,
+    label: "2 · DATA.xlsx (ERP export)",
+    hint: "DATA.xlsx — reads PendingOrder sheet: filters Segment ∈ {PTMT, PT}, groups by Old Item Code + Color, sums Balance_Qty. Provides current Pending Order.",
+    required: true,
+  },
+  {
+    kind: UploadKind.last_month_pending,
+    label: "3 · LAST_MONTH_PENDING_ORDERS file",
+    hint: "LAST_MONTH_PENDING_ORDERS_<month>.xlsx — reads PTMT tab: Item Code + Colour + Qty. Provides last-month Pending Order. Total should be ~137,939.",
+    required: true,
   },
 ];
 
@@ -40,7 +53,7 @@ function statusColor(status: SyncSource["status"]): string {
   }
 }
 
-function UploadRow({ kind, label, hint }: (typeof UPLOAD_KINDS)[number]) {
+function UploadRow({ kind, label, hint, required }: (typeof UPLOAD_KINDS)[number]) {
   const { toast } = useToast();
   const { data: uploads, refetch } = useListUploads();
   const createUpload = useCreateUpload();
@@ -72,15 +85,19 @@ function UploadRow({ kind, label, hint }: (typeof UPLOAD_KINDS)[number]) {
   return (
     <div className="flex items-center justify-between gap-4 py-3 border-b last:border-b-0">
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-sm">{label}</p>
-        <p className="text-xs text-gray-500">{hint}</p>
+        <div className="flex items-center gap-2">
+          <p className="font-medium text-sm">{label}</p>
+          {required && (
+            <Badge className="text-xs bg-red-50 text-red-700 border border-red-200">required</Badge>
+          )}
+        </div>
+        <p className="text-xs text-gray-500 mt-0.5">{hint}</p>
         {latest ? (
-          <p className="text-xs text-gray-600 mt-1">
-            Latest: {latest.filename} — {latest.rowCount} rows —{" "}
-            {fmtDateTime(latest.uploadedAt)}
+          <p className="text-xs text-green-700 mt-1">
+            ✓ {latest.filename} — {latest.rowCount} rows — {fmtDateTime(latest.uploadedAt)}
           </p>
         ) : (
-          <p className="text-xs text-amber-600 mt-1">No file uploaded yet</p>
+          <p className="text-xs text-amber-600 mt-1">⚠ No file uploaded yet — plan cannot run without this file</p>
         )}
       </div>
       <div>
@@ -101,7 +118,7 @@ function UploadRow({ kind, label, hint }: (typeof UPLOAD_KINDS)[number]) {
           onClick={() => inputRef.current?.click()}
           disabled={createUpload.isPending}
         >
-          {createUpload.isPending ? "Uploading..." : "Upload file"}
+          {createUpload.isPending ? "Uploading..." : latest ? "Replace" : "Upload file"}
         </Button>
       </div>
     </div>
@@ -221,27 +238,32 @@ export default function DataPage() {
         <div>
           <h2 className="text-xl font-semibold">Data</h2>
           <p className="text-sm text-gray-500">
-            Upload the monthly stock file, connect live Google Sheets sources, and set buffer-stock
-            multipliers per category.
+            All three monthly file uploads are required before a plan can be built. The Avg 3-Month Sale
+            figure is computed live from the Sale 26-27 Google Sheets connection below.
           </p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Monthly file uploads</CardTitle>
+            <CardTitle className="text-base">Monthly file uploads (3 required each month)</CardTitle>
           </CardHeader>
           <CardContent>
             {UPLOAD_KINDS.map((u) => (
               <UploadRow key={u.kind} {...u} />
             ))}
-            <div className="pt-3 text-xs text-gray-500 space-y-1">
+            <div className="pt-3 text-xs text-gray-500 space-y-1 border-t mt-2">
               <p>
-                <strong>Current Pending Order</strong> is read live from the "Pending order" Google Sheet
-                (report tab, Segment = PTMT, Old ERP Code + Colour, Bal. Qty) — no upload needed.
+                <strong>Stock</strong> comes from the F.G Sheet of the F.G. STOCK factory Excel (col A/B/C).
+                The LAST MONTH PENDING ITEMS tab inside that file is <em>not</em> used — upload file 3 instead.
               </p>
               <p>
-                <strong>Last Month Pending</strong> is auto-extracted from the LAST MONTH PENDING ITEMS
-                tab inside the F.G. STOCK Excel — no separate upload needed.
+                <strong>Current Pending Order</strong> comes from DATA.xlsx PendingOrder sheet — an ERP
+                export that is reproducible and audit-friendly. The live "Pending order" Google Sheet
+                drifts daily and is not used for planning.
+              </p>
+              <p>
+                <strong>Last-Month Pending</strong> comes from the dedicated LAST_MONTH file's PTMT tab
+                (not from F.G. STOCK). PTMT-segment total should be ~137,939.
               </p>
             </div>
           </CardContent>
