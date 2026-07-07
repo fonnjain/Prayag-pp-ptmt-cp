@@ -31,7 +31,7 @@ function loadThresholds(row: { thresholdsJson?: unknown } | null): PlantWarningT
   };
 }
 
-async function computeBundle(month: string) {
+export async function computePlantBundle(month: string) {
   const row = await loadPlantConfigRow(month);
   const config = {
     workingDays: row?.workingDays ?? 27,
@@ -56,7 +56,7 @@ router.get("/plant/bundle", async (req, res) => {
     return;
   }
   try {
-    const result = await computeBundle(month);
+    const result = await computePlantBundle(month);
     res.json(result);
   } catch (err) {
     logger.error({ err, month }, "plant/bundle failed");
@@ -140,7 +140,7 @@ router.get("/plant/export/pdf", async (req, res): Promise<void> => {
     return;
   }
   try {
-    const bundle = await computeBundle(month);
+    const bundle = await computePlantBundle(month);
     const { plant, categories, warnings, recommendations, context } = bundle;
 
     const ragCss = (band: string | null) => band === "green" ? "color:#16a34a" : band === "amber" ? "color:#d97706" : "color:#dc2626";
@@ -177,7 +177,7 @@ router.get("/plant/export/pdf", async (req, res): Promise<void> => {
 <table>
   <thead><tr><th>Category</th><th>Max PP</th><th>Produced</th><th>Gap</th><th>Cum Att %</th><th>Proj End %</th><th>RAG</th></tr></thead>
   <tbody>
-    ${categories.map((c) => `
+    ${categories.map((c: { category: string; targetMax: number; producedToDate: number; gapPcs: number; attainmentCumPct: number | null; projectedAttainmentPct: number | null; ragBand: string | null }) => `
     <tr>
       <td>${c.category}</td>
       <td>${c.targetMax.toLocaleString()}</td>
@@ -195,7 +195,7 @@ ${section === "warnings" || section === "control-board" ? `
 <table>
   <thead><tr><th>Code</th><th>Severity</th><th>Scope</th><th>Message</th></tr></thead>
   <tbody>
-    ${warnings.slice(0, 20).map((w) => `<tr><td>${w.code}</td><td class="${w.severity === "critical" || w.severity === "high" ? "red" : "amber"}">${w.severity.toUpperCase()}</td><td>${w.scope}</td><td>${w.message}</td></tr>`).join("")}
+    ${warnings.slice(0, 20).map((w: { code: string; severity: string; scope: string; message: string }) => `<tr><td>${w.code}</td><td class="${w.severity === "critical" || w.severity === "high" ? "red" : "amber"}">${w.severity.toUpperCase()}</td><td>${w.scope}</td><td>${w.message}</td></tr>`).join("")}
     ${warnings.length === 0 ? "<tr><td colspan='4'>No warnings</td></tr>" : ""}
   </tbody>
 </table>` : ""}
@@ -205,7 +205,7 @@ ${section === "control-board" ? `
 <table>
   <thead><tr><th>#</th><th>Code</th><th>Scope</th><th>Action</th><th>Effort</th></tr></thead>
   <tbody>
-    ${recommendations.map((r) => `<tr><td>${r.priority}</td><td>${r.code}</td><td>${r.scope}</td><td>${r.action}</td><td>${r.effort}</td></tr>`).join("")}
+    ${recommendations.map((r: { priority: number; code: string; scope: string; action: string; effort: string }) => `<tr><td>${r.priority}</td><td>${r.code}</td><td>${r.scope}</td><td>${r.action}</td><td>${r.effort}</td></tr>`).join("")}
   </tbody>
 </table>` : ""}
 

@@ -473,6 +473,102 @@ export const exportAiAnalysisPdfParams = zod.object({
 })
 
 
+export const analyzeAiPlantBody = zod.object({
+  "month": zod.string(),
+  "depth": zod.enum(['standard', 'deep']).optional()
+})
+
+
+export const listAiPlantAnalysesQueryParams = zod.object({
+  "month": zod.string()
+})
+
+export const listAiPlantAnalysesResponseItem = zod.object({
+  "id": zod.number(),
+  "month": zod.string(),
+  "snapshotDate": zod.string().nullable(),
+  "depth": zod.enum(['standard', 'deep']),
+  "model": zod.string(),
+  "createdAt": zod.string()
+})
+export const listAiPlantAnalysesResponse = zod.array(listAiPlantAnalysesResponseItem)
+
+
+export const getAiPlantAnalysisParams = zod.object({
+  "id": zod.number()
+})
+
+export const getAiPlantAnalysisResponse = zod.object({
+  "id": zod.number(),
+  "month": zod.string(),
+  "snapshotDate": zod.string().nullable(),
+  "depth": zod.enum(['standard', 'deep']),
+  "model": zod.string(),
+  "createdAt": zod.string()
+}).and(zod.object({
+  "result": zod.union([zod.object({
+  "executive_summary": zod.string(),
+  "pp_verdict": zod.object({
+  "max_pp": zod.object({
+  "attainment_pct": zod.number().nullish(),
+  "projected_attainment_pct": zod.number().nullish(),
+  "rag": zod.string().nullable(),
+  "verdict": zod.string()
+}),
+  "min_pp": zod.object({
+  "projected_attainment_pct": zod.number().nullish(),
+  "rag": zod.string().nullable(),
+  "verdict": zod.string()
+})
+}),
+  "key_findings": zod.array(zod.object({
+  "finding": zod.string(),
+  "evidence": zod.string(),
+  "scope": zod.string()
+})),
+  "root_cause_hypotheses": zod.array(zod.object({
+  "hypothesis": zod.string(),
+  "supporting_signal": zod.string(),
+  "confidence": zod.enum(['high', 'med', 'low'])
+})),
+  "risks": zod.array(zod.object({
+  "risk": zod.string(),
+  "severity": zod.enum(['Critical', 'High', 'Medium']),
+  "basis": zod.string()
+})),
+  "recommendations": zod.array(zod.object({
+  "action": zod.string(),
+  "rationale": zod.string(),
+  "quantified_impact": zod.string(),
+  "priority": zod.number(),
+  "effort": zod.enum(['low', 'med', 'high']),
+  "scope": zod.string()
+})),
+  "watch_items": zod.array(zod.string())
+}),zod.null()]),
+  "messages": zod.array(zod.object({
+  "id": zod.number(),
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string(),
+  "createdAt": zod.string()
+}))
+}))
+
+
+export const followupAiPlantAnalysisParams = zod.object({
+  "id": zod.number()
+})
+
+export const followupAiPlantAnalysisBody = zod.object({
+  "question": zod.string()
+})
+
+
+export const exportAiPlantAnalysisPdfParams = zod.object({
+  "id": zod.number()
+})
+
+
 export const getPlantBundleQueryParams = zod.object({
   "month": zod.string()
 })

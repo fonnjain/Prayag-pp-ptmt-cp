@@ -535,6 +535,108 @@ paths:
                 type: string
                 format: binary
 
+  /ai/analyze-plant:
+    post:
+      operationId: analyzeAiPlant
+      tags: [ai]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [month]
+              properties:
+                month: { type: string }
+                depth: { type: string, enum: [standard, deep] }
+      responses:
+        "200":
+          description: SSE stream of Claude analysis chunks
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /ai/plant-analyses:
+    get:
+      operationId: listAiPlantAnalyses
+      tags: [ai]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: History of plant AI analyses for the month
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiAnalysisSummary"
+
+  /ai/plant-analyses/{id}:
+    get:
+      operationId: getAiPlantAnalysis
+      tags: [ai]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: A single plant AI analysis with its follow-up messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiPlantAnalysisDetail"
+
+  /ai/plant-analyses/{id}/followup:
+    post:
+      operationId: followupAiPlantAnalysis
+      tags: [ai]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [question]
+              properties:
+                question: { type: string }
+      responses:
+        "200":
+          description: SSE stream of Claude follow-up response
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+  /ai/plant-analyses/{id}/export/pdf:
+    get:
+      operationId: exportAiPlantAnalysisPdf
+      tags: [ai]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: PDF export of the plant AI analysis
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
   /plant/bundle:
     get:
       operationId: getPlantBundle
@@ -1422,6 +1524,88 @@ components:
         shiftHours: { type: integer }
         snapshotDate: { type: ["string", "null"] }
         thresholds: { type: object, additionalProperties: true }
+
+    AiPlantAnalysisResult:
+      type: object
+      required: [executive_summary, pp_verdict, key_findings, root_cause_hypotheses, risks, recommendations, watch_items]
+      properties:
+        executive_summary: { type: string }
+        pp_verdict:
+          type: object
+          required: [max_pp, min_pp]
+          properties:
+            max_pp:
+              type: object
+              required: [rag, verdict]
+              properties:
+                attainment_pct: { type: ["number", "null"] }
+                projected_attainment_pct: { type: ["number", "null"] }
+                rag: { type: ["string", "null"] }
+                verdict: { type: string }
+            min_pp:
+              type: object
+              required: [rag, verdict]
+              properties:
+                projected_attainment_pct: { type: ["number", "null"] }
+                rag: { type: ["string", "null"] }
+                verdict: { type: string }
+        key_findings:
+          type: array
+          items:
+            type: object
+            required: [finding, evidence, scope]
+            properties:
+              finding: { type: string }
+              evidence: { type: string }
+              scope: { type: string }
+        root_cause_hypotheses:
+          type: array
+          items:
+            type: object
+            required: [hypothesis, supporting_signal, confidence]
+            properties:
+              hypothesis: { type: string }
+              supporting_signal: { type: string }
+              confidence: { type: string, enum: [high, med, low] }
+        risks:
+          type: array
+          items:
+            type: object
+            required: [risk, severity, basis]
+            properties:
+              risk: { type: string }
+              severity: { type: string, enum: [Critical, High, Medium] }
+              basis: { type: string }
+        recommendations:
+          type: array
+          items:
+            type: object
+            required: [action, rationale, quantified_impact, priority, effort, scope]
+            properties:
+              action: { type: string }
+              rationale: { type: string }
+              quantified_impact: { type: string }
+              priority: { type: integer }
+              effort: { type: string, enum: [low, med, high] }
+              scope: { type: string }
+        watch_items:
+          type: array
+          items: { type: string }
+
+    AiPlantAnalysisDetail:
+      allOf:
+        - $ref: "#/components/schemas/AiAnalysisSummary"
+        - type: object
+          required: [result, messages]
+          properties:
+            result:
+              anyOf:
+                - $ref: "#/components/schemas/AiPlantAnalysisResult"
+                - type: "null"
+            messages:
+              type: array
+              items:
+                $ref: "#/components/schemas/AiAnalysisMessage"
 
     PlantSourceConfigUpsert:
       type: object

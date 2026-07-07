@@ -21,6 +21,8 @@ import type {
 import type {
   AiAnalysisDetail,
   AiAnalysisSummary,
+  AiPlantAnalysisDetail,
+  AnalyzeAiPlantBody,
   BufferCategory,
   BufferCategoryUpdate,
   CreateUploadBody,
@@ -30,6 +32,7 @@ import type {
   ExportPlanExcelParams,
   ExportPlanPdfParams,
   ExportPlantPdfParams,
+  FollowupAiPlantAnalysisBody,
   GetMonitoringActionsParams,
   GetMonitoringBacklogParams,
   GetMonitoringConfigParams,
@@ -49,6 +52,7 @@ import type {
   ItemWeight,
   ItemWeightUpsert,
   ListAiAnalysesParams,
+  ListAiPlantAnalysesParams,
   ListIdealHoursOverridesParams,
   ListPlanItemsParams,
   MonitoringActions,
@@ -2725,6 +2729,419 @@ export function useExportAiAnalysisPdf<TData = Awaited<ReturnType<typeof exportA
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getExportAiAnalysisPdfQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type analyzeAiPlantResponse200 = {
+  data: string
+  status: 200
+}
+    
+export type analyzeAiPlantResponseSuccess = (analyzeAiPlantResponse200) & {
+  headers: Headers;
+};
+;
+
+export type analyzeAiPlantResponse = (analyzeAiPlantResponseSuccess)
+
+export const getAnalyzeAiPlantUrl = () => {
+
+
+  
+
+  return `/api/ai/analyze-plant`
+}
+
+export const analyzeAiPlant = async (analyzeAiPlantBody: AnalyzeAiPlantBody, options?: RequestInit): Promise<analyzeAiPlantResponse> => {
+  
+  return customFetch<analyzeAiPlantResponse>(getAnalyzeAiPlantUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      analyzeAiPlantBody,)
+  }
+);}
+
+
+
+
+export const getAnalyzeAiPlantMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeAiPlant>>, TError,{data: AnalyzeAiPlantBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof analyzeAiPlant>>, TError,{data: AnalyzeAiPlantBody}, TContext> => {
+
+const mutationKey = ['analyzeAiPlant'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof analyzeAiPlant>>, {data: AnalyzeAiPlantBody}> = (props) => {
+          const {data} = props ?? {};
+
+          return  analyzeAiPlant(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AnalyzeAiPlantMutationResult = NonNullable<Awaited<ReturnType<typeof analyzeAiPlant>>>
+    export type AnalyzeAiPlantMutationBody = AnalyzeAiPlantBody
+    export type AnalyzeAiPlantMutationError = unknown
+
+    export const useAnalyzeAiPlant = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof analyzeAiPlant>>, TError,{data: AnalyzeAiPlantBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof analyzeAiPlant>>,
+        TError,
+        {data: AnalyzeAiPlantBody},
+        TContext
+      > => {
+
+      const mutationOptions = getAnalyzeAiPlantMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type listAiPlantAnalysesResponse200 = {
+  data: AiAnalysisSummary[]
+  status: 200
+}
+    
+export type listAiPlantAnalysesResponseSuccess = (listAiPlantAnalysesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listAiPlantAnalysesResponse = (listAiPlantAnalysesResponseSuccess)
+
+export const getListAiPlantAnalysesUrl = (params: ListAiPlantAnalysesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/ai/plant-analyses?${stringifiedParams}` : `/api/ai/plant-analyses`
+}
+
+export const listAiPlantAnalyses = async (params: ListAiPlantAnalysesParams, options?: RequestInit): Promise<listAiPlantAnalysesResponse> => {
+  
+  return customFetch<listAiPlantAnalysesResponse>(getListAiPlantAnalysesUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getListAiPlantAnalysesQueryKey = (params?: ListAiPlantAnalysesParams,) => {
+    return [
+    `/api/ai/plant-analyses`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getListAiPlantAnalysesQueryOptions = <TData = Awaited<ReturnType<typeof listAiPlantAnalyses>>, TError = unknown>(params: ListAiPlantAnalysesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiPlantAnalyses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAiPlantAnalysesQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAiPlantAnalyses>>> = ({ signal }) => listAiPlantAnalyses(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAiPlantAnalyses>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAiPlantAnalysesQueryResult = NonNullable<Awaited<ReturnType<typeof listAiPlantAnalyses>>>
+export type ListAiPlantAnalysesQueryError = unknown
+
+
+
+export function useListAiPlantAnalyses<TData = Awaited<ReturnType<typeof listAiPlantAnalyses>>, TError = unknown>(
+ params: ListAiPlantAnalysesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAiPlantAnalyses>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAiPlantAnalysesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getAiPlantAnalysisResponse200 = {
+  data: AiPlantAnalysisDetail
+  status: 200
+}
+    
+export type getAiPlantAnalysisResponseSuccess = (getAiPlantAnalysisResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getAiPlantAnalysisResponse = (getAiPlantAnalysisResponseSuccess)
+
+export const getGetAiPlantAnalysisUrl = (id: number,) => {
+
+
+  
+
+  return `/api/ai/plant-analyses/${id}`
+}
+
+export const getAiPlantAnalysis = async (id: number, options?: RequestInit): Promise<getAiPlantAnalysisResponse> => {
+  
+  return customFetch<getAiPlantAnalysisResponse>(getGetAiPlantAnalysisUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetAiPlantAnalysisQueryKey = (id?: number,) => {
+    return [
+    `/api/ai/plant-analyses/${id}`
+    ] as const;
+    }
+
+    
+export const getGetAiPlantAnalysisQueryOptions = <TData = Awaited<ReturnType<typeof getAiPlantAnalysis>>, TError = unknown>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiPlantAnalysis>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAiPlantAnalysisQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAiPlantAnalysis>>> = ({ signal }) => getAiPlantAnalysis(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAiPlantAnalysis>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAiPlantAnalysisQueryResult = NonNullable<Awaited<ReturnType<typeof getAiPlantAnalysis>>>
+export type GetAiPlantAnalysisQueryError = unknown
+
+
+
+export function useGetAiPlantAnalysis<TData = Awaited<ReturnType<typeof getAiPlantAnalysis>>, TError = unknown>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAiPlantAnalysis>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAiPlantAnalysisQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type followupAiPlantAnalysisResponse200 = {
+  data: string
+  status: 200
+}
+    
+export type followupAiPlantAnalysisResponseSuccess = (followupAiPlantAnalysisResponse200) & {
+  headers: Headers;
+};
+;
+
+export type followupAiPlantAnalysisResponse = (followupAiPlantAnalysisResponseSuccess)
+
+export const getFollowupAiPlantAnalysisUrl = (id: number,) => {
+
+
+  
+
+  return `/api/ai/plant-analyses/${id}/followup`
+}
+
+export const followupAiPlantAnalysis = async (id: number,
+    followupAiPlantAnalysisBody: FollowupAiPlantAnalysisBody, options?: RequestInit): Promise<followupAiPlantAnalysisResponse> => {
+  
+  return customFetch<followupAiPlantAnalysisResponse>(getFollowupAiPlantAnalysisUrl(id),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      followupAiPlantAnalysisBody,)
+  }
+);}
+
+
+
+
+export const getFollowupAiPlantAnalysisMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof followupAiPlantAnalysis>>, TError,{id: number;data: FollowupAiPlantAnalysisBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof followupAiPlantAnalysis>>, TError,{id: number;data: FollowupAiPlantAnalysisBody}, TContext> => {
+
+const mutationKey = ['followupAiPlantAnalysis'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof followupAiPlantAnalysis>>, {id: number;data: FollowupAiPlantAnalysisBody}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  followupAiPlantAnalysis(id,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type FollowupAiPlantAnalysisMutationResult = NonNullable<Awaited<ReturnType<typeof followupAiPlantAnalysis>>>
+    export type FollowupAiPlantAnalysisMutationBody = FollowupAiPlantAnalysisBody
+    export type FollowupAiPlantAnalysisMutationError = unknown
+
+    export const useFollowupAiPlantAnalysis = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof followupAiPlantAnalysis>>, TError,{id: number;data: FollowupAiPlantAnalysisBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof followupAiPlantAnalysis>>,
+        TError,
+        {id: number;data: FollowupAiPlantAnalysisBody},
+        TContext
+      > => {
+
+      const mutationOptions = getFollowupAiPlantAnalysisMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type exportAiPlantAnalysisPdfResponse200 = {
+  data: Blob
+  status: 200
+}
+    
+export type exportAiPlantAnalysisPdfResponseSuccess = (exportAiPlantAnalysisPdfResponse200) & {
+  headers: Headers;
+};
+;
+
+export type exportAiPlantAnalysisPdfResponse = (exportAiPlantAnalysisPdfResponseSuccess)
+
+export const getExportAiPlantAnalysisPdfUrl = (id: number,) => {
+
+
+  
+
+  return `/api/ai/plant-analyses/${id}/export/pdf`
+}
+
+export const exportAiPlantAnalysisPdf = async (id: number, options?: RequestInit): Promise<exportAiPlantAnalysisPdfResponse> => {
+  
+  return customFetch<exportAiPlantAnalysisPdfResponse>(getExportAiPlantAnalysisPdfUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getExportAiPlantAnalysisPdfQueryKey = (id?: number,) => {
+    return [
+    `/api/ai/plant-analyses/${id}/export/pdf`
+    ] as const;
+    }
+
+    
+export const getExportAiPlantAnalysisPdfQueryOptions = <TData = Awaited<ReturnType<typeof exportAiPlantAnalysisPdf>>, TError = unknown>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAiPlantAnalysisPdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportAiPlantAnalysisPdfQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportAiPlantAnalysisPdf>>> = ({ signal }) => exportAiPlantAnalysisPdf(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportAiPlantAnalysisPdf>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportAiPlantAnalysisPdfQueryResult = NonNullable<Awaited<ReturnType<typeof exportAiPlantAnalysisPdf>>>
+export type ExportAiPlantAnalysisPdfQueryError = unknown
+
+
+
+export function useExportAiPlantAnalysisPdf<TData = Awaited<ReturnType<typeof exportAiPlantAnalysisPdf>>, TError = unknown>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportAiPlantAnalysisPdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportAiPlantAnalysisPdfQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
