@@ -1,24 +1,41 @@
 ---
-name: API listen-before-browser
-description: ensureBrowser (puppeteer Chrome install) must not block app.listen or production healthchecks fail
+name: API listen-before-browser-and-migrations
+description: app.listen must be the very first thing in startup; migrations and Chrome install must NOT block it or healthchecks fail in production
 ---
 
 ## Rule
-Always call `app.listen()` before `ensureBrowser()`. Never await browser setup before binding the port.
+Call `app.listen()` first — before `runMigrations()`, `ensureSeedData()`, AND `ensureBrowser()`. After the port is bound, run migrations + seeding in sequence, then Chrome in background.
 
 ## Why
-`ensureBrowser()` runs `execSync("npx puppeteer browsers install chrome")` which downloads ~100MB of Chrome. This takes ~100 seconds. If it runs before `app.listen()`, the server is not bound for the entire install duration. Replit healthchecks probe the path continuously; "connection refused" is reported as HTTP 500. The deployment never passes its health gate.
+On a cold production deploy:
+- `runMigrations()` + `ensureSeedData()` take ~60 seconds (cold DB schema setup + row seeding).
+- `ensureBrowser()` with `execSync` blocks the event loop for ~100s during Chrome download.
+- If either runs before `app.listen()`, the server is not bound during that window.
+- Replit healthcheck probes `GET /api` repeatedly; "connection refused" or event-loop freeze → HTTP 500. Deployment never passes its health gate.
+
+`GET /api` (root health handler) touches no database, so it responds 200 immediately even before migrations complete.
 
 ## How to apply
 In `index.ts`:
 ```ts
+const app = createApp();
+
+// Bind immediately — healthchecks pass on cold starts right away
+await new Promise<void>((resolve) => {
+  app.listen(port, "0.0.0.0", () => {
+    logger.info({ port }, "api-server listening");
+    resolve();
+  });
+});
+
+// DB setup after bind — routes work once this completes (~seconds)
 await runMigrations();
 await ensureSeedData();
-const app = createApp();
-app.listen(port, "0.0.0.0", () => {
-  logger.info({ port }, "api-server listening");
-  // background — PDF generation becomes available once Chrome is ready
-  ensureBrowser().catch((err) => logger.warn({ err }, "Background browser setup failed"));
-});
+
+// Chrome install non-blocking — PDF generation available once done
+ensureBrowser().catch((err) => logger.warn({ err }, "Background browser setup failed"));
 ```
-Chrome still installs on first deploy; subsequent deploys skip it (existsSync check). PDF routes should handle the case where Chrome isn't ready yet (they already catch puppeteer launch errors).
+
+Also ensure `ensureBrowser` uses async `exec()` not `execSync` so even if Chrome needs installing, the event loop stays free.
+
+Chrome caches at `~/.cache/puppeteer/chrome/`; subsequent deploys skip it via `existsSync` check.
