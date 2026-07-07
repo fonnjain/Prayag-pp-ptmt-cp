@@ -838,20 +838,22 @@ function PlantLevelTab({ month }: { month: string }) {
         throw new Error((body as { error?: string })?.error ?? `Request failed (${res.status})`);
       }
       let accumulated = "";
+      let generationSucceeded = false;
       await consumeSse(res, (evt) => {
         if (typeof evt.delta === "string") {
           accumulated += evt.delta;
           setStreamingText(accumulated);
           setPartialResult(parsePartialPlantResult(accumulated));
         }
-        if (evt.cached && evt.result) { setResult(evt.result as PlantAnalysisResult); setCurrentId(Number(evt.id)); setPartialResult(null); }
+        if (evt.cached && evt.result) { setResult(evt.result as PlantAnalysisResult); setCurrentId(Number(evt.id)); setPartialResult(null); generationSucceeded = true; }
         if (evt.error) setError(String(evt.error));
         if (evt.done) {
-          if (evt.result) { setResult(evt.result as PlantAnalysisResult); setPartialResult(null); }
+          if (evt.result) { setResult(evt.result as PlantAnalysisResult); setPartialResult(null); generationSucceeded = true; }
           if (evt.id) setCurrentId(Number(evt.id));
         }
       });
       await loadHistory();
+      if (generationSucceeded) loadTrend();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Analysis failed");
       toast({ title: "Plant AI analysis failed", description: err instanceof Error ? err.message : String(err), variant: "destructive" });
