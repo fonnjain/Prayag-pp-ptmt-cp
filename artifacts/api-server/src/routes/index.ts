@@ -9,6 +9,7 @@ import monitoringRouter from "./monitoring";
 import aiRouter from "./ai";
 import plantRouter from "./plant";
 import reportsRouter from "./reports";
+import opsRouter from "./ops";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(monitoringRouter);
 router.use(aiRouter);
 router.use(plantRouter);
 router.use(reportsRouter);
+router.use(opsRouter);
 
 export default router;

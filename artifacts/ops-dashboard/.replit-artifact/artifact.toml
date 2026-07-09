@@ -1,0 +1,31 @@
+kind = "data-app"
+previewPath = "/ops-dashboard/"
+title = "Prayag India Operations Dashboard"
+version = "1.0.0"
+id = "artifacts/ops-dashboard"
+router = "path"
+
+[[integratedSkills]]
+name = "data-visualization"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/ops-dashboard/" ]
+localPort = 21593
+
+[services.development]
+run = "pnpm --filter @workspace/ops-dashboard run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/ops-dashboard", "run", "build" ]
+publicDir = "artifacts/ops-dashboard/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21593"
+BASE_PATH = "/ops-dashboard/"
