@@ -410,46 +410,65 @@ function OverviewPage({ fy }: { fy: string }) {
                 Loading analysis data…
               </div>
             ) : mgmtVolumeData.length > 0 ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <div className="flex flex-col gap-6">
                 {/* Chart 1 — Volume by Category (E / H / I) */}
                 <div>
-                  <p className="text-xs font-medium text-foreground mb-1">Category Volume · K units/mo</p>
-                  <p className="text-[10px] text-muted-foreground mb-3">Sum of avg monthly sale per unique code · <span className="text-amber-600 font-medium">E=Prior FY</span> · <span className="text-green-600 font-medium">H=Last 3Mo</span> · <span className="text-slate-500 font-medium">I=Last Mo</span></p>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={mgmtVolumeData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }} barCategoryGap="20%">
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <p className="text-sm font-semibold text-foreground">Category Volume</p>
+                    <span className="text-xs text-muted-foreground">· K units / month</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Sum of avg monthly sale per unique code —&nbsp;
+                    <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{background:AMBER}} /> <span className="font-medium text-foreground">E Prior FY avg</span></span>
+                    &nbsp;·&nbsp;
+                    <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{background:GREEN}} /> <span className="font-medium text-foreground">H Last 3Mo avg</span></span>
+                    &nbsp;·&nbsp;
+                    <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-slate-400" /> <span className="font-medium text-foreground">I Last month</span></span>
+                  </p>
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={mgmtVolumeData} layout="vertical" margin={{ top: 4, right: 28, left: 4, bottom: 4 }} barCategoryGap="25%" barGap={3}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-                      <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}K`} />
-                      <YAxis type="category" dataKey="cat" tick={{ fontSize: 10 }} width={68} />
+                      <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}K`} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="cat" tick={{ fontSize: 12, fontWeight: 500 }} width={80} axisLine={false} tickLine={false} />
                       <Tooltip
-                        formatter={(v: number, name: string) => [`${v}K units/mo`, name]}
-                        contentStyle={{ fontSize: 11 }}
+                        formatter={(v: number, name: string) => [`${v.toLocaleString()}K units/mo`, name]}
+                        contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                        cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
                       />
-                      <Legend wrapperStyle={{ fontSize: 10 }} />
-                      <Bar dataKey="E · Prior FY" fill={AMBER} radius={[0,3,3,0]} maxBarSize={14} />
-                      <Bar dataKey="H · Last 3Mo" fill={GREEN} radius={[0,3,3,0]} maxBarSize={14} />
-                      <Bar dataKey="I · Last Mo" fill="hsl(215 20% 65%)" radius={[0,3,3,0]} maxBarSize={14} />
+                      <Bar dataKey="E · Prior FY" fill={AMBER} radius={[0,4,4,0]} maxBarSize={18} />
+                      <Bar dataKey="H · Last 3Mo" fill={GREEN} radius={[0,4,4,0]} maxBarSize={18} />
+                      <Bar dataKey="I · Last Mo" fill="#94a3b8" radius={[0,4,4,0]} maxBarSize={18} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
 
+                <div className="border-t border-border" />
+
                 {/* Chart 2 — Seasonality: F (peak) vs G (off-peak) */}
                 <div>
-                  <p className="text-xs font-medium text-foreground mb-1">Seasonality Split · K units/mo avg</p>
-                  <p className="text-[10px] text-muted-foreground mb-3">
-                    <span className="text-blue-600 font-medium">F=first {N} months</span> vs <span className="text-purple-600 font-medium">G=last {G} months</span> of prior FY · categories with long F bars peak early in fiscal year
+                  <div className="flex items-baseline gap-2 mb-1">
+                    <p className="text-sm font-semibold text-foreground">Seasonality Split</p>
+                    <span className="text-xs text-muted-foreground">· K units / month avg</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    Prior FY split —&nbsp;
+                    <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{background:BLUE}} /> <span className="font-medium text-foreground">F first {N} months (Apr–{mgmtSummary?.meta?.headers?.F?.split("–")[1]?.trim() ?? ""})</span></span>
+                    &nbsp;vs&nbsp;
+                    <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{background:PURPLE}} /> <span className="font-medium text-foreground">G last {G} months</span></span>
+                    &nbsp;— longer F bar = early-year peak
                   </p>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart data={mgmtSeasonData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }} barCategoryGap="20%">
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={mgmtSeasonData} layout="vertical" margin={{ top: 4, right: 28, left: 4, bottom: 4 }} barCategoryGap="25%" barGap={3}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
-                      <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}K`} />
-                      <YAxis type="category" dataKey="cat" tick={{ fontSize: 10 }} width={68} />
+                      <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}K`} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="cat" tick={{ fontSize: 12, fontWeight: 500 }} width={80} axisLine={false} tickLine={false} />
                       <Tooltip
-                        formatter={(v: number, name: string) => [`${v}K units/mo`, name]}
-                        contentStyle={{ fontSize: 11 }}
+                        formatter={(v: number, name: string) => [`${v.toLocaleString()}K units/mo`, name]}
+                        contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                        cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
                       />
-                      <Legend wrapperStyle={{ fontSize: 10 }} />
-                      <Bar dataKey="F · Peak" fill={BLUE} radius={[0,3,3,0]} maxBarSize={14} />
-                      <Bar dataKey="G · Off-peak" fill={PURPLE} radius={[0,3,3,0]} maxBarSize={14} />
+                      <Bar dataKey="F · Peak" fill={BLUE} radius={[0,4,4,0]} maxBarSize={18} />
+                      <Bar dataKey="G · Off-peak" fill={PURPLE} radius={[0,4,4,0]} maxBarSize={18} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
