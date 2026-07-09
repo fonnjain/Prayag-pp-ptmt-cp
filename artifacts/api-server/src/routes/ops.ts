@@ -474,7 +474,7 @@ router.get("/ops/config", (_req, res): void => {
 });
 
 // ─── Management View ──────────────────────────────────────────────────────────
-const ITEM_WISE_SALE_ID = "1sYzg-jIxoFUiORUJkLUQgT6wZSusR1orBhQSQ8aUPE8";
+// Source for E/F/G: CODE WISE SALE 25-26 (not the item-wise sheet which is FY24-25 only)
 const MGMT_CATEGORY_ORDER = [
   "Cocks Standard","Cocks Premium","Faucets & Jetsprays & Shower",
   "Accessories","Cistern & Seat Cover","Cabinet","Ball Cock",
@@ -546,52 +546,230 @@ function localAddDual(totals: DualTotals, code: unknown, colour: unknown, qty: n
   totals.byCode.set(ck, (totals.byCode.get(ck) ?? 0) + qty);
 }
 
-/** Read item-wise sale sheet; build per-item 12-month vector for prior FY. */
-async function fetchItemWiseSaleMap(meta: MgmtMeta): Promise<{ exact: Map<string, number[]>; byCode: Map<string, number[]> }> {
-  const empty = { exact: new Map<string, number[]>(), byCode: new Map<string, number[]>() };
+const mgmtSleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+/**
+ * Read CODE WISE SALE 25-26 to build per-code 12-month vector for the prior FY.
+ *
+ * Strategy (in order):
+ *  1. Read the "CODE" tab (A2:D) — if col C contains month labels, the tab is
+ *     a per-transaction/per-month ledger → group by (code, month) to get monthly vec.
+ *  2. Otherwise treat col A=code, col B=annual total → codeAnnual map (→ E=total/12).
+ *     Then read per-month tabs (named like "Apr-25", "May-25" …) for F/G vectors.
+ *  3. If no monthly tabs found either, fall back: F = G = E = annual/12.
+ *
+ * All values are CODE-LEVEL (colour is ignored; all colours of the same code
+ * share the same E/F/G as in the master Excel).
+ */
+async function fetchCodeWiseSaleMap(meta: MgmtMeta): Promise<{
+  byCode: Map<string, number[]>; // code → [12] monthly values for prior FY
+  codeAnnual: Map<string, number>; // code → annual total
+}> {
+  const empty = { byCode: new Map<string, number[]>(), codeAnnual: new Map<string, number>() };
   try {
-    const tabs = await listTabs(ITEM_WISE_SALE_ID);
-    const preferTab = tabs.find(t => /combined|ptmt|item|all/i.test(t)) ?? tabs[0];
-    if (!preferTab) return empty;
+    const tabs = await listTabs(SHEET_IDS.codeWiseSale2526);
+    logger.info({ tabs }, "CODE WISE SALE 25-26 tabs");
 
-    const values = await throttledGetTabValues(ITEM_WISE_SALE_ID, preferTab, "A1:ZZ200000");
-    if (values.length < 2) return empty;
-
-    const headers = values[0].map(h => String(h ?? "").trim());
-    const codeIdx = headers.findIndex(h => /item.?code|cat.?no|cat\.no|^code$/i.test(h));
-    const colourIdx = headers.findIndex(h => /colou?r/i.test(h));
-    if (codeIdx === -1) { logger.warn({ headers: headers.slice(0, 15) }, "item-wise sale: no item code col"); return empty; }
-
-    // Map each prior-FY month label → column index
-    const monthColIdxs = meta.priorFyMonthLabels.map(label => {
-      const [mon, yr] = label.split("-");
-      return headers.findIndex(h => {
-        const n = h.toLowerCase().replace(/[\s'`]/g, "");
-        return n.includes(mon.toLowerCase()) && n.includes(yr.toLowerCase());
-      });
-    });
-    logger.info({ found: monthColIdxs.filter(i => i >= 0).length }, "item-wise sale month col mapping");
-
-    const exact = new Map<string, number[]>();
     const byCode = new Map<string, number[]>();
+    const codeAnnual = new Map<string, number>();
 
-    for (let i = 1; i < values.length; i++) {
-      const row = values[i];
-      if (!row) continue;
-      const code = String(row[codeIdx] ?? "").trim();
-      if (!code) continue;
-      const colour = colourIdx >= 0 ? String(row[colourIdx] ?? "").trim() : "";
-      const monthly = monthColIdxs.map(idx => (idx >= 0 ? toNum(row[idx]) : 0));
+    // ── Step 1: Find and read CODE tab ────────────────────────────────────────
+    const codeTab = tabs.find(t => t.toUpperCase() === "CODE")
+      ?? tabs.find(t => /^code/i.test(t));
 
-      const k = itemKey(code, colour);
-      const ck = normalizeCode(code);
-      if (!exact.has(k)) exact.set(k, Array(12).fill(0));
-      if (!byCode.has(ck)) byCode.set(ck, Array(12).fill(0));
-      monthly.forEach((v, j) => { exact.get(k)![j] += v; byCode.get(ck)![j] += v; });
+    if (codeTab) {
+      const raw = await throttledGetTabValues(SHEET_IDS.codeWiseSale2526, codeTab, "A1:D200000");
+      const startRow = raw.length > 0 && /code|item/i.test(String(raw[0]?.[0] ?? "")) ? 1 : 0;
+      const rows = raw.slice(startRow);
+
+      // Detect if col C is a month label (per-transaction ledger with month)
+      const sampleC = rows.slice(0, 20).map(r => String(r?.[2] ?? "").trim().toLowerCase());
+      const hasMonthCol = sampleC.some(c => /^(apr|may|jun|jul|aug|sep|oct|nov|dec|jan|feb|mar)/i.test(c));
+
+      if (hasMonthCol) {
+        // Per-row: A=code, B=qty, C=month label (e.g. "Apr-25")
+        for (const row of rows) {
+          if (!row?.[0]) continue;
+          const code = normalizeCode(row[0]);
+          if (!code) continue;
+          const qty = toNum(row[1] ?? "0");
+          const monthRaw = String(row[2] ?? "").trim();
+          codeAnnual.set(code, (codeAnnual.get(code) ?? 0) + qty);
+
+          const mIdx = meta.priorFyMonthLabels.findIndex(label => {
+            const [mon, yr] = label.split("-");
+            const n = monthRaw.toLowerCase().replace(/[\s'`-]/g, "");
+            return n.includes(mon.toLowerCase()) && n.includes(yr.toLowerCase());
+          });
+          if (mIdx >= 0) {
+            if (!byCode.has(code)) byCode.set(code, Array(12).fill(0));
+            byCode.get(code)![mIdx] += qty;
+          }
+        }
+        logger.info({ codes: byCode.size }, "CODE tab: monthly-ledger mode");
+      } else {
+        // Annual-total mode: A=code, B=annual qty
+        for (const row of rows) {
+          if (!row?.[0]) continue;
+          const code = normalizeCode(row[0]);
+          if (!code) continue;
+          const qty = toNum(row[1] ?? "0");
+          codeAnnual.set(code, (codeAnnual.get(code) ?? 0) + qty);
+        }
+        logger.info({ codes: codeAnnual.size }, "CODE tab: annual-total mode — will seek monthly tabs");
+      }
     }
-    return { exact, byCode };
+
+    // ── Step 2: Monthly breakdown — try named-month tabs first, then wide format ──
+    const needMonthly = byCode.size === 0;
+    if (needMonthly) {
+      // 2a: Named per-month tabs (e.g. "Apr-25", "May-25"…)
+      const monthTabMap = meta.priorFyMonthLabels.map((label, idx) => {
+        const [mon, yr] = label.split("-");
+        const tab = tabs.find(t => {
+          const n = t.toLowerCase().replace(/[\s'`]/g, "");
+          return n.includes(mon.toLowerCase()) && n.includes(yr.toLowerCase());
+        }) ?? tabs.find(t => t.toLowerCase() === mon.toLowerCase());
+        return { label, idx, tab };
+      });
+      logger.info({ found: monthTabMap.filter(m => m.tab).map(m => m.label) }, "CODE WISE monthly tabs");
+
+      const tabCache = new Map<string, string[][]>();
+      for (const m of monthTabMap) {
+        if (!m.tab || tabCache.has(m.tab)) continue;
+        await mgmtSleep(1100);
+        try {
+          const v = await getTabValues(SHEET_IDS.codeWiseSale2526, m.tab, "A1:C100000");
+          tabCache.set(m.tab, v);
+        } catch (err) { logger.warn({ err, tab: m.tab }, "monthly tab read failed"); }
+      }
+
+      for (const m of monthTabMap) {
+        if (!m.tab) continue;
+        const vals = tabCache.get(m.tab) ?? [];
+        if (vals.length < 2) continue;
+        const hdr = vals[0].map(h => String(h ?? "").trim().toLowerCase());
+        const ci = hdr.findIndex(h => /item.?code|cat.?no|^code$/i.test(h));
+        const qi = hdr.findIndex(h => /qty|sale|quantity/i.test(h));
+        const codeCol = ci >= 0 ? ci : 0;
+        const qtyCol = qi >= 0 ? qi : 1;
+        const start = (ci >= 0 || qi >= 0) ? 1 : 0;
+        for (let r = start; r < vals.length; r++) {
+          const row = vals[r];
+          if (!row?.[codeCol]) continue;
+          const code = normalizeCode(row[codeCol]);
+          if (!code) continue;
+          const qty = toNum(row[qtyCol] ?? "0");
+          if (!byCode.has(code)) byCode.set(code, Array(12).fill(0));
+          byCode.get(code)![m.idx] += qty;
+          if (!codeAnnual.has(code)) codeAnnual.set(code, 0);
+          codeAnnual.set(code, codeAnnual.get(code)! + qty);
+        }
+      }
+
+      // 2b: If still no monthly data, try remaining tabs — detect wide OR tall format
+      if (byCode.size === 0) {
+        const skipTabs = new Set([codeTab ?? "", "PLUMBING TOP ITEMS", "SINK"]);
+        const wideCandidates = tabs.filter(t => !skipTabs.has(t));
+        logger.info({ wideCandidates }, "CODE WISE: trying wide/tall-format monthly tabs");
+
+        for (const wt of wideCandidates) {
+          await mgmtSleep(1100);
+          let vals: string[][] = [];
+          try {
+            // Read wide enough to capture Month col (col J = index 9), use A:N
+            vals = await getTabValues(SHEET_IDS.codeWiseSale2526, wt, "A1:N200000");
+          } catch (err) { logger.warn({ err, tab: wt }, "fallback tab read failed"); continue; }
+          if (vals.length < 2) continue;
+
+          const hdrs = vals[0].map(h => String(h ?? "").trim());
+          logger.info({ tab: wt, hdrs: hdrs.slice(0, 14) }, "fallback tab headers");
+
+          // ── Tall-format detection: has a dedicated "Month" column ────────────
+          const monthColI = hdrs.findIndex(h => /^month$/i.test(h.trim()));
+          if (monthColI >= 0) {
+            const codeColI = (() => {
+              const i = hdrs.findIndex(h => /old.?item.?code|item.?code|cat.?no|^code$/i.test(h));
+              return i >= 0 ? i : 0;
+            })();
+            const qtyColI = (() => {
+              const i = hdrs.findIndex(h => /^quantity$|^qty$/i.test(h));
+              return i >= 0 ? i : 3;
+            })();
+            logger.info({ tab: wt, codeHdr: hdrs[codeColI], qtyHdr: hdrs[qtyColI], monthHdr: hdrs[monthColI] }, "CODE WISE: tall-format detected");
+
+            // Sample month values to understand format
+            const sampleMonths = vals.slice(1, 6).map(r => String(r?.[monthColI] ?? "").trim());
+            logger.info({ sampleMonths }, "CODE WISE: sample month labels from Sheet1");
+
+            for (let r = 1; r < vals.length; r++) {
+              const row = vals[r];
+              if (!row?.[codeColI]) continue;
+              const code = normalizeCode(row[codeColI]);
+              if (!code) continue;
+              const qty = toNum(row[qtyColI] ?? "0");
+              const monthRaw = String(row[monthColI] ?? "").trim();
+
+              // Match against prior-FY month labels
+              const mIdx = meta.priorFyMonthLabels.findIndex(label => {
+                const [mon, yr] = label.split("-");
+                const n = monthRaw.toLowerCase().replace(/[\s'`.\-]/g, "");
+                const m = mon.toLowerCase();
+                // "Apr-25" → "apr25"; also handle "April 25", "Apr25", "04/25" etc.
+                return (n.includes(m) && n.includes(yr.toLowerCase()))
+                  || (n.includes(m.slice(0, 3)) && n.includes(yr.toLowerCase()));
+              });
+
+              if (mIdx >= 0) {
+                if (!byCode.has(code)) byCode.set(code, Array(12).fill(0));
+                byCode.get(code)![mIdx] += qty;
+              }
+            }
+
+            if (byCode.size > 0) {
+              logger.info({ codes: byCode.size, tab: wt }, "CODE WISE: tall-format data loaded");
+              break;
+            }
+            continue;
+          }
+
+          // ── Wide-format detection: columns named by month ────────────────────
+          const colMonthIdx = hdrs.map(h => {
+            const hn = h.toLowerCase().replace(/[\s'`]/g, "");
+            return meta.priorFyMonthLabels.findIndex(label => {
+              const [mon, yr] = label.split("-");
+              return hn.includes(mon.toLowerCase()) && hn.includes(yr.toLowerCase());
+            });
+          });
+          const monthCols = colMonthIdx.map((mIdx, col) => ({ col, mIdx })).filter(x => x.mIdx >= 0);
+          if (monthCols.length === 0) continue;
+
+          const codeHdrIdx = (() => {
+            const i = hdrs.findIndex(h => /item.?code|cat.?no|^code$/i.test(h));
+            return i >= 0 ? i : 0;
+          })();
+
+          for (let r = 1; r < vals.length; r++) {
+            const row = vals[r];
+            if (!row?.[codeHdrIdx]) continue;
+            const code = normalizeCode(row[codeHdrIdx]);
+            if (!code) continue;
+            if (!byCode.has(code)) byCode.set(code, Array(12).fill(0));
+            for (const { col, mIdx } of monthCols) {
+              byCode.get(code)![mIdx] += toNum(row[col] ?? "0");
+            }
+          }
+          if (byCode.size > 0) {
+            logger.info({ codes: byCode.size, tab: wt }, "CODE WISE: wide-format data loaded");
+            break;
+          }
+        }
+      }
+    }
+
+    return { byCode, codeAnnual };
   } catch (err) {
-    logger.warn({ err }, "fetchItemWiseSaleMap failed — returning empty");
+    logger.warn({ err }, "fetchCodeWiseSaleMap failed");
     return empty;
   }
 }
@@ -602,23 +780,37 @@ async function fetchLastMonthDualTotals(meta: MgmtMeta): Promise<DualTotals> {
   try {
     const tabs = await listTabs(SHEET_IDS.saleSheet2627);
     const [mon, yr] = meta.lastMonthLabel.split("-");
+    logger.info({ tabs, lastMonth: meta.lastMonthLabel }, "SALE SHEET 26-27 tabs");
     const matchTab = tabs.find(t => {
       const n = t.toLowerCase().replace(/[\s'`]/g, "");
       return n.includes(mon.toLowerCase()) && n.includes(yr.toLowerCase());
     }) ?? tabs.find(t => t.toLowerCase().includes(mon.toLowerCase()));
     if (!matchTab) { logger.warn({ tabs, lastMonth: meta.lastMonthLabel }, "SALE SHEET 26-27: no tab for last month"); return empty; }
+    logger.info({ matchTab }, "SALE SHEET 26-27 matched tab");
 
-    const values = await throttledGetTabValues(SHEET_IDS.saleSheet2627, matchTab, "D1:H300000");
+    // Read A1:L to auto-detect columns from header
+    const raw = await throttledGetTabValues(SHEET_IDS.saleSheet2627, matchTab, "A1:L300000");
+    logger.info({ rows: raw.length, sampleHdr: raw[0]?.slice(0,12) }, "SALE SHEET 26-27 raw header");
+    if (raw.length < 2) { logger.warn({ matchTab }, "SALE SHEET 26-27: empty tab"); return empty; }
+
+    const hdr = raw[0].map(h => String(h ?? "").trim());
+    // Prefer explicit header detection; fall back to positional cols D/F/H (offset 3/5/7)
+    const codeCol = (() => { const i = hdr.findIndex(h => /item.?code|cat.?no|old.?item|^code$/i.test(h)); return i >= 0 ? i : 3; })();
+    const colourCol = (() => { const i = hdr.findIndex(h => /colou?r/i.test(h)); return i >= 0 ? i : 5; })();
+    const qtyCol = (() => { const i = hdr.findIndex(h => /^qty$|^quantity$|^sale.?qty/i.test(h)); return i >= 0 ? i : 7; })();
+    logger.info({ codeHdr: hdr[codeCol], colourHdr: hdr[colourCol], qtyHdr: hdr[qtyCol] }, "SALE SHEET 26-27 col mapping");
+
     const totals: DualTotals = { exact: new Map(), byCode: new Map() };
-    for (let i = 1; i < values.length; i++) {
-      const row = values[i];
+    for (let i = 1; i < raw.length; i++) {
+      const row = raw[i];
       if (!row) continue;
-      const code = String(row[0] ?? "").trim(); // col D
-      const colour = String(row[2] ?? "").trim(); // col F
-      const qtyRaw = row[4]; // col H
+      const code = String(row[codeCol] ?? "").trim();
+      const colour = String(row[colourCol] ?? "").trim();
+      const qtyRaw = row[qtyCol];
       if (!code || !qtyRaw || String(qtyRaw).trim() === "") continue;
       localAddDual(totals, code, colour, toNum(qtyRaw));
     }
+    logger.info({ codes: totals.byCode.size }, "SALE SHEET 26-27 loaded");
     return totals;
   } catch (err) {
     logger.warn({ err }, "fetchLastMonthDualTotals failed");
@@ -626,12 +818,16 @@ async function fetchLastMonthDualTotals(meta: MgmtMeta): Promise<DualTotals> {
   }
 }
 
-/** Assemble per-category management view rows. */
+/**
+ * Assemble per-category management view rows.
+ * E/F/G/H/I are CODE-LEVEL — all colour variants of a code share the same values,
+ * matching the master Excel where these columns are colour-blind aggregates.
+ */
 async function computeMgmtCategories(meta: MgmtMeta, monthParam: string): Promise<CategoryView[]> {
-  const [masterItems, itemWise, h3moRaw, iLast] = await Promise.all([
+  const [masterItems, codeWise, h3moRaw, iLast] = await Promise.all([
     db.select({ category: itemMasterTable.category, itemCode: itemMasterTable.itemCode, colour: itemMasterTable.colour })
       .from(itemMasterTable),
-    fetchItemWiseSaleMap(meta),
+    fetchCodeWiseSaleMap(meta),
     fetchAvg3MoSaleTotals(monthParam),
     fetchLastMonthDualTotals(meta),
   ]);
@@ -641,16 +837,28 @@ async function computeMgmtCategories(meta: MgmtMeta, monthParam: string): Promis
     items: masterItems
       .filter(item => item.category === catName)
       .map(item => {
-        const k = itemKey(item.itemCode, item.colour);
         const ck = normalizeCode(item.itemCode);
-        const m12: number[] = itemWise.exact.get(k) ?? itemWise.byCode.get(ck) ?? Array(12).fill(0);
-        const sumAll = m12.reduce((s, v) => s + v, 0);
-        const E = sumAll / 12;
-        const F = meta.N > 0 ? m12.slice(0, meta.N).reduce((s, v) => s + v, 0) / meta.N : 0;
-        const G = meta.N < 12 ? m12.slice(meta.N).reduce((s, v) => s + v, 0) / (12 - meta.N) : 0;
-        // fetchAvg3MoSaleTotals returns 3-month SUM; divide by 3 for monthly avg
-        const H = (h3moRaw.exact.get(k) ?? h3moRaw.byCode.get(ck) ?? 0) / 3;
-        const I = iLast.exact.get(k) ?? iLast.byCode.get(ck) ?? 0;
+
+        // ── E / F / G — code-level, from CODE WISE SALE 25-26 ────────────────
+        const m12: number[] = codeWise.byCode.get(ck) ?? Array(12).fill(0);
+        const annualFromCode = codeWise.codeAnnual.get(ck) ?? m12.reduce((s, v) => s + v, 0);
+
+        const E = annualFromCode / 12;
+
+        // Use monthly vector for F/G if we have real data; else fall back to E
+        const hasMonthly = m12.some(v => v > 0);
+        const F = hasMonthly && meta.N > 0
+          ? m12.slice(0, meta.N).reduce((s, v) => s + v, 0) / meta.N
+          : E;
+        const G = hasMonthly && meta.N < 12
+          ? m12.slice(meta.N).reduce((s, v) => s + v, 0) / (12 - meta.N)
+          : (meta.N < 12 ? E : 0);
+
+        // ── H / I — code-level, aggregate all colours ─────────────────────────
+        // fetchAvg3MoSaleTotals returns 3-month SUM → ÷3 for monthly avg
+        const H = (h3moRaw.byCode.get(ck) ?? 0) / 3;
+        const I = iLast.byCode.get(ck) ?? 0;
+
         return { itemCode: item.itemCode, colour: item.colour, E, F, G, H, I };
       }),
   }));
