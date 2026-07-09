@@ -536,7 +536,7 @@ function buildMgmtMeta(monthParam: string): MgmtMeta | null {
   };
 }
 
-interface ItemViewRow { itemCode: string; colour: string; E: number; F: number; G: number; H: number; I: number; }
+interface ItemViewRow { itemCode: string; colour: string; E: number; F: number; G: number; H: number; I: number; J: number; }
 interface CategoryView { name: string; items: ItemViewRow[]; }
 
 function localAddDual(totals: DualTotals, code: unknown, colour: unknown, qty: number): void {
@@ -774,6 +774,44 @@ async function fetchCodeWiseSaleMap(meta: MgmtMeta): Promise<{
   }
 }
 
+/** Current (in-progress) month's line-level sales from SALE SHEET 26-27. */
+async function fetchCurrentMonthDualTotals(meta: MgmtMeta): Promise<DualTotals> {
+  const empty: DualTotals = { exact: new Map(), byCode: new Map() };
+  try {
+    const tabs = await listTabs(SHEET_IDS.saleSheet2627);
+    const curMonName = CAL_NAMES[meta.monthNum - 1]; // e.g. "Jul"
+    logger.info({ tabs, curMon: curMonName }, "SALE SHEET 26-27 tabs (current month)");
+    const matchTab = tabs.find(t => {
+      const n = t.toLowerCase().replace(/[\s'`]/g, "");
+      return n.includes(curMonName.toLowerCase());
+    });
+    if (!matchTab) { logger.warn({ tabs, curMon: curMonName }, "SALE SHEET 26-27: no tab for current month"); return empty; }
+    logger.info({ matchTab }, "SALE SHEET 26-27 current month tab matched");
+
+    const raw = await throttledGetTabValues(SHEET_IDS.saleSheet2627, matchTab, "A1:L300000");
+    if (raw.length < 2) return empty;
+
+    const hdr = raw[0].map(h => String(h ?? "").trim());
+    const codeCol = (() => { const i = hdr.findIndex(h => /item.?code/i.test(h)); return i >= 0 ? i : 7; })();
+    const colourCol = (() => { const i = hdr.findIndex(h => /colou?r/i.test(h)); return i >= 0 ? i : 8; })();
+    const qtyCol = (() => { const i = hdr.findIndex(h => /^qty$|^quantity$|^sale.?qty/i.test(h)); return i >= 0 ? i : 9; })();
+
+    const totals: DualTotals = { exact: new Map(), byCode: new Map() };
+    for (let r = 1; r < raw.length; r++) {
+      const row = raw[r];
+      const code = row[codeCol]; const colour = row[colourCol]; const qtyRaw = row[qtyCol];
+      if (!code || qtyRaw == null || qtyRaw === "") continue;
+      const toNum = (v: unknown) => { const n = parseFloat(String(v ?? "").replace(/,/g, "")); return isNaN(n) ? 0 : n; };
+      localAddDual(totals, code, colour, toNum(qtyRaw));
+    }
+    logger.info({ codes: totals.byCode.size }, "SALE SHEET 26-27 current month loaded");
+    return totals;
+  } catch (err) {
+    logger.warn({ err }, "fetchCurrentMonthDualTotals failed");
+    return empty;
+  }
+}
+
 /** Last completed month's line-level sales from SALE SHEET 26-27. */
 async function fetchLastMonthDualTotals(meta: MgmtMeta): Promise<DualTotals> {
   const empty: DualTotals = { exact: new Map(), byCode: new Map() };
@@ -824,12 +862,13 @@ async function fetchLastMonthDualTotals(meta: MgmtMeta): Promise<DualTotals> {
  * matching the master Excel where these columns are colour-blind aggregates.
  */
 async function computeMgmtCategories(meta: MgmtMeta, monthParam: string): Promise<CategoryView[]> {
-  const [masterItems, codeWise, h3moRaw, iLast] = await Promise.all([
+  const [masterItems, codeWise, h3moRaw, iLast, jCur] = await Promise.all([
     db.select({ category: itemMasterTable.category, itemCode: itemMasterTable.itemCode, colour: itemMasterTable.colour })
       .from(itemMasterTable),
     fetchCodeWiseSaleMap(meta),
     fetchAvg3MoSaleTotals(monthParam),
     fetchLastMonthDualTotals(meta),
+    fetchCurrentMonthDualTotals(meta),
   ]);
 
   return MGMT_CATEGORY_ORDER.map(catName => ({
@@ -854,12 +893,13 @@ async function computeMgmtCategories(meta: MgmtMeta, monthParam: string): Promis
           ? m12.slice(meta.N).reduce((s, v) => s + v, 0) / (12 - meta.N)
           : (meta.N < 12 ? E : 0);
 
-        // ── H / I — code-level, aggregate all colours ─────────────────────────
+        // ── H / I / J — code-level, aggregate all colours ────────────────────
         // fetchAvg3MoSaleTotals returns 3-month SUM → ÷3 for monthly avg
         const H = (h3moRaw.byCode.get(ck) ?? 0) / 3;
         const I = iLast.byCode.get(ck) ?? 0;
+        const J = jCur.byCode.get(ck) ?? 0;
 
-        return { itemCode: item.itemCode, colour: item.colour, E, F, G, H, I };
+        return { itemCode: item.itemCode, colour: item.colour, E, F, G, H, I, J };
       }),
   }));
 }
@@ -924,19 +964,19 @@ router.get("/ops/management-summary", async (req, res): Promise<void> => {
 
     const summary = mgmtData.categories.map(cat => {
       const seenCodes = new Set<string>();
-      let totalE = 0, totalF = 0, totalG = 0, totalH = 0, totalI = 0, codes = 0;
+      let totalE = 0, totalF = 0, totalG = 0, totalH = 0, totalI = 0, totalJ = 0, codes = 0;
       for (const item of cat.items) {
         const ck = normalizeCode(item.itemCode);
         if (seenCodes.has(ck)) continue;
         seenCodes.add(ck);
         totalE += item.E; totalF += item.F; totalG += item.G;
-        totalH += item.H; totalI += item.I;
+        totalH += item.H; totalI += item.I; totalJ += item.J;
         codes++;
       }
       return {
         name: cat.name, codes,
         totalE: Math.round(totalE), totalF: Math.round(totalF), totalG: Math.round(totalG),
-        totalH: Math.round(totalH), totalI: Math.round(totalI),
+        totalH: Math.round(totalH), totalI: Math.round(totalI), totalJ: Math.round(totalJ),
         momentumHE: totalE > 0 ? parseFloat((totalH / totalE).toFixed(3)) : 0,
       };
     });

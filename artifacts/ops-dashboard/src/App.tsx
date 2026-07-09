@@ -267,25 +267,33 @@ function OverviewPage({ fy }: { fy: string }) {
     staleTime: 10 * 60 * 1000,
   });
 
+  // Human-readable current month name e.g. "Jul"
+  const curMonName = useMemo(() => {
+    const [y, m] = currentMonth.split("-").map(Number);
+    return new Date(y, m - 1, 1).toLocaleString("en-IN", { month: "short" });
+  }, [currentMonth]);
+
   // Chart data derived from management summary
   const mgmtVolumeData = useMemo(() => {
     if (!mgmtSummary?.summary) return [];
     return mgmtSummary.summary.map((c: any) => ({
       cat: CAT_SHORT[c.name] ?? c.name,
-      "E · Prior FY": Math.round(c.totalE / 1000),
-      "H · Last 3Mo": Math.round(c.totalH / 1000),
-      "I · Last Mo": Math.round(c.totalI / 1000),
+      "E · Prior FY avg": Math.round(c.totalE / 1000),
+      "H · Last 3Mo avg": Math.round(c.totalH / 1000),
+      "I · Last month": Math.round(c.totalI / 1000),
+      [`J · ${curMonName} (live)`]: Math.round((c.totalJ ?? 0) / 1000),
     }));
-  }, [mgmtSummary]);
+  }, [mgmtSummary, curMonName]);
 
   const mgmtSeasonData = useMemo(() => {
     if (!mgmtSummary?.summary) return [];
     return mgmtSummary.summary.map((c: any) => ({
       cat: CAT_SHORT[c.name] ?? c.name,
-      "F · Peak": Math.round(c.totalF / 1000),
-      "G · Off-peak": Math.round(c.totalG / 1000),
+      "F · Peak months avg": Math.round(c.totalF / 1000),
+      "G · Off-peak avg": Math.round(c.totalG / 1000),
+      [`J · ${curMonName} (live)`]: Math.round((c.totalJ ?? 0) / 1000),
     }));
-  }, [mgmtSummary]);
+  }, [mgmtSummary, curMonName]);
 
   const trendData = useMemo(() => {
     if (!orders?.monthly) return [];
@@ -424,20 +432,23 @@ function OverviewPage({ fy }: { fy: string }) {
                     <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{background:GREEN}} /> <span className="font-medium text-foreground">H Last 3Mo avg</span></span>
                     &nbsp;·&nbsp;
                     <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-slate-400" /> <span className="font-medium text-foreground">I Last month</span></span>
+                    &nbsp;·&nbsp;
+                    <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-teal-500" /> <span className="font-medium text-foreground">J {curMonName} live</span></span>
                   </p>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={mgmtVolumeData} layout="vertical" margin={{ top: 4, right: 28, left: 4, bottom: 4 }} barCategoryGap="25%" barGap={3}>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={mgmtVolumeData} layout="vertical" margin={{ top: 4, right: 28, left: 4, bottom: 4 }} barCategoryGap="22%" barGap={2}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
                       <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}K`} axisLine={false} tickLine={false} />
                       <YAxis type="category" dataKey="cat" tick={{ fontSize: 12, fontWeight: 500 }} width={80} axisLine={false} tickLine={false} />
                       <Tooltip
-                        formatter={(v: number, name: string) => [`${v.toLocaleString()}K units/mo`, name]}
+                        formatter={(v: number, name: string) => [`${v.toLocaleString()}K units`, name]}
                         contentStyle={{ fontSize: 12, borderRadius: 8 }}
                         cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
                       />
-                      <Bar dataKey="E · Prior FY" fill={AMBER} radius={[0,4,4,0]} maxBarSize={18} />
-                      <Bar dataKey="H · Last 3Mo" fill={GREEN} radius={[0,4,4,0]} maxBarSize={18} />
-                      <Bar dataKey="I · Last Mo" fill="#94a3b8" radius={[0,4,4,0]} maxBarSize={18} />
+                      <Bar dataKey="E · Prior FY avg" fill={AMBER} radius={[0,4,4,0]} maxBarSize={16} />
+                      <Bar dataKey="H · Last 3Mo avg" fill={GREEN} radius={[0,4,4,0]} maxBarSize={16} />
+                      <Bar dataKey="I · Last month" fill="#94a3b8" radius={[0,4,4,0]} maxBarSize={16} />
+                      <Bar dataKey={`J · ${curMonName} (live)`} fill="#14b8a6" radius={[0,4,4,0]} maxBarSize={16} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -452,23 +463,26 @@ function OverviewPage({ fy }: { fy: string }) {
                   </div>
                   <p className="text-xs text-muted-foreground mb-3">
                     Prior FY split —&nbsp;
-                    <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{background:BLUE}} /> <span className="font-medium text-foreground">F first {N} months (Apr–{mgmtSummary?.meta?.headers?.F?.split("–")[1]?.trim() ?? ""})</span></span>
+                    <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{background:BLUE}} /> <span className="font-medium text-foreground">F first {N} months</span></span>
                     &nbsp;vs&nbsp;
                     <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm" style={{background:PURPLE}} /> <span className="font-medium text-foreground">G last {G} months</span></span>
+                    &nbsp;·&nbsp;
+                    <span className="inline-flex items-center gap-1"><span className="inline-block w-2.5 h-2.5 rounded-sm bg-teal-500" /> <span className="font-medium text-foreground">J {curMonName} live</span></span>
                     &nbsp;— longer F bar = early-year peak
                   </p>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={mgmtSeasonData} layout="vertical" margin={{ top: 4, right: 28, left: 4, bottom: 4 }} barCategoryGap="25%" barGap={3}>
+                  <ResponsiveContainer width="100%" height={280}>
+                    <BarChart data={mgmtSeasonData} layout="vertical" margin={{ top: 4, right: 28, left: 4, bottom: 4 }} barCategoryGap="22%" barGap={2}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
                       <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}K`} axisLine={false} tickLine={false} />
                       <YAxis type="category" dataKey="cat" tick={{ fontSize: 12, fontWeight: 500 }} width={80} axisLine={false} tickLine={false} />
                       <Tooltip
-                        formatter={(v: number, name: string) => [`${v.toLocaleString()}K units/mo`, name]}
+                        formatter={(v: number, name: string) => [`${v.toLocaleString()}K units`, name]}
                         contentStyle={{ fontSize: 12, borderRadius: 8 }}
                         cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
                       />
-                      <Bar dataKey="F · Peak" fill={BLUE} radius={[0,4,4,0]} maxBarSize={18} />
-                      <Bar dataKey="G · Off-peak" fill={PURPLE} radius={[0,4,4,0]} maxBarSize={18} />
+                      <Bar dataKey="F · Peak months avg" fill={BLUE} radius={[0,4,4,0]} maxBarSize={16} />
+                      <Bar dataKey="G · Off-peak avg" fill={PURPLE} radius={[0,4,4,0]} maxBarSize={16} />
+                      <Bar dataKey={`J · ${curMonName} (live)`} fill="#14b8a6" radius={[0,4,4,0]} maxBarSize={16} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
