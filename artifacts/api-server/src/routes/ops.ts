@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
-import { getTabValues, listTabs } from "../lib/sheets";
+import { getTabValues, listTabs, SHEET_IDS, throttledGetTabValues, itemKey, normalizeCode, type DualTotals, fetchAvg3MoSaleTotals } from "../lib/sheets";
 import { logger } from "../lib/logger";
+import type * as ExcelJSType from "exceljs";
+import { db, itemMasterTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -469,6 +471,267 @@ router.get("/ops/config", (_req, res): void => {
     categories: Object.values(REPORT_TAB_CATEGORIES),
     festivals: FESTIVAL_CONFIG,
   });
+});
+
+// ─── Management View ──────────────────────────────────────────────────────────
+const ITEM_WISE_SALE_ID = "1sYzg-jIxoFUiORUJkLUQgT6wZSusR1orBhQSQ8aUPE8";
+const MGMT_CATEGORY_ORDER = [
+  "Cocks Standard","Cocks Premium","Faucets & Jetsprays & Shower",
+  "Accessories","Cistern & Seat Cover","Cabinet","Ball Cock",
+];
+const FM_NAMES = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"];
+const CAL_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+interface MgmtMeta {
+  year: number; monthNum: number; N: number;
+  currentFyStart: number; priorFyStart: number;
+  currentFy: string; priorFy: string;
+  priorFyMonthLabels: string[];
+  fHeader: string; gHeader: string; eHeader: string;
+  hHeader: string; iHeader: string;
+  lastMonthLabel: string; lastMonthName: string;
+}
+
+function buildMgmtMeta(monthParam: string): MgmtMeta | null {
+  if (!/^\d{4}-\d{2}$/.test(monthParam)) return null;
+  const [yearStr, monStr] = monthParam.split("-");
+  const year = parseInt(yearStr, 10);
+  const monthNum = parseInt(monStr, 10);
+  if (monthNum < 1 || monthNum > 12) return null;
+
+  const currentFyStart = monthNum >= 4 ? year : year - 1;
+  const priorFyStart = currentFyStart - 1;
+  const N = ((monthNum - 4 + 12) % 12) + 1;
+  const currentFy = `${currentFyStart}-${String(currentFyStart + 1).slice(2)}`;
+  const priorFy  = `${priorFyStart}-${String(priorFyStart + 1).slice(2)}`;
+
+  // Apr(priorFyStart)..Mar(priorFyStart+1) — fiscal index 0=Apr..8=Dec use priorFyStart, 9=Jan..11=Mar use priorFyStart+1
+  const priorFyMonthLabels = FM_NAMES.map((name, i) => {
+    const yr = i <= 8 ? priorFyStart : priorFyStart + 1;
+    return `${name}-${String(yr).slice(2)}`;
+  });
+
+  const fLabels = priorFyMonthLabels.slice(0, N);
+  const gLabels = priorFyMonthLabels.slice(N);
+
+  const eHeader = `AVG SALE ${priorFy}`;
+  const fHeader = N > 0
+    ? `${N} MONTH SALE ${fLabels[0]} – ${fLabels[N - 1]}`
+    : "—";
+  const gHeader = gLabels.length > 0
+    ? `${gLabels.length} MONTH SALE ${gLabels[0]} – ${gLabels[gLabels.length - 1]}`
+    : "—";
+  const hHeader = "LAST 3 MONTH AVG SALE";
+
+  const lastMonthIdx0 = ((monthNum - 2 + 12) % 12); // 0=Jan..11=Dec
+  const lastMonthName = CAL_NAMES[lastMonthIdx0];
+  const lastMonthYear = monthNum === 1 ? year - 1 : year;
+  const lastMonthLabel = `${lastMonthName}-${String(lastMonthYear).slice(2)}`;
+  const iHeader = `LAST MONTH SALE (${lastMonthName})`;
+
+  return {
+    year, monthNum, N, currentFyStart, priorFyStart, currentFy, priorFy,
+    priorFyMonthLabels, fHeader, gHeader, eHeader, hHeader, iHeader,
+    lastMonthLabel, lastMonthName,
+  };
+}
+
+interface ItemViewRow { itemCode: string; colour: string; E: number; F: number; G: number; H: number; I: number; }
+interface CategoryView { name: string; items: ItemViewRow[]; }
+
+function localAddDual(totals: DualTotals, code: unknown, colour: unknown, qty: number): void {
+  const k = itemKey(code, colour);
+  const ck = normalizeCode(code);
+  totals.exact.set(k, (totals.exact.get(k) ?? 0) + qty);
+  totals.byCode.set(ck, (totals.byCode.get(ck) ?? 0) + qty);
+}
+
+/** Read item-wise sale sheet; build per-item 12-month vector for prior FY. */
+async function fetchItemWiseSaleMap(meta: MgmtMeta): Promise<{ exact: Map<string, number[]>; byCode: Map<string, number[]> }> {
+  const empty = { exact: new Map<string, number[]>(), byCode: new Map<string, number[]>() };
+  try {
+    const tabs = await listTabs(ITEM_WISE_SALE_ID);
+    const preferTab = tabs.find(t => /combined|ptmt|item|all/i.test(t)) ?? tabs[0];
+    if (!preferTab) return empty;
+
+    const values = await throttledGetTabValues(ITEM_WISE_SALE_ID, preferTab, "A1:ZZ200000");
+    if (values.length < 2) return empty;
+
+    const headers = values[0].map(h => String(h ?? "").trim());
+    const codeIdx = headers.findIndex(h => /item.?code|cat.?no|cat\.no|^code$/i.test(h));
+    const colourIdx = headers.findIndex(h => /colou?r/i.test(h));
+    if (codeIdx === -1) { logger.warn({ headers: headers.slice(0, 15) }, "item-wise sale: no item code col"); return empty; }
+
+    // Map each prior-FY month label → column index
+    const monthColIdxs = meta.priorFyMonthLabels.map(label => {
+      const [mon, yr] = label.split("-");
+      return headers.findIndex(h => {
+        const n = h.toLowerCase().replace(/[\s'`]/g, "");
+        return n.includes(mon.toLowerCase()) && n.includes(yr.toLowerCase());
+      });
+    });
+    logger.info({ found: monthColIdxs.filter(i => i >= 0).length }, "item-wise sale month col mapping");
+
+    const exact = new Map<string, number[]>();
+    const byCode = new Map<string, number[]>();
+
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      if (!row) continue;
+      const code = String(row[codeIdx] ?? "").trim();
+      if (!code) continue;
+      const colour = colourIdx >= 0 ? String(row[colourIdx] ?? "").trim() : "";
+      const monthly = monthColIdxs.map(idx => (idx >= 0 ? toNum(row[idx]) : 0));
+
+      const k = itemKey(code, colour);
+      const ck = normalizeCode(code);
+      if (!exact.has(k)) exact.set(k, Array(12).fill(0));
+      if (!byCode.has(ck)) byCode.set(ck, Array(12).fill(0));
+      monthly.forEach((v, j) => { exact.get(k)![j] += v; byCode.get(ck)![j] += v; });
+    }
+    return { exact, byCode };
+  } catch (err) {
+    logger.warn({ err }, "fetchItemWiseSaleMap failed — returning empty");
+    return empty;
+  }
+}
+
+/** Last completed month's line-level sales from SALE SHEET 26-27. */
+async function fetchLastMonthDualTotals(meta: MgmtMeta): Promise<DualTotals> {
+  const empty: DualTotals = { exact: new Map(), byCode: new Map() };
+  try {
+    const tabs = await listTabs(SHEET_IDS.saleSheet2627);
+    const [mon, yr] = meta.lastMonthLabel.split("-");
+    const matchTab = tabs.find(t => {
+      const n = t.toLowerCase().replace(/[\s'`]/g, "");
+      return n.includes(mon.toLowerCase()) && n.includes(yr.toLowerCase());
+    }) ?? tabs.find(t => t.toLowerCase().includes(mon.toLowerCase()));
+    if (!matchTab) { logger.warn({ tabs, lastMonth: meta.lastMonthLabel }, "SALE SHEET 26-27: no tab for last month"); return empty; }
+
+    const values = await throttledGetTabValues(SHEET_IDS.saleSheet2627, matchTab, "D1:H300000");
+    const totals: DualTotals = { exact: new Map(), byCode: new Map() };
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      if (!row) continue;
+      const code = String(row[0] ?? "").trim(); // col D
+      const colour = String(row[2] ?? "").trim(); // col F
+      const qtyRaw = row[4]; // col H
+      if (!code || !qtyRaw || String(qtyRaw).trim() === "") continue;
+      localAddDual(totals, code, colour, toNum(qtyRaw));
+    }
+    return totals;
+  } catch (err) {
+    logger.warn({ err }, "fetchLastMonthDualTotals failed");
+    return empty;
+  }
+}
+
+/** Assemble per-category management view rows. */
+async function computeMgmtCategories(meta: MgmtMeta, monthParam: string): Promise<CategoryView[]> {
+  const [masterItems, itemWise, h3moRaw, iLast] = await Promise.all([
+    db.select({ category: itemMasterTable.category, itemCode: itemMasterTable.itemCode, colour: itemMasterTable.colour })
+      .from(itemMasterTable),
+    fetchItemWiseSaleMap(meta),
+    fetchAvg3MoSaleTotals(monthParam),
+    fetchLastMonthDualTotals(meta),
+  ]);
+
+  return MGMT_CATEGORY_ORDER.map(catName => ({
+    name: catName,
+    items: masterItems
+      .filter(item => item.category === catName)
+      .map(item => {
+        const k = itemKey(item.itemCode, item.colour);
+        const ck = normalizeCode(item.itemCode);
+        const m12: number[] = itemWise.exact.get(k) ?? itemWise.byCode.get(ck) ?? Array(12).fill(0);
+        const sumAll = m12.reduce((s, v) => s + v, 0);
+        const E = sumAll / 12;
+        const F = meta.N > 0 ? m12.slice(0, meta.N).reduce((s, v) => s + v, 0) / meta.N : 0;
+        const G = meta.N < 12 ? m12.slice(meta.N).reduce((s, v) => s + v, 0) / (12 - meta.N) : 0;
+        // fetchAvg3MoSaleTotals returns 3-month SUM; divide by 3 for monthly avg
+        const H = (h3moRaw.exact.get(k) ?? h3moRaw.byCode.get(ck) ?? 0) / 3;
+        const I = iLast.exact.get(k) ?? iLast.byCode.get(ck) ?? 0;
+        return { itemCode: item.itemCode, colour: item.colour, E, F, G, H, I };
+      }),
+  }));
+}
+
+// GET /ops/management-view
+router.get("/ops/management-view", async (req, res): Promise<void> => {
+  const monthParam = String(req.query.month ?? "");
+  const meta = buildMgmtMeta(monthParam);
+  if (!meta) { res.status(400).json({ error: "month must be YYYY-MM e.g. 2026-07" }); return; }
+
+  const cacheKey = `ops:mgmt:${monthParam}`;
+  const cached = getCached<unknown>(cacheKey);
+  if (cached) { res.json(cached); return; }
+
+  try {
+    const categories = await computeMgmtCategories(meta, monthParam);
+    const result = {
+      month: monthParam,
+      meta: {
+        currentFy: meta.currentFy, priorFy: meta.priorFy, N: meta.N,
+        nSplit: `${meta.N}/${12 - meta.N}`,
+        headers: { E: meta.eHeader, F: meta.fHeader, G: meta.gHeader, H: meta.hHeader, I: meta.iHeader },
+        lastMonthName: meta.lastMonthName,
+      },
+      categories,
+    };
+    setCached(cacheKey, result);
+    res.json(result);
+  } catch (err) {
+    logger.error({ err }, "management-view failed");
+    res.status(500).json({ error: "Failed to compute management view" });
+  }
+});
+
+// GET /ops/management-view/excel
+router.get("/ops/management-view/excel", async (req, res): Promise<void> => {
+  const monthParam = String(req.query.month ?? "");
+  const meta = buildMgmtMeta(monthParam);
+  if (!meta) { res.status(400).json({ error: "month must be YYYY-MM" }); return; }
+
+  try {
+    const cacheKey = `ops:mgmt:${monthParam}`;
+    let categories: CategoryView[];
+    const cached = getCached<{ categories: CategoryView[] }>(cacheKey);
+    categories = cached ? cached.categories : await computeMgmtCategories(meta, monthParam);
+
+    const ExcelJSrt = require("exceljs") as typeof ExcelJSType;
+    const wb = new ExcelJSrt.Workbook();
+    wb.creator = "Prayag India Ops Dashboard";
+    wb.created = new Date();
+
+    for (const cat of categories) {
+      const ws = wb.addWorksheet(cat.name.slice(0, 31));
+      // Stamp row
+      ws.addRow([`Management Report · ${monthParam} | FY ${meta.currentFy} | Prior FY ${meta.priorFy} | N=${meta.N} (${meta.N}/${12 - meta.N} split)`]);
+      ws.getRow(1).font = { bold: true, size: 11 };
+      ws.addRow([]);
+      // Headers
+      const hr = ws.addRow(["Item Code","Colour", meta.eHeader, meta.fHeader, meta.gHeader, meta.hHeader, meta.iHeader]);
+      hr.font = { bold: true };
+      hr.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE0B2" } };
+      hr.alignment = { wrapText: true };
+      // Data
+      for (const item of cat.items) {
+        ws.addRow([item.itemCode, item.colour,
+          Math.round(item.E), Math.round(item.F), Math.round(item.G),
+          Math.round(item.H), Math.round(item.I)]);
+      }
+      ws.getColumn(1).width = 18;
+      ws.getColumn(2).width = 14;
+      for (let c = 3; c <= 7; c++) ws.getColumn(c).width = 24;
+    }
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="mgmt-view-${monthParam}.xlsx"`);
+    await wb.xlsx.write(res);
+  } catch (err) {
+    logger.error({ err }, "management-view/excel failed");
+    res.status(500).json({ error: "Failed to generate Excel" });
+  }
 });
 
 export default router;

@@ -10,6 +10,7 @@ import { useState, useMemo, Fragment } from "react";
 import {
   LayoutDashboard, ShoppingCart, Factory, TrendingUp, Database,
   RefreshCw, ChevronRight, AlertCircle, Loader2, Layers, ChevronDown, ChevronUp,
+  ClipboardList, Download,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import SEED from "./data/seed.json";
@@ -137,12 +138,13 @@ function volBadge(cls: string) {
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 const NAV_ITEMS = [
-  { href: "/",            label: "Overview",     icon: <LayoutDashboard size={15} /> },
-  { href: "/orders",      label: "Orders",       icon: <ShoppingCart size={15} /> },
-  { href: "/production",  label: "Production",   icon: <Factory size={15} /> },
-  { href: "/stock-buffer",label: "Stock Buffer", icon: <Layers size={15} /> },
-  { href: "/sales",       label: "Sales",        icon: <TrendingUp size={15} /> },
-  { href: "/sources",     label: "Data Sources", icon: <Database size={15} /> },
+  { href: "/",            label: "Overview",            icon: <LayoutDashboard size={15} /> },
+  { href: "/management",  label: "Management Reports",  icon: <ClipboardList size={15} /> },
+  { href: "/orders",      label: "Orders",              icon: <ShoppingCart size={15} /> },
+  { href: "/production",  label: "Production",          icon: <Factory size={15} /> },
+  { href: "/stock-buffer",label: "Stock Buffer",        icon: <Layers size={15} /> },
+  { href: "/sales",       label: "Sales",               icon: <TrendingUp size={15} /> },
+  { href: "/sources",     label: "Data Sources",        icon: <Database size={15} /> },
 ];
 
 function SidebarLink({ href, label, icon }: { href: string; label: string; icon: React.ReactNode }) {
@@ -301,6 +303,60 @@ function OverviewPage({ fy }: { fy: string }) {
           sub="Seed · daily production sheets" color={BLUE} />
       </div>
 
+      {/* Management Report quick-access card — static, always visible */}
+      {(() => {
+        const d = new Date();
+        const mNum = d.getMonth() + 1; // 1-12
+        const yr = d.getFullYear();
+        const curFyStart = mNum >= 4 ? yr : yr - 1;
+        const priorFy = `${curFyStart - 1}-${String(curFyStart).slice(2)}`;
+        const N = ((mNum - 4 + 12) % 12) + 1;
+        const G = 12 - N;
+        const FM = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"];
+        const priorFyStart = curFyStart - 1;
+        const labels = FM.map((name, i) => `${name}-${String(i <= 8 ? priorFyStart : priorFyStart + 1).slice(2)}`);
+        const fEnd = labels[N - 1];
+        const gStart = labels[N];
+        const curMo = ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][mNum === 1 ? 12 : mNum - 1];
+        return (
+          <div className="mb-6 bg-card border border-card-border rounded-lg p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2 mb-1">
+                  <ClipboardList size={15} className="text-amber-500" />
+                  <h3 className="text-sm font-semibold text-foreground">Management Reports · {d.toLocaleString("en-IN", { month: "long" })} {yr}</h3>
+                </div>
+                <p className="text-xs text-muted-foreground mb-3">Prior FY {priorFy} seasonality split for each item across 7 categories</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div className="bg-blue-50/60 border border-blue-100 rounded-md px-3 py-2">
+                    <div className="text-blue-600 font-semibold">F · {N} months</div>
+                    <div className="text-muted-foreground mt-0.5">Apr-{String(priorFyStart).slice(2)} – {fEnd}</div>
+                  </div>
+                  <div className="bg-purple-50/60 border border-purple-100 rounded-md px-3 py-2">
+                    <div className="text-purple-600 font-semibold">G · {G} months</div>
+                    <div className="text-muted-foreground mt-0.5">{gStart} – Mar-{String(curFyStart).slice(2)}</div>
+                  </div>
+                  <div className="bg-green-50/60 border border-green-100 rounded-md px-3 py-2">
+                    <div className="text-green-600 font-semibold">H · Last 3 Mo Avg</div>
+                    <div className="text-muted-foreground mt-0.5">Current FY rolling avg</div>
+                  </div>
+                  <div className="bg-muted/60 border border-border rounded-md px-3 py-2">
+                    <div className="text-foreground font-semibold">I · {curMo} Sale</div>
+                    <div className="text-muted-foreground mt-0.5">Last completed month</div>
+                  </div>
+                </div>
+              </div>
+              <Link href="/management">
+                <span className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-amber-500 text-white rounded-md font-medium hover:bg-amber-600 transition-colors cursor-pointer whitespace-nowrap">
+                  <ClipboardList size={12} />
+                  View Report
+                </span>
+              </Link>
+            </div>
+          </div>
+        );
+      })()}
+
       {data && (
         <>
 
@@ -409,6 +465,243 @@ function OverviewPage({ fy }: { fy: string }) {
               </div>
             </div>
           </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Management Reports Page ──────────────────────────────────────────────────
+function defaultMgmtMonth(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+const MGMT_CATEGORIES = [
+  "Cocks Standard","Cocks Premium","Faucets & Jetsprays & Shower",
+  "Accessories","Cistern & Seat Cover","Cabinet","Ball Cock",
+];
+
+function fmtN(v: number) { return Math.round(v).toLocaleString("en-IN"); }
+
+function ManagementReportsPage() {
+  const [month, setMonth] = useState(defaultMgmtMonth);
+  const [activeCategory, setActiveCategory] = useState(MGMT_CATEGORIES[0]);
+  const [search, setSearch] = useState("");
+
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: ["mgmt-view", month],
+    queryFn: async () => {
+      const res = await fetch(`/api/ops/management-view?month=${month}`);
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Failed"); }
+      return res.json();
+    },
+    enabled: /^\d{4}-\d{2}$/.test(month),
+    staleTime: 10 * 60 * 1000,
+  });
+
+  const catData = data?.categories?.find((c: any) => c.name === activeCategory);
+  const filteredItems = useMemo(() => {
+    const rows: any[] = catData?.items ?? [];
+    if (!search.trim()) return rows;
+    const q = search.trim().toUpperCase();
+    return rows.filter((r: any) =>
+      r.itemCode?.toUpperCase().includes(q) || r.colour?.toUpperCase().includes(q)
+    );
+  }, [catData, search]);
+
+  const hdrs = data?.meta?.headers;
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Management Reports</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Seasonality &amp; sales history · columns E–I per item
+          </p>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Planning Month</label>
+            <input
+              type="month"
+              value={month}
+              onChange={e => setMonth(e.target.value)}
+              className="text-sm bg-background border border-border rounded-md px-2 py-1.5 text-foreground"
+            />
+          </div>
+          <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-border rounded-md text-muted-foreground hover:bg-muted transition-colors"
+          >
+            <RefreshCw size={12} className={isFetching ? "animate-spin" : ""} />
+            Refresh
+          </button>
+          <a
+            href={`/api/ops/management-view/excel?month=${month}`}
+            download={`mgmt-view-${month}.xlsx`}
+            className={cn(
+              "flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md font-medium transition-colors",
+              data
+                ? "bg-amber-500 text-white hover:bg-amber-600"
+                : "bg-muted text-muted-foreground pointer-events-none"
+            )}
+          >
+            <Download size={12} />
+            Download Excel
+          </a>
+        </div>
+      </div>
+
+      {/* Meta banner */}
+      {data?.meta && (
+        <div className="mb-5 flex flex-wrap gap-3">
+          {[
+            { label: "Planning Month", value: month },
+            { label: "Current FY", value: data.meta.currentFy },
+            { label: "Prior FY (E/F/G)", value: data.meta.priorFy },
+            { label: "N-Split", value: `N=${data.meta.N} → ${data.meta.N}/${12 - data.meta.N}` },
+            { label: "Last Month (I)", value: data.meta.lastMonthName },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-card border border-card-border rounded-md px-3 py-2 text-xs">
+              <span className="text-muted-foreground mr-1.5">{label}</span>
+              <span className="font-semibold text-foreground">{value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Dynamic header legend */}
+      {hdrs && (
+        <div className="mb-5 bg-amber-50/50 border border-amber-200/60 rounded-lg p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-amber-700/70 mb-2">Column Headers for {month}</p>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
+            {(["E","F","G","H","I"] as const).map(col => (
+              <div key={col}>
+                <span className="font-bold text-foreground">{col}: </span>
+                <span className="text-muted-foreground">{hdrs[col]}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Loading / Error */}
+      {isLoading && (
+        <div className="flex flex-col items-center py-20 gap-3">
+          <Loader2 size={28} className="animate-spin text-amber-500" />
+          <p className="text-sm text-muted-foreground">Loading management view — fetching sale sheets…</p>
+          <p className="text-xs text-muted-foreground/60">First load may take 20–30 seconds (3 sheet reads)</p>
+        </div>
+      )}
+      {error && !isLoading && (
+        <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-3 mb-5">
+          <AlertCircle size={15} />
+          {(error as Error).message}
+        </div>
+      )}
+
+      {/* Category tabs + table */}
+      {data && !isLoading && (
+        <>
+          {/* Category tab bar */}
+          <div className="flex gap-1.5 flex-wrap mb-4">
+            {MGMT_CATEGORIES.map(cat => {
+              const catObj = data.categories?.find((c: any) => c.name === cat);
+              const count = catObj?.items?.length ?? 0;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => { setActiveCategory(cat); setSearch(""); }}
+                  className={cn(
+                    "px-3 py-1.5 rounded-md text-xs font-medium transition-colors border",
+                    activeCategory === cat
+                      ? "bg-amber-500 text-white border-amber-500"
+                      : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  {cat} <span className={cn("ml-1 opacity-60", activeCategory === cat && "opacity-80")}>({count})</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search */}
+          <div className="mb-3">
+            <input
+              type="text"
+              placeholder="Filter by item code or colour…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="text-sm bg-background border border-border rounded-md px-3 py-1.5 w-full max-w-xs text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+
+          {/* Table */}
+          <div className="bg-card border border-card-border rounded-lg overflow-auto">
+            <table className="w-full text-xs border-collapse min-w-[700px]">
+              <thead>
+                <tr className="border-b border-border bg-muted/40">
+                  <th className="text-left px-3 py-2 font-semibold text-foreground sticky left-0 bg-muted/40">Item Code</th>
+                  <th className="text-left px-3 py-2 font-semibold text-foreground">Colour</th>
+                  <th className="text-right px-3 py-2 font-semibold text-amber-700 whitespace-nowrap">
+                    E · {hdrs?.E ?? "AVG SALE"}
+                  </th>
+                  <th className="text-right px-3 py-2 font-semibold text-blue-700 whitespace-nowrap">
+                    F · {hdrs?.F ?? "N-Month"}
+                  </th>
+                  <th className="text-right px-3 py-2 font-semibold text-purple-700 whitespace-nowrap">
+                    G · {hdrs?.G ?? "Rem Months"}
+                  </th>
+                  <th className="text-right px-3 py-2 font-semibold text-green-700 whitespace-nowrap">
+                    H · Last 3Mo Avg
+                  </th>
+                  <th className="text-right px-3 py-2 font-semibold text-foreground whitespace-nowrap">
+                    I · Last Month
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="text-center text-muted-foreground py-10">
+                      {search ? "No items match filter." : "No items in this category."}
+                    </td>
+                  </tr>
+                ) : filteredItems.map((item: any, idx: number) => (
+                  <tr key={`${item.itemCode}::${item.colour}::${idx}`}
+                    className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                    <td className="px-3 py-1.5 font-mono font-medium text-foreground sticky left-0 bg-card">{item.itemCode}</td>
+                    <td className="px-3 py-1.5 text-muted-foreground">{item.colour || "—"}</td>
+                    <td className="px-3 py-1.5 text-right text-amber-800">{fmtN(item.E)}</td>
+                    <td className="px-3 py-1.5 text-right text-blue-800">{fmtN(item.F)}</td>
+                    <td className="px-3 py-1.5 text-right text-purple-800">{fmtN(item.G)}</td>
+                    <td className="px-3 py-1.5 text-right text-green-800 font-medium">{fmtN(item.H)}</td>
+                    <td className="px-3 py-1.5 text-right font-semibold text-foreground">{fmtN(item.I)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {filteredItems.length > 0 && (
+                <tfoot>
+                  <tr className="border-t-2 border-border bg-muted/40 font-semibold">
+                    <td className="px-3 py-1.5 sticky left-0 bg-muted/40">Total ({filteredItems.length})</td>
+                    <td className="px-3 py-1.5" />
+                    {(["E","F","G","H","I"] as const).map(col => (
+                      <td key={col} className="px-3 py-1.5 text-right">
+                        {fmtN(filteredItems.reduce((s: number, r: any) => s + (r[col] ?? 0), 0))}
+                      </td>
+                    ))}
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            E/F/G = prior-FY averages · H = current-FY last-3-month avg · I = last month sale · all figures are monthly averages (not totals)
+          </p>
         </>
       )}
     </div>
@@ -1240,6 +1533,7 @@ function AppRouter() {
     <AppLayout fy={fy} setFy={setFy}>
       <Switch>
         <Route path="/"             component={() => <OverviewPage fy={fy} />} />
+        <Route path="/management"   component={() => <ManagementReportsPage />} />
         <Route path="/orders"       component={() => <OrdersPage fy={fy} />} />
         <Route path="/production"   component={() => <ProductionPage />} />
         <Route path="/stock-buffer" component={() => <StockBufferPage />} />
