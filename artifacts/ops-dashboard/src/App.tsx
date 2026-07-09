@@ -543,15 +543,10 @@ function ManagementReportsPage() {
           <a
             href={`/api/ops/management-view/excel?month=${month}`}
             download={`mgmt-view-${month}.xlsx`}
-            className={cn(
-              "flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md font-medium transition-colors",
-              data
-                ? "bg-amber-500 text-white hover:bg-amber-600"
-                : "bg-muted text-muted-foreground pointer-events-none"
-            )}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md font-medium transition-colors bg-amber-500 text-white hover:bg-amber-600"
           >
             <Download size={12} />
-            Download Excel
+            Export Excel
           </a>
         </div>
       </div>
