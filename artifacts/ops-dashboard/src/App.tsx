@@ -383,12 +383,22 @@ function OverviewPage({ fy }: { fy: string }) {
                 </div>
                 <p className="text-xs text-muted-foreground">Prior FY {priorFy} seasonality split for each item across 7 categories</p>
               </div>
-              <Link href="/management">
-                <span className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-amber-500 text-white rounded-md font-medium hover:bg-amber-600 transition-colors cursor-pointer whitespace-nowrap">
-                  <ClipboardList size={12} />
-                  View Report
-                </span>
-              </Link>
+              <div className="flex items-center gap-2 flex-wrap justify-end">
+                <a
+                  href={`/api/plan/export/excel?month=${yr}-${String(mNum).padStart(2, "0")}`}
+                  download={`planning-report-${yr}-${String(mNum).padStart(2, "0")}.xlsx`}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-green-600 text-white rounded-md font-medium hover:bg-green-700 transition-colors whitespace-nowrap"
+                >
+                  <Download size={12} />
+                  Planning Report
+                </a>
+                <Link href="/management">
+                  <span className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-amber-500 text-white rounded-md font-medium hover:bg-amber-600 transition-colors cursor-pointer whitespace-nowrap">
+                    <ClipboardList size={12} />
+                    View Report
+                  </span>
+                </Link>
+              </div>
             </div>
 
             {/* Column legend pills */}
@@ -675,6 +685,14 @@ function ManagementReportsPage() {
             <RefreshCw size={12} className={isFetching ? "animate-spin" : ""} />
             Refresh
           </button>
+          <a
+            href={`/api/plan/export/excel?month=${month}`}
+            download={`planning-report-${month}.xlsx`}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md font-medium transition-colors bg-green-600 text-white hover:bg-green-700"
+          >
+            <Download size={12} />
+            Planning Report
+          </a>
           <a
             href={`/api/ops/management-view/excel?month=${month}`}
             download={`mgmt-view-${month}.xlsx`}
