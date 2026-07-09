@@ -170,8 +170,8 @@ function CrossAppNav() {
   const isOps = path.startsWith("/ops-dashboard");
   const isMon = path.startsWith("/monitoring");
   const tabs = [
-    { label: "Ops Dashboard",         href: "/ops-dashboard", active: isOps },
-    { label: "Production Monitoring", href: "/monitoring",    active: isMon },
+    { label: "Ops Dashboard",         href: "/ops-dashboard/", active: isOps },
+    { label: "Production Monitoring", href: "/monitoring/",   active: isMon },
     { label: "Production Planning",   href: "/",              active: !isOps && !isMon },
   ];
   return (
