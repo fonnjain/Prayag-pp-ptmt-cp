@@ -223,6 +223,16 @@ function Sidebar({ fy, setFy }: { fy: string; setFy: (v: string) => void }) {
 }
 
 // ─── Overview Page ────────────────────────────────────────────────────────────
+const CAT_SHORT: Record<string, string> = {
+  "Cocks Standard": "Std Cocks",
+  "Cocks Premium": "Pre Cocks",
+  "Faucets & Jetsprays & Shower": "Faucets",
+  "Accessories": "Access.",
+  "Cistern & Seat Cover": "Cistern",
+  "Cabinet": "Cabinet",
+  "Ball Cock": "Ball Ck",
+};
+
 function OverviewPage({ fy }: { fy: string }) {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["ops-overview", fy],
@@ -240,6 +250,42 @@ function OverviewPage({ fy }: { fy: string }) {
       return res.json();
     },
   });
+
+  // Current month for management summary
+  const currentMonth = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }, []);
+
+  const { data: mgmtSummary, isLoading: mgmtLoading } = useQuery({
+    queryKey: ["mgmt-summary", currentMonth],
+    queryFn: async () => {
+      const res = await fetch(`/api/ops/management-summary?month=${currentMonth}`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+
+  // Chart data derived from management summary
+  const mgmtVolumeData = useMemo(() => {
+    if (!mgmtSummary?.summary) return [];
+    return mgmtSummary.summary.map((c: any) => ({
+      cat: CAT_SHORT[c.name] ?? c.name,
+      "E · Prior FY": Math.round(c.totalE / 1000),
+      "H · Last 3Mo": Math.round(c.totalH / 1000),
+      "I · Last Mo": Math.round(c.totalI / 1000),
+    }));
+  }, [mgmtSummary]);
+
+  const mgmtSeasonData = useMemo(() => {
+    if (!mgmtSummary?.summary) return [];
+    return mgmtSummary.summary.map((c: any) => ({
+      cat: CAT_SHORT[c.name] ?? c.name,
+      "F · Peak": Math.round(c.totalF / 1000),
+      "G · Off-peak": Math.round(c.totalG / 1000),
+    }));
+  }, [mgmtSummary]);
 
   const trendData = useMemo(() => {
     if (!orders?.monthly) return [];
@@ -303,10 +349,10 @@ function OverviewPage({ fy }: { fy: string }) {
           sub="Seed · daily production sheets" color={BLUE} />
       </div>
 
-      {/* Management Report quick-access card — static, always visible */}
+      {/* Management Report card — with live charts */}
       {(() => {
         const d = new Date();
-        const mNum = d.getMonth() + 1; // 1-12
+        const mNum = d.getMonth() + 1;
         const yr = d.getFullYear();
         const curFyStart = mNum >= 4 ? yr : yr - 1;
         const priorFy = `${curFyStart - 1}-${String(curFyStart).slice(2)}`;
@@ -320,31 +366,14 @@ function OverviewPage({ fy }: { fy: string }) {
         const curMo = ["","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][mNum === 1 ? 12 : mNum - 1];
         return (
           <div className="mb-6 bg-card border border-card-border rounded-lg p-5">
-            <div className="flex items-start justify-between gap-4">
+            {/* Header row */}
+            <div className="flex items-start justify-between gap-4 mb-4">
               <div>
                 <div className="flex items-center gap-2 mb-1">
                   <ClipboardList size={15} className="text-amber-500" />
                   <h3 className="text-sm font-semibold text-foreground">Management Reports · {d.toLocaleString("en-IN", { month: "long" })} {yr}</h3>
                 </div>
-                <p className="text-xs text-muted-foreground mb-3">Prior FY {priorFy} seasonality split for each item across 7 categories</p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div className="bg-blue-50/60 border border-blue-100 rounded-md px-3 py-2">
-                    <div className="text-blue-600 font-semibold">F · {N} months</div>
-                    <div className="text-muted-foreground mt-0.5">Apr-{String(priorFyStart).slice(2)} – {fEnd}</div>
-                  </div>
-                  <div className="bg-purple-50/60 border border-purple-100 rounded-md px-3 py-2">
-                    <div className="text-purple-600 font-semibold">G · {G} months</div>
-                    <div className="text-muted-foreground mt-0.5">{gStart} – Mar-{String(curFyStart).slice(2)}</div>
-                  </div>
-                  <div className="bg-green-50/60 border border-green-100 rounded-md px-3 py-2">
-                    <div className="text-green-600 font-semibold">H · Last 3 Mo Avg</div>
-                    <div className="text-muted-foreground mt-0.5">Current FY rolling avg</div>
-                  </div>
-                  <div className="bg-muted/60 border border-border rounded-md px-3 py-2">
-                    <div className="text-foreground font-semibold">I · {curMo} Sale</div>
-                    <div className="text-muted-foreground mt-0.5">Last completed month</div>
-                  </div>
-                </div>
+                <p className="text-xs text-muted-foreground">Prior FY {priorFy} seasonality split for each item across 7 categories</p>
               </div>
               <Link href="/management">
                 <span className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-amber-500 text-white rounded-md font-medium hover:bg-amber-600 transition-colors cursor-pointer whitespace-nowrap">
@@ -353,6 +382,79 @@ function OverviewPage({ fy }: { fy: string }) {
                 </span>
               </Link>
             </div>
+
+            {/* Column legend pills */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mb-5">
+              <div className="bg-blue-50/60 border border-blue-100 rounded-md px-3 py-2">
+                <div className="text-blue-600 font-semibold">F · {N} months</div>
+                <div className="text-muted-foreground mt-0.5">Apr-{String(priorFyStart).slice(2)} – {fEnd}</div>
+              </div>
+              <div className="bg-purple-50/60 border border-purple-100 rounded-md px-3 py-2">
+                <div className="text-purple-600 font-semibold">G · {G} months</div>
+                <div className="text-muted-foreground mt-0.5">{gStart} – Mar-{String(curFyStart).slice(2)}</div>
+              </div>
+              <div className="bg-green-50/60 border border-green-100 rounded-md px-3 py-2">
+                <div className="text-green-600 font-semibold">H · Last 3 Mo Avg</div>
+                <div className="text-muted-foreground mt-0.5">Current FY rolling avg</div>
+              </div>
+              <div className="bg-muted/60 border border-border rounded-md px-3 py-2">
+                <div className="text-foreground font-semibold">I · {curMo} Sale</div>
+                <div className="text-muted-foreground mt-0.5">Last completed month</div>
+              </div>
+            </div>
+
+            {/* Charts */}
+            {mgmtLoading ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground py-6 justify-center">
+                <Loader2 size={14} className="animate-spin" />
+                Loading analysis data…
+              </div>
+            ) : mgmtVolumeData.length > 0 ? (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {/* Chart 1 — Volume by Category (E / H / I) */}
+                <div>
+                  <p className="text-xs font-medium text-foreground mb-1">Category Volume · K units/mo</p>
+                  <p className="text-[10px] text-muted-foreground mb-3">Sum of avg monthly sale per unique code · <span className="text-amber-600 font-medium">E=Prior FY</span> · <span className="text-green-600 font-medium">H=Last 3Mo</span> · <span className="text-slate-500 font-medium">I=Last Mo</span></p>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={mgmtVolumeData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }} barCategoryGap="20%">
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}K`} />
+                      <YAxis type="category" dataKey="cat" tick={{ fontSize: 10 }} width={68} />
+                      <Tooltip
+                        formatter={(v: number, name: string) => [`${v}K units/mo`, name]}
+                        contentStyle={{ fontSize: 11 }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 10 }} />
+                      <Bar dataKey="E · Prior FY" fill={AMBER} radius={[0,3,3,0]} maxBarSize={14} />
+                      <Bar dataKey="H · Last 3Mo" fill={GREEN} radius={[0,3,3,0]} maxBarSize={14} />
+                      <Bar dataKey="I · Last Mo" fill="hsl(215 20% 65%)" radius={[0,3,3,0]} maxBarSize={14} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Chart 2 — Seasonality: F (peak) vs G (off-peak) */}
+                <div>
+                  <p className="text-xs font-medium text-foreground mb-1">Seasonality Split · K units/mo avg</p>
+                  <p className="text-[10px] text-muted-foreground mb-3">
+                    <span className="text-blue-600 font-medium">F=first {N} months</span> vs <span className="text-purple-600 font-medium">G=last {G} months</span> of prior FY · categories with long F bars peak early in fiscal year
+                  </p>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={mgmtSeasonData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }} barCategoryGap="20%">
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+                      <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}K`} />
+                      <YAxis type="category" dataKey="cat" tick={{ fontSize: 10 }} width={68} />
+                      <Tooltip
+                        formatter={(v: number, name: string) => [`${v}K units/mo`, name]}
+                        contentStyle={{ fontSize: 11 }}
+                      />
+                      <Legend wrapperStyle={{ fontSize: 10 }} />
+                      <Bar dataKey="F · Peak" fill={BLUE} radius={[0,3,3,0]} maxBarSize={14} />
+                      <Bar dataKey="G · Off-peak" fill={PURPLE} radius={[0,3,3,0]} maxBarSize={14} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ) : null}
           </div>
         );
       })()}

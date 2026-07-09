@@ -894,6 +894,62 @@ router.get("/ops/management-view", async (req, res): Promise<void> => {
   }
 });
 
+// GET /ops/management-summary — category-level aggregates (deduped by code) for Overview charts
+router.get("/ops/management-summary", async (req, res): Promise<void> => {
+  const monthParam = String(req.query.month ?? "");
+  const meta = buildMgmtMeta(monthParam);
+  if (!meta) { res.status(400).json({ error: "month must be YYYY-MM" }); return; }
+
+  const summaryKey = `ops:mgmt-summary:${monthParam}`;
+  const cached = getCached<unknown>(summaryKey);
+  if (cached) { res.json(cached); return; }
+
+  try {
+    // Reuse the full management-view cache if already warm, else compute it
+    const mgmtKey = `ops:mgmt:${monthParam}`;
+    let mgmtData = getCached<{ meta: unknown; categories: CategoryView[] }>(mgmtKey);
+    if (!mgmtData) {
+      const categories = await computeMgmtCategories(meta, monthParam);
+      mgmtData = {
+        meta: {
+          currentFy: meta.currentFy, priorFy: meta.priorFy, N: meta.N,
+          nSplit: `${meta.N}/${12 - meta.N}`,
+          headers: { E: meta.eHeader, F: meta.fHeader, G: meta.gHeader, H: meta.hHeader, I: meta.iHeader },
+          lastMonthName: meta.lastMonthName,
+        },
+        categories,
+      };
+      setCached(mgmtKey, { month: monthParam, ...mgmtData });
+    }
+
+    const summary = mgmtData.categories.map(cat => {
+      const seenCodes = new Set<string>();
+      let totalE = 0, totalF = 0, totalG = 0, totalH = 0, totalI = 0, codes = 0;
+      for (const item of cat.items) {
+        const ck = normalizeCode(item.itemCode);
+        if (seenCodes.has(ck)) continue;
+        seenCodes.add(ck);
+        totalE += item.E; totalF += item.F; totalG += item.G;
+        totalH += item.H; totalI += item.I;
+        codes++;
+      }
+      return {
+        name: cat.name, codes,
+        totalE: Math.round(totalE), totalF: Math.round(totalF), totalG: Math.round(totalG),
+        totalH: Math.round(totalH), totalI: Math.round(totalI),
+        momentumHE: totalE > 0 ? parseFloat((totalH / totalE).toFixed(3)) : 0,
+      };
+    });
+
+    const result = { meta: mgmtData.meta, summary };
+    setCached(summaryKey, result);
+    res.json(result);
+  } catch (err) {
+    logger.warn({ err }, "management-summary failed");
+    res.status(500).json({ error: "Failed to compute management summary" });
+  }
+});
+
 // GET /ops/management-view/excel
 router.get("/ops/management-view/excel", async (req, res): Promise<void> => {
   const monthParam = String(req.query.month ?? "");
