@@ -164,9 +164,36 @@ function SidebarLink({ href, label, icon }: { href: string; label: string; icon:
   );
 }
 
+// ─── Cross-App Nav ────────────────────────────────────────────────────────────
+function CrossAppNav() {
+  const path = window.location.pathname;
+  const isOps = path.startsWith("/ops-dashboard");
+  const isMon = path.startsWith("/monitoring");
+  const tabs = [
+    { label: "Ops Dashboard",         href: "/ops-dashboard", active: isOps },
+    { label: "Production Monitoring", href: "/monitoring",    active: isMon },
+    { label: "Production Planning",   href: "/",              active: !isOps && !isMon },
+  ];
+  return (
+    <nav className="fixed top-0 left-0 right-0 z-30 h-9 flex items-center px-4 gap-1 border-b border-sidebar-border bg-sidebar">
+      <span className="text-[11px] font-bold mr-3" style={{ color: AMBER }}>prayag</span>
+      {tabs.map((app) => (
+        <a key={app.href} href={app.href}
+          className={cn(
+            "px-3 py-1 rounded text-xs font-medium transition-colors",
+            app.active
+              ? "bg-amber-500/10 text-amber-600 font-semibold"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          )}
+        >{app.label}</a>
+      ))}
+    </nav>
+  );
+}
+
 function Sidebar({ fy, setFy }: { fy: string; setFy: (v: string) => void }) {
   return (
-    <aside className="fixed inset-y-0 left-0 z-20 flex w-56 flex-col border-r border-sidebar-border bg-sidebar">
+    <aside className="fixed top-9 left-0 bottom-0 z-20 flex w-56 flex-col border-r border-sidebar-border bg-sidebar">
       <div className="px-5 pt-5 pb-4 border-b border-sidebar-border">
         <div className="text-[22px] font-bold tracking-tight leading-none" style={{ color: AMBER }}>prayag</div>
         <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">India Operations</div>
@@ -1194,12 +1221,15 @@ function SourcesPage() {
 // ─── Layout ───────────────────────────────────────────────────────────────────
 function AppLayout({ children, fy, setFy }: { children: React.ReactNode; fy: string; setFy: (v: string) => void }) {
   return (
-    <div className="flex min-h-screen bg-background">
-      <Sidebar fy={fy} setFy={setFy} />
-      <main className="ml-56 flex-1 min-h-screen">
-        <div className="max-w-[1200px] mx-auto px-6 py-6">{children}</div>
-      </main>
-    </div>
+    <>
+      <CrossAppNav />
+      <div className="flex min-h-screen bg-background pt-9">
+        <Sidebar fy={fy} setFy={setFy} />
+        <main className="ml-56 flex-1 min-h-screen">
+          <div className="max-w-[1200px] mx-auto px-6 py-6">{children}</div>
+        </main>
+      </div>
+    </>
   );
 }
 

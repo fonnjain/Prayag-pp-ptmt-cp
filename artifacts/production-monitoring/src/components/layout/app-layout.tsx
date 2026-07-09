@@ -55,6 +55,33 @@ const PLANT_PATHS = new Set([
   "/plant/recommendations", "/plant/trend", "/plant/config", "/plant/reports", "/plant/categories",
 ]);
 
+// ─── Cross-App Nav ────────────────────────────────────────────────────────────
+function CrossAppNav() {
+  const path = window.location.pathname;
+  const isOps = path.startsWith("/ops-dashboard");
+  const isMon = path.startsWith("/monitoring");
+  const tabs = [
+    { label: "Ops Dashboard",         href: "/ops-dashboard", active: isOps },
+    { label: "Production Monitoring", href: "/monitoring",    active: isMon },
+    { label: "Production Planning",   href: "/",              active: !isOps && !isMon },
+  ];
+  return (
+    <nav className="fixed top-0 left-0 right-0 z-30 h-9 flex items-center px-4 gap-1 border-b border-sidebar-border bg-sidebar">
+      <span className="text-[11px] font-bold mr-3" style={{ color: "hsl(38 90% 48%)" }}>prayag</span>
+      {tabs.map((app) => (
+        <a key={app.href} href={app.href}
+          className={cn(
+            "px-3 py-1 rounded text-xs font-medium transition-colors",
+            app.active
+              ? "bg-amber-500/10 text-amber-600 font-semibold"
+              : "text-muted-foreground hover:text-foreground hover:bg-muted"
+          )}
+        >{app.label}</a>
+      ))}
+    </nav>
+  );
+}
+
 export function AppLayout({
   children, month, preset, customMonth, dateRange,
   setPreset, setCustomMonth, selectedCategory, setSelectedCategory,
@@ -116,7 +143,9 @@ export function AppLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-background text-foreground">
+    <>
+    <CrossAppNav />
+    <div className="flex min-h-screen bg-background text-foreground pt-9">
       {/* Sidebar */}
       <div className="w-64 flex-shrink-0 bg-sidebar border-r border-sidebar-border flex flex-col">
         <div className="p-6 border-b border-sidebar-border">
@@ -198,5 +227,6 @@ export function AppLayout({
         <main className="flex-1 overflow-auto p-8">{children}</main>
       </div>
     </div>
+    </>
   );
 }
