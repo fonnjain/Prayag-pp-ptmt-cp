@@ -1,0 +1,939 @@
+{
+ "project": "Prayag India Ops Dashboard",
+ "domains": [
+  "orders_received",
+  "production_planning",
+  "sales"
+ ],
+ "currency": "INR",
+ "fiscal_year_start": "April",
+ "orders": {
+  "files": [
+   {
+    "fy": "2026-27",
+    "name": "Order Sheet 26-27",
+    "id": "1HFBAtvbAskejVkjuO8zHoEsE-pBAFij2ERMKFEvt64A",
+    "status": "current"
+   },
+   {
+    "fy": "2025-26",
+    "name": "Order Sheet 25-26",
+    "id": "1Xzq-gmB6K7iuMcE6gb-O7OpvGgSDU33DzEVyK60LK6E",
+    "status": "history"
+   },
+   {
+    "fy": "2024-25",
+    "name": "Order Sheet 24-25",
+    "id": "1cT6lWRPJ3oSeYhab-cqeVjJidGitFQsr0DOq-vNn6cI",
+    "status": "history"
+   },
+   {
+    "fy": "2023-24",
+    "name": "Order Sheet 23-24",
+    "id": "1jtSUGE6iT8WuUKi56F4LYqjJgZF42oR1mk51imG8yq8",
+    "status": "history"
+   }
+  ],
+  "config": {
+   "monthly_tabs": [
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+    "Jan",
+    "Feb",
+    "Mar"
+   ],
+   "line_columns": {
+    "date": "Date",
+    "doc": "Document No.",
+    "plant": "Location.Name",
+    "customer": "Customer.Name",
+    "group": "GROUP",
+    "item_code": "Old ERP Code",
+    "item": "Item.Name",
+    "color": "Item.Color",
+    "unit": "Unit.Name",
+    "qty": "Quantity",
+    "rate": "Rate",
+    "value": "Taxable Value",
+    "month": "Month",
+    "state": "STATE",
+    "state_head": "STATE HEAD"
+   },
+   "value_field": "Taxable Value",
+   "qty_field": "Quantity",
+   "channel_rule": "If STATE or STATE HEAD contains JJM/GEM/GOVT/PROJECT -> that channel; else Retail",
+   "imports_from": {
+    "name": "rate list",
+    "id": "1njO-srsS29qiE4t45-zr5njbB7R2Zb-oSnv2NL1ONY4",
+    "note": "Order Sheets IMPORTRANGE item rates from this master (Sheet1!B4:F, Sheet2!A2:F)."
+   },
+   "caveat": "'Combined' tab holds only the current week; use the monthly tabs for full history."
+  }
+ },
+ "production": {
+  "months": [
+   {
+    "year": 2020,
+    "month": "Aug",
+    "id": "1fTZoE1APgaXoCyKS5Zf5Xhg45ce1_EfITBxGfCPLEZI",
+    "era": "2020 (col M)",
+    "pp_col": "M"
+   },
+   {
+    "year": 2020,
+    "month": "Sep",
+    "id": "1RKhDfC0v7K0SV3bCeHvsXxdZzKI-FYv1YkjeaOTAN8g",
+    "era": "2020 (col M)",
+    "pp_col": "M"
+   },
+   {
+    "year": 2020,
+    "month": "Oct",
+    "id": "1B3YskI_vOjsTHzcnM87fLEV-C6wfPIn47F_ipn3T2d0",
+    "era": "2020 (col M)",
+    "pp_col": "M"
+   },
+   {
+    "year": 2020,
+    "month": "Nov",
+    "id": "1sUMGJXD2iHsin-5vKGM1-3AwmAhfr_cepYPXdN2blBo",
+    "era": "2020 (col M)",
+    "pp_col": "M"
+   },
+   {
+    "year": 2021,
+    "month": "Jan",
+    "id": "1EnMc_pCjo3kudItNtxNsQfPomT_TLycZStMDhTavncw",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2021,
+    "month": "Feb",
+    "id": "1Y2rIMvAOIuD1hEyi0ySpOcBVq4N8rbJ5sIbz9tCoRQM",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2021,
+    "month": "Mar",
+    "id": "16dFy1ebLBsdV2DgXHg_qr-KjSugEpdTylwdwWWsP370",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2021,
+    "month": "Apr",
+    "id": "1wrKDx8g15x1tQjLcx3WxszBDCshI8v8mLIgI5H8JBi4",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2021,
+    "month": "May",
+    "id": "1D5TWkERRtLw9CTlEDb98Y4ha_hW29LeCPyPNi3UA-3I",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2021,
+    "month": "Jun",
+    "id": "18aDjIeVOADwGWhXwA9gkqwQ4A76mH2Hb2gcEomsQWHo",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2021,
+    "month": "Jul",
+    "id": "1E9ApOeVwh4O05VUz_NDxWhjYxOstSPkgsvnUN1g0Pe8",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2021,
+    "month": "Aug",
+    "id": "1koAgBqvI44QzvKmA6ONQdU9BevA64QSkqhVaSNF6DJY",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2021,
+    "month": "Sep",
+    "id": "1WsPVqMk73kloCGbyA3BKxfE_rpdk8i2UfNC0trSX3kc",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2021,
+    "month": "Oct",
+    "id": "19Tn4m2c-f5WHPsNCndt-bhjEIyIVJ2WkArH_oFLoi40",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2021,
+    "month": "Nov",
+    "id": "19-SKJNsNhv1zrswZx1de0NRVdNtd-Wi_r3ZXImO69Sc",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2021,
+    "month": "Dec",
+    "id": "1h3uWLq0V3ZripGyV_OZk-CVK_NVcAISHzx9CoBvXXoU",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2022,
+    "month": "Jan",
+    "id": "1dolbJ1jS8hzpKFZXVIp-gFoz1QT0RyivF8ODl9s1M38",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2022,
+    "month": "Feb",
+    "id": "151u29sX6PHJhuItQvC537QTlQPLGEzknj-PRhPOqhHY",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2022,
+    "month": "Mar",
+    "id": "15y1H3I32RUj6JLk4bfDVRqSGtHRNwjDGEkUV2IXC-40",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2022,
+    "month": "Apr",
+    "id": "1Cii_AX_rI-1wkkJ9KQ69MRdSQeVU3EHUoj_8Yuxmj5E",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2022,
+    "month": "May",
+    "id": "1Tgf01i1Fly4L9GY78h0zzZS1FHdgiFm_TR4OEDOojkk",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2022,
+    "month": "Jun",
+    "id": "1tNIEr2yzguv057mwEatpAvQ_NanAhnmKRn_eAy0Eih4",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2022,
+    "month": "Jul",
+    "id": "166TX987JA7kp_HyM8FjwO8B4QzON83VQcLZvWYbkpQM",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2022,
+    "month": "Aug",
+    "id": "1G_dDZ3J6l9c2Ctm1MWQqdLVmvfIVeT7ivFKgvV0q6pQ",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2022,
+    "month": "Sep",
+    "id": "1k1yDbvHiLeb-75jPTcAfywvWk7-phvOwHPSktLFaaqg",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2022,
+    "month": "Oct",
+    "id": "1w0723LKKmckWdzQeOPYsEA1tJwlEpJkPFan2yEH-VMc",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2022,
+    "month": "Nov",
+    "id": "18gzEKq2yYAXhfnN4lKkFPdyKXnJDJUT9yCiUlDLnqmU",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2022,
+    "month": "Dec",
+    "id": "1U5ZbsD8Ej0CoxVC7N7En6Nl34e6GGPDo_EnFieb-CRM",
+    "era": "2021\u201322 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2023,
+    "month": "Jan",
+    "id": "19ew_cWKp0U9CgffomI51JCm3DRPOnQ99PCxQkPb_ojI",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2023,
+    "month": "Feb",
+    "id": "15WIWC-eifskC6OVCFa5SrsCgVxln-fOuHRLzESm0qj4",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2023,
+    "month": "Mar",
+    "id": "1OStRfDQ5xMstyiQO9NVMsSL1kb5rEE2n-ApDA63HFpw",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2023,
+    "month": "Apr",
+    "id": "1BVk8ClhuZRNI_-wsuHbKoBEt3NF939GkxwSIBLANckU",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2023,
+    "month": "May",
+    "id": "19jVp9VJSygegphhflGBOSbHBL6F_e0koQ0nVL5Pl1xA",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2023,
+    "month": "Jun",
+    "id": "1NGAi7Gf759i6ls7dlOB3NuvpkJcmPSIqtT6C1EilZJM",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2023,
+    "month": "Jul",
+    "id": "12Yq8Qcd1R_23alokIPSPfrIYUX51NxXfWYRjVMjOuG0",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2023,
+    "month": "Aug",
+    "id": "13WvCGHENwBIGpe2C2VO1YtQgYP052pUgNLxMUH9ErC4",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2023,
+    "month": "Sep",
+    "id": "1NTIfqlbOT6D1lBqww17ELw5YTmd4ihwEgelyVvfe00g",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2023,
+    "month": "Nov",
+    "id": "15_tiiicwffJ7iMIznuRVXtihnDHz1J6OvMy5uxgmy7o",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2023,
+    "month": "Dec",
+    "id": "10s2o7TsAReseJKNG-tXyPCsIEckzRDlzzvRfASJBi5I",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2024,
+    "month": "Jan",
+    "id": "1w_VWMAtpKvbb7u11Oqpm-A984jeS33KGQdPqjoDR728",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2024,
+    "month": "Feb",
+    "id": "1o7qIevaVx1HWB9stPIf6o1YhKNolCjQZq6_mLkkcm_o",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2024,
+    "month": "Mar",
+    "id": "1oB-4EgKPZuFUmFNrzDJJr0locRz33Bm2xc1ThwReSTA",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2024,
+    "month": "May",
+    "id": "1yKDGsrTqaWdreXRE_CDwc5AoF3_Pyi57iZeZTAUMjYQ",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2024,
+    "month": "Jun",
+    "id": "1n0mlxJ20p6Ts7qoQkVyurdg3gIla__0tqwudHgBcpkQ",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2024,
+    "month": "Jul",
+    "id": "18VrflqWTraewmPumCMrxwwJnIAEOEE5uAlL-q7JfAbI",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2024,
+    "month": "Aug",
+    "id": "1OuYwZK4IZzyjg9Xql-SAXplbhCc_j9vp2aSbZgA4o0Q",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2024,
+    "month": "Sep",
+    "id": "1KXRkY6ZNYv8rElVLgRGLo3Dm2RGY_awmB3MHW3aY6ig",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2024,
+    "month": "Oct",
+    "id": "1sgomGwqDbEQMMVsqLsDOBGJkf9M5vN9ehQNPaOx5Mf4",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2024,
+    "month": "Nov",
+    "id": "1L4EsqyKs2eQWjYl9DzCUuI8_Sgm5qGfmu4hh8gBhd34",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2024,
+    "month": "Dec",
+    "id": "1PfBJNElpYGKZxwZPn1tb18xApVaSr5saadZSAFH00Uc",
+    "era": "2023\u201324 (col O)",
+    "pp_col": "O"
+   },
+   {
+    "year": 2025,
+    "month": "Jan",
+    "id": "1Oq-KlRrwED6csa3eeR3XjOfZX0c3Z3JzlLmx-Dpt1DQ",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2025,
+    "month": "Feb",
+    "id": "1aONDqDpZ60lPLchkQLX13C5TYAl5_rB_LLtBwD1wBis",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2025,
+    "month": "Mar",
+    "id": "15wvfw096QmuyX0Tay1XpHEDrJGX6FgV65HaoxhxXl_M",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2025,
+    "month": "Apr",
+    "id": "1dDPDz8Zl9GugtzEh_ThW4MpzH2bBg_579zpzH6EJs4c",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2025,
+    "month": "May",
+    "id": "1f-hHy_iuwQ9AwR75-DJjFOWsIgcXeaT-ZGqTfeb-eqw",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2025,
+    "month": "Jun",
+    "id": "1mkaiBnYszdIgADd-uBul__tbjGthpHVmDelfjLK1cM0",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2025,
+    "month": "Jul",
+    "id": "1DdhslLlfub3c8kFDsWytgThIOoZUukPixX8DWYwMZDE",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2025,
+    "month": "Aug",
+    "id": "1io3JTh-3EjL6N23bdibmCth25BU53DSq-b0lGQH8Hzc",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2025,
+    "month": "Sep",
+    "id": "1yx3eVPEPgn928pMVN6zwsAZIajuqZxBatXENGJN_8Do",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2025,
+    "month": "Oct",
+    "id": "1qrIRmFwirb1Rmog0ukl7Si1sjuii786IzC7TFqWBz1s",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2025,
+    "month": "Nov",
+    "id": "1tXAr1SxS5DNxqddJn3AP6BmahmdUXwVeLBN6LuJF3nU",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2025,
+    "month": "Dec",
+    "id": "17mSXFE1Qg6bmIDDAOWebP83P_A6eTzbNyIkQ4LWxp_k",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2026,
+    "month": "Jan",
+    "id": "1w5y24k5cBzf-7a_YYWaFnk-1pCW1tyBzUlaMe2NRa00",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2026,
+    "month": "Feb",
+    "id": "11f9XIS5bMMwkn6HlTI8gmNrG2VHmmUhGtCan_fPhmeI",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2026,
+    "month": "Mar",
+    "id": "1wi9FQAHkJG5rksk9WravDJ6Rtuw_Ks3LNcTvQSylERU",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2026,
+    "month": "May",
+    "id": "1uDsowSmqu8J6NSAPS2AoJBKamkzATQqdtYPONJ7VQAc",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2026,
+    "month": "Jun",
+    "id": "170xrcWDdTMvTLSJyCw3yGBWxqOOSfZkesGWunqKr8Rw",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   },
+   {
+    "year": 2026,
+    "month": "Jul",
+    "id": "1xxYYRdjrVcob3a_eIU7K4RRCzXkl50KMngJ5I8T7xuk",
+    "era": "2025\u201326 (col P)",
+    "pp_col": "P"
+   }
+  ],
+  "config": {
+   "product_line": "PTMT (this master). Other lines (CP, CPVC, SWR, UPVC, SINK, TANK, GARDEN PIPE) have their own Daily Production files.",
+   "report_tabs_to_categories": {
+    "REPORT 1": "Cocks Standard",
+    "REPORT 2": "Cocks Premium",
+    "REPORT 3": "Faucets & Jetsprays & Shower",
+    "REPORT 4": "Accessorise",
+    "REPORT 5": "Cistern & Seat Cover",
+    "REPORT 6": "Cabinet",
+    "REPORT 7": "Ball Cock",
+    "REPORT 8": "Connection (misc)",
+    "REPORT 9": "Water/other (misc)"
+   },
+   "eras": {
+    "2020": {
+     "pp_col": "M",
+     "header_row": 13,
+     "reports": "REPORT 1-4"
+    },
+    "2021-2022": {
+     "pp_col": "O",
+     "header_row": 13,
+     "reports": "REPORT 1-4 + 'REPORT 3 A'"
+    },
+    "2023-2024": {
+     "pp_col": "O",
+     "header_row": 11,
+     "reports": "REPORT 1-9"
+    },
+    "2025-2026": {
+     "pp_col": "P",
+     "header_row": "11-17 (varies)",
+     "reports": "REPORT 1-9"
+    }
+   },
+   "read_columns": {
+    "item_code": "B",
+    "colour": "G (I in some 2025-26 reports)",
+    "production_plan": "per-era pp_col"
+   },
+   "note": "Production Plan = planned units per item/colour. Sum REPORT 1-7 per file for the 7-category monthly plan."
+  }
+ },
+ "sales": {
+  "files": [
+   {
+    "name": "Sale & Pur PL Summary 2026-27",
+    "id": "1OhGlFHTxJ4XQetMurLmi_fvJGmb3fVjhCyIQ_bZxtsU",
+    "category": "Consolidated P&L Summary",
+    "fy": "2026-27",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale & Pur PL Summary 2025-26",
+    "id": "13muZf9-tFNkXbR3zetL8ibY5GVK7tQRVHi-tofSHm5U",
+    "category": "Consolidated P&L Summary",
+    "fy": "2025-26",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "_Sale & Pur PL Summary 2025-26 (copy)",
+    "id": "1wsduIZ0T-zIL2nViVMFN3GQ9ZNzKuvvWqp-hRClmo1M",
+    "category": "Consolidated P&L Summary",
+    "fy": "2025-26",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale & Pur PL Summary 2024-25",
+    "id": "1HgWelwHy73Ybc-1fBQMXhKxo2ctJToxgZLDWwJPmqz8",
+    "category": "Consolidated P&L Summary",
+    "fy": "2024-25",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale & Pur PL Summary 2024-25.xlsx",
+    "id": "1lKoCMlGU42-psMEgLxzPAHURNMHPP1aP",
+    "category": "Consolidated P&L Summary",
+    "fy": "2024-25",
+    "type": "Excel (.xlsx)"
+   },
+   {
+    "name": "Sale & Pur PL Summary 2023-24",
+    "id": "1-vgW_n7gqk4EHt0FBSI-aKdpVyJh0DRoV2vytFlHdug",
+    "category": "Consolidated P&L Summary",
+    "fy": "2023-24",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale & Pur PL Summary 2022-23",
+    "id": "1Ql_slsNOlIB12ExaBOWu_XmXpm0d-F1Nch6B4mNJQJo",
+    "category": "Consolidated P&L Summary",
+    "fy": "2022-23",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale Master 2026-27",
+    "id": "1sytliQa_YdoC_ddB6FxqlbXGwlG-qXknmi4g0VNHJ6o",
+    "category": "Sale Master (yearly)",
+    "fy": "2026-27",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale Master 2025-26",
+    "id": "1HjzsyZDqeCYXCG-l7CX10ddxCgi1-C31xUO1YlHFMUU",
+    "category": "Sale Master (yearly)",
+    "fy": "2025-26",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale Master 2023-24",
+    "id": "1zvtL4AAOvT714VDWjAmME5jyb4ruQn1Aay9LO7A3-tw",
+    "category": "Sale Master (yearly)",
+    "fy": "2023-24",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale Master 2022-23",
+    "id": "1f8A5BaCEysQNYxPtqfEUjXSbX0umh7hCFOubQdVzTuE",
+    "category": "Sale Master (yearly)",
+    "fy": "2022-23",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale Master 2022-23 dated 07/04/2023",
+    "id": "12oqe4z70KYe8LlQT6-CVf73F97PlLToWg-BdI3ZsFYI",
+    "category": "Sale Master (yearly)",
+    "fy": "2022-23",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "3 YEAR SALE MASTER",
+    "id": "1JpHX_hiRZ1l2QyyS3X3LbbsyqSLQ0oyIs3n9emnoH3s",
+    "category": "Sale Master (multi-year)",
+    "fy": "3-year",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "State Head Sale 2026-27",
+    "id": "1QIpcfgOVCFjcCmgU_DXKn8h7Bfa8rm2q2wB2HneTvKs",
+    "category": "State-Head Sale",
+    "fy": "2026-27",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "State Head Sale 2025-26",
+    "id": "1RuXHIXfusOT-VDdDqeuB-Nx-pxyVkmrJsqr21BB-NUA",
+    "category": "State-Head Sale",
+    "fy": "2025-26",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "State Head Sale 2024-25",
+    "id": "1iL1su3xwe40eG0QJHVwat97rhlMmADzeKQVfMw6ZrE0",
+    "category": "State-Head Sale",
+    "fy": "2024-25",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "State Head Sale Summary 2025-26",
+    "id": "1ctm5oiWWJTbYtrTmlg4Y5l9J87b3PIsSbyPH0hbJCg8",
+    "category": "State-Head Sale",
+    "fy": "2025-26",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "State Head Wise Sale",
+    "id": "1KgnZ5iCKszgJ_tACijCzDaPlAf1sHwFWgNSYazH6jGY",
+    "category": "State-Head Sale",
+    "fy": "undated",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale PL APR 2026-27",
+    "id": "16W-fxW6srpBsCtP6-xMR8FoLRhb3z9L_3ls5ZIfLmgc",
+    "category": "Monthly Sale P&L",
+    "fy": "2026-27",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale PL MAY 2026-27",
+    "id": "1DSA6jOGAPcK3bAjcIf7Z4taz8rapShggT8-TCVpntHY",
+    "category": "Monthly Sale P&L",
+    "fy": "2026-27",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Daily Sale mail-2024",
+    "id": "1JbxNmTPLrJyKPjbqspzRkhxaLZDLsNA4OsHGEqF4tuA",
+    "category": "Daily Sale (mailer)",
+    "fy": "rolling",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale 2023-24",
+    "id": "1R-jNPuy6ofJgIOqykulT0FDkuYVvh_FTAR59H4c5FkI",
+    "category": "Sale Report (yearly)",
+    "fy": "2023-24",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale REPORT 2022-23 DATED 16-02-2023",
+    "id": "1Fu52AyIfSuq8fKmdkWUGHNiyJDzjGVsFEndM2FuD9P4",
+    "category": "Sale Report (yearly)",
+    "fy": "2022-23",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Sale Comparison -25-26 / 26-27",
+    "id": "16fFG3xkDt3rlGbiHKSIaj38hi7c3K8gHXm8G2dCTcvU",
+    "category": "Sale Comparison",
+    "fy": "25-26/26-27",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "sale & dispatch data",
+    "id": "1ITliDjJEjSs7QAuKQ4_QQc47o_67evUn0vRvIKj9HLQ",
+    "category": "Sale + Dispatch",
+    "fy": "undated",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "3 YEAR SALE",
+    "id": "1OW8Oh-zd6lgQbTOf4w_r1MqEN8SikJyU0uDwZmJlMfM",
+    "category": "Multi-Year Sale",
+    "fy": "3-year",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "4 YEAR SALE",
+    "id": "1PB4fXtqrF4yK5sH-t-UJS15yIrhWEO0cCG5RjrRln9w",
+    "category": "Multi-Year Sale",
+    "fy": "4-year",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "5 YEAR SALE WEIGHT",
+    "id": "1Qi_bQATy_60QGoJmGKkQsn4Ul8dPYzbk-UOC4j7LUrg",
+    "category": "Multi-Year Sale",
+    "fy": "5-year",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "6 YEAR SALE",
+    "id": "1ilnmTpbOVUD9_G90ttz41XgVLQrUucMpUzzvxsRS-vc",
+    "category": "Multi-Year Sale",
+    "fy": "6-year",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "7 Years Sale Report- State Head (folder)",
+    "id": "1m-JlphYuytCy_3vliWWFNwDBdS8v7Elq",
+    "category": "Multi-Year Sale",
+    "fy": "7-year",
+    "type": "Folder"
+   },
+   {
+    "name": "7 Year Sales Report - Sandeep ji",
+    "id": "1KxI0s_HR2SVUX29qQd01gbajJusi5geHTQkuGhCVtQI",
+    "category": "Distributor Sale History",
+    "fy": "7-year",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "7 Year Sales Report - Rizvi ji",
+    "id": "1oEd4jNclJM6DK6butzP55bmes2T8GYZozd3IkjYqWrc",
+    "category": "Distributor Sale History",
+    "fy": "7-year",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "4 Year Sales Report - Pawan Kumar",
+    "id": "1lLYyFxz9awRzaf4xdPpa8gqXglUpuooG0sl_cbl9pjw",
+    "category": "Distributor Sale History",
+    "fy": "4-year",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "CP SALE GROUP WISE 2023-24",
+    "id": "1IoNfjKPH8s78RoJJuIKMW9yNOg5rocTR8EHnFJbp7cc",
+    "category": "Segment Sale (CP)",
+    "fy": "2023-24",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Plumbing Item Wise Sale -24-25 / 25-26",
+    "id": "1_nnbFlnokNgm5RT522YB4d074Ehvv2-iP9L5gistsSA",
+    "category": "Segment Sale (Plumbing)",
+    "fy": "24-25/25-26",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "PLUMBING ITEM WISE SALE (24-25/25-26)",
+    "id": "1VNEygCgHLxhgwpwQHySKD7k0FZVF5mzEJkjsIi98cK0",
+    "category": "Segment Sale (Plumbing)",
+    "fy": "24-25/25-26",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Plumbing Sale GP Margin APR-26",
+    "id": "1HfOnlp2UUZXCe0Jt9JtLpfVY078Ryp3hF_vU8Sx46BU",
+    "category": "Segment Sale (Plumbing)",
+    "fy": "2026-27",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "PLUMBING SALE GP MARGIN Feb 26",
+    "id": "1RQckznLZms_Wfo6tAoHnitAP6WVQKGfmvDRTkq0Mlng",
+    "category": "Segment Sale (Plumbing)",
+    "fy": "2025-26",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "Plumbing Sale GP Margin Mar-26",
+    "id": "1khU931IAfqHlMUxqN4ZTp1Es-VjnwQXlodFTvYQ6P6I",
+    "category": "Segment Sale (Plumbing)",
+    "fy": "2025-26",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "PLUMBING SALE GP MARGIN Jan 26",
+    "id": "1i4s4yIAp41iL5fbi9AGBN6BruD7aeVglsIe5qGIIRgU",
+    "category": "Segment Sale (Plumbing)",
+    "fy": "2025-26",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "SINK SALE GP MARGIN (Apr to Sep 2024-25)",
+    "id": "1RO6_2UxlFPwCnibq2nwrwSk5VbP4Q4UVop5kerzh2AU",
+    "category": "Segment Sale (Sink)",
+    "fy": "2024-25",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "SINK SALE GP MARGIN (Apr To June 2024-25)",
+    "id": "1pML4iDzLKNuKdOE6lmusFcmvja6MVFhj1mDk-7JR5bY",
+    "category": "Segment Sale (Sink)",
+    "fy": "2024-25",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "SINK SALE GP MARGIN (Apr To Aug 2024-25)",
+    "id": "1sWZsoMUKuHCeXtESJPuc5tHHTHMYbjLJDvX2YSu4rCw",
+    "category": "Segment Sale (Sink)",
+    "fy": "2024-25",
+    "type": "Google Sheet"
+   },
+   {
+    "name": "SINK SALE GP MARGIN (Apr To July 2024-25)",
+    "id": "1lVxX6YnH_Dp3YhlcymSPd38ml692htPvC7_OB90JSEg",
+    "category": "Segment Sale (Sink)",
+    "fy": "2024-25",
+    "type": "Google Sheet"
+   }
+  ],
+  "config": {
+   "primary_for_trend": [
+    "3 YEAR SALE MASTER (1JpHX_hiRZ1l2QyyS3X3LbbsyqSLQ0oyIs3n9emnoH3s)",
+    "yearly Sale Masters"
+   ],
+   "product_wise_source": "SALE tab of a multi-year Sale Master (used for the computed FY2024-25 product table)",
+   "note": "Sale Masters = dated invoice lines (daily grain). P&L summaries = monthly totals. Pick Sale Masters for trend/seasonality."
+  }
+ },
+ "computed_seed_files": [
+  {
+   "file": "Prayag_Order_Booking_Analysis_FY2026-27.xlsx",
+   "domain": "orders",
+   "content": "FY26-27 order intake by month/group/channel/plant + festival-season calendar"
+  },
+  {
+   "file": "Prayag_Sales_By_Product_Year.xlsx",
+   "domain": "sales",
+   "content": "FY2024-25 product-wise monthly + annual sales value"
+  },
+  {
+   "file": "PTMT_Production_Plans_History2.xlsx",
+   "domain": "production",
+   "content": "PTMT 7-category production-plan totals: Jun2025, Mar/May/Jun/Jul 2026 (+old samples)"
+  }
+ ]
+}
