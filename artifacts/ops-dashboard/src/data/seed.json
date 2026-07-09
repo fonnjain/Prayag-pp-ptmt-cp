@@ -1,0 +1,507 @@
+{
+ "meta": {
+  "currency": "INR",
+  "fiscal_start": "April",
+  "note": "Real seed data computed from Order Sheets, PTMT Daily Production, and 3 YEAR SALE MASTER. Dashboard recomputes live; this seeds instant views."
+ },
+ "orders": {
+  "year_value_cr": {
+   "2023-24": 377.39,
+   "2024-25": 333.81,
+   "2025-26": 342.03,
+   "2026-27": 78.73
+  },
+  "seasonal_index_total": {
+   "Apr": 0.781,
+   "May": 0.98,
+   "Jun": 1.182,
+   "Jul": 0.904,
+   "Aug": 0.85,
+   "Sep": 0.904,
+   "Oct": 0.901,
+   "Nov": 0.971,
+   "Dec": 0.994,
+   "Jan": 0.986,
+   "Feb": 1.039,
+   "Mar": 1.507
+  },
+  "channel_cr": {
+   "2023-24": {
+    "Retail": 286.21,
+    "Govt": 10.72,
+    "Project": 5.21,
+    "GeM": 3.83,
+    "JJM": 71.43
+   },
+   "2024-25": {
+    "Retail": 299.14,
+    "Govt": 16.76,
+    "Project": 4.36,
+    "GeM": 5.54,
+    "JJM": 8.02
+   },
+   "2025-26": {
+    "Retail": 319.82,
+    "Govt": 12.56,
+    "Project": 3.93,
+    "GeM": 2.87,
+    "JJM": 2.86
+   },
+   "2026-27": {
+    "Retail": 73.73,
+    "Govt": 3.08,
+    "Project": 1.16,
+    "GeM": 0.75,
+    "JJM": 0.01
+   }
+  }
+ },
+ "stock_buffer": {
+  "service_level_z": 1.65,
+  "basis": "FY2024-25 & 2025-26, recency-weighted (recent x2)",
+  "categories": [
+   {
+    "category": "WATER TANK",
+    "avg_month_units": 2379566,
+    "seasonal_index": {
+     "Apr": 0.721,
+     "May": 1.13,
+     "Jun": 1.16,
+     "Jul": 1.006,
+     "Aug": 0.853,
+     "Sep": 0.801,
+     "Oct": 0.966,
+     "Nov": 0.924,
+     "Dec": 1.026,
+     "Jan": 0.898,
+     "Feb": 1.102,
+     "Mar": 1.415
+    },
+    "cv": 0.155,
+    "vol_class": "Medium",
+    "safety_multiplier": 1.256,
+    "yoy": -0.197,
+    "trend_signal": "Declining",
+    "planning_growth": -0.098,
+    "peak_month": "Mar"
+   },
+   {
+    "category": "CPVC",
+    "avg_month_units": 655438,
+    "seasonal_index": {
+     "Apr": 0.678,
+     "May": 1.01,
+     "Jun": 0.826,
+     "Jul": 1.027,
+     "Aug": 0.876,
+     "Sep": 0.902,
+     "Oct": 0.787,
+     "Nov": 0.947,
+     "Dec": 1.084,
+     "Jan": 1.287,
+     "Feb": 1.012,
+     "Mar": 1.564
+    },
+    "cv": 0.145,
+    "vol_class": "Low",
+    "safety_multiplier": 1.239,
+    "yoy": 0.185,
+    "trend_signal": "Growing",
+    "planning_growth": 0.093,
+    "peak_month": "Mar"
+   },
+   {
+    "category": "PTMT",
+    "avg_month_units": 534259,
+    "seasonal_index": {
+     "Apr": 0.538,
+     "May": 0.957,
+     "Jun": 1.295,
+     "Jul": 0.899,
+     "Aug": 0.938,
+     "Sep": 0.703,
+     "Oct": 0.679,
+     "Nov": 0.953,
+     "Dec": 1.056,
+     "Jan": 0.98,
+     "Feb": 1.043,
+     "Mar": 1.959
+    },
+    "cv": 0.079,
+    "vol_class": "Low",
+    "safety_multiplier": 1.131,
+    "yoy": 0.02,
+    "trend_signal": "Stable",
+    "planning_growth": 0.01,
+    "peak_month": "Mar"
+   },
+   {
+    "category": "UPVC",
+    "avg_month_units": 389134,
+    "seasonal_index": {
+     "Apr": 0.598,
+     "May": 1.191,
+     "Jun": 1.013,
+     "Jul": 0.729,
+     "Aug": 0.673,
+     "Sep": 0.761,
+     "Oct": 0.775,
+     "Nov": 0.874,
+     "Dec": 1.058,
+     "Jan": 1.318,
+     "Feb": 1.255,
+     "Mar": 1.755
+    },
+    "cv": 0.13,
+    "vol_class": "Low",
+    "safety_multiplier": 1.214,
+    "yoy": -0.073,
+    "trend_signal": "Stable",
+    "planning_growth": -0.036,
+    "peak_month": "Mar"
+   },
+   {
+    "category": "OTHER",
+    "avg_month_units": 313114,
+    "seasonal_index": {
+     "Apr": 0.518,
+     "May": 1.063,
+     "Jun": 1.058,
+     "Jul": 0.855,
+     "Aug": 0.841,
+     "Sep": 0.812,
+     "Oct": 0.997,
+     "Nov": 1.026,
+     "Dec": 1.089,
+     "Jan": 0.872,
+     "Feb": 1.26,
+     "Mar": 1.607
+    },
+    "cv": 0.099,
+    "vol_class": "Low",
+    "safety_multiplier": 1.163,
+    "yoy": 0.003,
+    "trend_signal": "Stable",
+    "planning_growth": 0.001,
+    "peak_month": "Mar"
+   },
+   {
+    "category": "SWR",
+    "avg_month_units": 163576,
+    "seasonal_index": {
+     "Apr": 0.462,
+     "May": 1.016,
+     "Jun": 0.892,
+     "Jul": 0.769,
+     "Aug": 0.817,
+     "Sep": 0.825,
+     "Oct": 0.904,
+     "Nov": 0.947,
+     "Dec": 1.059,
+     "Jan": 1.276,
+     "Feb": 1.457,
+     "Mar": 1.577
+    },
+    "cv": 0.224,
+    "vol_class": "Medium",
+    "safety_multiplier": 1.37,
+    "yoy": 0.078,
+    "trend_signal": "Stable",
+    "planning_growth": 0.039,
+    "peak_month": "Mar"
+   },
+   {
+    "category": "CP",
+    "avg_month_units": 97167,
+    "seasonal_index": {
+     "Apr": 0.573,
+     "May": 0.927,
+     "Jun": 0.908,
+     "Jul": 0.781,
+     "Aug": 0.72,
+     "Sep": 1.037,
+     "Oct": 0.769,
+     "Nov": 1.001,
+     "Dec": 1.37,
+     "Jan": 1.198,
+     "Feb": 1.362,
+     "Mar": 1.354
+    },
+    "cv": 0.15,
+    "vol_class": "Low",
+    "safety_multiplier": 1.247,
+    "yoy": 0.142,
+    "trend_signal": "Growing",
+    "planning_growth": 0.071,
+    "peak_month": "Dec"
+   },
+   {
+    "category": "AGRI",
+    "avg_month_units": 60053,
+    "seasonal_index": {
+     "Apr": 0.658,
+     "May": 1.041,
+     "Jun": 0.852,
+     "Jul": 1.062,
+     "Aug": 0.779,
+     "Sep": 0.854,
+     "Oct": 1.027,
+     "Nov": 0.841,
+     "Dec": 1.286,
+     "Jan": 1.057,
+     "Feb": 1.369,
+     "Mar": 1.174
+    },
+    "cv": 0.165,
+    "vol_class": "Medium",
+    "safety_multiplier": 1.272,
+    "yoy": 0.225,
+    "trend_signal": "Growing",
+    "planning_growth": 0.112,
+    "peak_month": "Feb"
+   },
+   {
+    "category": "GARDEN PIPE",
+    "avg_month_units": 53112,
+    "seasonal_index": {
+     "Apr": 1.802,
+     "May": 1.287,
+     "Jun": 3.135,
+     "Jul": 0.121,
+     "Aug": 0.457,
+     "Sep": 0.691,
+     "Oct": 1.594,
+     "Nov": 0.298,
+     "Dec": 0.706,
+     "Jan": 0.968,
+     "Feb": 0.448,
+     "Mar": 0.493
+    },
+    "cv": 0.774,
+    "vol_class": "High",
+    "safety_multiplier": 2.277,
+    "yoy": -0.548,
+    "trend_signal": "Declining",
+    "planning_growth": -0.2,
+    "peak_month": "Jun"
+   },
+   {
+    "category": "CP ACCESSORIES",
+    "avg_month_units": 32581,
+    "seasonal_index": {
+     "Apr": 0.663,
+     "May": 0.994,
+     "Jun": 0.839,
+     "Jul": 0.823,
+     "Aug": 0.84,
+     "Sep": 0.953,
+     "Oct": 0.768,
+     "Nov": 0.997,
+     "Dec": 1.306,
+     "Jan": 1.106,
+     "Feb": 1.331,
+     "Mar": 1.379
+    },
+    "cv": 0.109,
+    "vol_class": "Low",
+    "safety_multiplier": 1.18,
+    "yoy": 0.052,
+    "trend_signal": "Stable",
+    "planning_growth": 0.026,
+    "peak_month": "Mar"
+   },
+   {
+    "category": "CISTERN",
+    "avg_month_units": 19230,
+    "seasonal_index": {
+     "Apr": 0.684,
+     "May": 1.049,
+     "Jun": 1.006,
+     "Jul": 0.996,
+     "Aug": 0.82,
+     "Sep": 0.947,
+     "Oct": 0.953,
+     "Nov": 1.009,
+     "Dec": 0.961,
+     "Jan": 0.938,
+     "Feb": 1.525,
+     "Mar": 1.114
+    },
+    "cv": 0.197,
+    "vol_class": "Medium",
+    "safety_multiplier": 1.325,
+    "yoy": 0.004,
+    "trend_signal": "Stable",
+    "planning_growth": 0.002,
+    "peak_month": "Feb"
+   },
+   {
+    "category": "HARDWARE",
+    "avg_month_units": 12698,
+    "seasonal_index": {
+     "Apr": 1.237,
+     "May": 1.795,
+     "Jun": 0.774,
+     "Jul": 0.571,
+     "Aug": 0.621,
+     "Sep": 1.193,
+     "Oct": 0.452,
+     "Nov": 0.585,
+     "Dec": 1.262,
+     "Jan": 0.864,
+     "Feb": 0.943,
+     "Mar": 1.704
+    },
+    "cv": 0.452,
+    "vol_class": "High",
+    "safety_multiplier": 1.745,
+    "yoy": 0.021,
+    "trend_signal": "Stable",
+    "planning_growth": 0.01,
+    "peak_month": "May"
+   },
+   {
+    "category": "SANITARYWARE",
+    "avg_month_units": 9983,
+    "seasonal_index": {
+     "Apr": 0.508,
+     "May": 0.705,
+     "Jun": 1.431,
+     "Jul": 1.046,
+     "Aug": 0.733,
+     "Sep": 0.827,
+     "Oct": 0.826,
+     "Nov": 0.956,
+     "Dec": 0.983,
+     "Jan": 1.099,
+     "Feb": 1.17,
+     "Mar": 1.715
+    },
+    "cv": 0.161,
+    "vol_class": "Medium",
+    "safety_multiplier": 1.266,
+    "yoy": 0.142,
+    "trend_signal": "Growing",
+    "planning_growth": 0.071,
+    "peak_month": "Mar"
+   },
+   {
+    "category": "SINK",
+    "avg_month_units": 6659,
+    "seasonal_index": {
+     "Apr": 0.791,
+     "May": 1.017,
+     "Jun": 0.908,
+     "Jul": 0.921,
+     "Aug": 1.005,
+     "Sep": 0.879,
+     "Oct": 0.717,
+     "Nov": 0.897,
+     "Dec": 1.011,
+     "Jan": 0.839,
+     "Feb": 1.327,
+     "Mar": 1.689
+    },
+    "cv": 0.142,
+    "vol_class": "Low",
+    "safety_multiplier": 1.234,
+    "yoy": 0.311,
+    "trend_signal": "Growing",
+    "planning_growth": 0.156,
+    "peak_month": "Mar"
+   },
+   {
+    "category": "GEYSER",
+    "avg_month_units": 55,
+    "seasonal_index": {
+     "Apr": 0.365,
+     "May": 0.049,
+     "Jun": 0.073,
+     "Jul": 0.0,
+     "Aug": 1.266,
+     "Sep": 0.274,
+     "Oct": 1.594,
+     "Nov": 5.27,
+     "Dec": 2.233,
+     "Jan": 0.164,
+     "Feb": 0.006,
+     "Mar": 0.706
+    },
+    "cv": 0.588,
+    "vol_class": "High",
+    "safety_multiplier": 1.97,
+    "yoy": -0.548,
+    "trend_signal": "Declining",
+    "planning_growth": -0.2,
+    "peak_month": "Nov"
+   }
+  ]
+ },
+ "production_ptmt": {
+  "fy_plan_units": {
+   "2020-21": 1961674,
+   "2021-22": 3197155,
+   "2022-23": 7695118,
+   "2023-24": 7132838,
+   "2024-25": 4956909,
+   "2025-26": 4160292
+  },
+  "category_fy": {
+   "2023-24": {
+    "Cocks Standard": 5068409,
+    "Cocks Premium": 0,
+    "Faucets & Jetsprays": 721601,
+    "Accessorise": 319472,
+    "Cistern & Seat Cover": 283321,
+    "Cabinet": 14075,
+    "Ball Cock": 543208
+   },
+   "2024-25": {
+    "Cocks Standard": 2612919,
+    "Cocks Premium": 0,
+    "Faucets & Jetsprays": 466316,
+    "Accessorise": 198154,
+    "Cistern & Seat Cover": 193431,
+    "Cabinet": 8827,
+    "Ball Cock": 312234
+   },
+   "2025-26": {
+    "Cocks Standard": 2053944,
+    "Cocks Premium": 0,
+    "Faucets & Jetsprays": 348904,
+    "Accessorise": 129158,
+    "Cistern & Seat Cover": 159925,
+    "Cabinet": 4534,
+    "Ball Cock": 255332
+   }
+  }
+ },
+ "sales_ptmt": {
+  "fy_qty": {
+   "2022-23": 4269927,
+   "2023-24": 5805445,
+   "2024-25": 7124605,
+   "2025-26": 7527808
+  }
+ },
+ "combined_ptmt_qty": {
+  "orders": {
+   "2024-25": 6325267,
+   "2025-26": 6454020
+  },
+  "plan": {
+   "2020-21": 1961674,
+   "2021-22": 3197155,
+   "2022-23": 7695118,
+   "2023-24": 7132838,
+   "2024-25": 4956909,
+   "2025-26": 4160292
+  },
+  "sales": {
+   "2022-23": 4269927,
+   "2023-24": 5805445,
+   "2024-25": 7124605,
+   "2025-26": 7527808
+  }
+ }
+}
