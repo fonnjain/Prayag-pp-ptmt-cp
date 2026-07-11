@@ -861,47 +861,63 @@ async function fetchLastMonthDualTotals(meta: MgmtMeta): Promise<DualTotals> {
  * E/F/G/H/I are CODE-LEVEL — all colour variants of a code share the same values,
  * matching the master Excel where these columns are colour-blind aggregates.
  */
+// In-flight deduplication: if two requests arrive before the first finishes,
+// they share one Promise instead of firing double the Sheets API calls.
+const _mgmtInFlight = new Map<string, Promise<CategoryView[]>>();
+
 async function computeMgmtCategories(meta: MgmtMeta, monthParam: string): Promise<CategoryView[]> {
-  const [masterItems, codeWise, h3moRaw, iLast, jCur] = await Promise.all([
-    db.select({ category: itemMasterTable.category, itemCode: itemMasterTable.itemCode, colour: itemMasterTable.colour })
-      .from(itemMasterTable),
-    fetchCodeWiseSaleMap(meta),
-    fetchAvg3MoSaleTotals(monthParam),
-    fetchLastMonthDualTotals(meta),
-    fetchCurrentMonthDualTotals(meta),
-  ]);
+  const existing = _mgmtInFlight.get(monthParam);
+  if (existing) return existing;
 
-  return MGMT_CATEGORY_ORDER.map(catName => ({
-    name: catName,
-    items: masterItems
-      .filter(item => item.category === catName)
-      .map(item => {
-        const ck = normalizeCode(item.itemCode);
+  const promise = (async () => {
+    try {
+      const [masterItems, codeWise, h3moRaw, iLast, jCur] = await Promise.all([
+        db.select({ category: itemMasterTable.category, itemCode: itemMasterTable.itemCode, colour: itemMasterTable.colour })
+          .from(itemMasterTable),
+        fetchCodeWiseSaleMap(meta),
+        fetchAvg3MoSaleTotals(monthParam),
+        fetchLastMonthDualTotals(meta),
+        fetchCurrentMonthDualTotals(meta),
+      ]);
 
-        // ── E / F / G — code-level, from CODE WISE SALE 25-26 ────────────────
-        const m12: number[] = codeWise.byCode.get(ck) ?? Array(12).fill(0);
-        const annualFromCode = codeWise.codeAnnual.get(ck) ?? m12.reduce((s, v) => s + v, 0);
+      return MGMT_CATEGORY_ORDER.map(catName => ({
+        name: catName,
+        items: masterItems
+          .filter(item => item.category === catName)
+          .map(item => {
+            const ck = normalizeCode(item.itemCode);
 
-        const E = annualFromCode / 12;
+            // ── E / F / G — code-level, from CODE WISE SALE 25-26 ────────────────
+            const m12: number[] = codeWise.byCode.get(ck) ?? Array(12).fill(0);
+            const annualFromCode = codeWise.codeAnnual.get(ck) ?? m12.reduce((s, v) => s + v, 0);
 
-        // Use monthly vector for F/G if we have real data; else fall back to E
-        const hasMonthly = m12.some(v => v > 0);
-        const F = hasMonthly && meta.N > 0
-          ? m12.slice(0, meta.N).reduce((s, v) => s + v, 0) / meta.N
-          : E;
-        const G = hasMonthly && meta.N < 12
-          ? m12.slice(meta.N).reduce((s, v) => s + v, 0) / (12 - meta.N)
-          : (meta.N < 12 ? E : 0);
+            const E = annualFromCode / 12;
 
-        // ── H / I / J — code-level, aggregate all colours ────────────────────
-        // fetchAvg3MoSaleTotals returns 3-month SUM → ÷3 for monthly avg
-        const H = (h3moRaw.byCode.get(ck) ?? 0) / 3;
-        const I = iLast.byCode.get(ck) ?? 0;
-        const J = jCur.byCode.get(ck) ?? 0;
+            // Use monthly vector for F/G if we have real data; else fall back to E
+            const hasMonthly = m12.some(v => v > 0);
+            const F = hasMonthly && meta.N > 0
+              ? m12.slice(0, meta.N).reduce((s, v) => s + v, 0) / meta.N
+              : E;
+            const G = hasMonthly && meta.N < 12
+              ? m12.slice(meta.N).reduce((s, v) => s + v, 0) / (12 - meta.N)
+              : (meta.N < 12 ? E : 0);
 
-        return { itemCode: item.itemCode, colour: item.colour, E, F, G, H, I, J };
-      }),
-  }));
+            // ── H / I / J — code-level, aggregate all colours ────────────────────
+            // fetchAvg3MoSaleTotals returns 3-month SUM → ÷3 for monthly avg
+            const H = (h3moRaw.byCode.get(ck) ?? 0) / 3;
+            const I = iLast.byCode.get(ck) ?? 0;
+            const J = jCur.byCode.get(ck) ?? 0;
+
+            return { itemCode: item.itemCode, colour: item.colour, E, F, G, H, I, J };
+          }),
+      }));
+    } finally {
+      _mgmtInFlight.delete(monthParam);
+    }
+  })();
+
+  _mgmtInFlight.set(monthParam, promise);
+  return promise;
 }
 
 // GET /ops/management-view

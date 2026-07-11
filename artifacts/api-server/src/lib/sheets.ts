@@ -41,17 +41,33 @@ export const PTMT_DAILY_WORKBOOK_IDS: Record<string, string> = {
 };
 
 async function proxyJson(path: string): Promise<any> {
-  const res = await getConnectors().proxy("google-sheet", path, { method: "GET" });
-  if (!res.ok) {
+  const MAX_RETRIES = 4;
+  let delay = 1000;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const res = await getConnectors().proxy("google-sheet", path, { method: "GET" });
+    if (res.ok) return res.json();
+    if (res.status === 429 && attempt < MAX_RETRIES) {
+      logger.warn({ attempt, delay, path }, "Sheets API 429 — backing off");
+      await sleep(delay);
+      delay *= 2;
+      continue;
+    }
     const body = await res.text();
     throw new Error(`Sheets API error ${res.status}: ${body.slice(0, 300)}`);
   }
-  return res.json();
 }
 
+// Cache tab lists for 10 minutes — sheet structure changes are rare intra-session
+const _tabsCache = new Map<string, { tabs: string[]; expires: number }>();
+
 export async function listTabs(sheetId: string): Promise<string[]> {
+  const now = Date.now();
+  const cached = _tabsCache.get(sheetId);
+  if (cached && cached.expires > now) return cached.tabs;
   const data = await proxyJson(`/v4/spreadsheets/${sheetId}?fields=sheets.properties`);
-  return (data.sheets ?? []).map((s: any) => s.properties.title as string);
+  const tabs = (data.sheets ?? []).map((s: any) => s.properties.title as string);
+  _tabsCache.set(sheetId, { tabs, expires: now + 10 * 60 * 1000 });
+  return tabs;
 }
 
 export async function getTabValues(sheetId: string, tab: string, range = "A1:Z20000"): Promise<string[][]> {
