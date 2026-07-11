@@ -25,7 +25,7 @@ function formatPct(val: number | null | undefined) {
   return `${val.toFixed(1)}%`;
 }
 
-export default function Velocity({ month }: { month: string }) {
+export default function Velocity({ month, selectedCategory }: { month: string; selectedCategory?: string | null }) {
   const { data: velocity, isLoading } = useGetMonitoringVelocity(
     { month },
     { query: { queryKey: getGetMonitoringVelocityQueryKey({ month }) } }
@@ -36,20 +36,33 @@ export default function Velocity({ month }: { month: string }) {
 
   const data = velocity as unknown as MonitoringVelocity;
 
-  const rows = [
+  const allRows = [
     { ...data.plant, name: "PLANT TOTAL", isPlant: true },
     ...(data.categories || []).map((c: any) => ({ ...c, name: c.category, isPlant: false }))
   ];
+
+  const rows = selectedCategory
+    ? allRows.filter((r) => r.isPlant || (r as any).category === selectedCategory)
+    : allRows;
+
+  const exportRows = selectedCategory
+    ? allRows.filter((r) => r.isPlant || (r as any).category === selectedCategory)
+    : allRows;
 
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto pb-10">
       <header className="mb-8 flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-2">Production Velocity</h1>
-          <p className="text-muted-foreground">Pace and projection metrics for {month}</p>
+          <p className="text-muted-foreground">
+            Pace and projection metrics for {month}
+            {selectedCategory && (
+              <span className="ml-2 text-sm font-medium text-primary">— {selectedCategory}</span>
+            )}
+          </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => exportXlsx(`velocity-${month}`, [
-          { name: "Velocity", rows: rows.map((r: any) => ({ Category: r.name, TargetKg: r.targetKg, OutputKg: r.outputToDateKg, Attainment: r.attainmentPct, RequiredPerDay: r.requiredPerDay, ActualPerDay: r.actualPerDay, DaysAheadBehind: r.daysAheadBehind, ProjectedEnd: r.projectedMonthEnd, RAG: r.ragBand })) },
+          { name: "Velocity", rows: exportRows.map((r: any) => ({ Category: r.name, TargetKg: r.targetKg, OutputKg: r.outputToDateKg, Attainment: r.attainmentPct, RequiredPerDay: r.requiredPerDay, ActualPerDay: r.actualPerDay, DaysAheadBehind: r.daysAheadBehind, ProjectedEnd: r.projectedMonthEnd, RAG: r.ragBand })) },
         ])}>
           <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
         </Button>
@@ -72,7 +85,10 @@ export default function Velocity({ month }: { month: string }) {
           </TableHeader>
           <TableBody>
             {rows.map((row: any, i) => (
-              <TableRow key={i} className={row.isPlant ? "bg-muted/10 font-medium" : ""}>
+              <TableRow
+                key={i}
+                className={row.isPlant ? "bg-muted/10 font-medium" : selectedCategory && !row.isPlant ? "bg-primary/5" : ""}
+              >
                 <TableCell className="font-medium">{row.name}</TableCell>
                 <TableCell className="text-right font-mono text-muted-foreground">{formatKg(row.targetKg)}</TableCell>
                 <TableCell className="text-right font-mono">{formatKg(row.outputToDateKg)}</TableCell>

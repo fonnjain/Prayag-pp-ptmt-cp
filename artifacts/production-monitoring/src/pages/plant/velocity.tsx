@@ -27,6 +27,13 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
   const bundle = data as unknown as PlantBundle;
 
   const { plant, dailySeries, context } = bundle;
+
+  const catKPIs = selectedCategory
+    ? (bundle.categories as any[]).find((c) => c.category === selectedCategory)
+    : null;
+
+  const kpis = catKPIs ?? plant;
+
   const chartData = dailySeries.map((d) => ({
     day: `D${d.workingDayNum}`,
     date: d.date,
@@ -36,15 +43,28 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
     required: d.requiredPerDay,
   }));
 
+  const kpiCards = [
+    { label: "Actual/Day", value: fmt(kpis.actualPerDay, 0), sub: "pcs/day" },
+    { label: "Required/Day", value: fmt(kpis.requiredPerDay, 0), sub: "pcs/day" },
+    { label: "Cum Attainment", value: kpis.attainmentCumPct !== null ? `${(kpis.attainmentCumPct as number).toFixed(1)}%` : "–", sub: "vs required cum" },
+    { label: "Projected End", value: kpis.projectedAttainmentPct !== null ? `${(kpis.projectedAttainmentPct as number).toFixed(1)}%` : "–", sub: "of Max PP" },
+    { label: "Linearity", value: kpis.linearityIndex !== null ? (kpis.linearityIndex as number).toFixed(2) : "–", sub: kpis.linearityIndex !== null && (kpis.linearityIndex as number) < 0.6 ? "⚠ back-loaded" : "1.0 = perfect" },
+  ];
+
   return (
     <div className="space-y-6 max-w-[1300px] mx-auto pb-10">
       <header className="mb-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight mb-1">Plant Velocity</h1>
+            <h1 className="text-3xl font-bold tracking-tight mb-1">
+              Plant Velocity
+              {catKPIs && <span className="ml-2 text-lg font-normal text-muted-foreground">— {selectedCategory}</span>}
+            </h1>
             <p className="text-muted-foreground text-sm">
               Daily output and burn-up chart in pieces (NOS) — {month} · {context.elapsed}/{context.workingDays} days elapsed
-              {selectedCategory && <span className="ml-2 inline-flex items-center gap-1 text-xs font-medium text-amber-600 bg-amber-500/10 border border-amber-500/20 rounded px-1.5 py-0.5">⚠ Velocity is plant-level — category filter ({selectedCategory}) not applicable here</span>}
+              {catKPIs && (
+                <span className="ml-2 text-xs text-muted-foreground">· KPIs showing {selectedCategory} · burn-up chart is plant-level</span>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -60,15 +80,9 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
         </div>
       </header>
 
-      {/* Headline KPI row */}
+      {/* Headline KPI row — shows category KPIs when filtered, plant KPIs otherwise */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        {[
-          { label: "Actual/Day", value: fmt(plant.actualPerDay, 0), sub: "pcs/day" },
-          { label: "Required/Day", value: fmt(plant.requiredPerDay, 0), sub: "pcs/day" },
-          { label: "Cum Attainment", value: plant.attainmentCumPct !== null ? `${plant.attainmentCumPct.toFixed(1)}%` : "–", sub: "vs required cum" },
-          { label: "Projected End", value: plant.projectedAttainmentPct !== null ? `${plant.projectedAttainmentPct.toFixed(1)}%` : "–", sub: "of Max PP" },
-          { label: "Linearity", value: plant.linearityIndex !== null ? plant.linearityIndex.toFixed(2) : "–", sub: plant.linearityIndex !== null && plant.linearityIndex < 0.6 ? "⚠ back-loaded" : "1.0 = perfect" },
-        ].map((k) => (
+        {kpiCards.map((k) => (
           <Card key={k.label}>
             <CardHeader className="pb-1"><CardTitle className="text-xs text-muted-foreground uppercase tracking-wider">{k.label}</CardTitle></CardHeader>
             <CardContent><div className="text-xl font-bold">{k.value}</div><div className="text-xs text-muted-foreground">{k.sub}</div></CardContent>
@@ -76,9 +90,55 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
         ))}
       </div>
 
-      {/* Burn-up chart */}
+      {/* Category comparison table when a category is selected */}
+      {catKPIs && (
+        <Card>
+          <CardHeader><CardTitle className="text-sm">Category vs. Plant</CardTitle></CardHeader>
+          <CardContent>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border/50 text-muted-foreground">
+                  <th className="text-left py-2 pr-4 font-medium">Metric</th>
+                  <th className="text-right py-2 pr-4 font-medium">{selectedCategory}</th>
+                  <th className="text-right py-2 font-medium">Plant Total</th>
+                </tr>
+              </thead>
+              <tbody className="text-xs">
+                {[
+                  { label: "Target Max (pcs)", cat: (catKPIs as any).targetMax, plant: plant.targetMax },
+                  { label: "Target Min (pcs)", cat: (catKPIs as any).targetMin, plant: plant.targetMin },
+                  { label: "Produced to Date", cat: (catKPIs as any).producedToDate, plant: plant.producedToDate },
+                  { label: "Required/Day", cat: (catKPIs as any).requiredPerDay, plant: plant.requiredPerDay },
+                  { label: "Actual/Day", cat: (catKPIs as any).actualPerDay, plant: plant.actualPerDay },
+                  { label: "Cum Attainment %", cat: (catKPIs as any).attainmentCumPct, plant: plant.attainmentCumPct, pct: true },
+                  { label: "Projected End %", cat: (catKPIs as any).projectedAttainmentPct, plant: plant.projectedAttainmentPct, pct: true },
+                  { label: "Days Ahead/Behind", cat: (catKPIs as any).daysAheadBehind, plant: plant.daysAheadBehind, signed: true },
+                  { label: "Linearity", cat: (catKPIs as any).linearityIndex, plant: plant.linearityIndex, dec: 2 },
+                ].map((row) => (
+                  <tr key={row.label} className="border-b border-border/20 hover:bg-muted/20">
+                    <td className="py-1.5 pr-4 text-muted-foreground">{row.label}</td>
+                    <td className="py-1.5 pr-4 text-right font-mono font-medium">
+                      {row.cat == null ? "–" : row.pct ? `${Number(row.cat).toFixed(1)}%` : row.signed ? `${Number(row.cat) > 0 ? "+" : ""}${Number(row.cat).toFixed(1)}` : Number(row.cat).toLocaleString(undefined, { maximumFractionDigits: row.dec ?? 0 })}
+                    </td>
+                    <td className="py-1.5 text-right font-mono text-muted-foreground">
+                      {row.plant == null ? "–" : row.pct ? `${Number(row.plant).toFixed(1)}%` : row.signed ? `${Number(row.plant) > 0 ? "+" : ""}${Number(row.plant).toFixed(1)}` : Number(row.plant).toLocaleString(undefined, { maximumFractionDigits: row.dec ?? 0 })}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Burn-up chart — always plant-level */}
       <Card>
-        <CardHeader><CardTitle>Cumulative Burn-up</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle>
+            Cumulative Burn-up
+            {catKPIs && <span className="ml-2 text-xs font-normal text-muted-foreground">(plant-level)</span>}
+          </CardTitle>
+        </CardHeader>
         <CardContent>
           <ResponsiveContainer width="100%" height={320}>
             <ComposedChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>

@@ -63,7 +63,7 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
           <Dashboard month={month} />
         </Route>
         <Route path="/velocity">
-          <Velocity month={month} />
+          <Velocity month={month} selectedCategory={selectedCategory} />
         </Route>
         <Route path="/warnings">
           <Warnings month={month} />
