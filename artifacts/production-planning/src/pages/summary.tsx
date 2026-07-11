@@ -1,7 +1,7 @@
-import { useGetPlanSummary, useListPlanItems, type PlanSummary, type PlanItem } from "@workspace/api-client-react";
+import { useGetPlanSummary, useListPlanItems, type PlanSummary, type PlanItem, useGetPlantWeeklySummary, getGetPlantWeeklySummaryQueryKey } from "@workspace/api-client-react";
 import { AppLayout, categorySlug } from "@/components/layout/app-layout";
 import { Link } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -16,12 +16,11 @@ import { cn } from "@/lib/utils";
 import { FileSpreadsheet } from "lucide-react";
 import { exportXlsx } from "@/lib/excel";
 
-function achievementBand(pct: number): string {
-  if (pct <= 75) return "bg-red-100 text-red-800";
-  if (pct <= 90) return "bg-yellow-100 text-yellow-800";
-  if (pct <= 110) return "bg-green-100 text-green-800";
-  if (pct <= 140) return "bg-blue-100 text-blue-800";
-  return "bg-purple-100 text-purple-800";
+function ragBadge(pct: number | null | undefined): string {
+  if (pct === null || pct === undefined) return "";
+  if (pct >= 85) return "bg-green-100 text-green-800";
+  if (pct >= 60) return "bg-yellow-100 text-yellow-800";
+  return "bg-red-100 text-red-800";
 }
 
 interface WeeklyTotals {
@@ -50,6 +49,43 @@ function computeWeeklyTotals(items: PlanItem[]): WeeklyTotals[] {
   return [...map.values()];
 }
 
+const WEEK_COLORS = {
+  1: { cell: "bg-orange-50/40 text-orange-900", header: "bg-orange-50 text-orange-800" },
+  2: { cell: "bg-yellow-50/40 text-yellow-900", header: "bg-yellow-50 text-yellow-800" },
+  3: { cell: "bg-green-50/40 text-green-900",  header: "bg-green-50 text-green-800" },
+  4: { cell: "bg-blue-50/40 text-blue-900",    header: "bg-blue-50 text-blue-800" },
+} as const;
+
+function WeekCell({
+  plan,
+  attainmentPct,
+  isLoading,
+  colorClass,
+}: {
+  plan: number;
+  attainmentPct: number | null | undefined;
+  isLoading: boolean;
+  colorClass: string;
+}) {
+  const hasData = attainmentPct !== null && attainmentPct !== undefined;
+  return (
+    <TableCell className={cn("text-right align-top font-mono", colorClass)}>
+      <div className="flex flex-col items-end gap-0.5">
+        <span>{plan > 0 ? plan.toLocaleString(undefined, { maximumFractionDigits: 0 }) : isLoading ? "…" : "—"}</span>
+        {plan > 0 && (
+          hasData ? (
+            <span className={cn("text-[10px] px-1.5 py-0 rounded font-semibold leading-4", ragBadge(attainmentPct))}>
+              {attainmentPct!.toFixed(1)}%
+            </span>
+          ) : (
+            <span className="text-[10px] text-muted-foreground/40 leading-4">–</span>
+          )
+        )}
+      </div>
+    </TableCell>
+  );
+}
+
 export default function SummaryPage() {
   const month = currentMonth();
   const { data, isLoading, isError } = useGetPlanSummary({ month });
@@ -57,12 +93,15 @@ export default function SummaryPage() {
     { month },
     { query: { staleTime: 5 * 60 * 1000 } as any },
   );
+  const { data: weeklyRaw } = useGetPlantWeeklySummary(
+    { month },
+    { query: { queryKey: getGetPlantWeeklySummaryQueryKey({ month }) } as any },
+  );
 
   const summary = data as unknown as PlanSummary | undefined;
   const categories = summary?.categories ?? [];
   const grandMin = summary?.grandMinTotal ?? 0;
   const grandMax = summary?.grandMaxTotal ?? 0;
-  const achievementPct = grandMax > 0 ? (grandMin / grandMax) * 100 : 0;
 
   const allItems = (itemsData as unknown as PlanItem[] | undefined) ?? [];
   const weeklyTotals = computeWeeklyTotals(allItems);
@@ -72,6 +111,29 @@ export default function SummaryPage() {
   const grandW4 = weeklyTotals.reduce((s, t) => s + t.w4, 0);
   const grandUnscheduled = weeklyTotals.reduce((s, t) => s + t.unscheduled, 0);
 
+  const weekly = weeklyRaw as any;
+
+  // Build lookup: category → { w1Pct, w2Pct, w3Pct, w4Pct }
+  type WeekPcts = { w1Pct: number | null; w2Pct: number | null; w3Pct: number | null; w4Pct: number | null };
+  const weeklyPctMap = new Map<string, WeekPcts>();
+  if (weekly?.categories) {
+    for (const catRow of weekly.categories as any[]) {
+      const pcts: WeekPcts = { w1Pct: null, w2Pct: null, w3Pct: null, w4Pct: null };
+      for (const wk of catRow.weeks as any[]) {
+        if (wk.week === 1) pcts.w1Pct = wk.attainmentPct;
+        if (wk.week === 2) pcts.w2Pct = wk.attainmentPct;
+        if (wk.week === 3) pcts.w3Pct = wk.attainmentPct;
+        if (wk.week === 4) pcts.w4Pct = wk.attainmentPct;
+      }
+      weeklyPctMap.set(catRow.category, pcts);
+    }
+  }
+
+  // Plant-level weekly attainment for the totals row
+  const plantWeeks: any[] = weekly?.plant?.weeks ?? [];
+  const plantWeekPct = (w: number): number | null =>
+    plantWeeks.find((pw: any) => pw.week === w)?.attainmentPct ?? null;
+
   return (
     <AppLayout>
       <div className="max-w-6xl mx-auto space-y-6">
@@ -80,17 +142,20 @@ export default function SummaryPage() {
           {!isLoading && !isError && (
             <Button variant="outline" size="sm" onClick={() => exportXlsx(`plan-summary-${month}`, [
               { name: "Summary", rows: categories.map((cat) => {
-                const p = cat.maxTotal > 0 ? (cat.minTotal / cat.maxTotal) * 100 : 0;
                 const wt = weeklyTotals.find((t) => t.category === cat.category);
+                const pcts = weeklyPctMap.get(cat.category);
                 return {
                   Category: cat.category,
                   MinRequired: cat.minTotal,
                   MaxPlan: cat.maxTotal,
-                  AchievementPct: p,
-                  W1: wt?.w1 ?? 0,
-                  W2: wt?.w2 ?? 0,
-                  W3: wt?.w3 ?? 0,
-                  W4: wt?.w4 ?? 0,
+                  W1_Plan: wt?.w1 ?? 0,
+                  W1_Ach_Pct: pcts?.w1Pct ?? "",
+                  W2_Plan: wt?.w2 ?? 0,
+                  W2_Ach_Pct: pcts?.w2Pct ?? "",
+                  W3_Plan: wt?.w3 ?? 0,
+                  W3_Ach_Pct: pcts?.w3Pct ?? "",
+                  W4_Plan: wt?.w4 ?? 0,
+                  W4_Ach_Pct: pcts?.w4Pct ?? "",
                   Unscheduled: wt?.unscheduled ?? 0,
                 };
               }) },
@@ -109,25 +174,36 @@ export default function SummaryPage() {
 
         {!isLoading && !isError && (
           <Card>
-            <CardContent className="pt-6 overflow-x-auto">
+            <CardContent className="pt-4 overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Category</TableHead>
                     <TableHead className="text-right">Min Reqd</TableHead>
                     <TableHead className="text-right">Max / Plan</TableHead>
-                    <TableHead className="text-right">Achiev %</TableHead>
-                    <TableHead className="text-right bg-orange-50 text-orange-800">W1</TableHead>
-                    <TableHead className="text-right bg-yellow-50 text-yellow-800">W2</TableHead>
-                    <TableHead className="text-right bg-green-50 text-green-800">W3</TableHead>
-                    <TableHead className="text-right bg-blue-50 text-blue-800">W4</TableHead>
+                    <TableHead className={cn("text-right", WEEK_COLORS[1].header)}>
+                      W1
+                      <div className="text-[9px] font-normal opacity-70">days 1–7</div>
+                    </TableHead>
+                    <TableHead className={cn("text-right", WEEK_COLORS[2].header)}>
+                      W2
+                      <div className="text-[9px] font-normal opacity-70">days 8–14</div>
+                    </TableHead>
+                    <TableHead className={cn("text-right", WEEK_COLORS[3].header)}>
+                      W3
+                      <div className="text-[9px] font-normal opacity-70">days 15–21</div>
+                    </TableHead>
+                    <TableHead className={cn("text-right", WEEK_COLORS[4].header)}>
+                      W4
+                      <div className="text-[9px] font-normal opacity-70">days 22–end</div>
+                    </TableHead>
                     <TableHead className="text-right text-gray-500">Unscheduled</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {categories.map((cat, idx) => {
-                    const pct = cat.maxTotal > 0 ? (cat.minTotal / cat.maxTotal) * 100 : 0;
                     const wt = weeklyTotals.find((t) => t.category === cat.category);
+                    const pcts = weeklyPctMap.get(cat.category);
                     return (
                       <TableRow key={cat.category}>
                         <TableCell>
@@ -144,23 +220,10 @@ export default function SummaryPage() {
                         <TableCell className="text-right">
                           {cat.maxTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <span className={cn("px-2 py-0.5 rounded text-xs font-medium", achievementBand(pct))}>
-                            {pct.toFixed(1)}%
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-right bg-orange-50/40 text-orange-900 font-mono">
-                          {wt && wt.w1 > 0 ? wt.w1.toLocaleString(undefined, { maximumFractionDigits: 0 }) : itemsLoading ? "…" : "—"}
-                        </TableCell>
-                        <TableCell className="text-right bg-yellow-50/40 text-yellow-900 font-mono">
-                          {wt && wt.w2 > 0 ? wt.w2.toLocaleString(undefined, { maximumFractionDigits: 0 }) : itemsLoading ? "…" : "—"}
-                        </TableCell>
-                        <TableCell className="text-right bg-green-50/40 text-green-900 font-mono">
-                          {wt && wt.w3 > 0 ? wt.w3.toLocaleString(undefined, { maximumFractionDigits: 0 }) : itemsLoading ? "…" : "—"}
-                        </TableCell>
-                        <TableCell className="text-right bg-blue-50/40 text-blue-900 font-mono">
-                          {wt && wt.w4 > 0 ? wt.w4.toLocaleString(undefined, { maximumFractionDigits: 0 }) : itemsLoading ? "…" : "—"}
-                        </TableCell>
+                        <WeekCell plan={wt?.w1 ?? 0} attainmentPct={pcts?.w1Pct} isLoading={itemsLoading} colorClass={WEEK_COLORS[1].cell} />
+                        <WeekCell plan={wt?.w2 ?? 0} attainmentPct={pcts?.w2Pct} isLoading={itemsLoading} colorClass={WEEK_COLORS[2].cell} />
+                        <WeekCell plan={wt?.w3 ?? 0} attainmentPct={pcts?.w3Pct} isLoading={itemsLoading} colorClass={WEEK_COLORS[3].cell} />
+                        <WeekCell plan={wt?.w4 ?? 0} attainmentPct={pcts?.w4Pct} isLoading={itemsLoading} colorClass={WEEK_COLORS[4].cell} />
                         <TableCell className="text-right text-gray-500 font-mono">
                           {wt && wt.unscheduled > 0 ? wt.unscheduled.toLocaleString(undefined, { maximumFractionDigits: 0 }) : itemsLoading ? "…" : "—"}
                         </TableCell>
@@ -175,29 +238,35 @@ export default function SummaryPage() {
                     <TableCell className="text-right">
                       {grandMax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </TableCell>
-                    <TableCell className="text-right">
-                      <span className={cn("px-2 py-0.5 rounded text-xs font-medium", achievementBand(achievementPct))}>
-                        {achievementPct.toFixed(1)}%
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-right bg-orange-100 text-orange-900 font-mono">
-                      {grandW1 > 0 ? grandW1.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right bg-yellow-100 text-yellow-900 font-mono">
-                      {grandW2 > 0 ? grandW2.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right bg-green-100 text-green-900 font-mono">
-                      {grandW3 > 0 ? grandW3.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
-                    </TableCell>
-                    <TableCell className="text-right bg-blue-100 text-blue-900 font-mono">
-                      {grandW4 > 0 ? grandW4.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
-                    </TableCell>
+                    {([1, 2, 3, 4] as const).map((w) => {
+                      const plan = [grandW1, grandW2, grandW3, grandW4][w - 1];
+                      return (
+                        <TableCell key={w} className={cn("text-right align-top font-mono", WEEK_COLORS[w].cell.replace("/40", "/60"))}>
+                          <div className="flex flex-col items-end gap-0.5">
+                            <span>{plan > 0 ? plan.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}</span>
+                            {plan > 0 && (() => {
+                              const pct = plantWeekPct(w);
+                              return pct !== null ? (
+                                <span className={cn("text-[10px] px-1.5 py-0 rounded font-semibold leading-4", ragBadge(pct))}>
+                                  {pct.toFixed(1)}%
+                                </span>
+                              ) : <span className="text-[10px] text-muted-foreground/40 leading-4">–</span>;
+                            })()}
+                          </div>
+                        </TableCell>
+                      );
+                    })}
                     <TableCell className="text-right text-gray-500 font-mono">
                       {grandUnscheduled > 0 ? grandUnscheduled.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
                     </TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
+              {weekly?.currentWeek && (
+                <p className="text-[11px] text-muted-foreground mt-3 px-1">
+                  Achievement % shown for elapsed/in-progress weeks only · current week: W{weekly.currentWeek} · RAG: <span className="text-green-700 font-medium">green ≥85%</span> · <span className="text-yellow-700 font-medium">amber ≥60%</span> · <span className="text-red-700 font-medium">red &lt;60%</span>
+                </p>
+              )}
             </CardContent>
           </Card>
         )}
