@@ -3,8 +3,10 @@ import { db, plantConfigsTable, plantSourceConfigsTable, plantIngestionCacheTabl
 import { eq } from "drizzle-orm";
 import { fetchDailyActuals, fetchMonthlyTargets } from "../lib/plant-ingestion";
 import { buildPlantBundle, type PlantBundle } from "../lib/plant-engine";
-import { buildPlantWarnings, DEFAULT_PLANT_WARNING_THRESHOLDS, type PlantWarningThresholds } from "../lib/plant-warnings";
+import { buildPlantWarnings, buildPlantWeeklyWarnings, DEFAULT_PLANT_WARNING_THRESHOLDS, type PlantWarningThresholds } from "../lib/plant-warnings";
 import { buildPlantRecommendations } from "../lib/plant-recommendations";
+import { buildPlantWeeklySummary } from "../lib/plant-weekly-engine";
+import { buildPlanItems } from "./plan";
 import { logger } from "../lib/logger";
 const router: IRouter = Router();
 
@@ -52,8 +54,26 @@ export async function computePlantBundle(month: string) {
   const bundle = buildPlantBundle(month, actuals, targets, config);
   const thresholds = loadThresholds(row);
   const warnings = buildPlantWarnings(bundle, thresholds);
+
+  // Append weekly release warnings
+  let planItems: Awaited<ReturnType<typeof buildPlanItems>> = [];
+  try { planItems = await buildPlanItems(month); } catch { /* plan unavailable */ }
+  const snapshotDate = row?.snapshotDate ?? (actuals.length > 0 ? [...actuals].map((r) => r.date).sort().pop()! : null);
+  const weekly = buildPlantWeeklySummary(
+    month,
+    actuals,
+    planItems as { itemCode: string; colour: string; category: string; w1: number; w2: number; w3: number; w4: number; maxProduction: number }[],
+    targets,
+    snapshotDate,
+  );
+  const weeklyWarnings = buildPlantWeeklyWarnings(weekly);
+  const allWarnings = [...warnings, ...weeklyWarnings].sort((a, b) => {
+    const order = { critical: 0, high: 1, medium: 2, info: 3 };
+    return (order[a.severity] ?? 4) - (order[b.severity] ?? 4);
+  });
+
   const recommendations = buildPlantRecommendations(bundle, thresholds);
-  return { ...bundle, warnings, recommendations };
+  return { ...bundle, warnings: allWarnings, recommendations };
 }
 
 // --- GET /plant/bundle ---
@@ -334,6 +354,46 @@ router.post("/plant/cache/invalidate", async (req, res) => {
   invalidatePlantBundleCache(month);
   logger.info({ month }, "plant cache invalidated");
   res.json({ ok: true });
+});
+
+// --- GET /plant/weekly-summary ---
+router.get("/plant/weekly-summary", async (req, res) => {
+  const month = String(req.query.month ?? "");
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    res.status(400).json({ error: "month query param required (YYYY-MM)" });
+    return;
+  }
+  try {
+    const configRow = await loadPlantConfigRow(month);
+    const [actuals, targets] = await Promise.all([
+      fetchDailyActuals(month),
+      fetchMonthlyTargets(month),
+    ]);
+
+    let planItems: Awaited<ReturnType<typeof buildPlanItems>> = [];
+    try {
+      planItems = await buildPlanItems(month);
+    } catch {
+      // plan items unavailable for this month
+    }
+
+    const snapshotDate =
+      configRow?.snapshotDate ??
+      (actuals.length > 0 ? [...actuals].map((r) => r.date).sort().pop()! : null);
+
+    const summary = buildPlantWeeklySummary(
+      month,
+      actuals,
+      planItems as { itemCode: string; colour: string; category: string; w1: number; w2: number; w3: number; w4: number; maxProduction: number }[],
+      targets,
+      snapshotDate,
+    );
+
+    res.json(summary);
+  } catch (err) {
+    logger.error({ err, month }, "plant/weekly-summary failed");
+    res.status(500).json({ error: "Failed to compute weekly summary" });
+  }
 });
 
 export default router;

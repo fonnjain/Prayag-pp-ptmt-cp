@@ -48,6 +48,7 @@ import type {
   GetPlantConfigParams,
   GetPlantTrend200,
   GetPlantTrendParams,
+  GetPlantWeeklySummaryParams,
   HealthStatus,
   IdealHoursOverride,
   IdealHoursOverrideUpsert,
@@ -77,6 +78,7 @@ import type {
   PlantConfigData,
   PlantConfigUpdate,
   PlantSourceConfigUpsert,
+  PlantWeeklySummary,
   SyncSource,
   UploadKind,
   UploadedFile,
@@ -4526,6 +4528,102 @@ export function useExportPlantPdf<TData = Awaited<ReturnType<typeof exportPlantP
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getExportPlantPdfQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
+ * @summary Weekly release plan vs actuals for a month
+ */
+export type getPlantWeeklySummaryResponse200 = {
+  data: PlantWeeklySummary
+  status: 200
+}
+    
+export type getPlantWeeklySummaryResponseSuccess = (getPlantWeeklySummaryResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPlantWeeklySummaryResponse = (getPlantWeeklySummaryResponseSuccess)
+
+export const getGetPlantWeeklySummaryUrl = (params: GetPlantWeeklySummaryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/plant/weekly-summary?${stringifiedParams}` : `/api/plant/weekly-summary`
+}
+
+export const getPlantWeeklySummary = async (params: GetPlantWeeklySummaryParams, options?: RequestInit): Promise<getPlantWeeklySummaryResponse> => {
+  
+  return customFetch<getPlantWeeklySummaryResponse>(getGetPlantWeeklySummaryUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetPlantWeeklySummaryQueryKey = (params?: GetPlantWeeklySummaryParams,) => {
+    return [
+    `/api/plant/weekly-summary`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetPlantWeeklySummaryQueryOptions = <TData = Awaited<ReturnType<typeof getPlantWeeklySummary>>, TError = unknown>(params: GetPlantWeeklySummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantWeeklySummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlantWeeklySummaryQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlantWeeklySummary>>> = ({ signal }) => getPlantWeeklySummary(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlantWeeklySummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlantWeeklySummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getPlantWeeklySummary>>>
+export type GetPlantWeeklySummaryQueryError = unknown
+
+
+/**
+ * @summary Weekly release plan vs actuals for a month
+ */
+
+export function useGetPlantWeeklySummary<TData = Awaited<ReturnType<typeof getPlantWeeklySummary>>, TError = unknown>(
+ params: GetPlantWeeklySummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantWeeklySummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlantWeeklySummaryQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

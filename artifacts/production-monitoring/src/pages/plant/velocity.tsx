@@ -1,5 +1,6 @@
-import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "@workspace/api-client-react";
+import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle, useGetPlantWeeklySummary, getGetPlantWeeklySummaryQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ComposedChart, Line, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
 import { Download, FileSpreadsheet } from "lucide-react";
@@ -15,16 +16,34 @@ function fmt(n: number | null | undefined, d = 0) {
   if (n === null || n === undefined) return "–";
   return n.toLocaleString(undefined, { maximumFractionDigits: d });
 }
+function pct(n: number | null | undefined) {
+  if (n === null || n === undefined) return "–";
+  return `${n.toFixed(1)}%`;
+}
+
+function weekIndexForDay(dayOfMonth: number): number {
+  if (dayOfMonth <= 7) return 0;
+  if (dayOfMonth <= 14) return 1;
+  if (dayOfMonth <= 21) return 2;
+  return 3;
+}
+
+const RAG_COLORS = { green: "#10b981", amber: "#f59e0b", red: "#ef4444", null: "#94a3b8" };
 
 export default function PlantVelocity({ month, selectedCategory }: { month: string; selectedCategory?: string | null }) {
   const { data, isLoading } = useGetPlantBundle(
     { month },
     { query: { queryKey: getGetPlantBundleQueryKey({ month }) } }
   );
+  const { data: weeklyRaw } = useGetPlantWeeklySummary(
+    { month },
+    { query: { queryKey: getGetPlantWeeklySummaryQueryKey({ month }) } as any }
+  );
 
   if (isLoading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
   if (!data) return <div className="text-red-500 p-4">Failed to load plant data.</div>;
   const bundle = data as unknown as PlantBundle;
+  const weekly = weeklyRaw as any;
 
   const { plant, dailySeries, context } = bundle;
 
@@ -34,14 +53,30 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
 
   const kpis = catKPIs ?? plant;
 
-  const chartData = dailySeries.map((d) => ({
-    day: `D${d.workingDayNum}`,
-    date: d.date,
-    actual: d.actualPcs > 0 || d.workingDayNum <= context.elapsed ? d.actualPcs : null,
-    cumActual: d.workingDayNum <= context.elapsed ? d.cumulativeActual : null,
-    cumRequired: d.cumulativeRequired,
-    required: d.requiredPerDay,
-  }));
+  // --- Weekly step function for cumulative released ---
+  const weekTargets: number[] = weekly?.plant?.weeks?.map((w: any) => w.target) ?? [];
+  const wkCum: number[] = [0, 0, 0, 0];
+  if (weekTargets.length === 4) {
+    wkCum[0] = weekTargets[0];
+    wkCum[1] = weekTargets[0] + weekTargets[1];
+    wkCum[2] = weekTargets[0] + weekTargets[1] + weekTargets[2];
+    wkCum[3] = weekTargets[0] + weekTargets[1] + weekTargets[2] + weekTargets[3];
+  }
+  const hasWeeklyTargets = wkCum[3] > 0;
+
+  const chartData = dailySeries.map((d) => {
+    const dayOfMonth = parseInt(d.date.slice(8), 10);
+    const wkIdx = weekIndexForDay(dayOfMonth);
+    return {
+      day: `D${d.workingDayNum}`,
+      date: d.date,
+      actual: d.actualPcs > 0 || d.workingDayNum <= context.elapsed ? d.actualPcs : null,
+      cumActual: d.workingDayNum <= context.elapsed ? d.cumulativeActual : null,
+      cumRequired: d.cumulativeRequired,
+      cumReleased: hasWeeklyTargets ? wkCum[wkIdx] : null,
+      required: d.requiredPerDay,
+    };
+  });
 
   const kpiCards = [
     { label: "Actual/Day", value: fmt(kpis.actualPerDay, 0), sub: "pcs/day" },
@@ -62,14 +97,12 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
             </h1>
             <p className="text-muted-foreground text-sm">
               Daily output and burn-up chart in pieces (NOS) — {month} · {context.elapsed}/{context.workingDays} days elapsed
-              {catKPIs && (
-                <span className="ml-2 text-xs text-muted-foreground">· KPIs showing {selectedCategory} · burn-up chart is plant-level</span>
-              )}
+              {catKPIs && <span className="ml-2 text-xs text-muted-foreground">· KPIs showing {selectedCategory} · burn-up chart is plant-level</span>}
             </p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => exportXlsx(`plant-velocity-${month}`, [
-              { name: "Daily Series", rows: (bundle.dailySeries || []).map((d: any) => ({ Date: d.date, DayOfMonth: d.dayOfMonth, DailyOutput: d.dailyOutput, CumulativeOutput: d.cumulativeOutput, RequiredCumulative: d.requiredCumulative, TargetMax: d.targetMax })) },
+              { name: "Daily Series", rows: (bundle.dailySeries || []).map((d: any) => ({ Date: d.date, DayOfMonth: d.dayOfMonth, DailyOutput: d.actualPcs, CumulativeOutput: d.cumulativeActual, RequiredCumulative: d.cumulativeRequired, TargetMax: plant.targetMax })) },
             ])}>
               <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
             </Button>
@@ -80,7 +113,7 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
         </div>
       </header>
 
-      {/* Headline KPI row — shows category KPIs when filtered, plant KPIs otherwise */}
+      {/* Headline KPI row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {kpiCards.map((k) => (
           <Card key={k.label}>
@@ -110,18 +143,18 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
                   { label: "Produced to Date", cat: (catKPIs as any).producedToDate, plant: plant.producedToDate },
                   { label: "Required/Day", cat: (catKPIs as any).requiredPerDay, plant: plant.requiredPerDay },
                   { label: "Actual/Day", cat: (catKPIs as any).actualPerDay, plant: plant.actualPerDay },
-                  { label: "Cum Attainment %", cat: (catKPIs as any).attainmentCumPct, plant: plant.attainmentCumPct, pct: true },
-                  { label: "Projected End %", cat: (catKPIs as any).projectedAttainmentPct, plant: plant.projectedAttainmentPct, pct: true },
+                  { label: "Cum Attainment %", cat: (catKPIs as any).attainmentCumPct, plant: plant.attainmentCumPct, pctFlag: true },
+                  { label: "Projected End %", cat: (catKPIs as any).projectedAttainmentPct, plant: plant.projectedAttainmentPct, pctFlag: true },
                   { label: "Days Ahead/Behind", cat: (catKPIs as any).daysAheadBehind, plant: plant.daysAheadBehind, signed: true },
                   { label: "Linearity", cat: (catKPIs as any).linearityIndex, plant: plant.linearityIndex, dec: 2 },
                 ].map((row) => (
                   <tr key={row.label} className="border-b border-border/20 hover:bg-muted/20">
                     <td className="py-1.5 pr-4 text-muted-foreground">{row.label}</td>
                     <td className="py-1.5 pr-4 text-right font-mono font-medium">
-                      {row.cat == null ? "–" : row.pct ? `${Number(row.cat).toFixed(1)}%` : row.signed ? `${Number(row.cat) > 0 ? "+" : ""}${Number(row.cat).toFixed(1)}` : Number(row.cat).toLocaleString(undefined, { maximumFractionDigits: row.dec ?? 0 })}
+                      {row.cat == null ? "–" : row.pctFlag ? `${Number(row.cat).toFixed(1)}%` : row.signed ? `${Number(row.cat) > 0 ? "+" : ""}${Number(row.cat).toFixed(1)}` : Number(row.cat).toLocaleString(undefined, { maximumFractionDigits: row.dec ?? 0 })}
                     </td>
                     <td className="py-1.5 text-right font-mono text-muted-foreground">
-                      {row.plant == null ? "–" : row.pct ? `${Number(row.plant).toFixed(1)}%` : row.signed ? `${Number(row.plant) > 0 ? "+" : ""}${Number(row.plant).toFixed(1)}` : Number(row.plant).toLocaleString(undefined, { maximumFractionDigits: row.dec ?? 0 })}
+                      {row.plant == null ? "–" : row.pctFlag ? `${Number(row.plant).toFixed(1)}%` : row.signed ? `${Number(row.plant) > 0 ? "+" : ""}${Number(row.plant).toFixed(1)}` : Number(row.plant).toLocaleString(undefined, { maximumFractionDigits: row.dec ?? 0 })}
                     </td>
                   </tr>
                 ))}
@@ -131,11 +164,65 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
         </Card>
       )}
 
-      {/* Burn-up chart — always plant-level */}
+      {/* Weekly step function context */}
+      {hasWeeklyTargets && weekly?.plant?.weeks && (
+        <div className="grid grid-cols-4 gap-3">
+          {(weekly.plant.weeks as any[]).map((wk: any, i: number) => {
+            const isCurrent = weekly.currentWeek === wk.week;
+            const rag = wk.ragBand;
+            const borderCls = isCurrent
+              ? "border-primary/60 bg-primary/5"
+              : rag === "green" ? "border-emerald-500/30 bg-emerald-500/5"
+              : rag === "amber" ? "border-amber-500/30 bg-amber-500/5"
+              : rag === "red" ? "border-red-500/30 bg-red-500/5"
+              : "border-border";
+            const textCls = rag === "green" ? "text-emerald-600" : rag === "amber" ? "text-amber-600" : rag === "red" ? "text-red-500" : "text-muted-foreground";
+            const label = weekly.weekCalendar?.[i]?.label ?? `W${wk.week}`;
+            return (
+              <Card key={wk.week} className={`border ${borderCls}`}>
+                <CardHeader className="pb-1 pt-3 px-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-xs font-semibold uppercase tracking-wider">{label}</CardTitle>
+                    {isCurrent && <Badge variant="outline" className="text-[10px] border-primary/40 text-primary">current</Badge>}
+                  </div>
+                </CardHeader>
+                <CardContent className="px-3 pb-3 space-y-0.5">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Released</span>
+                    <span className="font-mono font-medium">{fmt(wk.target)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Actual</span>
+                    <span className="font-mono font-medium">{fmt(wk.actual)}</span>
+                  </div>
+                  {wk.carryover > 0 && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Carry-in</span>
+                      <span className="font-mono text-amber-600">+{fmt(wk.carryover)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-xs pt-1 border-t border-border/30 mt-1">
+                    <span className="text-muted-foreground">Attainment</span>
+                    <span className={`font-mono font-bold ${textCls}`}>{pct(wk.attainmentPct)}</span>
+                  </div>
+                  {wk.gap > 0 && wk.attainmentPct !== null && (
+                    <div className="flex justify-between text-xs">
+                      <span className="text-muted-foreground">Gap</span>
+                      <span className="font-mono text-red-500">{fmt(wk.gap)}</span>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Burn-up chart — step function line for released cumulative */}
       <Card>
         <CardHeader>
           <CardTitle>
-            Cumulative Burn-up
+            Cumulative Burn-up{hasWeeklyTargets ? " — Weekly Release (Step) vs Actual" : ""}
             {catKPIs && <span className="ml-2 text-xs font-normal text-muted-foreground">(plant-level)</span>}
           </CardTitle>
         </CardHeader>
@@ -148,7 +235,11 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
               <YAxis yAxisId="daily" orientation="right" tick={{ fontSize: 11 }} tickFormatter={(v) => `${(v / 1000).toFixed(1)}k`} />
               <Tooltip formatter={(v: number) => v?.toLocaleString()} labelFormatter={(l, p) => `${l} (${fmtDate(p?.[0]?.payload?.date) ?? ""})`} />
               <Legend />
-              <Line yAxisId="cum" type="monotone" dataKey="cumRequired" name="Required Cumulative" stroke="#94a3b8" strokeDasharray="5 5" dot={false} strokeWidth={1.5} />
+              {hasWeeklyTargets ? (
+                <Line yAxisId="cum" type="stepAfter" dataKey="cumReleased" name="Released (Weekly Step)" stroke="#8b5cf6" strokeDasharray="6 3" dot={false} strokeWidth={2} connectNulls />
+              ) : (
+                <Line yAxisId="cum" type="monotone" dataKey="cumRequired" name="Required Cumulative" stroke="#94a3b8" strokeDasharray="5 5" dot={false} strokeWidth={1.5} />
+              )}
               <Line yAxisId="cum" type="monotone" dataKey="cumActual" name="Actual Cumulative" stroke="#3b82f6" dot={false} strokeWidth={2} connectNulls />
               <Bar yAxisId="daily" dataKey="actual" name="Daily Output (pcs)" fill="#3b82f6" fillOpacity={0.25} barSize={8} />
               <ReferenceLine yAxisId="daily" y={plant.requiredPerDay} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: "Req/Day", fontSize: 10, fill: "#94a3b8" }} />
@@ -167,19 +258,25 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
                 <tr className="border-b border-border/50 text-muted-foreground">
                   <th className="text-left py-2 pr-4 font-medium">Day</th>
                   <th className="text-left py-2 pr-4 font-medium">Date</th>
+                  <th className="text-right py-2 pr-4 font-medium">Week</th>
                   <th className="text-right py-2 pr-4 font-medium">Actual (pcs)</th>
                   <th className="text-right py-2 pr-4 font-medium">Required (pcs)</th>
                   <th className="text-right py-2 pr-4 font-medium">Cum Actual</th>
-                  <th className="text-right py-2 font-medium">Cum Required</th>
+                  <th className="text-right py-2 font-medium">Cum vs Released</th>
                 </tr>
               </thead>
               <tbody>
                 {dailySeries.filter((d) => d.workingDayNum <= context.elapsed).map((d) => {
-                  const gap = d.cumulativeActual - d.cumulativeRequired;
+                  const dayOfMonth = parseInt(d.date.slice(8), 10);
+                  const wkIdx = weekIndexForDay(dayOfMonth);
+                  const released = hasWeeklyTargets ? wkCum[wkIdx] : d.cumulativeRequired;
+                  const gap = d.cumulativeActual - released;
+                  const wkLabel = `W${wkIdx + 1}`;
                   return (
                     <tr key={d.date} className="border-b border-border/20 hover:bg-muted/20">
                       <td className="py-1.5 pr-4 font-mono">D{d.workingDayNum}</td>
                       <td className="py-1.5 pr-4 text-muted-foreground">{fmtDate(d.date)}</td>
+                      <td className="py-1.5 pr-4 text-right font-mono text-muted-foreground">{wkLabel}</td>
                       <td className="py-1.5 pr-4 text-right font-mono">{d.actualPcs.toLocaleString()}</td>
                       <td className="py-1.5 pr-4 text-right text-muted-foreground font-mono">{d.requiredPerDay.toLocaleString()}</td>
                       <td className="py-1.5 pr-4 text-right font-mono">{d.cumulativeActual.toLocaleString()}</td>
@@ -188,7 +285,7 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
                   );
                 })}
                 {context.elapsed === 0 && (
-                  <tr><td colSpan={6} className="py-4 text-center text-muted-foreground">No production days elapsed yet.</td></tr>
+                  <tr><td colSpan={7} className="py-4 text-center text-muted-foreground">No production days elapsed yet.</td></tr>
                 )}
               </tbody>
             </table>

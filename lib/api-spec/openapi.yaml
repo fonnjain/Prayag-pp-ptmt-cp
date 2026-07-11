@@ -946,6 +946,24 @@ paths:
                 type: string
                 format: binary
 
+  /plant/weekly-summary:
+    get:
+      operationId: getPlantWeeklySummary
+      tags: [plant]
+      summary: Weekly release plan vs actuals for a month
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Weekly release summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantWeeklySummary"
+
 components:
   schemas:
     HealthStatus:
@@ -1878,3 +1896,75 @@ components:
         w2Upper: { type: number }
         w3Upper: { type: number }
         w4Upper: { type: number }
+
+    PlantWeekWindow:
+      type: object
+      required: [week, startDay, endDay, startDate, endDate, label]
+      properties:
+        week: { type: integer }
+        startDay: { type: integer }
+        endDay: { type: integer }
+        startDate: { type: string }
+        endDate: { type: string }
+        label: { type: string }
+
+    PlantWeeklyStats:
+      type: object
+      required: [week, target, actual, carryover, effectiveTarget, gap]
+      properties:
+        week: { type: integer }
+        target: { type: number }
+        actual: { type: number }
+        carryover: { type: number }
+        effectiveTarget: { type: number }
+        gap: { type: number }
+        attainmentPct:
+          nullable: true
+          type: number
+        attainmentEffectivePct:
+          nullable: true
+          type: number
+        ragBand:
+          nullable: true
+          type: string
+          enum: [green, amber, red]
+
+    PlantWeeklyCategoryRow:
+      type: object
+      required: [category, weeks]
+      properties:
+        category: { type: string }
+        weeks:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantWeeklyStats"
+
+    PlantWeeklyPlantSummary:
+      type: object
+      required: [weeks]
+      properties:
+        weeks:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantWeeklyStats"
+
+    PlantWeeklySummary:
+      type: object
+      required: [month, snapshotDate, weekCalendar, currentWeek, elapsedDaysInWeek, plant, categories]
+      properties:
+        month: { type: string }
+        snapshotDate:
+          nullable: true
+          type: string
+        weekCalendar:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantWeekWindow"
+        currentWeek: { type: integer }
+        elapsedDaysInWeek: { type: integer }
+        plant:
+          $ref: "#/components/schemas/PlantWeeklyPlantSummary"
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantWeeklyCategoryRow"

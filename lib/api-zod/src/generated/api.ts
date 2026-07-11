@@ -923,3 +923,53 @@ export const exportPlantPdfQueryParams = zod.object({
   "month": zod.string(),
   "section": zod.enum(['control-board', 'velocity', 'warnings']).default(exportPlantPdfQuerySectionDefault)
 })
+
+
+/**
+ * @summary Weekly release plan vs actuals for a month
+ */
+export const getPlantWeeklySummaryQueryParams = zod.object({
+  "month": zod.string()
+})
+
+export const getPlantWeeklySummaryResponse = zod.object({
+  "month": zod.string(),
+  "snapshotDate": zod.string().nullable(),
+  "weekCalendar": zod.array(zod.object({
+  "week": zod.number(),
+  "startDay": zod.number(),
+  "endDay": zod.number(),
+  "startDate": zod.string(),
+  "endDate": zod.string(),
+  "label": zod.string()
+})),
+  "currentWeek": zod.number(),
+  "elapsedDaysInWeek": zod.number(),
+  "plant": zod.object({
+  "weeks": zod.array(zod.object({
+  "week": zod.number(),
+  "target": zod.number(),
+  "actual": zod.number(),
+  "carryover": zod.number(),
+  "effectiveTarget": zod.number(),
+  "gap": zod.number(),
+  "attainmentPct": zod.number().nullish(),
+  "attainmentEffectivePct": zod.number().nullish(),
+  "ragBand": zod.enum(['green', 'amber', 'red']).nullish()
+}))
+}),
+  "categories": zod.array(zod.object({
+  "category": zod.string(),
+  "weeks": zod.array(zod.object({
+  "week": zod.number(),
+  "target": zod.number(),
+  "actual": zod.number(),
+  "carryover": zod.number(),
+  "effectiveTarget": zod.number(),
+  "gap": zod.number(),
+  "attainmentPct": zod.number().nullish(),
+  "attainmentEffectivePct": zod.number().nullish(),
+  "ragBand": zod.enum(['green', 'amber', 'red']).nullish()
+}))
+}))
+})

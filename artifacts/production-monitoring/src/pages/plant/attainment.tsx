@@ -1,5 +1,5 @@
 import { useState, Fragment } from "react";
-import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "@workspace/api-client-react";
+import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle, useGetPlantWeeklySummary, getGetPlantWeeklySummaryQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,10 +20,15 @@ export default function PlantAttainment({ month, selectedCategory }: { month: st
     { month },
     { query: { queryKey: getGetPlantBundleQueryKey({ month }) } }
   );
+  const { data: weeklyRaw } = useGetPlantWeeklySummary(
+    { month },
+    { query: { queryKey: getGetPlantWeeklySummaryQueryKey({ month }) } as any }
+  );
 
   if (isLoading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
   if (!data) return <div className="text-red-500 p-4">Failed to load plant data.</div>;
   const bundle = data as unknown as PlantBundle;
+  const weekly = weeklyRaw as any;
 
   const { categories: allCategories, items, variancePareto, mixFlags, plant, context } = bundle;
 
@@ -74,6 +79,7 @@ export default function PlantAttainment({ month, selectedCategory }: { month: st
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="weekly">Weekly Release</TabsTrigger>
           <TabsTrigger value="pareto">Variance Pareto</TabsTrigger>
           <TabsTrigger value="mix">Mix Imbalance</TabsTrigger>
         </TabsList>
@@ -224,6 +230,124 @@ export default function PlantAttainment({ month, selectedCategory }: { month: st
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Weekly Release tab */}
+        <TabsContent value="weekly" className="space-y-4 mt-4">
+          {weekly?.categories?.length > 0 ? (() => {
+            const weekCalendar: any[] = weekly.weekCalendar ?? [];
+            const currentWeek: number = weekly.currentWeek ?? 0;
+            const catRows: any[] = selectedCategory
+              ? weekly.categories.filter((c: any) => c.category === selectedCategory)
+              : weekly.categories;
+            const plantWeeks: any[] = weekly.plant?.weeks ?? [];
+
+            return (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Weekly Release Plan vs Actual</CardTitle>
+                  <CardDescription>
+                    Category attainment per week (W1–W4) · current week: W{currentWeek}
+                    {selectedCategory ? ` · filtered: ${selectedCategory}` : ""}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border/50 text-right">
+                          <th className="text-left py-2 pr-4 font-medium text-muted-foreground w-44">Category</th>
+                          {weekCalendar.map((wk: any) => (
+                            <th key={wk.week} colSpan={3} className={`py-2 px-2 font-medium text-center text-muted-foreground border-l border-border/20 ${wk.week === currentWeek ? "bg-primary/5 text-primary" : ""}`}>
+                              {wk.label}
+                              {wk.week === currentWeek && <span className="ml-1 text-[10px] font-normal opacity-70">▶ now</span>}
+                            </th>
+                          ))}
+                        </tr>
+                        <tr className="border-b border-border/30 text-right text-xs text-muted-foreground">
+                          <th className="text-left py-1.5 pr-4" />
+                          {weekCalendar.map((wk: any) => (
+                            <Fragment key={wk.week}>
+                              <th className={`py-1.5 px-2 font-normal border-l border-border/20 ${wk.week === currentWeek ? "bg-primary/5" : ""}`}>Plan</th>
+                              <th className={`py-1.5 px-2 font-normal ${wk.week === currentWeek ? "bg-primary/5" : ""}`}>Actual</th>
+                              <th className={`py-1.5 px-2 font-normal ${wk.week === currentWeek ? "bg-primary/5" : ""}`}>Att%</th>
+                            </Fragment>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {catRows.map((catRow: any) => (
+                          <tr key={catRow.category} className="border-b border-border/20 hover:bg-muted/20 text-right">
+                            <td className="py-2 pr-4 text-left font-medium text-sm truncate max-w-[160px]">{catRow.category}</td>
+                            {(catRow.weeks as any[]).map((wk: any) => {
+                              const isCurrent = wk.week === currentWeek;
+                              const future = wk.attainmentPct === null && wk.target > 0;
+                              const rag = wk.ragBand;
+                              const attCls = rag === "green" ? "text-emerald-600 font-semibold"
+                                : rag === "amber" ? "text-amber-600 font-semibold"
+                                : rag === "red" ? "text-red-500 font-semibold"
+                                : "text-muted-foreground";
+                              return (
+                                <Fragment key={wk.week}>
+                                  <td className={`py-2 px-2 font-mono text-xs border-l border-border/10 ${isCurrent ? "bg-primary/5" : ""}`}>{fmt(wk.target)}</td>
+                                  <td className={`py-2 px-2 font-mono text-xs ${isCurrent ? "bg-primary/5" : ""}`}>{future ? <span className="text-muted-foreground/40">–</span> : fmt(wk.actual)}</td>
+                                  <td className={`py-2 px-2 font-mono text-xs ${isCurrent ? "bg-primary/5" : ""} ${attCls}`}>
+                                    {future ? <span className="text-muted-foreground/40">–</span> : pct(wk.attainmentPct)}
+                                  </td>
+                                </Fragment>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                        {/* Plant total footer */}
+                        {!selectedCategory && plantWeeks.length === 4 && (
+                          <tr className="border-t-2 border-border font-bold text-right bg-muted/10">
+                            <td className="py-2 pr-4 text-left">Plant Total</td>
+                            {plantWeeks.map((wk: any) => {
+                              const isCurrent = wk.week === currentWeek;
+                              const future = wk.attainmentPct === null && wk.target > 0;
+                              const rag = wk.ragBand;
+                              const attCls = rag === "green" ? "text-emerald-600"
+                                : rag === "amber" ? "text-amber-600"
+                                : rag === "red" ? "text-red-500"
+                                : "text-muted-foreground";
+                              return (
+                                <Fragment key={wk.week}>
+                                  <td className={`py-2 px-2 font-mono text-xs border-l border-border/10 ${isCurrent ? "bg-primary/10" : ""}`}>{fmt(wk.target)}</td>
+                                  <td className={`py-2 px-2 font-mono text-xs ${isCurrent ? "bg-primary/10" : ""}`}>{future ? "–" : fmt(wk.actual)}</td>
+                                  <td className={`py-2 px-2 font-mono text-xs ${isCurrent ? "bg-primary/10" : ""} ${attCls}`}>
+                                    {future ? "–" : pct(wk.attainmentPct)}
+                                  </td>
+                                </Fragment>
+                              );
+                            })}
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Carryover legend */}
+                  {plantWeeks.some((w: any) => w.carryover > 0) && (
+                    <div className="mt-3 text-xs text-muted-foreground border-t border-border/30 pt-2">
+                      <span className="font-medium">Carryover: </span>
+                      {plantWeeks.filter((w: any) => w.carryover > 0).map((w: any) => (
+                        <span key={w.week} className="mr-3 text-amber-600">
+                          W{w.week} effective target: {fmt(w.effectiveTarget)} (+{fmt(w.carryover)} carried in from W{w.week - 1})
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })() : (
+            <Card>
+              <CardContent className="pt-6 text-muted-foreground text-sm">
+                Weekly release plan targets not available for this month. Ensure plan items have W1–W4 band assignments.
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Pareto tab */}

@@ -1,8 +1,8 @@
-import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "@workspace/api-client-react";
+import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle, useGetPlantWeeklySummary, getGetPlantWeeklySummaryQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Activity, Download, FileSpreadsheet } from "lucide-react";
+import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Activity, Download, FileSpreadsheet, CalendarRange } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
 import { exportXlsx } from "@/lib/excel";
 
@@ -32,10 +32,15 @@ export default function PlantDashboard({ month, selectedCategory }: { month: str
     { month },
     { query: { queryKey: getGetPlantBundleQueryKey({ month }) } }
   );
+  const { data: weeklyRaw } = useGetPlantWeeklySummary(
+    { month },
+    { query: { queryKey: getGetPlantWeeklySummaryQueryKey({ month }) } as any }
+  );
 
   if (isLoading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading plant data...</div>;
   if (!data) return <div className="text-red-500 p-4">Failed to load plant data.</div>;
   const bundle = data as unknown as PlantBundle;
+  const weekly = weeklyRaw as any;
 
   const { plant, context, categories: allCategories, warnings } = bundle;
 
@@ -46,6 +51,19 @@ export default function PlantDashboard({ month, selectedCategory }: { month: str
   const colors = ragColors(plant.ragBand);
   const criticalWarnings = warnings.filter((w) => w.severity === "critical").length;
   const highWarnings = warnings.filter((w) => w.severity === "high").length;
+
+  const weeklyPlantWeeks: any[] = weekly?.plant?.weeks ?? [];
+  const weekCalendar: any[] = weekly?.weekCalendar ?? [];
+  const currentWeek: number = weekly?.currentWeek ?? 0;
+  const hasWeeklyData = weeklyPlantWeeks.length === 4 && weeklyPlantWeeks.some((w: any) => w.target > 0);
+
+  // Category filter for weekly data
+  const weeklyCatRow = selectedCategory && weekly?.categories
+    ? (weekly.categories as any[]).find((c: any) => c.category === selectedCategory)
+    : null;
+  const weeklyRows: any[] = weeklyCatRow
+    ? weeklyCatRow.weeks
+    : weeklyPlantWeeks;
 
   return (
     <div className="space-y-6 max-w-[1300px] mx-auto pb-10">
@@ -91,7 +109,7 @@ export default function PlantDashboard({ month, selectedCategory }: { month: str
         </div>
       )}
 
-      {/* Plant hero row — always plant-wide */}
+      {/* Monthly hero row */}
       <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-lg border ${colors.bg}`}>
         <div>
           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Produced to Date</div>
@@ -114,6 +132,105 @@ export default function PlantDashboard({ month, selectedCategory }: { month: str
           <div className="text-xs text-muted-foreground mt-1">at {fmt(plant.actualPerDay, 0)} pcs/day</div>
         </div>
       </div>
+
+      {/* === WEEKLY RELEASE PULSE === */}
+      {hasWeeklyData && (
+        <Card className="border-primary/20">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <CalendarRange className="h-4 w-4 text-primary" />
+              Weekly Release Pulse
+              {selectedCategory && <span className="text-sm font-normal text-muted-foreground">— {selectedCategory}</span>}
+              {currentWeek > 0 && (
+                <Badge variant="outline" className="text-xs border-primary/40 text-primary ml-1">
+                  W{currentWeek} in progress
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="grid grid-cols-4 gap-3">
+              {weeklyRows.map((wk: any, i: number) => {
+                const isCurrent = currentWeek === wk.week;
+                const rag = wk.ragBand;
+                const wkLabel = weekCalendar[i]?.label ?? `W${wk.week}`;
+                const borderCls = isCurrent
+                  ? "border-primary/60 bg-primary/5 ring-1 ring-primary/20"
+                  : rag === "green" ? "border-emerald-500/30 bg-emerald-500/5"
+                  : rag === "amber" ? "border-amber-500/30 bg-amber-500/5"
+                  : rag === "red" ? "border-red-500/30 bg-red-500/5"
+                  : "border-border bg-muted/20";
+                const textCls = rag === "green" ? "text-emerald-600" : rag === "amber" ? "text-amber-600" : rag === "red" ? "text-red-500" : "text-muted-foreground";
+                const futureWeek = wk.attainmentPct === null && wk.target > 0;
+                return (
+                  <div key={wk.week} className={`rounded-lg border p-3 ${borderCls}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider">{wkLabel}</span>
+                      {isCurrent && <Badge variant="outline" className="text-[10px] border-primary/40 text-primary py-0">now</Badge>}
+                      {!isCurrent && !futureWeek && rag && (
+                        <span className={`text-[10px] font-semibold uppercase ${textCls}`}>{rag}</span>
+                      )}
+                      {futureWeek && <span className="text-[10px] text-muted-foreground">upcoming</span>}
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Released</span>
+                        <span className="font-mono font-medium">{fmt(wk.target)}</span>
+                      </div>
+                      {wk.carryover > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">Carry-in</span>
+                          <span className="font-mono text-amber-600 font-medium">+{fmt(wk.carryover)}</span>
+                        </div>
+                      )}
+                      {wk.carryover > 0 && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-muted-foreground">Effective</span>
+                          <span className="font-mono font-medium">{fmt(wk.effectiveTarget)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Actual</span>
+                        <span className="font-mono font-medium">{fmt(wk.actual)}</span>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 pt-2 border-t border-border/30">
+                      {futureWeek ? (
+                        <div className="text-center text-xs text-muted-foreground">—</div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">Attainment</span>
+                          <span className={`text-sm font-bold font-mono ${textCls}`}>{pct(wk.attainmentPct)}</span>
+                        </div>
+                      )}
+                      {wk.gap > 0 && !futureWeek && (
+                        <div className="flex items-center justify-between mt-0.5">
+                          <span className="text-xs text-muted-foreground">Gap</span>
+                          <span className="text-xs font-mono text-red-500">{fmt(wk.gap)}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Attainment progress bar */}
+                    {!futureWeek && wk.target > 0 && (
+                      <div className="mt-2 bg-muted/40 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            rag === "green" ? "bg-emerald-500" : rag === "amber" ? "bg-amber-500" : rag === "red" ? "bg-red-500" : "bg-muted-foreground"
+                          }`}
+                          style={{ width: `${Math.min(wk.attainmentPct ?? 0, 100)}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* KPI cards row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -168,7 +285,7 @@ export default function PlantDashboard({ month, selectedCategory }: { month: str
         </Card>
       </div>
 
-      {/* Category summary — filtered by selectedCategory */}
+      {/* Category summary */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
@@ -177,7 +294,6 @@ export default function PlantDashboard({ month, selectedCategory }: { month: str
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {/* column headers */}
           <div className="flex items-center gap-3 mb-2 pb-1 border-b border-border/30">
             <div className="w-44" />
             <div className="flex-1" />
@@ -208,7 +324,6 @@ export default function PlantDashboard({ month, selectedCategory }: { month: str
                   </div>
                   <div className="w-14 text-right text-sm font-mono text-muted-foreground">{pct(cat.attainmentCumPct)}</div>
                   <Badge variant="outline" className={`text-xs w-24 justify-end font-mono ${cc.badge}`}>{fmt(cat.producedToDate)} pcs</Badge>
-                  {/* Projected EOM */}
                   <div className={`w-28 text-right text-sm font-mono font-semibold ${projectedPcs === null ? "text-muted-foreground" : projOk ? "text-emerald-600" : "text-red-500"}`}>
                     {projectedPcs !== null ? (
                       <span title={`${projPct?.toFixed(1)}% of target at current pace`}>

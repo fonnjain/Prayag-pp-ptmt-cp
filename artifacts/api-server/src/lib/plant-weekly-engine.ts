@@ -1,0 +1,223 @@
+import { normalizeCode } from "./sheets";
+
+export interface WeekWindow {
+  week: 1 | 2 | 3 | 4;
+  startDay: number;
+  endDay: number;
+  startDate: string;
+  endDate: string;
+  label: string;
+}
+
+export interface WeeklyStats {
+  week: number;
+  target: number;
+  actual: number;
+  carryover: number;
+  effectiveTarget: number;
+  gap: number;
+  attainmentPct: number | null;
+  attainmentEffectivePct: number | null;
+  ragBand: "green" | "amber" | "red" | null;
+}
+
+export interface WeeklyReleaseCategoryRow {
+  category: string;
+  weeks: WeeklyStats[];
+}
+
+export interface PlantWeeklySummary {
+  month: string;
+  snapshotDate: string | null;
+  weekCalendar: WeekWindow[];
+  currentWeek: number;
+  elapsedDaysInWeek: number;
+  plant: { weeks: WeeklyStats[] };
+  categories: WeeklyReleaseCategoryRow[];
+}
+
+function daysInMonth(month: string): number {
+  const [y, m] = month.split("-").map(Number);
+  return new Date(y, m, 0).getDate();
+}
+
+function pad2(n: number): string { return String(n).padStart(2, "0"); }
+
+export function buildWeekCalendar(month: string): WeekWindow[] {
+  const lastDay = daysInMonth(month);
+  const [y, m] = month.split("-").map(Number);
+  return [
+    { week: 1, startDay: 1, endDay: 7, startDate: `${y}-${pad2(m)}-01`, endDate: `${y}-${pad2(m)}-07`, label: `W1 (${m}/1–7)` },
+    { week: 2, startDay: 8, endDay: 14, startDate: `${y}-${pad2(m)}-08`, endDate: `${y}-${pad2(m)}-14`, label: `W2 (${m}/8–14)` },
+    { week: 3, startDay: 15, endDay: 21, startDate: `${y}-${pad2(m)}-15`, endDate: `${y}-${pad2(m)}-21`, label: `W3 (${m}/15–21)` },
+    { week: 4, startDay: 22, endDay: lastDay, startDate: `${y}-${pad2(m)}-22`, endDate: `${y}-${pad2(m)}-${pad2(lastDay)}`, label: `W4 (${m}/22–${lastDay})` },
+  ] as WeekWindow[];
+}
+
+function dateToWeekIndex(dateIso: string, calendar: WeekWindow[]): number | null {
+  const day = parseInt(dateIso.slice(8), 10);
+  for (let i = 0; i < calendar.length; i++) {
+    if (day >= calendar[i].startDay && day <= calendar[i].endDay) return i;
+  }
+  return null;
+}
+
+function weekRagBand(pct: number | null): "green" | "amber" | "red" | null {
+  if (pct === null) return null;
+  if (pct >= 95) return "green";
+  if (pct >= 85) return "amber";
+  return "red";
+}
+
+function r1(n: number): number { return Math.round(n * 10) / 10; }
+
+export interface WeeklyInputPlanItem {
+  itemCode: string;
+  colour: string;
+  category: string;
+  w1: number;
+  w2: number;
+  w3: number;
+  w4: number;
+  maxProduction: number;
+}
+
+export interface WeeklyInputTarget {
+  itemCode: string;
+  colour: string;
+  category: string;
+}
+
+export interface WeeklyInputActual {
+  date: string;
+  itemCode: string;
+  colour: string;
+  qty: number;
+}
+
+function buildWeeklyStats(
+  targets: [number, number, number, number],
+  actuals: [number, number, number, number],
+  calendar: WeekWindow[],
+  today: string,
+  month: string,
+): WeeklyStats[] {
+  let carry = 0;
+  return calendar.map((wk, i) => {
+    const target = targets[i];
+    const actual = actuals[i];
+    const carryover = carry;
+    const effectiveTarget = target + carryover;
+    const gap = Math.max(0, effectiveTarget - actual);
+
+    const wkStarted = today.slice(0, 7) === month && today >= wk.startDate;
+    const wkElapsed = today > wk.endDate;
+
+    const attainmentPct = target > 0 && wkStarted ? r1((actual / target) * 100) : null;
+    const attainmentEffectivePct = effectiveTarget > 0 && wkStarted ? r1((actual / effectiveTarget) * 100) : null;
+
+    carry = wkElapsed ? gap : 0;
+
+    return {
+      week: wk.week,
+      target,
+      actual,
+      carryover,
+      effectiveTarget,
+      gap,
+      attainmentPct,
+      attainmentEffectivePct,
+      ragBand: weekRagBand(attainmentPct),
+    };
+  });
+}
+
+export function buildPlantWeeklySummary(
+  month: string,
+  actuals: WeeklyInputActual[],
+  planItems: WeeklyInputPlanItem[],
+  targets: WeeklyInputTarget[],
+  snapshotDate: string | null,
+): PlantWeeklySummary {
+  const calendar = buildWeekCalendar(month);
+
+  const today = snapshotDate ?? new Date().toISOString().slice(0, 10);
+  const todayInMonth = today.slice(0, 7) === month ? parseInt(today.slice(8), 10) : 0;
+
+  const currentWeek: number =
+    todayInMonth === 0 ? 0
+    : todayInMonth <= 7 ? 1
+    : todayInMonth <= 14 ? 2
+    : todayInMonth <= 21 ? 3 : 4;
+
+  let elapsedDaysInWeek = 0;
+  if (currentWeek >= 1) {
+    const wk = calendar[currentWeek - 1];
+    elapsedDaysInWeek = Math.max(0, Math.min(todayInMonth - wk.startDay + 1, wk.endDay - wk.startDay + 1));
+  }
+
+  const catByKey = new Map<string, string>();
+  const catByCode = new Map<string, string>();
+  for (const t of targets) {
+    catByKey.set(`${t.itemCode}|${t.colour}`, t.category);
+    const nc = normalizeCode(t.itemCode);
+    if (!catByCode.has(nc)) catByCode.set(nc, t.category);
+  }
+
+  const catW = new Map<string, [number, number, number, number]>();
+  for (const item of planItems) {
+    if (item.maxProduction <= 0) continue;
+    const arr = catW.get(item.category) ?? [0, 0, 0, 0];
+    arr[0] += item.w1;
+    arr[1] += item.w2;
+    arr[2] += item.w3;
+    arr[3] += item.w4;
+    catW.set(item.category, arr);
+  }
+
+  const catA = new Map<string, [number, number, number, number]>();
+  for (const row of actuals) {
+    if (row.date.slice(0, 7) !== month) continue;
+    const wkIdx = dateToWeekIndex(row.date, calendar);
+    if (wkIdx === null) continue;
+    const cat =
+      catByKey.get(`${row.itemCode}|${row.colour}`) ??
+      catByCode.get(normalizeCode(row.itemCode)) ??
+      null;
+    if (!cat) continue;
+    const arr = catA.get(cat) ?? [0, 0, 0, 0];
+    arr[wkIdx] += row.qty;
+    catA.set(cat, arr);
+  }
+
+  const allCats = new Set([...catW.keys(), ...catA.keys()]);
+  const plantTargets: [number, number, number, number] = [0, 0, 0, 0];
+  const plantActuals: [number, number, number, number] = [0, 0, 0, 0];
+  const categoryRows: WeeklyReleaseCategoryRow[] = [];
+
+  for (const cat of allCats) {
+    const tgts = catW.get(cat) ?? [0, 0, 0, 0];
+    const acts = catA.get(cat) ?? [0, 0, 0, 0];
+    for (let i = 0; i < 4; i++) {
+      plantTargets[i] += tgts[i];
+      plantActuals[i] += acts[i];
+    }
+    categoryRows.push({ category: cat, weeks: buildWeeklyStats(tgts, acts, calendar, today, month) });
+  }
+
+  categoryRows.sort((a, b) => {
+    const aTotal = (catW.get(a.category) ?? [0, 0, 0, 0]).reduce((s, v) => s + v, 0);
+    const bTotal = (catW.get(b.category) ?? [0, 0, 0, 0]).reduce((s, v) => s + v, 0);
+    return bTotal - aTotal;
+  });
+
+  return {
+    month,
+    snapshotDate,
+    weekCalendar: calendar,
+    currentWeek,
+    elapsedDaysInWeek,
+    plant: { weeks: buildWeeklyStats(plantTargets, plantActuals, calendar, today, month) },
+    categories: categoryRows,
+  };
+}

@@ -1,4 +1,5 @@
 import type { PlantBundle, PlantKPIs, CategoryKPIs } from "./plant-engine";
+import type { PlantWeeklySummary } from "./plant-weekly-engine";
 
 export type PlantWarningSeverity = "info" | "medium" | "high" | "critical";
 
@@ -118,6 +119,87 @@ export function buildPlantWarnings(bundle: PlantBundle, thresholds: PlantWarning
     const bundleMonthYear = sy * 100 + sm;
     if (monthYear === bundleMonthYear && context.snapshotDate < today && todayDate.getDay() !== 0 && todayDate.getDay() !== 6) {
       warnings.push({ code: "TODAY_MISSED", severity: "medium", scope: "Plant", message: `No production data for today (${today}) — last snapshot is ${context.snapshotDate}. Today's output may not be captured yet.`, value: null, threshold: null, source: "data" });
+    }
+  }
+
+  warnings.sort((a, b) => severityOrder(a.severity) - severityOrder(b.severity));
+  return warnings;
+}
+
+export function buildPlantWeeklyWarnings(weekly: PlantWeeklySummary): PlantWarning[] {
+  const warnings: PlantWarning[] = [];
+  const { currentWeek, elapsedDaysInWeek } = weekly;
+
+  if (currentWeek < 1 || currentWeek > 4) return warnings;
+
+  const plantWk = weekly.plant.weeks.find((w) => w.week === currentWeek);
+  if (!plantWk) return warnings;
+
+  // Current week attainment behind plan
+  if (plantWk.attainmentPct !== null && plantWk.target > 0 && elapsedDaysInWeek >= 3) {
+    if (plantWk.attainmentPct < 80) {
+      warnings.push({
+        code: "WEEK_BEHIND",
+        severity: "critical",
+        scope: `W${currentWeek}`,
+        message: `Week ${currentWeek}: at ${plantWk.attainmentPct.toFixed(1)}% of its released target after ${elapsedDaysInWeek} days (${plantWk.actual.toLocaleString()} of ${plantWk.target.toLocaleString()} pcs)`,
+        value: plantWk.attainmentPct,
+        threshold: 80,
+        source: "weekly",
+      });
+    } else if (plantWk.attainmentPct < 90) {
+      warnings.push({
+        code: "WEEK_BEHIND",
+        severity: "high",
+        scope: `W${currentWeek}`,
+        message: `Week ${currentWeek}: at ${plantWk.attainmentPct.toFixed(1)}% of its released target — pacing behind weekly plan`,
+        value: plantWk.attainmentPct,
+        threshold: 90,
+        source: "weekly",
+      });
+    }
+  }
+
+  // Large carryover from prior week
+  if (plantWk.carryover > 0 && plantWk.target > 0) {
+    const carryPct = (plantWk.carryover / plantWk.target) * 100;
+    if (carryPct >= 20) {
+      warnings.push({
+        code: "CARRYOVER_HIGH",
+        severity: "high",
+        scope: `W${currentWeek}`,
+        message: `W${currentWeek - 1} carryover of ${plantWk.carryover.toLocaleString()} pcs (${carryPct.toFixed(0)}% of W${currentWeek} plan) — effective target elevated to ${plantWk.effectiveTarget.toLocaleString()}`,
+        value: plantWk.carryover,
+        threshold: plantWk.target * 0.2,
+        source: "weekly",
+      });
+    } else if (carryPct >= 10) {
+      warnings.push({
+        code: "CARRYOVER_HIGH",
+        severity: "medium",
+        scope: `W${currentWeek}`,
+        message: `W${currentWeek - 1} carryover of ${plantWk.carryover.toLocaleString()} pcs (${carryPct.toFixed(0)}% of W${currentWeek} plan) carried into this week`,
+        value: plantWk.carryover,
+        threshold: plantWk.target * 0.1,
+        source: "weekly",
+      });
+    }
+  }
+
+  // Category: release not started in current week
+  for (const cat of weekly.categories) {
+    const catWk = cat.weeks.find((w) => w.week === currentWeek);
+    if (!catWk || catWk.target === 0) continue;
+    if (catWk.actual === 0 && catWk.attainmentPct !== null && elapsedDaysInWeek >= 2) {
+      warnings.push({
+        code: "WEEK_RELEASE_NOT_STARTED",
+        severity: "high",
+        scope: cat.category,
+        message: `${cat.category}: W${currentWeek} target ${catWk.target.toLocaleString()} pcs — zero production after ${elapsedDaysInWeek} days elapsed in the week`,
+        value: 0,
+        threshold: catWk.target,
+        source: "weekly",
+      });
     }
   }
 
