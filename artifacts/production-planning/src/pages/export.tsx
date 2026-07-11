@@ -21,19 +21,31 @@ async function downloadFile(url: string, filename: string) {
   URL.revokeObjectURL(objectUrl);
 }
 
+type ExportKind = "excel" | "pdf" | "weekly-excel";
+
 export default function ExportPage() {
   const month = currentMonth();
   const { toast } = useToast();
-  const [downloading, setDownloading] = useState<"excel" | "pdf" | null>(null);
+  const [downloading, setDownloading] = useState<ExportKind | null>(null);
 
   const base = import.meta.env.BASE_URL;
 
-  const handleExport = async (kind: "excel" | "pdf") => {
+  const handleExport = async (kind: ExportKind) => {
     setDownloading(kind);
     try {
-      const path = kind === "excel" ? "plan/export/excel" : "plan/export/pdf";
-      const ext = kind === "excel" ? "xlsx" : "pdf";
-      await downloadFile(`${base}api/${path}?month=${month}`, `PTMT_Production_Plan_${month}.${ext}`);
+      let path: string;
+      let filename: string;
+      if (kind === "excel") {
+        path = "plan/export/excel";
+        filename = `PTMT_Production_Plan_${month}.xlsx`;
+      } else if (kind === "pdf") {
+        path = "plan/export/pdf";
+        filename = `PTMT_Production_Plan_${month}.pdf`;
+      } else {
+        path = "plan/export/weekly-excel";
+        filename = `PTMT_Weekly_Release_Plan_${month}.xlsx`;
+      }
+      await downloadFile(`${base}api/${path}?month=${month}`, filename);
     } catch {
       toast({
         title: "Export failed",
@@ -55,7 +67,7 @@ export default function ExportPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Excel workbook</CardTitle>
+            <CardTitle className="text-base">Production Plan — Excel workbook</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <p className="text-sm text-gray-600">
@@ -69,7 +81,7 @@ export default function ExportPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">PDF report</CardTitle>
+            <CardTitle className="text-base">Production Plan — PDF report</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             <p className="text-sm text-gray-600">
@@ -77,6 +89,29 @@ export default function ExportPage() {
             </p>
             <Button onClick={() => handleExport("pdf")} disabled={downloading === "pdf"}>
               {downloading === "pdf" ? "Generating..." : "Download PDF"}
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border-blue-200">
+          <CardHeader>
+            <CardTitle className="text-base">Weekly Release Plan — Excel workbook</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <p className="text-sm text-gray-600">
+              One sheet per category: items colour-coded by release week (W1–W4) based on cover ratio.
+              Includes a Summary sheet with weekly totals and legend.
+            </p>
+            <p className="text-xs text-gray-400">
+              Cover = Stock ÷ Avg 3-Mo Sale. Band thresholds are editable per category on each category page.
+            </p>
+            <Button
+              variant="outline"
+              className="border-blue-300 text-blue-700 hover:bg-blue-50"
+              onClick={() => handleExport("weekly-excel")}
+              disabled={downloading === "weekly-excel"}
+            >
+              {downloading === "weekly-excel" ? "Generating..." : "Download Weekly Release Excel"}
             </Button>
           </CardContent>
         </Card>

@@ -34,6 +34,7 @@ import type {
   ExportPlanExcelParams,
   ExportPlanPdfParams,
   ExportPlantPdfParams,
+  ExportWeeklyReleaseExcelParams,
   FollowupAiPlantAnalysisBody,
   GetMonitoringActionsParams,
   GetMonitoringBacklogParams,
@@ -79,7 +80,9 @@ import type {
   SyncSource,
   UploadKind,
   UploadedFile,
-  WarningThresholds
+  WarningThresholds,
+  WeeklyReleaseBand,
+  WeeklyReleaseBandUpdate
 } from './types';
 
 import { customFetch } from '../custom-fetch';
@@ -1113,6 +1116,270 @@ export function useExportPlanPdf<TData = Awaited<ReturnType<typeof exportPlanPdf
 
 
 
+export type exportWeeklyReleaseExcelResponse200 = {
+  data: Blob
+  status: 200
+}
+    
+export type exportWeeklyReleaseExcelResponseSuccess = (exportWeeklyReleaseExcelResponse200) & {
+  headers: Headers;
+};
+;
+
+export type exportWeeklyReleaseExcelResponse = (exportWeeklyReleaseExcelResponseSuccess)
+
+export const getExportWeeklyReleaseExcelUrl = (params: ExportWeeklyReleaseExcelParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/plan/export/weekly-excel?${stringifiedParams}` : `/api/plan/export/weekly-excel`
+}
+
+export const exportWeeklyReleaseExcel = async (params: ExportWeeklyReleaseExcelParams, options?: RequestInit): Promise<exportWeeklyReleaseExcelResponse> => {
+  
+  return customFetch<exportWeeklyReleaseExcelResponse>(getExportWeeklyReleaseExcelUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getExportWeeklyReleaseExcelQueryKey = (params?: ExportWeeklyReleaseExcelParams,) => {
+    return [
+    `/api/plan/export/weekly-excel`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getExportWeeklyReleaseExcelQueryOptions = <TData = Awaited<ReturnType<typeof exportWeeklyReleaseExcel>>, TError = unknown>(params: ExportWeeklyReleaseExcelParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportWeeklyReleaseExcel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportWeeklyReleaseExcelQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportWeeklyReleaseExcel>>> = ({ signal }) => exportWeeklyReleaseExcel(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportWeeklyReleaseExcel>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportWeeklyReleaseExcelQueryResult = NonNullable<Awaited<ReturnType<typeof exportWeeklyReleaseExcel>>>
+export type ExportWeeklyReleaseExcelQueryError = unknown
+
+
+
+export function useExportWeeklyReleaseExcel<TData = Awaited<ReturnType<typeof exportWeeklyReleaseExcel>>, TError = unknown>(
+ params: ExportWeeklyReleaseExcelParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportWeeklyReleaseExcel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportWeeklyReleaseExcelQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type listWeeklyReleaseBandsResponse200 = {
+  data: WeeklyReleaseBand[]
+  status: 200
+}
+    
+export type listWeeklyReleaseBandsResponseSuccess = (listWeeklyReleaseBandsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listWeeklyReleaseBandsResponse = (listWeeklyReleaseBandsResponseSuccess)
+
+export const getListWeeklyReleaseBandsUrl = () => {
+
+
+  
+
+  return `/api/plan/weekly-bands`
+}
+
+export const listWeeklyReleaseBands = async ( options?: RequestInit): Promise<listWeeklyReleaseBandsResponse> => {
+  
+  return customFetch<listWeeklyReleaseBandsResponse>(getListWeeklyReleaseBandsUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getListWeeklyReleaseBandsQueryKey = () => {
+    return [
+    `/api/plan/weekly-bands`
+    ] as const;
+    }
+
+    
+export const getListWeeklyReleaseBandsQueryOptions = <TData = Awaited<ReturnType<typeof listWeeklyReleaseBands>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWeeklyReleaseBands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListWeeklyReleaseBandsQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWeeklyReleaseBands>>> = ({ signal }) => listWeeklyReleaseBands({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listWeeklyReleaseBands>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListWeeklyReleaseBandsQueryResult = NonNullable<Awaited<ReturnType<typeof listWeeklyReleaseBands>>>
+export type ListWeeklyReleaseBandsQueryError = unknown
+
+
+
+export function useListWeeklyReleaseBands<TData = Awaited<ReturnType<typeof listWeeklyReleaseBands>>, TError = unknown>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWeeklyReleaseBands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListWeeklyReleaseBandsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type updateWeeklyReleaseBandResponse200 = {
+  data: WeeklyReleaseBand
+  status: 200
+}
+
+export type updateWeeklyReleaseBandResponse400 = {
+  data: void
+  status: 400
+}
+
+export type updateWeeklyReleaseBandResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type updateWeeklyReleaseBandResponseSuccess = (updateWeeklyReleaseBandResponse200) & {
+  headers: Headers;
+};
+export type updateWeeklyReleaseBandResponseError = (updateWeeklyReleaseBandResponse400 | updateWeeklyReleaseBandResponse404) & {
+  headers: Headers;
+};
+
+export type updateWeeklyReleaseBandResponse = (updateWeeklyReleaseBandResponseSuccess | updateWeeklyReleaseBandResponseError)
+
+export const getUpdateWeeklyReleaseBandUrl = (category: string,) => {
+
+
+  
+
+  return `/api/plan/weekly-bands/${category}`
+}
+
+export const updateWeeklyReleaseBand = async (category: string,
+    weeklyReleaseBandUpdate: WeeklyReleaseBandUpdate, options?: RequestInit): Promise<updateWeeklyReleaseBandResponse> => {
+  
+  return customFetch<updateWeeklyReleaseBandResponse>(getUpdateWeeklyReleaseBandUrl(category),
+  {      
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      weeklyReleaseBandUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateWeeklyReleaseBandMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWeeklyReleaseBand>>, TError,{category: string;data: WeeklyReleaseBandUpdate}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateWeeklyReleaseBand>>, TError,{category: string;data: WeeklyReleaseBandUpdate}, TContext> => {
+
+const mutationKey = ['updateWeeklyReleaseBand'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateWeeklyReleaseBand>>, {category: string;data: WeeklyReleaseBandUpdate}> = (props) => {
+          const {category,data} = props ?? {};
+
+          return  updateWeeklyReleaseBand(category,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateWeeklyReleaseBandMutationResult = NonNullable<Awaited<ReturnType<typeof updateWeeklyReleaseBand>>>
+    export type UpdateWeeklyReleaseBandMutationBody = WeeklyReleaseBandUpdate
+    export type UpdateWeeklyReleaseBandMutationError = void
+
+    export const useUpdateWeeklyReleaseBand = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateWeeklyReleaseBand>>, TError,{category: string;data: WeeklyReleaseBandUpdate}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateWeeklyReleaseBand>>,
+        TError,
+        {category: string;data: WeeklyReleaseBandUpdate},
+        TContext
+      > => {
+
+      const mutationOptions = getUpdateWeeklyReleaseBandMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
 export type createPlanRunResponse201 = {
   data: PlanRunSummary
   status: 201

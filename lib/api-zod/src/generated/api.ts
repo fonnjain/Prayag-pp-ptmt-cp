@@ -96,7 +96,13 @@ export const listPlanItemsResponseItem = zod.object({
   "pendingOrderLastMonth": zod.number(),
   "pendingOrder": zod.number(),
   "order": zod.number(),
-  "achievementPct": zod.number().nullable()
+  "achievementPct": zod.number().nullable(),
+  "cover": zod.union([zod.number(),zod.enum(['OS'])]),
+  "week": zod.number().nullable(),
+  "w1": zod.number(),
+  "w2": zod.number(),
+  "w3": zod.number(),
+  "w4": zod.number()
 })
 export const listPlanItemsResponse = zod.array(listPlanItemsResponseItem)
 
@@ -134,6 +140,45 @@ export const exportPlanExcelQueryParams = zod.object({
 
 export const exportPlanPdfQueryParams = zod.object({
   "month": zod.string()
+})
+
+
+export const exportWeeklyReleaseExcelQueryParams = zod.object({
+  "month": zod.string()
+})
+
+
+export const listWeeklyReleaseBandsResponseItem = zod.object({
+  "id": zod.number(),
+  "categoryName": zod.string(),
+  "w1Upper": zod.number(),
+  "w2Upper": zod.number(),
+  "w3Upper": zod.number(),
+  "w4Upper": zod.number(),
+  "updatedAt": zod.string().datetime({})
+})
+export const listWeeklyReleaseBandsResponse = zod.array(listWeeklyReleaseBandsResponseItem)
+
+
+export const updateWeeklyReleaseBandParams = zod.object({
+  "category": zod.string()
+})
+
+export const updateWeeklyReleaseBandBody = zod.object({
+  "w1Upper": zod.number(),
+  "w2Upper": zod.number(),
+  "w3Upper": zod.number(),
+  "w4Upper": zod.number()
+})
+
+export const updateWeeklyReleaseBandResponse = zod.object({
+  "id": zod.number(),
+  "categoryName": zod.string(),
+  "w1Upper": zod.number(),
+  "w2Upper": zod.number(),
+  "w3Upper": zod.number(),
+  "w4Upper": zod.number(),
+  "updatedAt": zod.string().datetime({})
 })
 
 

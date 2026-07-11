@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { db, itemMasterTable, bufferCategoriesTable, uploadedFilesTable } from "@workspace/db";
+import { db, itemMasterTable, bufferCategoriesTable, uploadedFilesTable, weeklyReleaseBandsTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
-import { computeItemPlan, summarizePlan, type ItemSourceRow } from "../lib/calc";
+import { computeItemPlan, annotateWeeklyRelease, summarizePlan, type ItemSourceRow, type WeeklyBandConfig } from "../lib/calc";
 import {
   fetchAvg3MoSaleTotals,
   fetchLiveOrderTotals,
@@ -11,6 +11,7 @@ import {
 } from "../lib/sheets";
 import { exportPlanExcel } from "../lib/excel-export";
 import { exportPlanPdf } from "../lib/pdf-export";
+import { exportWeeklyReleaseExcel } from "../lib/weekly-excel-export";
 
 const router: IRouter = Router();
 
@@ -59,10 +60,11 @@ function hasEntry(totals: DualTotals, itemCode: string, colour: string, isSingle
 }
 
 export async function buildPlanItems(month: string) {
-  const [itemRows, bufferRows, pendingOrderRows, pendingLastMoRows, currentStockRows, avg3MoTotals, liveOrderTotals] =
+  const [itemRows, bufferRows, bandRows, pendingOrderRows, pendingLastMoRows, currentStockRows, avg3MoTotals, liveOrderTotals] =
     await Promise.all([
       db.select().from(itemMasterTable),
       db.select().from(bufferCategoriesTable),
+      db.select().from(weeklyReleaseBandsTable),
       // Current pending: uploaded DATA.xlsx → PendingOrder sheet (Segment ∈ {PTMT, PT},
       // Old Item Code + Color, Balance_Qty). Per spec §4: do NOT use the live
       // "Pending order" Google Sheet — it drifts daily and breaks reproducibility.
@@ -76,6 +78,9 @@ export async function buildPlanItems(month: string) {
     ]);
 
   const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
+  const bandsByCategory = new Map<string, WeeklyBandConfig>(
+    bandRows.map((b) => [b.categoryName, { w1Upper: b.w1Upper, w2Upper: b.w2Upper, w3Upper: b.w3Upper, w4Upper: b.w4Upper }]),
+  );
 
   // Pending current: DATA.xlsx PendingOrder tab columns after alias transform:
   //   "Old Item Code" / "Item No." → code; "Colour" / "Color" → colour;
@@ -126,6 +131,7 @@ export async function buildPlanItems(month: string) {
     return computeItemPlan(source, item.category, multiplier);
   });
 
+  annotateWeeklyRelease(items, bandsByCategory);
   return items;
 }
 
@@ -188,6 +194,57 @@ router.get("/plan/export/pdf", async (req, res): Promise<void> => {
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="PTMT_Production_Plan_${month}.pdf"`);
   res.send(buffer);
+});
+
+router.get("/plan/export/weekly-excel", async (req, res): Promise<void> => {
+  const month = String(req.query.month ?? "");
+  if (!month) {
+    res.status(400).json({ error: "month is required" });
+    return;
+  }
+  const items = await buildPlanItems(month);
+  const buffer = await exportWeeklyReleaseExcel(month, items);
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="PTMT_Weekly_Release_Plan_${month}.xlsx"`);
+  res.send(buffer);
+});
+
+router.get("/plan/weekly-bands", async (_req, res): Promise<void> => {
+  const bands = await db.select().from(weeklyReleaseBandsTable);
+  res.json(bands);
+});
+
+router.put("/plan/weekly-bands/:category", async (req, res): Promise<void> => {
+  const category = decodeURIComponent(req.params.category);
+  const { w1Upper, w2Upper, w3Upper, w4Upper } = req.body as {
+    w1Upper: number;
+    w2Upper: number;
+    w3Upper: number;
+    w4Upper: number;
+  };
+  if (
+    typeof w1Upper !== "number" ||
+    typeof w2Upper !== "number" ||
+    typeof w3Upper !== "number" ||
+    typeof w4Upper !== "number"
+  ) {
+    res.status(400).json({ error: "w1Upper, w2Upper, w3Upper, w4Upper are required numbers" });
+    return;
+  }
+  if (!(w1Upper < w2Upper && w2Upper < w3Upper && w3Upper < w4Upper)) {
+    res.status(400).json({ error: "Band thresholds must be strictly increasing: w1Upper < w2Upper < w3Upper < w4Upper" });
+    return;
+  }
+  const [updated] = await db
+    .update(weeklyReleaseBandsTable)
+    .set({ w1Upper, w2Upper, w3Upper, w4Upper, updatedAt: new Date() })
+    .where(eq(weeklyReleaseBandsTable.categoryName, category))
+    .returning();
+  if (!updated) {
+    res.status(404).json({ error: `No band config found for category: ${category}` });
+    return;
+  }
+  res.json(updated);
 });
 
 /**

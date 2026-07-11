@@ -1,7 +1,7 @@
-import { useGetPlanSummary, type PlanSummary } from "@workspace/api-client-react";
+import { useGetPlanSummary, useListPlanItems, type PlanSummary, type PlanItem } from "@workspace/api-client-react";
 import { AppLayout, categorySlug } from "@/components/layout/app-layout";
 import { Link } from "wouter";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -24,9 +24,39 @@ function achievementBand(pct: number): string {
   return "bg-purple-100 text-purple-800";
 }
 
+interface WeeklyTotals {
+  category: string;
+  w1: number;
+  w2: number;
+  w3: number;
+  w4: number;
+  unscheduled: number;
+}
+
+function computeWeeklyTotals(items: PlanItem[]): WeeklyTotals[] {
+  const map = new Map<string, WeeklyTotals>();
+  for (const item of items) {
+    if (item.maxProduction <= 0) continue;
+    const existing = map.get(item.category) ?? { category: item.category, w1: 0, w2: 0, w3: 0, w4: 0, unscheduled: 0 };
+    existing.w1 += item.w1;
+    existing.w2 += item.w2;
+    existing.w3 += item.w3;
+    existing.w4 += item.w4;
+    if (item.week === null && item.cover !== "OS") {
+      existing.unscheduled += item.maxProduction;
+    }
+    map.set(item.category, existing);
+  }
+  return [...map.values()];
+}
+
 export default function SummaryPage() {
   const month = currentMonth();
   const { data, isLoading, isError } = useGetPlanSummary({ month });
+  const { data: itemsData, isLoading: itemsLoading } = useListPlanItems(
+    { month },
+    { query: { staleTime: 5 * 60 * 1000 } as any },
+  );
 
   const summary = data as unknown as PlanSummary | undefined;
   const categories = summary?.categories ?? [];
@@ -34,16 +64,35 @@ export default function SummaryPage() {
   const grandMax = summary?.grandMaxTotal ?? 0;
   const achievementPct = grandMax > 0 ? (grandMin / grandMax) * 100 : 0;
 
+  const allItems = (itemsData as unknown as PlanItem[] | undefined) ?? [];
+  const weeklyTotals = computeWeeklyTotals(allItems);
+  const grandW1 = weeklyTotals.reduce((s, t) => s + t.w1, 0);
+  const grandW2 = weeklyTotals.reduce((s, t) => s + t.w2, 0);
+  const grandW3 = weeklyTotals.reduce((s, t) => s + t.w3, 0);
+  const grandW4 = weeklyTotals.reduce((s, t) => s + t.w4, 0);
+  const grandUnscheduled = weeklyTotals.reduce((s, t) => s + t.unscheduled, 0);
+
   return (
     <AppLayout>
-      <div className="max-w-6xl mx-auto space-y-4">
+      <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Summary — {formatMonthLabel(month)}</h2>
           {!isLoading && !isError && (
             <Button variant="outline" size="sm" onClick={() => exportXlsx(`plan-summary-${month}`, [
               { name: "Summary", rows: categories.map((cat) => {
                 const p = cat.maxTotal > 0 ? (cat.minTotal / cat.maxTotal) * 100 : 0;
-                return { Category: cat.category, MinRequired: cat.minTotal, MaxPlan: cat.maxTotal, AchievementPct: p };
+                const wt = weeklyTotals.find((t) => t.category === cat.category);
+                return {
+                  Category: cat.category,
+                  MinRequired: cat.minTotal,
+                  MaxPlan: cat.maxTotal,
+                  AchievementPct: p,
+                  W1: wt?.w1 ?? 0,
+                  W2: wt?.w2 ?? 0,
+                  W3: wt?.w3 ?? 0,
+                  W4: wt?.w4 ?? 0,
+                  Unscheduled: wt?.unscheduled ?? 0,
+                };
               }) },
             ])}>
               <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
@@ -90,12 +139,7 @@ export default function SummaryPage() {
                           {cat.maxTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </TableCell>
                         <TableCell className="text-right">
-                          <span
-                            className={cn(
-                              "px-2 py-0.5 rounded text-xs font-medium",
-                              achievementBand(pct),
-                            )}
-                          >
+                          <span className={cn("px-2 py-0.5 rounded text-xs font-medium", achievementBand(pct))}>
                             {pct.toFixed(1)}%
                           </span>
                         </TableCell>
@@ -111,18 +155,87 @@ export default function SummaryPage() {
                       {grandMax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </TableCell>
                     <TableCell className="text-right">
-                      <span
-                        className={cn(
-                          "px-2 py-0.5 rounded text-xs font-medium",
-                          achievementBand(achievementPct),
-                        )}
-                      >
+                      <span className={cn("px-2 py-0.5 rounded text-xs font-medium", achievementBand(achievementPct))}>
                         {achievementPct.toFixed(1)}%
                       </span>
                     </TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+        )}
+
+        {!itemsLoading && weeklyTotals.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Weekly Release Plan — Totals</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Category</TableHead>
+                    <TableHead className="text-right bg-orange-50">W1</TableHead>
+                    <TableHead className="text-right bg-yellow-50">W2</TableHead>
+                    <TableHead className="text-right bg-green-50">W3</TableHead>
+                    <TableHead className="text-right bg-blue-50">W4</TableHead>
+                    <TableHead className="text-right text-gray-500">Unscheduled</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {weeklyTotals.map((t) => (
+                    <TableRow key={t.category}>
+                      <TableCell>
+                        <Link
+                          href={`/category/${categorySlug(t.category)}`}
+                          className="text-primary hover:underline"
+                        >
+                          {t.category}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-right bg-orange-50/50 text-orange-900">
+                        {t.w1 > 0 ? t.w1.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right bg-yellow-50/50 text-yellow-900">
+                        {t.w2 > 0 ? t.w2.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right bg-green-50/50 text-green-900">
+                        {t.w3 > 0 ? t.w3.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right bg-blue-50/50 text-blue-900">
+                        {t.w4 > 0 ? t.w4.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
+                      </TableCell>
+                      <TableCell className="text-right text-gray-500">
+                        {t.unscheduled > 0 ? t.unscheduled.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="font-semibold border-t-2">
+                    <TableCell>Grand Total</TableCell>
+                    <TableCell className="text-right bg-orange-100 text-orange-900">
+                      {grandW1 > 0 ? grandW1.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right bg-yellow-100 text-yellow-900">
+                      {grandW2 > 0 ? grandW2.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right bg-green-100 text-green-900">
+                      {grandW3 > 0 ? grandW3.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right bg-blue-100 text-blue-900">
+                      {grandW4 > 0 ? grandW4.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right text-gray-500">
+                      {grandUnscheduled > 0 ? grandUnscheduled.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+              {grandW1 === 0 && grandW2 === 0 && grandW3 === 0 && grandW4 === 0 && (
+                <p className="text-xs text-gray-400 mt-3">
+                  No items have been scheduled yet. Weekly bands may not be seeded, or plan data may not be loaded.
+                </p>
+              )}
             </CardContent>
           </Card>
         )}

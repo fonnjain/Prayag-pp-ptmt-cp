@@ -217,6 +217,65 @@ paths:
                 type: string
                 format: binary
 
+  /plan/export/weekly-excel:
+    get:
+      operationId: exportWeeklyReleaseExcel
+      tags: [plan]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Excel workbook of the weekly release plan
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /plan/weekly-bands:
+    get:
+      operationId: listWeeklyReleaseBands
+      tags: [plan]
+      responses:
+        "200":
+          description: Weekly release band configs per category
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WeeklyReleaseBand"
+
+  /plan/weekly-bands/{category}:
+    put:
+      operationId: updateWeeklyReleaseBand
+      tags: [plan]
+      parameters:
+        - name: category
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WeeklyReleaseBandUpdate"
+      responses:
+        "200":
+          description: Updated weekly release band config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WeeklyReleaseBand"
+        "400":
+          description: Validation error
+        "404":
+          description: Category not found
+
   /plan/runs:
     post:
       operationId: createPlanRun
@@ -952,6 +1011,12 @@ components:
         - pendingOrder
         - order
         - achievementPct
+        - cover
+        - week
+        - w1
+        - w2
+        - w3
+        - w4
       properties:
         itemCode: { type: string }
         colour: { type: string }
@@ -965,6 +1030,16 @@ components:
         pendingOrder: { type: number }
         order: { type: number }
         achievementPct: { type: ["number", "null"] }
+        cover:
+          oneOf:
+            - type: number
+            - type: string
+              enum: ["OS"]
+        week: { type: ["integer", "null"] }
+        w1: { type: number }
+        w2: { type: number }
+        w3: { type: number }
+        w4: { type: number }
 
     CategorySummary:
       type: object
@@ -1782,3 +1857,24 @@ components:
         month: { type: string }
         fileId: { type: string }
         notes: { type: string }
+
+    WeeklyReleaseBand:
+      type: object
+      required: [id, categoryName, w1Upper, w2Upper, w3Upper, w4Upper, updatedAt]
+      properties:
+        id: { type: integer }
+        categoryName: { type: string }
+        w1Upper: { type: number }
+        w2Upper: { type: number }
+        w3Upper: { type: number }
+        w4Upper: { type: number }
+        updatedAt: { type: string, format: date-time }
+
+    WeeklyReleaseBandUpdate:
+      type: object
+      required: [w1Upper, w2Upper, w3Upper, w4Upper]
+      properties:
+        w1Upper: { type: number }
+        w2Upper: { type: number }
+        w3Upper: { type: number }
+        w4Upper: { type: number }

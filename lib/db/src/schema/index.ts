@@ -12,3 +12,4 @@ export * from "./plant-source-configs";
 export * from "./plant-ingestion-cache";
 export * from "./reports";
 export * from "./plan-runs";
+export * from "./weekly-release-bands";

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable } from "@workspace/db";
+import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable, weeklyReleaseBandsTable } from "@workspace/db";
 import { logger } from "./logger";
 import { SHEET_LABELS } from "./sheets";
 
@@ -111,10 +111,37 @@ async function seedPlantConfigs(): Promise<void> {
   logger.info({ count: PLANT_CONFIGS.length }, "Seeded plant configs");
 }
 
+const DEFAULT_WEEKLY_RELEASE_BANDS: {
+  categoryName: string;
+  w1Upper: number;
+  w2Upper: number;
+  w3Upper: number;
+  w4Upper: number;
+}[] = [
+  { categoryName: "Cocks Standard",             w1Upper: 0.1, w2Upper: 0.3, w3Upper: 0.8, w4Upper: 5.9 },
+  { categoryName: "Cocks Premium",              w1Upper: 0.3, w2Upper: 0.5, w3Upper: 0.8, w4Upper: 3.0 },
+  { categoryName: "Faucets & Jetsprays & Shower", w1Upper: 0.3, w2Upper: 0.5, w3Upper: 0.8, w4Upper: 5.0 },
+  { categoryName: "Accessorise",               w1Upper: 0.3, w2Upper: 0.5, w3Upper: 0.8, w4Upper: 1.5 },
+  { categoryName: "Cistern & Seat Cover",       w1Upper: 0.3, w2Upper: 0.5, w3Upper: 0.8, w4Upper: 1.5 },
+  { categoryName: "Cabinet",                   w1Upper: 0.1, w2Upper: 0.3, w3Upper: 0.8, w4Upper: 5.9 },
+  { categoryName: "Ball Cock",                 w1Upper: 0.1, w2Upper: 0.3, w3Upper: 0.8, w4Upper: 5.9 },
+];
+
+async function seedWeeklyReleaseBands(): Promise<void> {
+  for (const band of DEFAULT_WEEKLY_RELEASE_BANDS) {
+    await db
+      .insert(weeklyReleaseBandsTable)
+      .values(band)
+      .onConflictDoNothing();
+  }
+  logger.info({ count: DEFAULT_WEEKLY_RELEASE_BANDS.length }, "Seeded weekly release bands");
+}
+
 export async function ensureSeedData(): Promise<void> {
   await seedBufferCategories();
   await seedItemMaster();
   await seedSyncSources();
   await seedPlantSourceConfigs();
   await seedPlantConfigs();
+  await seedWeeklyReleaseBands();
 }

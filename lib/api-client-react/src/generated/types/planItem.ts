@@ -5,6 +5,8 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { PlanItemAchievementPct } from './planItemAchievementPct';
+import type { PlanItemCover } from './planItemCover';
+import type { PlanItemWeek } from './planItemWeek';
 
 export interface PlanItem {
   itemCode: string;
@@ -19,4 +21,10 @@ export interface PlanItem {
   pendingOrder: number;
   order: number;
   achievementPct: PlanItemAchievementPct;
+  cover: PlanItemCover;
+  week: PlanItemWeek;
+  w1: number;
+  w2: number;
+  w3: number;
+  w4: number;
 }

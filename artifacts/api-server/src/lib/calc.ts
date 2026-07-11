@@ -9,6 +9,13 @@ export interface ItemSourceRow {
   order: number;
 }
 
+export interface WeeklyBandConfig {
+  w1Upper: number;
+  w2Upper: number;
+  w3Upper: number;
+  w4Upper: number;
+}
+
 export interface CalcPlanItem {
   itemCode: string;
   colour: string;
@@ -23,6 +30,12 @@ export interface CalcPlanItem {
   pendingOrder: number;
   order: number;
   achievementPct: number | null;
+  cover: number | "OS";
+  week: 1 | 2 | 3 | 4 | null;
+  w1: number;
+  w2: number;
+  w3: number;
+  w4: number;
 }
 
 export interface CategorySummary {
@@ -47,6 +60,7 @@ const round = (n: number): number => Math.round(n * 100) / 100;
  *   MinProduction = max(Avg3MoSale - Stock, 0)
  *   MaxProduction = max((BufferReq - Stock) + PendingOrderLastMonth + PendingOrder, 0)
  *   Order is a separate live order-book figure and is NOT part of the Max formula.
+ *   Cover = Stock / Avg3MoSale (months of cover); "OS" when Avg3MoSale = 0.
  */
 export function computeItemPlan(
   source: ItemSourceRow,
@@ -59,6 +73,7 @@ export function computeItemPlan(
   const maxProduction = round(
     Math.max(bufferReq - source.stock + source.pendingOrderLastMonth + source.pendingOrder, 0),
   );
+  const cover: number | "OS" = avg3MoSale > 0 ? round(source.stock / avg3MoSale) : "OS";
 
   return {
     itemCode: source.itemCode,
@@ -73,9 +88,43 @@ export function computeItemPlan(
     pendingOrderLastMonth: source.pendingOrderLastMonth,
     pendingOrder: source.pendingOrder,
     order: source.order,
-    // Actual production tracking is out of scope for the planning engine; always null.
     achievementPct: null,
+    cover,
+    week: null,
+    w1: 0,
+    w2: 0,
+    w3: 0,
+    w4: 0,
   };
+}
+
+/**
+ * Annotates items in-place with week assignments and W1–W4 quantities.
+ * Uses half-open bands: W1 = [0, w1Upper), W2 = [w1Upper, w2Upper), ...
+ * Items with cover = "OS", plan ≤ 0, or cover ≥ w4Upper are left unscheduled (week = null).
+ */
+export function annotateWeeklyRelease(
+  items: CalcPlanItem[],
+  bandsByCategory: Map<string, WeeklyBandConfig>,
+): void {
+  for (const item of items) {
+    if (item.maxProduction <= 0 || item.cover === "OS") continue;
+    const band = bandsByCategory.get(item.category);
+    if (!band) continue;
+
+    const c = item.cover as number;
+    let week: 1 | 2 | 3 | 4 | null = null;
+    if (c < band.w1Upper) week = 1;
+    else if (c < band.w2Upper) week = 2;
+    else if (c < band.w3Upper) week = 3;
+    else if (c < band.w4Upper) week = 4;
+
+    item.week = week;
+    item.w1 = week === 1 ? item.maxProduction : 0;
+    item.w2 = week === 2 ? item.maxProduction : 0;
+    item.w3 = week === 3 ? item.maxProduction : 0;
+    item.w4 = week === 4 ? item.maxProduction : 0;
+  }
 }
 
 export function summarizePlan(items: CalcPlanItem[]): PlanSummaryResult {
