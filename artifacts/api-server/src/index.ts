@@ -2,6 +2,8 @@ import { createApp } from "./app";
 import { logger } from "./lib/logger";
 import { ensureSeedData } from "./lib/seed";
 import { runMigrations } from "./lib/runMigrations";
+import { startSyncScheduler } from "./routes/sync";
+import { ensureBrowser } from "./lib/ensureBrowser";
 
 const port = Number(process.env.PORT ?? 8080);
 
@@ -29,6 +31,12 @@ async function main(): Promise<void> {
       logger.error({ err }, "Migrations/seeding failed — server continues; DB-backed routes may error until fixed");
     }
 
+    // Install Chrome for PDF export (non-blocking; runs in background).
+    ensureBrowser().catch((err) => logger.error({ err }, "ensureBrowser failed"));
+
+    // Start auto-sync scheduler after DB is ready.
+    // Pulls Daily Production + Order Book hourly during IST work hours.
+    startSyncScheduler();
   })();
 }
 

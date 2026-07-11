@@ -208,6 +208,124 @@ export async function fetchAvg3MoSaleTotals(month: string): Promise<DualTotals> 
  * or rejection tracking is added later.
  */
 
+/**
+ * Parse a date value from a Google Sheet cell.
+ * Handles: Sheets serial integers, ISO strings, "dd-Mon-yy(yy)", "dd/mm/yyyy".
+ */
+function parseSheetDate(raw: unknown): Date | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  const n = Number(s);
+  // Google Sheets serial date — epoch is 30 Dec 1899
+  if (!isNaN(n) && n > 1000 && !/[-/]/.test(s)) {
+    return new Date((n - 25569) * 86400 * 1000);
+  }
+  // "01-Apr-26" / "1-Apr-2026" / "01/Apr/2026"
+  const MONTH_SHORT: Record<string, number> = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+  };
+  const dmy = s.match(/^(\d{1,2})[-/]([A-Za-z]{3,})[-/](\d{2,4})$/);
+  if (dmy) {
+    const day = parseInt(dmy[1], 10);
+    const mon = MONTH_SHORT[dmy[2].toLowerCase().slice(0, 3)];
+    let year = parseInt(dmy[3], 10);
+    if (year < 100) year += 2000;
+    if (mon !== undefined) return new Date(year, mon, day);
+  }
+  // ISO / DD/MM/YYYY fallback
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d;
+  return null;
+}
+
+/**
+ * Daily production totals for a given planning month from PTMT ANUJ → Production tab.
+ * Range A3:D: A = Date, B = Item Code, C = Colour, D = Qty.
+ * Rows are filtered to the target month before aggregation.
+ */
+export async function fetchLiveDailyProductionTotals(month: string): Promise<DualTotals> {
+  const [year, mon] = month.split("-").map(Number);
+  const values = await throttledGetTabValues(SHEET_IDS.ptmtAnuj, "Production", "A3:D300000");
+  const totals: DualTotals = { exact: new Map(), byCode: new Map() };
+  for (const row of values) {
+    const dateRaw = row[0];
+    if (!dateRaw || String(dateRaw).trim() === "") continue;
+    const d = parseSheetDate(dateRaw);
+    if (!d) continue;
+    if (d.getFullYear() !== year || d.getMonth() + 1 !== mon) continue;
+    const code = row[1];
+    if (!code || String(code).trim() === "") continue;
+    const colour = row[2];
+    const qty = toNumber(row[3]);
+    addToDualTotals(totals, code, colour, qty);
+  }
+  return totals;
+}
+
+/**
+ * Order totals from a per-month tab of Order Sheet 26-27.
+ * Spec range F:K — expected positional layout from col F (0-indexed):
+ *   1 = Old ERP Code (G), 3 = Colour (I), 5 = Quantity (K).
+ * Tries header-based detection first; falls back to positional.
+ * Falls back to Combined-tab filter if no matching month tab is found.
+ */
+export async function fetchLiveOrderByMonthTab(month: string): Promise<DualTotals> {
+  const [y, m] = month.split("-").map(Number);
+  const label = monthLabel(y, m - 1); // e.g. "Jul-26"
+  const monthShort = label.split("-")[0].toLowerCase(); // "jul"
+  const yearShort = label.split("-")[1]; // "26"
+  const tabs = await listTabs(SHEET_IDS.orderSheet);
+  const matchTab =
+    // Preferred: tab contains both month name and year (e.g. "Jul-26")
+    tabs.find((t) => {
+      const lower = t.toLowerCase().replace(/\s+/g, "-");
+      return lower.includes(monthShort) && lower.includes(yearShort);
+    }) ??
+    // Fallback: bare month name only (e.g. "July" or "Jul")
+    tabs.find((t) => {
+      const stripped = t.toLowerCase().replace(/[-_\s]/g, "");
+      return MONTH_NAMES[m - 1].some(
+        (name) => stripped === name || stripped === name.slice(0, 3),
+      );
+    });
+  if (!matchTab) {
+    logger.info({ tabs, month, label }, "No per-month tab in Order Sheet 26-27; falling back to Combined filter");
+    return fetchLiveOrderTotals(month);
+  }
+  const values = await throttledGetTabValues(SHEET_IDS.orderSheet, matchTab, "F1:K50000");
+  const totals: DualTotals = { exact: new Map(), byCode: new Map() };
+  // Header-based detection
+  const headerRowIdx = values.findIndex((row) =>
+    row.some((cell) => /old.*erp|erp.*code/i.test(String(cell)))
+  );
+  if (headerRowIdx >= 0) {
+    const header = values[headerRowIdx];
+    const codeIdx = header.findIndex((h) => /old.*erp|erp.*code/i.test(h));
+    const colourIdx = header.findIndex((h) => /colou?r/i.test(h));
+    const qtyIdx = header.findIndex((h) => /^qty$|quantity/i.test(h));
+    for (let i = headerRowIdx + 1; i < values.length; i++) {
+      const row = values[i];
+      const code = codeIdx >= 0 ? row[codeIdx] : row[1];
+      const colour = colourIdx >= 0 ? row[colourIdx] : row[3];
+      const qty = toNumber(qtyIdx >= 0 ? row[qtyIdx] : row[5]);
+      if (!code || String(code).trim() === "") continue;
+      addToDualTotals(totals, code, colour, qty);
+    }
+  } else {
+    // Positional fallback: G=1, I=3, K=5 (0-indexed from F)
+    for (let i = 1; i < values.length; i++) {
+      const row = values[i];
+      const code = row[1];
+      const colour = row[3];
+      const qty = toNumber(row[5]);
+      if (!code || String(code).trim() === "") continue;
+      addToDualTotals(totals, code, colour, qty);
+    }
+  }
+  return totals;
+}
+
 /** Live order-book qty for the target month, from Order Sheet 26-27 "Combined" tab, GROUP=PTMT. */
 export async function fetchLiveOrderTotals(month: string): Promise<DualTotals> {
   const [y, m] = month.split("-").map(Number);

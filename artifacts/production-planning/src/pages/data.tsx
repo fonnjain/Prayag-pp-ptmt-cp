@@ -186,8 +186,25 @@ function GoogleSheetsStatus() {
 
   const sources = (data as unknown as SyncSource[] | undefined) ?? [];
 
+  // Most recent sync timestamp across all sources
+  const lastSyncedAt = sources
+    .map((s) => s.lastSyncedAt)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+
   return (
     <div className="space-y-3">
+      {/* Last synced banner */}
+      {lastSyncedAt && (
+        <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-sm text-blue-800">
+          <span className="text-base">🔄</span>
+          <span>
+            <strong>Last synced:</strong> {fmtDateTime(lastSyncedAt)}
+          </span>
+        </div>
+      )}
+
       <div className="flex justify-end">
         <Button
           size="sm"
@@ -203,10 +220,10 @@ function GoogleSheetsStatus() {
           }
           disabled={syncSheets.isPending}
         >
-          {syncSheets.isPending ? "Syncing..." : "Sync now"}
+          {syncSheets.isPending ? "Syncing…" : "Sync now"}
         </Button>
       </div>
-      {isLoading && <p className="text-sm text-gray-500">Loading sync status...</p>}
+      {isLoading && <p className="text-sm text-gray-500">Loading sync status…</p>}
       {!isLoading &&
         sources.map((src) => (
           <div key={src.id} className="flex items-center justify-between py-2 border-b last:border-b-0">
@@ -226,6 +243,120 @@ function GoogleSheetsStatus() {
         ))}
       {!isLoading && sources.length === 0 && (
         <p className="text-sm text-gray-500">No live sheet sources configured.</p>
+      )}
+    </div>
+  );
+}
+
+type CheckResult = {
+  name: string;
+  expected: number;
+  actual: number;
+  pass: boolean;
+  tolerance?: string;
+};
+
+type ValidationResponse = {
+  month: string;
+  allPass: boolean;
+  passCount: number;
+  failCount: number;
+  checks: CheckResult[];
+};
+
+function ValidationPanel() {
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const [month, setMonth] = useState(defaultMonth);
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<ValidationResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const runChecks = async () => {
+    if (!month) return;
+    setRunning(true);
+    setResult(null);
+    setError(null);
+    try {
+      const res = await fetch(`/api/plan/validate?month=${encodeURIComponent(month)}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const json = (await res.json()) as ValidationResponse;
+      setResult(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-500">
+        Runs 6 golden-value spot-checks against the uploaded files and live sheet data. All checks must pass
+        before the plan is trustworthy. Fails are shown loudly — no silent fallbacks.
+      </p>
+
+      <div className="flex items-center gap-3">
+        <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Planning month</label>
+        <Input
+          type="month"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="w-44 h-8"
+        />
+        <Button size="sm" onClick={runChecks} disabled={running || !month}>
+          {running ? "Running…" : "Run checks"}
+        </Button>
+      </div>
+
+      {error && (
+        <div className="px-3 py-2 rounded-md bg-red-50 border border-red-200 text-sm text-red-700">
+          Error: {error}
+        </div>
+      )}
+
+      {result && (
+        <div className="space-y-2">
+          <div
+            className={cn(
+              "flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium",
+              result.allPass
+                ? "bg-green-50 border border-green-200 text-green-800"
+                : "bg-red-50 border border-red-200 text-red-800",
+            )}
+          >
+            <span className="text-base">{result.allPass ? "✅" : "❌"}</span>
+            <span>
+              {result.allPass
+                ? `All ${result.passCount} checks passed for ${result.month}`
+                : `${result.failCount} of ${result.passCount + result.failCount} checks FAILED for ${result.month}`}
+            </span>
+          </div>
+
+          <div className="rounded-md border divide-y text-sm">
+            {result.checks.map((c) => (
+              <div key={c.name} className="flex items-center justify-between px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <span>{c.pass ? "✅" : "❌"}</span>
+                  <span className={cn("font-medium", !c.pass && "text-red-700")}>{c.name}</span>
+                  {c.tolerance && <span className="text-xs text-gray-400">({c.tolerance})</span>}
+                </div>
+                <div className="text-right text-xs font-mono">
+                  {c.pass ? (
+                    <span className="text-green-700">{c.actual.toLocaleString()}</span>
+                  ) : (
+                    <span className="text-red-700">
+                      got {c.actual.toLocaleString()} · expected {c.expected.toLocaleString()}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -271,10 +402,19 @@ export default function DataPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Google Sheets connection status</CardTitle>
+            <CardTitle className="text-base">Google Sheets — live data sync</CardTitle>
           </CardHeader>
           <CardContent>
             <GoogleSheetsStatus />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Golden-value validation checks</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ValidationPanel />
           </CardContent>
         </Card>
 

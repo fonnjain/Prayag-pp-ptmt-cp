@@ -177,8 +177,6 @@ router.get("/plan/export/excel", async (req, res): Promise<void> => {
 });
 
 router.get("/plan/export/pdf", async (req, res): Promise<void> => {
-  res.status(503).json({ error: "PDF export is not available in this deployment" });
-  return;
   const month = String(req.query.month ?? "");
   if (!month) {
     res.status(400).json({ error: "month is required" });
@@ -190,6 +188,149 @@ router.get("/plan/export/pdf", async (req, res): Promise<void> => {
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="PTMT_Production_Plan_${month}.pdf"`);
   res.send(buffer);
+});
+
+/**
+ * Golden-value validation checks. Returns pass/fail per check with expected vs actual.
+ * Fail loudly: each check is independent so all failures are reported, not just the first.
+ *
+ * Checks:
+ *   1. Stock 121-O / WHITE = 1,644
+ *   2. Last-month pending total = 137,939
+ *   3. Current pending 144-O / WHITE = 132
+ *   4. Avg 3-Mo Sale 144-O / WHITE = 5,222
+ *   5. Grand Max total ≈ 576,037 (±5 %)
+ *   6. Grand Min total ≈ 301,918 (±5 %)
+ */
+router.get("/plan/validate", async (req, res): Promise<void> => {
+  const month = String(req.query.month ?? "");
+  if (!month) {
+    res.status(400).json({ error: "month is required" });
+    return;
+  }
+
+  // Fetch everything in one parallel batch — DB reads + both Sheets calls
+  // so we only pay the throttle penalty once (they overlap in Promise.all).
+  const [
+    stockRows,
+    pendingRows,
+    lastMoRows,
+    itemRows,
+    bufferRows,
+    avg3MoTotals,
+    liveOrderTotals,
+  ] = await Promise.all([
+    loadLatestUploadRowsByKind("current_stock"),
+    loadLatestUploadRowsByKind("pending_orders"),
+    loadLatestUploadRowsByKind("last_month_pending"),
+    db.select().from(itemMasterTable),
+    db.select().from(bufferCategoriesTable),
+    fetchAvg3MoSaleTotals(month),
+    fetchLiveOrderTotals(month),
+  ]);
+
+  type CheckResult = {
+    name: string;
+    expected: number;
+    actual: number;
+    pass: boolean;
+    tolerance?: string;
+  };
+
+  const checks: CheckResult[] = [];
+
+  // ── 1. Stock 121-O / WHITE = 1,644 ────────────────────────────────────
+  const stockTotals = sumByKey(stockRows, ["Item Code"], ["Colour", "Color"], ["Qty"]);
+  const stock121 = resolveTotal(stockTotals, "121-O", "WHITE", false);
+  checks.push({ name: "Stock 121-O / WHITE", expected: 1644, actual: stock121, pass: stock121 === 1644 });
+
+  // ── 2. Last-month pending total = 137,939 ─────────────────────────────
+  const lmTotals = sumByKey(
+    lastMoRows,
+    ["Item Code", "Cat No", "Cat-No", "Old Item Code"],
+    ["Colour", "Color"],
+    ["Qty", "Balance_Qty", "Balance Qty"],
+  );
+  const lmTotal = Math.round([...lmTotals.byCode.values()].reduce((a, b) => a + b, 0));
+  checks.push({ name: "Last-month pending total", expected: 137939, actual: lmTotal, pass: lmTotal === 137939 });
+
+  // ── 3. Current pending 144-O / WHITE = 132 ────────────────────────────
+  const pendTotals = sumByKey(
+    pendingRows,
+    ["Old Item Code", "Item Code", "Item No."],
+    ["Colour", "Color"],
+    ["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"],
+  );
+  const pend144 = resolveTotal(pendTotals, "144-O", "WHITE", false);
+  checks.push({ name: "Current pending 144-O / WHITE", expected: 132, actual: pend144, pass: pend144 === 132 });
+
+  // ── 4. Avg 3-Mo Sale 144-O / WHITE = 5,222 ───────────────────────────
+  const avg3MoRaw = resolveTotal(avg3MoTotals, "144-O", "WHITE", false);
+  const avg3Mo = Math.round(avg3MoRaw / 3);
+  checks.push({ name: "Avg 3-Mo Sale 144-O / WHITE", expected: 5222, actual: avg3Mo, pass: avg3Mo === 5222 });
+
+  // ── 5 & 6. Grand totals ≈ Max 576,037 / Min 301,918 (±5 %) ──────────
+  // Build plan items directly from already-fetched data — no second Sheets round trip.
+  const pendingOrderTotals = sumByKey(
+    pendingRows,
+    ["Old Item Code", "Item Code", "Item No."],
+    ["Colour", "Color"],
+    ["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"],
+  );
+  const pendingLastMoTotals = sumByKey(
+    lastMoRows,
+    ["Item Code", "Cat No", "Cat-No", "Old Item Code"],
+    ["Colour", "Color"],
+    ["Qty", "Balance_Qty", "Balance Qty"],
+  );
+  const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
+  const codeCounts = new Map<string, number>();
+  for (const item of itemRows) {
+    const codeKey = `${item.category}::${normalizeCode(item.itemCode)}`;
+    codeCounts.set(codeKey, (codeCounts.get(codeKey) ?? 0) + 1);
+  }
+  const currentStockRows = await loadLatestUploadRowsByKind("current_stock");
+  const stockTotalsForPlan = sumByKey(currentStockRows, ["Item Code"], ["Colour", "Color"], ["Qty"]);
+  const planItems = itemRows.map((item) => {
+    const isSingleVariant = (codeCounts.get(`${item.category}::${normalizeCode(item.itemCode)}`) ?? 0) <= 1;
+    return computeItemPlan(
+      {
+        itemCode: item.itemCode,
+        colour: item.colour,
+        avg3MoSaleTotal3Mo: resolveTotal(avg3MoTotals, item.itemCode, item.colour, isSingleVariant),
+        stock: resolveTotal(stockTotalsForPlan, item.itemCode, item.colour, isSingleVariant),
+        stockNeedsReview:
+          currentStockRows.length > 0 && !hasEntry(stockTotalsForPlan, item.itemCode, item.colour, isSingleVariant),
+        pendingOrderLastMonth: resolveTotal(pendingLastMoTotals, item.itemCode, item.colour, isSingleVariant),
+        pendingOrder: resolveTotal(pendingOrderTotals, item.itemCode, item.colour, isSingleVariant),
+        order: resolveTotal(liveOrderTotals, item.itemCode, item.colour, isSingleVariant),
+      },
+      item.category,
+      bufferByCategory.get(item.category) ?? 1,
+    );
+  });
+  const summary = summarizePlan(planItems);
+  const maxPct = Math.abs(summary.grandMaxTotal - 576037) / 576037;
+  const minPct = Math.abs(summary.grandMinTotal - 301918) / 301918;
+  checks.push({
+    name: "Grand Max total ≈ 576,037",
+    expected: 576037,
+    actual: summary.grandMaxTotal,
+    pass: maxPct <= 0.05,
+    tolerance: "±5%",
+  });
+  checks.push({
+    name: "Grand Min total ≈ 301,918",
+    expected: 301918,
+    actual: summary.grandMinTotal,
+    pass: minPct <= 0.05,
+    tolerance: "±5%",
+  });
+
+  const allPass = checks.every((c) => c.pass);
+  const failCount = checks.filter((c) => !c.pass).length;
+
+  res.json({ month, allPass, passCount: checks.length - failCount, failCount, checks });
 });
 
 export default router;

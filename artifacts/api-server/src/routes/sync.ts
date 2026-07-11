@@ -1,64 +1,161 @@
 import { Router, type IRouter } from "express";
 import { db, syncSourcesTable } from "@workspace/db";
 import { logger } from "../lib/logger";
-import { SHEET_IDS, SHEET_LABELS, listTabs } from "../lib/sheets";
+import {
+  SHEET_IDS,
+  SHEET_LABELS,
+  listTabs,
+  fetchLiveDailyProductionTotals,
+  fetchLiveOrderByMonthTab,
+} from "../lib/sheets";
 
 const router: IRouter = Router();
 
-async function syncOne(id: keyof typeof SHEET_IDS): Promise<void> {
+function currentPlanningMonth(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth() + 1;
+  return `${y}-${String(m).padStart(2, "0")}`;
+}
+
+async function upsertSyncSource(
+  id: string,
+  name: string,
+  status: string,
+  message: string,
+  rows: Record<string, unknown>[],
+): Promise<void> {
+  await db
+    .insert(syncSourcesTable)
+    .values({ id, name, status, message, rows, lastSyncedAt: new Date() })
+    .onConflictDoUpdate({
+      target: syncSourcesTable.id,
+      set: { name, status, message, rows, lastSyncedAt: new Date() },
+    });
+}
+
+async function syncSheetConnectivity(id: keyof typeof SHEET_IDS): Promise<void> {
   const name = SHEET_LABELS[id];
   try {
     const tabs = await listTabs(SHEET_IDS[id]);
-    await db
-      .insert(syncSourcesTable)
-      .values({
-        id,
-        name,
-        status: "success",
-        message: `${tabs.length} tab(s) found`,
-        rows: tabs.map((tab) => ({ tab })),
-        lastSyncedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: syncSourcesTable.id,
-        set: {
-          name,
-          status: "success",
-          message: `${tabs.length} tab(s) found`,
-          rows: tabs.map((tab) => ({ tab })),
-          lastSyncedAt: new Date(),
-        },
-      });
+    await upsertSyncSource(id, name, "success", `${tabs.length} tab(s) found`, tabs.map((tab) => ({ tab })));
   } catch (err) {
     logger.warn({ err, id }, "Failed to sync sheet source");
-    await db
-      .insert(syncSourcesTable)
-      .values({
-        id,
-        name,
-        status: "error",
-        message: err instanceof Error ? err.message : "Unknown error",
-        rows: [],
-        lastSyncedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: syncSourcesTable.id,
-        set: {
-          name,
-          status: "error",
-          message: err instanceof Error ? err.message : "Unknown error",
-          lastSyncedAt: new Date(),
-        },
-      });
+    await upsertSyncSource(
+      id,
+      name,
+      "error",
+      err instanceof Error ? err.message : "Unknown error",
+      [],
+    );
   }
 }
 
-router.post("/sync/sheets", async (_req, res): Promise<void> => {
+async function syncDailyProduction(month: string): Promise<void> {
+  const id = `liveProduction_${month}`;
+  const name = `Daily Production (${month})`;
+  try {
+    const totals = await fetchLiveDailyProductionTotals(month);
+    const codeCount = totals.byCode.size;
+    const totalQty = [...totals.byCode.values()].reduce((a, b) => a + b, 0);
+    await upsertSyncSource(
+      id,
+      name,
+      "success",
+      `${codeCount} item(s) · ${totalQty.toLocaleString()} pcs this month`,
+      [{ codes: codeCount, totalQty }],
+    );
+  } catch (err) {
+    logger.warn({ err, month }, "Failed to sync daily production");
+    await upsertSyncSource(
+      id,
+      name,
+      "error",
+      err instanceof Error ? err.message : "Unknown error",
+      [],
+    );
+  }
+}
+
+async function syncLiveOrder(month: string): Promise<void> {
+  const id = `liveOrder_${month}`;
+  const name = `Order Book (${month})`;
+  try {
+    const totals = await fetchLiveOrderByMonthTab(month);
+    const codeCount = totals.byCode.size;
+    const totalQty = [...totals.byCode.values()].reduce((a, b) => a + b, 0);
+    await upsertSyncSource(
+      id,
+      name,
+      "success",
+      `${codeCount} item(s) · ${totalQty.toLocaleString()} open orders`,
+      [{ codes: codeCount, totalQty }],
+    );
+  } catch (err) {
+    logger.warn({ err, month }, "Failed to sync live order");
+    await upsertSyncSource(
+      id,
+      name,
+      "error",
+      err instanceof Error ? err.message : "Unknown error",
+      [],
+    );
+  }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export async function runFullSync(month?: string): Promise<void> {
+  const m = month ?? currentPlanningMonth();
+  logger.info({ month: m }, "Starting full sync");
+
   const ids = Object.keys(SHEET_IDS) as (keyof typeof SHEET_IDS)[];
   for (const id of ids) {
-    await syncOne(id);
-    await new Promise((resolve) => setTimeout(resolve, 1100));
+    await syncSheetConnectivity(id);
+    await sleep(1100);
   }
+
+  await syncDailyProduction(m);
+  await sleep(1100);
+  await syncLiveOrder(m);
+
+  logger.info({ month: m }, "Full sync complete");
+}
+
+// ── Scheduler ──────────────────────────────────────────────────────────────
+
+function isISTWorkHour(): boolean {
+  const istMs = Date.now() + 5.5 * 60 * 60 * 1000;
+  const hour = new Date(istMs).getUTCHours();
+  return hour >= 8 && hour < 20;
+}
+
+let _schedulerStarted = false;
+
+export function startSyncScheduler(): void {
+  if (_schedulerStarted) return;
+  _schedulerStarted = true;
+
+  // Startup sync — 8 s delay so DB migrations finish first
+  setTimeout(() => {
+    logger.info("Auto-sync: startup run");
+    runFullSync().catch((err) => logger.error({ err }, "Startup sync failed"));
+  }, 8000);
+
+  // Hourly tick during IST work hours (08:00–20:00)
+  setInterval(() => {
+    if (isISTWorkHour()) {
+      logger.info("Auto-sync: hourly scheduled run");
+      runFullSync().catch((err) => logger.error({ err }, "Scheduled sync failed"));
+    }
+  }, 60 * 60 * 1000);
+}
+
+// ── Routes ─────────────────────────────────────────────────────────────────
+
+router.post("/sync/sheets", async (req, res): Promise<void> => {
+  const month = req.body?.month ? String(req.body.month) : currentPlanningMonth();
+  await runFullSync(month);
   const results = await db.select().from(syncSourcesTable).orderBy(syncSourcesTable.name);
   res.json(results);
 });
