@@ -109,19 +109,25 @@ export default function SummaryPage() {
 
         {!isLoading && !isError && (
           <Card>
-            <CardContent className="pt-6">
+            <CardContent className="pt-6 overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Category</TableHead>
-                    <TableHead className="text-right">Min Production Required</TableHead>
-                    <TableHead className="text-right">Max Production Required</TableHead>
-                    <TableHead className="text-right">Achievement %</TableHead>
+                    <TableHead className="text-right">Min Reqd</TableHead>
+                    <TableHead className="text-right">Max / Plan</TableHead>
+                    <TableHead className="text-right">Achiev %</TableHead>
+                    <TableHead className="text-right bg-orange-50 text-orange-800">W1</TableHead>
+                    <TableHead className="text-right bg-yellow-50 text-yellow-800">W2</TableHead>
+                    <TableHead className="text-right bg-green-50 text-green-800">W3</TableHead>
+                    <TableHead className="text-right bg-blue-50 text-blue-800">W4</TableHead>
+                    <TableHead className="text-right text-gray-500">Unscheduled</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {categories.map((cat, idx) => {
                     const pct = cat.maxTotal > 0 ? (cat.minTotal / cat.maxTotal) * 100 : 0;
+                    const wt = weeklyTotals.find((t) => t.category === cat.category);
                     return (
                       <TableRow key={cat.category}>
                         <TableCell>
@@ -143,6 +149,21 @@ export default function SummaryPage() {
                             {pct.toFixed(1)}%
                           </span>
                         </TableCell>
+                        <TableCell className="text-right bg-orange-50/40 text-orange-900 font-mono">
+                          {wt && wt.w1 > 0 ? wt.w1.toLocaleString(undefined, { maximumFractionDigits: 0 }) : itemsLoading ? "…" : "—"}
+                        </TableCell>
+                        <TableCell className="text-right bg-yellow-50/40 text-yellow-900 font-mono">
+                          {wt && wt.w2 > 0 ? wt.w2.toLocaleString(undefined, { maximumFractionDigits: 0 }) : itemsLoading ? "…" : "—"}
+                        </TableCell>
+                        <TableCell className="text-right bg-green-50/40 text-green-900 font-mono">
+                          {wt && wt.w3 > 0 ? wt.w3.toLocaleString(undefined, { maximumFractionDigits: 0 }) : itemsLoading ? "…" : "—"}
+                        </TableCell>
+                        <TableCell className="text-right bg-blue-50/40 text-blue-900 font-mono">
+                          {wt && wt.w4 > 0 ? wt.w4.toLocaleString(undefined, { maximumFractionDigits: 0 }) : itemsLoading ? "…" : "—"}
+                        </TableCell>
+                        <TableCell className="text-right text-gray-500 font-mono">
+                          {wt && wt.unscheduled > 0 ? wt.unscheduled.toLocaleString(undefined, { maximumFractionDigits: 0 }) : itemsLoading ? "…" : "—"}
+                        </TableCell>
                       </TableRow>
                     );
                   })}
@@ -159,83 +180,24 @@ export default function SummaryPage() {
                         {achievementPct.toFixed(1)}%
                       </span>
                     </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        )}
-
-        {!itemsLoading && weeklyTotals.length > 0 && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Weekly Release Plan — Totals</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Category</TableHead>
-                    <TableHead className="text-right bg-orange-50">W1</TableHead>
-                    <TableHead className="text-right bg-yellow-50">W2</TableHead>
-                    <TableHead className="text-right bg-green-50">W3</TableHead>
-                    <TableHead className="text-right bg-blue-50">W4</TableHead>
-                    <TableHead className="text-right text-gray-500">Unscheduled</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {weeklyTotals.map((t) => (
-                    <TableRow key={t.category}>
-                      <TableCell>
-                        <Link
-                          href={`/category/${categorySlug(t.category)}`}
-                          className="text-primary hover:underline"
-                        >
-                          {t.category}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-right bg-orange-50/50 text-orange-900">
-                        {t.w1 > 0 ? t.w1.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
-                      </TableCell>
-                      <TableCell className="text-right bg-yellow-50/50 text-yellow-900">
-                        {t.w2 > 0 ? t.w2.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
-                      </TableCell>
-                      <TableCell className="text-right bg-green-50/50 text-green-900">
-                        {t.w3 > 0 ? t.w3.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
-                      </TableCell>
-                      <TableCell className="text-right bg-blue-50/50 text-blue-900">
-                        {t.w4 > 0 ? t.w4.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
-                      </TableCell>
-                      <TableCell className="text-right text-gray-500">
-                        {t.unscheduled > 0 ? t.unscheduled.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  <TableRow className="font-semibold border-t-2">
-                    <TableCell>Grand Total</TableCell>
-                    <TableCell className="text-right bg-orange-100 text-orange-900">
+                    <TableCell className="text-right bg-orange-100 text-orange-900 font-mono">
                       {grandW1 > 0 ? grandW1.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
                     </TableCell>
-                    <TableCell className="text-right bg-yellow-100 text-yellow-900">
+                    <TableCell className="text-right bg-yellow-100 text-yellow-900 font-mono">
                       {grandW2 > 0 ? grandW2.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
                     </TableCell>
-                    <TableCell className="text-right bg-green-100 text-green-900">
+                    <TableCell className="text-right bg-green-100 text-green-900 font-mono">
                       {grandW3 > 0 ? grandW3.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
                     </TableCell>
-                    <TableCell className="text-right bg-blue-100 text-blue-900">
+                    <TableCell className="text-right bg-blue-100 text-blue-900 font-mono">
                       {grandW4 > 0 ? grandW4.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
                     </TableCell>
-                    <TableCell className="text-right text-gray-500">
+                    <TableCell className="text-right text-gray-500 font-mono">
                       {grandUnscheduled > 0 ? grandUnscheduled.toLocaleString(undefined, { maximumFractionDigits: 0 }) : "—"}
                     </TableCell>
                   </TableRow>
                 </TableBody>
               </Table>
-              {grandW1 === 0 && grandW2 === 0 && grandW3 === 0 && grandW4 === 0 && (
-                <p className="text-xs text-gray-400 mt-3">
-                  No items have been scheduled yet. Weekly bands may not be seeded, or plan data may not be loaded.
-                </p>
-              )}
             </CardContent>
           </Card>
         )}

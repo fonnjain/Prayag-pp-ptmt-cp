@@ -412,11 +412,16 @@ export default function CategoryPage() {
                         <TableHead className="text-right">Min Production</TableHead>
                         <TableHead className="text-right">Production Plan</TableHead>
                         <TableHead className="text-right">Order</TableHead>
+                        <TableHead className="text-right bg-orange-50 text-orange-800">W1</TableHead>
+                        <TableHead className="text-right bg-yellow-50 text-yellow-800">W2</TableHead>
+                        <TableHead className="text-right bg-green-50 text-green-800">W3</TableHead>
+                        <TableHead className="text-right bg-blue-50 text-blue-800">W4</TableHead>
+                        <TableHead className="text-center">Week</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {items.map((item) => (
-                        <TableRow key={`${item.itemCode}-${item.colour}`}>
+                        <TableRow key={`${item.itemCode}-${item.colour}`} className={item.week ? WEEK_ROW_CLS[item.week] : ""}>
                           <TableCell className="font-medium">{item.itemCode}</TableCell>
                           <TableCell>{item.colour}</TableCell>
                           <TableCell className="text-right">
@@ -440,11 +445,34 @@ export default function CategoryPage() {
                           <TableCell className={cn("text-right", item.order > 0 && "bg-blue-50 text-blue-800")}>
                             {item.order.toFixed(0)}
                           </TableCell>
+                          <TableCell className={cn("text-right font-mono", item.week === 1 && "font-bold text-orange-800")}>
+                            {item.w1 > 0 ? item.w1.toFixed(0) : ""}
+                          </TableCell>
+                          <TableCell className={cn("text-right font-mono", item.week === 2 && "font-bold text-yellow-800")}>
+                            {item.w2 > 0 ? item.w2.toFixed(0) : ""}
+                          </TableCell>
+                          <TableCell className={cn("text-right font-mono", item.week === 3 && "font-bold text-green-800")}>
+                            {item.w3 > 0 ? item.w3.toFixed(0) : ""}
+                          </TableCell>
+                          <TableCell className={cn("text-right font-mono", item.week === 4 && "font-bold text-blue-800")}>
+                            {item.w4 > 0 ? item.w4.toFixed(0) : ""}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {item.week ? (
+                              <span className={cn("px-2 py-0.5 rounded text-xs font-semibold", WEEK_BADGE_CLS[item.week])}>
+                                W{item.week}
+                              </span>
+                            ) : item.maxProduction > 0 ? (
+                              <span className="text-xs text-gray-400">
+                                {item.cover === "OS" ? "OS" : "—"}
+                              </span>
+                            ) : null}
+                          </TableCell>
                         </TableRow>
                       ))}
                       {items.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={11} className="text-center text-sm text-gray-500 py-6">
+                          <TableCell colSpan={16} className="text-center text-sm text-gray-500 py-6">
                             No items found for this category.
                           </TableCell>
                         </TableRow>
