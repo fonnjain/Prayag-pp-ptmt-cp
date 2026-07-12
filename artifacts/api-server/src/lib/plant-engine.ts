@@ -330,7 +330,19 @@ export function buildPlantBundle(
     },
     plant: plantKPIs,
     categories,
-    items: itemKPIs.slice(0, 100),
+    items: (() => {
+      // Cap per-category so no single large category crowds out others
+      const PER_CAT = 150;
+      const byCategory = new Map<string, ItemKPIs[]>();
+      for (const item of itemKPIs) {
+        const arr = byCategory.get(item.category) ?? [];
+        arr.push(item);
+        byCategory.set(item.category, arr);
+      }
+      const result: ItemKPIs[] = [];
+      for (const arr of byCategory.values()) result.push(...arr.slice(0, PER_CAT));
+      return result;
+    })(),
     dailySeries,
     variancePareto,
     mixFlags: mixFlags.slice(0, 20),
