@@ -150,6 +150,85 @@ paths:
                 items:
                   $ref: "#/components/schemas/SyncSource"
 
+  /corrective/replan:
+    post:
+      operationId: runCorrectiveReplan
+      tags: [corrective]
+      summary: Run the weekly corrective re-plan engine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CorrectiveReplanInput"
+      responses:
+        "200":
+          description: Corrective re-plan result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CorrectiveReplanResult"
+        "400":
+          description: Bad request
+        "500":
+          description: Engine error
+
+  /corrective/runs:
+    get:
+      operationId: listCorrectiveRuns
+      tags: [corrective]
+      parameters:
+        - name: month
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: List of corrective plan runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CorrectivePlanRunSummary"
+
+  /corrective/runs/{id}:
+    get:
+      operationId: getCorrectiveRun
+      tags: [corrective]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Full corrective run with items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CorrectiveReplanResult"
+        "404":
+          description: Not found
+
+  /corrective/runs/{id}/export/excel:
+    get:
+      operationId: exportCorrectiveExcel
+      tags: [corrective]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Excel workbook
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        "404":
+          description: Not found
+
   /plan:
     get:
       operationId: listPlanItems
@@ -1992,6 +2071,117 @@ components:
           nullable: true
           type: string
           enum: [green, amber, red]
+
+    CorrectiveReplanInput:
+      type: object
+      required: [month, weekClosed]
+      properties:
+        month: { type: string, description: "YYYY-MM" }
+        weekClosed: { type: integer, description: "Week just closed (0=none, 1=W1 done, 2=W2 done, 3=W3 done)" }
+        dailyCapacity: { type: number, description: "Pieces per day (default 21335)" }
+        workingDaysPerWeek: { type: integer, description: "Working days per week (default 6)" }
+
+    CorrectiveWeekStat:
+      type: object
+      required: [week, weekLabel, released, capacity, workingDays, produced, lag, loadFactor, status]
+      properties:
+        week: { type: integer }
+        weekLabel: { type: string }
+        released: { type: number }
+        capacity: { type: number }
+        workingDays: { type: integer }
+        produced: { type: number }
+        lag: { type: number }
+        loadFactor: { type: number }
+        status: { type: string, enum: [open, closed, future, unfulfillable] }
+
+    CorrectiveWarning:
+      type: object
+      required: [code, severity, message]
+      properties:
+        code: { type: string }
+        severity: { type: string, enum: [info, medium, high, critical] }
+        message: { type: string }
+        value: { type: ["number", "null"] }
+        threshold: { type: ["number", "null"] }
+        category: { type: ["string", "null"] }
+        items:
+          type: array
+          items: { type: string }
+
+    CorrectiveItemResult:
+      type: object
+      required: [itemCode, colour, category, avg3MoSale, bufferMultiplier, stockOpen, producedToDate, stockNow, pendingAtPlan, pendingNow, pendingLastMonth, originalPlan, bufferReqRev, planRev, remainingToProduce, deltaNewOrders, deltaProduction, deltaNet, w1Rev, w2Rev, w3Rev, w4Rev, status, isNewItem]
+      properties:
+        itemCode: { type: string }
+        colour: { type: string }
+        category: { type: string }
+        avg3MoSale: { type: number }
+        bufferMultiplier: { type: number }
+        stockOpen: { type: number }
+        producedToDate: { type: number }
+        stockNow: { type: number }
+        pendingAtPlan: { type: number }
+        pendingNow: { type: number }
+        pendingLastMonth: { type: number }
+        originalPlan: { type: number }
+        originalWeek: { type: ["integer", "null"] }
+        bufferReqRev: { type: number }
+        planRev: { type: number }
+        remainingToProduce: { type: number }
+        deltaNewOrders: { type: number }
+        deltaProduction: { type: number }
+        deltaNet: { type: number }
+        coverNow: { type: ["number", "null"] }
+        newWeek: { type: ["integer", "null"] }
+        w1Rev: { type: number }
+        w2Rev: { type: number }
+        w3Rev: { type: number }
+        w4Rev: { type: number }
+        status: { type: string }
+        isNewItem: { type: boolean }
+
+    CorrectiveReplanResult:
+      type: object
+      required: [runId, month, weekClosed, dailyCapacity, workingDaysPerWeek, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, weekStats, warnings, items]
+      properties:
+        runId: { type: integer }
+        month: { type: string }
+        weekClosed: { type: integer }
+        dailyCapacity: { type: number }
+        workingDaysPerWeek: { type: integer }
+        producedToDate: { type: number }
+        newOrdersQty: { type: number }
+        originalMonthTotal: { type: number }
+        revisedMonthTotal: { type: number }
+        unfulfillableQty: { type: number }
+        weekStats:
+          type: array
+          items: { $ref: "#/components/schemas/CorrectiveWeekStat" }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/CorrectiveWarning" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/CorrectiveItemResult" }
+
+    CorrectivePlanRunSummary:
+      type: object
+      required: [id, month, weekClosed, dailyCapacity, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, warnings, createdAt]
+      properties:
+        id: { type: integer }
+        month: { type: string }
+        weekClosed: { type: integer }
+        dailyCapacity: { type: number }
+        producedToDate: { type: number }
+        newOrdersQty: { type: number }
+        originalMonthTotal: { type: number }
+        revisedMonthTotal: { type: number }
+        unfulfillableQty: { type: number }
+        warnings:
+          type: array
+          items: { $ref: "#/components/schemas/CorrectiveWarning" }
+        createdAt: { type: string }
 
     PlantWeeklyCategoryRow:
       type: object

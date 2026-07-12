@@ -156,6 +156,179 @@ export const getSyncStatusResponseItem = zod.object({
 export const getSyncStatusResponse = zod.array(getSyncStatusResponseItem)
 
 
+/**
+ * @summary Run the weekly corrective re-plan engine
+ */
+export const runCorrectiveReplanBody = zod.object({
+  "month": zod.string().describe('YYYY-MM'),
+  "weekClosed": zod.number().describe('Week just closed (0=none, 1=W1 done, 2=W2 done, 3=W3 done)'),
+  "dailyCapacity": zod.number().optional().describe('Pieces per day (default 21335)'),
+  "workingDaysPerWeek": zod.number().optional().describe('Working days per week (default 6)')
+})
+
+export const runCorrectiveReplanResponse = zod.object({
+  "runId": zod.number(),
+  "month": zod.string(),
+  "weekClosed": zod.number(),
+  "dailyCapacity": zod.number(),
+  "workingDaysPerWeek": zod.number(),
+  "producedToDate": zod.number(),
+  "newOrdersQty": zod.number(),
+  "originalMonthTotal": zod.number(),
+  "revisedMonthTotal": zod.number(),
+  "unfulfillableQty": zod.number(),
+  "weekStats": zod.array(zod.object({
+  "week": zod.number(),
+  "weekLabel": zod.string(),
+  "released": zod.number(),
+  "capacity": zod.number(),
+  "workingDays": zod.number(),
+  "produced": zod.number(),
+  "lag": zod.number(),
+  "loadFactor": zod.number(),
+  "status": zod.enum(['open', 'closed', 'future', 'unfulfillable'])
+})),
+  "warnings": zod.array(zod.object({
+  "code": zod.string(),
+  "severity": zod.enum(['info', 'medium', 'high', 'critical']),
+  "message": zod.string(),
+  "value": zod.number().nullish(),
+  "threshold": zod.number().nullish(),
+  "category": zod.string().nullish(),
+  "items": zod.array(zod.string()).optional()
+})),
+  "items": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "category": zod.string(),
+  "avg3MoSale": zod.number(),
+  "bufferMultiplier": zod.number(),
+  "stockOpen": zod.number(),
+  "producedToDate": zod.number(),
+  "stockNow": zod.number(),
+  "pendingAtPlan": zod.number(),
+  "pendingNow": zod.number(),
+  "pendingLastMonth": zod.number(),
+  "originalPlan": zod.number(),
+  "originalWeek": zod.number().nullish(),
+  "bufferReqRev": zod.number(),
+  "planRev": zod.number(),
+  "remainingToProduce": zod.number(),
+  "deltaNewOrders": zod.number(),
+  "deltaProduction": zod.number(),
+  "deltaNet": zod.number(),
+  "coverNow": zod.number().nullish(),
+  "newWeek": zod.number().nullish(),
+  "w1Rev": zod.number(),
+  "w2Rev": zod.number(),
+  "w3Rev": zod.number(),
+  "w4Rev": zod.number(),
+  "status": zod.string(),
+  "isNewItem": zod.boolean()
+}))
+})
+
+
+export const listCorrectiveRunsQueryParams = zod.object({
+  "month": zod.string().optional()
+})
+
+export const listCorrectiveRunsResponseItem = zod.object({
+  "id": zod.number(),
+  "month": zod.string(),
+  "weekClosed": zod.number(),
+  "dailyCapacity": zod.number(),
+  "producedToDate": zod.number(),
+  "newOrdersQty": zod.number(),
+  "originalMonthTotal": zod.number(),
+  "revisedMonthTotal": zod.number(),
+  "unfulfillableQty": zod.number(),
+  "warnings": zod.array(zod.object({
+  "code": zod.string(),
+  "severity": zod.enum(['info', 'medium', 'high', 'critical']),
+  "message": zod.string(),
+  "value": zod.number().nullish(),
+  "threshold": zod.number().nullish(),
+  "category": zod.string().nullish(),
+  "items": zod.array(zod.string()).optional()
+})),
+  "createdAt": zod.string()
+})
+export const listCorrectiveRunsResponse = zod.array(listCorrectiveRunsResponseItem)
+
+
+export const getCorrectiveRunParams = zod.object({
+  "id": zod.number()
+})
+
+export const getCorrectiveRunResponse = zod.object({
+  "runId": zod.number(),
+  "month": zod.string(),
+  "weekClosed": zod.number(),
+  "dailyCapacity": zod.number(),
+  "workingDaysPerWeek": zod.number(),
+  "producedToDate": zod.number(),
+  "newOrdersQty": zod.number(),
+  "originalMonthTotal": zod.number(),
+  "revisedMonthTotal": zod.number(),
+  "unfulfillableQty": zod.number(),
+  "weekStats": zod.array(zod.object({
+  "week": zod.number(),
+  "weekLabel": zod.string(),
+  "released": zod.number(),
+  "capacity": zod.number(),
+  "workingDays": zod.number(),
+  "produced": zod.number(),
+  "lag": zod.number(),
+  "loadFactor": zod.number(),
+  "status": zod.enum(['open', 'closed', 'future', 'unfulfillable'])
+})),
+  "warnings": zod.array(zod.object({
+  "code": zod.string(),
+  "severity": zod.enum(['info', 'medium', 'high', 'critical']),
+  "message": zod.string(),
+  "value": zod.number().nullish(),
+  "threshold": zod.number().nullish(),
+  "category": zod.string().nullish(),
+  "items": zod.array(zod.string()).optional()
+})),
+  "items": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "category": zod.string(),
+  "avg3MoSale": zod.number(),
+  "bufferMultiplier": zod.number(),
+  "stockOpen": zod.number(),
+  "producedToDate": zod.number(),
+  "stockNow": zod.number(),
+  "pendingAtPlan": zod.number(),
+  "pendingNow": zod.number(),
+  "pendingLastMonth": zod.number(),
+  "originalPlan": zod.number(),
+  "originalWeek": zod.number().nullish(),
+  "bufferReqRev": zod.number(),
+  "planRev": zod.number(),
+  "remainingToProduce": zod.number(),
+  "deltaNewOrders": zod.number(),
+  "deltaProduction": zod.number(),
+  "deltaNet": zod.number(),
+  "coverNow": zod.number().nullish(),
+  "newWeek": zod.number().nullish(),
+  "w1Rev": zod.number(),
+  "w2Rev": zod.number(),
+  "w3Rev": zod.number(),
+  "w4Rev": zod.number(),
+  "status": zod.string(),
+  "isNewItem": zod.boolean()
+}))
+})
+
+
+export const exportCorrectiveExcelParams = zod.object({
+  "id": zod.number()
+})
+
+
 export const listPlanItemsQueryParams = zod.object({
   "month": zod.string(),
   "category": zod.string().optional()

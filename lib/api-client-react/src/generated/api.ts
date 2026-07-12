@@ -26,6 +26,9 @@ import type {
   BufferCategory,
   BufferCategoryUpdate,
   ComparePlanRunsParams,
+  CorrectivePlanRunSummary,
+  CorrectiveReplanInput,
+  CorrectiveReplanResult,
   CreatePlanRunRequest,
   CreateUploadBody,
   DashboardSnapshot,
@@ -57,6 +60,7 @@ import type {
   ItemWeightUpsert,
   ListAiAnalysesParams,
   ListAiPlantAnalysesParams,
+  ListCorrectiveRunsParams,
   ListIdealHoursOverridesParams,
   ListPlanItemsParams,
   ListPlanRunsParams,
@@ -762,6 +766,372 @@ export function useGetSyncStatus<TData = Awaited<ReturnType<typeof getSyncStatus
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetSyncStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
+ * @summary Run the weekly corrective re-plan engine
+ */
+export type runCorrectiveReplanResponse200 = {
+  data: CorrectiveReplanResult
+  status: 200
+}
+
+export type runCorrectiveReplanResponse400 = {
+  data: void
+  status: 400
+}
+
+export type runCorrectiveReplanResponse500 = {
+  data: void
+  status: 500
+}
+    
+export type runCorrectiveReplanResponseSuccess = (runCorrectiveReplanResponse200) & {
+  headers: Headers;
+};
+export type runCorrectiveReplanResponseError = (runCorrectiveReplanResponse400 | runCorrectiveReplanResponse500) & {
+  headers: Headers;
+};
+
+export type runCorrectiveReplanResponse = (runCorrectiveReplanResponseSuccess | runCorrectiveReplanResponseError)
+
+export const getRunCorrectiveReplanUrl = () => {
+
+
+  
+
+  return `/api/corrective/replan`
+}
+
+export const runCorrectiveReplan = async (correctiveReplanInput: CorrectiveReplanInput, options?: RequestInit): Promise<runCorrectiveReplanResponse> => {
+  
+  return customFetch<runCorrectiveReplanResponse>(getRunCorrectiveReplanUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      correctiveReplanInput,)
+  }
+);}
+
+
+
+
+export const getRunCorrectiveReplanMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runCorrectiveReplan>>, TError,{data: CorrectiveReplanInput}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof runCorrectiveReplan>>, TError,{data: CorrectiveReplanInput}, TContext> => {
+
+const mutationKey = ['runCorrectiveReplan'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof runCorrectiveReplan>>, {data: CorrectiveReplanInput}> = (props) => {
+          const {data} = props ?? {};
+
+          return  runCorrectiveReplan(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RunCorrectiveReplanMutationResult = NonNullable<Awaited<ReturnType<typeof runCorrectiveReplan>>>
+    export type RunCorrectiveReplanMutationBody = CorrectiveReplanInput
+    export type RunCorrectiveReplanMutationError = void
+
+    /**
+ * @summary Run the weekly corrective re-plan engine
+ */
+export const useRunCorrectiveReplan = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof runCorrectiveReplan>>, TError,{data: CorrectiveReplanInput}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof runCorrectiveReplan>>,
+        TError,
+        {data: CorrectiveReplanInput},
+        TContext
+      > => {
+
+      const mutationOptions = getRunCorrectiveReplanMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type listCorrectiveRunsResponse200 = {
+  data: CorrectivePlanRunSummary[]
+  status: 200
+}
+    
+export type listCorrectiveRunsResponseSuccess = (listCorrectiveRunsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listCorrectiveRunsResponse = (listCorrectiveRunsResponseSuccess)
+
+export const getListCorrectiveRunsUrl = (params?: ListCorrectiveRunsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/corrective/runs?${stringifiedParams}` : `/api/corrective/runs`
+}
+
+export const listCorrectiveRuns = async (params?: ListCorrectiveRunsParams, options?: RequestInit): Promise<listCorrectiveRunsResponse> => {
+  
+  return customFetch<listCorrectiveRunsResponse>(getListCorrectiveRunsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getListCorrectiveRunsQueryKey = (params?: ListCorrectiveRunsParams,) => {
+    return [
+    `/api/corrective/runs`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getListCorrectiveRunsQueryOptions = <TData = Awaited<ReturnType<typeof listCorrectiveRuns>>, TError = unknown>(params?: ListCorrectiveRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCorrectiveRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCorrectiveRunsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCorrectiveRuns>>> = ({ signal }) => listCorrectiveRuns(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCorrectiveRuns>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCorrectiveRunsQueryResult = NonNullable<Awaited<ReturnType<typeof listCorrectiveRuns>>>
+export type ListCorrectiveRunsQueryError = unknown
+
+
+
+export function useListCorrectiveRuns<TData = Awaited<ReturnType<typeof listCorrectiveRuns>>, TError = unknown>(
+ params?: ListCorrectiveRunsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCorrectiveRuns>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCorrectiveRunsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getCorrectiveRunResponse200 = {
+  data: CorrectiveReplanResult
+  status: 200
+}
+
+export type getCorrectiveRunResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type getCorrectiveRunResponseSuccess = (getCorrectiveRunResponse200) & {
+  headers: Headers;
+};
+export type getCorrectiveRunResponseError = (getCorrectiveRunResponse404) & {
+  headers: Headers;
+};
+
+export type getCorrectiveRunResponse = (getCorrectiveRunResponseSuccess | getCorrectiveRunResponseError)
+
+export const getGetCorrectiveRunUrl = (id: number,) => {
+
+
+  
+
+  return `/api/corrective/runs/${id}`
+}
+
+export const getCorrectiveRun = async (id: number, options?: RequestInit): Promise<getCorrectiveRunResponse> => {
+  
+  return customFetch<getCorrectiveRunResponse>(getGetCorrectiveRunUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetCorrectiveRunQueryKey = (id?: number,) => {
+    return [
+    `/api/corrective/runs/${id}`
+    ] as const;
+    }
+
+    
+export const getGetCorrectiveRunQueryOptions = <TData = Awaited<ReturnType<typeof getCorrectiveRun>>, TError = void>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCorrectiveRun>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCorrectiveRunQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCorrectiveRun>>> = ({ signal }) => getCorrectiveRun(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCorrectiveRun>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCorrectiveRunQueryResult = NonNullable<Awaited<ReturnType<typeof getCorrectiveRun>>>
+export type GetCorrectiveRunQueryError = void
+
+
+
+export function useGetCorrectiveRun<TData = Awaited<ReturnType<typeof getCorrectiveRun>>, TError = void>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCorrectiveRun>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCorrectiveRunQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type exportCorrectiveExcelResponse200 = {
+  data: Blob
+  status: 200
+}
+
+export type exportCorrectiveExcelResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type exportCorrectiveExcelResponseSuccess = (exportCorrectiveExcelResponse200) & {
+  headers: Headers;
+};
+export type exportCorrectiveExcelResponseError = (exportCorrectiveExcelResponse404) & {
+  headers: Headers;
+};
+
+export type exportCorrectiveExcelResponse = (exportCorrectiveExcelResponseSuccess | exportCorrectiveExcelResponseError)
+
+export const getExportCorrectiveExcelUrl = (id: number,) => {
+
+
+  
+
+  return `/api/corrective/runs/${id}/export/excel`
+}
+
+export const exportCorrectiveExcel = async (id: number, options?: RequestInit): Promise<exportCorrectiveExcelResponse> => {
+  
+  return customFetch<exportCorrectiveExcelResponse>(getExportCorrectiveExcelUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getExportCorrectiveExcelQueryKey = (id?: number,) => {
+    return [
+    `/api/corrective/runs/${id}/export/excel`
+    ] as const;
+    }
+
+    
+export const getExportCorrectiveExcelQueryOptions = <TData = Awaited<ReturnType<typeof exportCorrectiveExcel>>, TError = void>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportCorrectiveExcel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportCorrectiveExcelQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportCorrectiveExcel>>> = ({ signal }) => exportCorrectiveExcel(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportCorrectiveExcel>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportCorrectiveExcelQueryResult = NonNullable<Awaited<ReturnType<typeof exportCorrectiveExcel>>>
+export type ExportCorrectiveExcelQueryError = void
+
+
+
+export function useExportCorrectiveExcel<TData = Awaited<ReturnType<typeof exportCorrectiveExcel>>, TError = void>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportCorrectiveExcel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportCorrectiveExcelQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

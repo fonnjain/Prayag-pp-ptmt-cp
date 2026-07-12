@@ -8,6 +8,7 @@ import SummaryPage from "@/pages/summary";
 import CategoryPage from "@/pages/category";
 import ExportPage from "@/pages/export";
 import RunsPage from "@/pages/runs";
+import CorrectivePage from "@/pages/corrective";
 
 const queryClient = new QueryClient();
 
@@ -19,6 +20,7 @@ function Router() {
       <Route path="/category/:slug" component={CategoryPage} />
       <Route path="/runs" component={RunsPage} />
       <Route path="/export" component={ExportPage} />
+      <Route path="/corrective" component={CorrectivePage} />
       <Route component={NotFound} />
     </Switch>
   );
