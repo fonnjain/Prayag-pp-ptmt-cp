@@ -141,8 +141,15 @@ export function buildPlantWeeklySummary(
 ): PlantWeeklySummary {
   const calendar = buildWeekCalendar(month);
 
-  const today = snapshotDate ?? new Date().toISOString().slice(0, 10);
-  const todayInMonth = today.slice(0, 7) === month ? parseInt(today.slice(8), 10) : 0;
+  // Always use the real wall-clock date for "which week are we in" — never let
+  // a stale snapshotDate cause the current-week badge to fall behind.
+  const realToday = new Date().toISOString().slice(0, 10);
+  const calToday = realToday.slice(0, 7) === month ? parseInt(realToday.slice(8), 10) : 0;
+
+  // For data-elapsed calculations keep using snapshotDate (last data day)
+  const dataDay = (snapshotDate ?? realToday).slice(0, 7) === month
+    ? parseInt((snapshotDate ?? realToday).slice(8), 10) : 0;
+  const todayInMonth = calToday; // alias used below
 
   const currentWeek: number =
     todayInMonth === 0 ? 0
@@ -153,7 +160,8 @@ export function buildPlantWeeklySummary(
   let elapsedDaysInWeek = 0;
   if (currentWeek >= 1) {
     const wk = calendar[currentWeek - 1];
-    elapsedDaysInWeek = Math.max(0, Math.min(todayInMonth - wk.startDay + 1, wk.endDay - wk.startDay + 1));
+    // Use dataDay (snapshotDate) for elapsed — reflects how much of this week has actual data
+    elapsedDaysInWeek = Math.max(0, Math.min(dataDay - wk.startDay + 1, wk.endDay - wk.startDay + 1));
   }
 
   const catByKey = new Map<string, string>();
@@ -202,7 +210,7 @@ export function buildPlantWeeklySummary(
       plantTargets[i] += tgts[i];
       plantActuals[i] += acts[i];
     }
-    categoryRows.push({ category: cat, weeks: buildWeeklyStats(tgts, acts, calendar, today, month) });
+    categoryRows.push({ category: cat, weeks: buildWeeklyStats(tgts, acts, calendar, realToday, month) });
   }
 
   categoryRows.sort((a, b) => {
@@ -217,7 +225,7 @@ export function buildPlantWeeklySummary(
     weekCalendar: calendar,
     currentWeek,
     elapsedDaysInWeek,
-    plant: { weeks: buildWeeklyStats(plantTargets, plantActuals, calendar, today, month) },
+    plant: { weeks: buildWeeklyStats(plantTargets, plantActuals, calendar, realToday, month) },
     categories: categoryRows,
   };
 }

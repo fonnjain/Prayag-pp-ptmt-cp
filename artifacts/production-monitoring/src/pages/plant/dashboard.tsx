@@ -34,9 +34,9 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
     { month },
     { query: { queryKey: getGetPlantBundleQueryKey({ month }) } }
   );
-  const { data: weeklyRaw } = useGetPlantWeeklySummary(
+  const { data: weeklyRaw, isLoading: isWeeklyLoading } = useGetPlantWeeklySummary(
     { month },
-    { query: { queryKey: getGetPlantWeeklySummaryQueryKey({ month }) } as any }
+    { query: { queryKey: getGetPlantWeeklySummaryQueryKey({ month }), staleTime: 0 } as any }
   );
 
   if (isLoading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading plant data...</div>;
