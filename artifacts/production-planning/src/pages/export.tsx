@@ -4,6 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { currentMonth, formatMonthLabel } from "@/lib/month";
+import { useCreatePlanRun } from "@workspace/api-client-react";
+import { RefreshCw } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 async function downloadFile(url: string, filename: string) {
   const response = await fetch(url);
@@ -27,6 +30,19 @@ export default function ExportPage() {
   const month = currentMonth();
   const { toast } = useToast();
   const [downloading, setDownloading] = useState<ExportKind | null>(null);
+  const createRun = useCreatePlanRun();
+
+  function handleRunPlan() {
+    createRun.mutate(
+      { data: { month } },
+      {
+        onSuccess: () =>
+          toast({ title: "Plan run created", description: `Snapshot for ${formatMonthLabel(month)} saved to Plan Runs.` }),
+        onError: () =>
+          toast({ title: "Failed to create run", description: "Check that all data sources are available.", variant: "destructive" }),
+      },
+    );
+  }
 
   const base = import.meta.env.BASE_URL;
 
@@ -60,9 +76,18 @@ export default function ExportPage() {
   return (
     <AppLayout>
       <div className="max-w-2xl mx-auto space-y-6">
-        <div>
-          <h2 className="text-xl font-semibold">Export</h2>
-          <p className="text-sm text-gray-500">{formatMonthLabel(month)}</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold">Export</h2>
+            <p className="text-sm text-gray-500">{formatMonthLabel(month)}</p>
+          </div>
+          <Button
+            onClick={handleRunPlan}
+            disabled={createRun.isPending}
+          >
+            <RefreshCw className={cn("h-4 w-4 mr-2", createRun.isPending && "animate-spin")} />
+            {createRun.isPending ? "Running plan…" : "Run Plan now"}
+          </Button>
         </div>
 
         <Card>

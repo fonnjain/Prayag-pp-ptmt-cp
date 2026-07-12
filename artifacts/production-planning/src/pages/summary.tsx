@@ -1,4 +1,4 @@
-import { useGetPlanSummary, useListPlanItems, type PlanSummary, type PlanItem, useGetPlantWeeklySummary, getGetPlantWeeklySummaryQueryKey } from "@workspace/api-client-react";
+import { useGetPlanSummary, useListPlanItems, type PlanSummary, type PlanItem, useGetPlantWeeklySummary, getGetPlantWeeklySummaryQueryKey, useCreatePlanRun } from "@workspace/api-client-react";
 import { AppLayout, categorySlug } from "@/components/layout/app-layout";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/table";
 import { currentMonth, formatMonthLabel } from "@/lib/month";
 import { cn } from "@/lib/utils";
-import { FileSpreadsheet } from "lucide-react";
+import { FileSpreadsheet, RefreshCw } from "lucide-react";
 import { exportXlsx } from "@/lib/excel";
+import { useToast } from "@/hooks/use-toast";
 
 function ragBadge(pct: number | null | undefined): string {
   if (pct === null || pct === undefined) return "";
@@ -89,6 +90,20 @@ function WeekCell({
 export default function SummaryPage() {
   const month = currentMonth();
   const { data, isLoading, isError } = useGetPlanSummary({ month });
+  const createRun = useCreatePlanRun();
+  const { toast } = useToast();
+
+  function handleRunPlan() {
+    createRun.mutate(
+      { data: { month } },
+      {
+        onSuccess: () =>
+          toast({ title: "Plan run created", description: `Snapshot for ${formatMonthLabel(month)} saved to Plan Runs.` }),
+        onError: () =>
+          toast({ title: "Failed to create run", description: "Check that all data sources are available.", variant: "destructive" }),
+      },
+    );
+  }
   const { data: itemsData, isLoading: itemsLoading } = useListPlanItems(
     { month },
     { query: { staleTime: 5 * 60 * 1000 } as any },
@@ -139,30 +154,40 @@ export default function SummaryPage() {
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Summary — {formatMonthLabel(month)}</h2>
-          {!isLoading && !isError && (
-            <Button variant="outline" size="sm" onClick={() => exportXlsx(`plan-summary-${month}`, [
-              { name: "Summary", rows: categories.map((cat) => {
-                const wt = weeklyTotals.find((t) => t.category === cat.category);
-                const pcts = weeklyPctMap.get(cat.category);
-                return {
-                  Category: cat.category,
-                  MinRequired: cat.minTotal,
-                  MaxPlan: cat.maxTotal,
-                  W1_Plan: wt?.w1 ?? 0,
-                  W1_Ach_Pct: pcts?.w1Pct ?? "",
-                  W2_Plan: wt?.w2 ?? 0,
-                  W2_Ach_Pct: pcts?.w2Pct ?? "",
-                  W3_Plan: wt?.w3 ?? 0,
-                  W3_Ach_Pct: pcts?.w3Pct ?? "",
-                  W4_Plan: wt?.w4 ?? 0,
-                  W4_Ach_Pct: pcts?.w4Pct ?? "",
-                  Unscheduled: wt?.unscheduled ?? 0,
-                };
-              }) },
-            ])}>
-              <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={handleRunPlan}
+              disabled={createRun.isPending}
+            >
+              <RefreshCw className={cn("h-4 w-4 mr-2", createRun.isPending && "animate-spin")} />
+              {createRun.isPending ? "Running plan…" : "Run Plan now"}
             </Button>
-          )}
+            {!isLoading && !isError && (
+              <Button variant="outline" size="sm" onClick={() => exportXlsx(`plan-summary-${month}`, [
+                { name: "Summary", rows: categories.map((cat) => {
+                  const wt = weeklyTotals.find((t) => t.category === cat.category);
+                  const pcts = weeklyPctMap.get(cat.category);
+                  return {
+                    Category: cat.category,
+                    MinRequired: cat.minTotal,
+                    MaxPlan: cat.maxTotal,
+                    W1_Plan: wt?.w1 ?? 0,
+                    W1_Ach_Pct: pcts?.w1Pct ?? "",
+                    W2_Plan: wt?.w2 ?? 0,
+                    W2_Ach_Pct: pcts?.w2Pct ?? "",
+                    W3_Plan: wt?.w3 ?? 0,
+                    W3_Ach_Pct: pcts?.w3Pct ?? "",
+                    W4_Plan: wt?.w4 ?? 0,
+                    W4_Ach_Pct: pcts?.w4Pct ?? "",
+                    Unscheduled: wt?.unscheduled ?? 0,
+                  };
+                }) },
+              ])}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+              </Button>
+            )}
+          </div>
         </div>
 
         {isLoading && <p className="text-sm text-gray-500">Loading summary...</p>}
