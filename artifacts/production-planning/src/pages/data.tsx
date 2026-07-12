@@ -7,10 +7,14 @@ import {
   useCreateUpload,
   useGetSyncStatus,
   useSyncSheets,
+  useListCategoryCapacities,
+  useUpdateCategoryCapacity,
+  useRecomputeCategoryCapacity,
   UploadKind,
   type SyncSource,
   type UploadedFile,
   type BufferCategory,
+  type CategoryCapacity,
 } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -214,6 +218,164 @@ const Z_OPTIONS = [
   { value: 1.65, label: "95% (z=1.65)", short: "95%" },
   { value: 2.05, label: "98% (z=2.05)", short: "98%" },
 ];
+
+// ─── Production Capacity Table ────────────────────────────────────────────────
+
+function headroomColor(headroom: number, planNeedsPerDay: number): string {
+  if (planNeedsPerDay <= 0) return "text-gray-400";
+  if (headroom < 0) return "text-red-700 font-semibold";
+  if (headroom < planNeedsPerDay * 0.1) return "text-amber-700 font-semibold";
+  return "text-green-700";
+}
+
+function CapacityTable() {
+  const { data, isLoading, refetch } = useListCategoryCapacities();
+  const updateCapacity = useUpdateCategoryCapacity();
+  const recompute = useRecomputeCategoryCapacity();
+  const { toast } = useToast();
+  const [overrideDrafts, setOverrideDrafts] = useState<Record<string, string>>({});
+
+  const rows = (data as unknown as CategoryCapacity[] | undefined) ?? [];
+  const lastComputedAt = rows.map(r => r.lastComputedAt).filter(Boolean).sort().at(-1);
+
+  function appliedCapacity(row: CategoryCapacity): number {
+    return row.overrideCapacity != null ? row.overrideCapacity : row.suggestedCapacity;
+  }
+
+  function handleOverrideSave(row: CategoryCapacity, draftStr: string) {
+    const trimmed = draftStr.trim();
+    const isBlank = trimmed === "" || trimmed === "—";
+    const val = isBlank ? null : Number(trimmed.replace(/,/g, ""));
+    if (!isBlank && (Number.isNaN(val) || (val ?? 0) < 0)) {
+      toast({ title: "Invalid value", description: "Enter a positive number or leave blank to use suggestion.", variant: "destructive" });
+      return;
+    }
+    (updateCapacity as unknown as { mutate: (args: object, cbs: object) => void }).mutate(
+      { category: encodeURIComponent(row.category), data: { overrideCapacity: val } },
+      {
+        onSuccess: () => {
+          setOverrideDrafts(d => { const n = { ...d }; delete n[row.category]; return n; });
+          refetch();
+          toast({ title: isBlank ? "Override cleared" : "Override saved", description: `${row.category} → ${isBlank ? "Suggested" : val?.toLocaleString() + " pcs/day"}` });
+        },
+        onError: () => toast({ title: "Update failed", variant: "destructive" }),
+      },
+    );
+  }
+
+  function handleRecompute() {
+    (recompute as unknown as { mutate: (args: object, cbs: object) => void }).mutate(
+      {},
+      {
+        onSuccess: () => {
+          refetch();
+          toast({ title: "Capacity recomputed", description: "p90, mean, and best-day updated from trailing 90-day production actuals." });
+        },
+        onError: () => toast({ title: "Recompute failed", variant: "destructive" }),
+      },
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs text-gray-500">
+          <strong>Suggested</strong> = p90 of trailing 90-day daily output (from PTMT ANUJ). <strong>Applied</strong> = Override if set, else Suggested — consumed by all levelling modules.
+          {lastComputedAt && <span className="ml-2">Last recomputed: {fmtDateTime(lastComputedAt)}.</span>}
+        </div>
+        <Button size="sm" onClick={handleRecompute} disabled={(recompute as { isPending?: boolean }).isPending} className="shrink-0">
+          {(recompute as { isPending?: boolean }).isPending ? "Computing…" : "Recompute"}
+        </Button>
+      </div>
+
+      {isLoading && <p className="text-sm text-gray-500">Loading…</p>}
+
+      {!isLoading && rows.length === 0 && (
+        <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
+          ⚠ No capacity data yet. Click <strong>Recompute</strong> to derive from PTMT ANUJ daily actuals.
+        </div>
+      )}
+
+      {rows.length > 0 && (
+        <div className="overflow-x-auto rounded-md border text-sm">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                <th className="px-3 py-2 text-left">Category</th>
+                <th className="px-3 py-2 text-right">Suggested</th>
+                <th className="px-3 py-2 text-right">Override</th>
+                <th className="px-3 py-2 text-right font-bold text-gray-800">Applied</th>
+                <th className="px-3 py-2 text-right">Mean</th>
+                <th className="px-3 py-2 text-right">p90</th>
+                <th className="px-3 py-2 text-right">Best day</th>
+                <th className="px-3 py-2 text-right">Days obs.</th>
+                <th className="px-3 py-2 text-right">Plan needs/day</th>
+                <th className="px-3 py-2 text-right">Headroom</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {rows.map(row => {
+                const applied = appliedCapacity(row);
+                const headroom = applied - row.planNeedsPerDay;
+                const draft = overrideDrafts[row.category];
+                return (
+                  <tr key={row.category} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 font-medium whitespace-nowrap">
+                      {row.category}
+                      {row.isThinData === 1 && (
+                        <span className="ml-1 text-xs text-amber-600" title="Fewer than 10 producing days observed">⚠ thin data</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                      {Math.round(row.suggestedCapacity).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <input
+                        type="text"
+                        placeholder="—"
+                        value={draft ?? (row.overrideCapacity != null ? String(Math.round(row.overrideCapacity)) : "")}
+                        onChange={e => setOverrideDrafts(d => ({ ...d, [row.category]: e.target.value }))}
+                        onBlur={() => { if (draft !== undefined) handleOverrideSave(row, draft); }}
+                        onKeyDown={e => { if (e.key === "Enter" && draft !== undefined) handleOverrideSave(row, draft); }}
+                        className="w-24 text-right text-sm border border-gray-300 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                      {Math.round(applied).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                      {Math.round(row.meanPerDay).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                      {Math.round(row.p90PerDay).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                      {Math.round(row.bestDay).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                      {row.daysObserved}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                      {row.planNeedsPerDay > 0 ? Math.round(row.planNeedsPerDay).toLocaleString() : "—"}
+                    </td>
+                    <td className={cn("px-3 py-2 text-right tabular-nums", headroomColor(headroom, row.planNeedsPerDay))}>
+                      {row.planNeedsPerDay > 0 ? (headroom >= 0 ? "+" : "") + Math.round(headroom).toLocaleString() : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="text-xs text-gray-400">
+        Headroom = Applied − Plan needs/day. <span className="text-red-600">Red</span> = bottleneck (below plan need). <span className="text-amber-600">Amber</span> = within 10% headroom. <span className="text-green-600">Green</span> = ample headroom.
+        Thin-data categories (&lt;10 producing days) are flagged — review manually before trusting.
+      </p>
+    </div>
+  );
+}
 
 // ─── Main Seasonality Table ───────────────────────────────────────────────────
 
@@ -763,6 +925,20 @@ export default function DataPage() {
           </CardHeader>
           <CardContent>
             <ValidationPanel />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Production Capacity (pcs/day by category)</CardTitle>
+            <p className="text-xs text-gray-500 mt-1">
+              Three-column model: <strong>Suggested</strong> (p90 of trailing 90-day actuals, auto-computed) ·{" "}
+              <strong>Override</strong> (user, optional — type to set, clear to restore suggestion) ·{" "}
+              <strong>Applied</strong> (= Override if set, else Suggested). All levelling modules use Applied.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <CapacityTable />
           </CardContent>
         </Card>
 

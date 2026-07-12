@@ -1,4 +1,4 @@
-import { db, itemMasterTable, bufferCategoriesTable, weeklyReleaseBandsTable, correctivePlanRunsTable, correctivePlanItemsTable } from "@workspace/db";
+import { db, itemMasterTable, bufferCategoriesTable, weeklyReleaseBandsTable, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable } from "@workspace/db";
 import type { CorrectiveWeekStat, CorrectiveWarning } from "@workspace/db";
 import { fetchDailyActuals } from "./plant-ingestion";
 import { fetchLivePendingOrderTotals, itemKey, normalizeCode } from "./sheets";
@@ -95,7 +95,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   logger.info({ month, weekClosed, dailyCapacity }, "corrective-engine: starting replan");
 
   // ── Fetch everything in parallel ────────────────────────────────────────────
-  const [originalItems, dailyActuals, livePendingTotals, pendingOrderRows, pendingLastMoRows, bufferRows, bandRows, itemRows] =
+  const [originalItems, dailyActuals, livePendingTotals, pendingOrderRows, pendingLastMoRows, bufferRows, bandRows, itemRows, catCapRows] =
     await Promise.all([
       buildPlanItems(month),
       fetchDailyActuals(month).catch(err => { logger.warn({ err }, "corrective-engine: fetchDailyActuals failed, using zeros"); return []; }),
@@ -105,6 +105,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       db.select().from(bufferCategoriesTable),
       db.select().from(weeklyReleaseBandsTable),
       db.select().from(itemMasterTable),
+      db.select().from(categoryCapacityTable),
     ]);
 
   // ── Map original plan items by key ──────────────────────────────────────────
@@ -229,10 +230,16 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     });
   }
 
+  // ── Per-category capacity map ─────────────────────────────────────────────────
+  const catCapMap = new Map(catCapRows.map(r => [r.category, r]));
+  const globalWorkingDays = catCapRows[0]?.workingDaysPerWeek ?? workingDaysPerWeek;
+  // Total applied capacity per day (for weekStats reporting only)
+  const totalDailyApplied = catCapRows.reduce((s, r) => s + (r.overrideCapacity ?? r.suggestedCapacity), 0) || dailyCapacity;
+  const weekCapacity = globalWorkingDays * totalDailyApplied;
+
   // ── Re-score urgency and assign to remaining weeks ────────────────────────────
   const remainingWeeks: number[] = [];
   for (let w = weekClosed + 1; w <= 4; w++) remainingWeeks.push(w);
-  const weekCapacity = workingDaysPerWeek * dailyCapacity;
 
   // Sort items with remaining_to_produce > 0 by cover_now ascending (most urgent first)
   const schedulable = items.filter(i => i.remainingToProduce > 0);
@@ -242,9 +249,9 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     return ca - cb;
   });
 
-  // Also assign week via band config for re-scoring
-  const weekBuckets = new Map<number, number>(); // week → cumulative load
-  for (const w of remainingWeeks) weekBuckets.set(w, 0);
+  // Per-category, per-week load buckets: Map<week, Map<category, load>>
+  const catWeekBuckets = new Map<number, Map<string, number>>();
+  for (const w of remainingWeeks) catWeekBuckets.set(w, new Map());
 
   // Week assignment: first try band-based, then fall back to capacity-levelled spill
   for (const item of schedulable) {
@@ -270,15 +277,23 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       continue;
     }
 
-    // Capacity levelling: spill forward if week is full
+    // Per-category capacity levelling: spill forward if THIS CATEGORY's week is full
+    const cap = catCapMap.get(item.category);
+    const appliedDailyCap = cap
+      ? (cap.overrideCapacity ?? cap.suggestedCapacity)
+      : (totalDailyApplied / Math.max(catCapRows.length, 1));
+    const catWDays = cap?.workingDaysPerWeek ?? globalWorkingDays;
+    const catWeekCap = appliedDailyCap * catWDays;
+
     let finalWeek: number | null = null;
     let spill = assignedWeek;
     while (spill <= 4) {
       if (!remainingWeeks.includes(spill)) { spill++; continue; }
-      const currentLoad = weekBuckets.get(spill) ?? 0;
-      if (currentLoad + item.remainingToProduce <= weekCapacity) {
+      const catBuckets = catWeekBuckets.get(spill)!;
+      const catLoad = catBuckets.get(item.category) ?? 0;
+      if (catLoad + item.remainingToProduce <= catWeekCap) {
         finalWeek = spill;
-        weekBuckets.set(spill, currentLoad + item.remainingToProduce);
+        catBuckets.set(item.category, catLoad + item.remainingToProduce);
         break;
       }
       spill++;
@@ -327,7 +342,9 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       .filter(i => i.originalWeek === w)
       .reduce((sum, i) => sum + i.producedToDate, 0);
 
-    const weekLoad = weekBuckets.get(w) ?? 0;
+    // Total load for this week = sum of all category loads
+    const catMap = catWeekBuckets.get(w);
+    const weekLoad = catMap ? [...catMap.values()].reduce((s, v) => s + v, 0) : 0;
     const revLoad = w <= weekClosed ? origReleased : weekLoad;
 
     weekStats.push({
@@ -335,10 +352,10 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       weekLabel: `W${w}`,
       released: round(origReleased),
       capacity: round(weekCapacity),
-      workingDays: workingDaysPerWeek,
+      workingDays: globalWorkingDays,
       produced: round(w <= weekClosed ? producedForWeek : 0),
       lag: round(w <= weekClosed ? Math.max(origReleased - producedForWeek, 0) : 0),
-      loadFactor: round(revLoad / weekCapacity),
+      loadFactor: round(weekCapacity > 0 ? revLoad / weekCapacity : 0),
       status: w < weekClosed ? "closed" : w === weekClosed ? "closed" : remainingWeeks.includes(w) ? "future" : "closed",
     });
   }
@@ -370,13 +387,35 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     }
   }
 
-  // CAPACITY_OVERLOAD: any week's revised load > capacity
+  // CAPACITY_OVERLOAD: per-category check for remaining weeks
+  for (const w of remainingWeeks) {
+    const catMap = catWeekBuckets.get(w);
+    if (!catMap) continue;
+    for (const [cat, load] of catMap) {
+      const cap = catCapMap.get(cat);
+      const appliedDailyCap = cap ? (cap.overrideCapacity ?? cap.suggestedCapacity) : 0;
+      const catWDays = cap?.workingDaysPerWeek ?? globalWorkingDays;
+      const catWeekCap = appliedDailyCap * catWDays;
+      if (catWeekCap > 0 && load > catWeekCap * 1.05) {
+        const lf = load / catWeekCap;
+        warnings.push({
+          code: "CAPACITY_OVERLOAD",
+          severity: lf > 2 ? "critical" : lf > 1.5 ? "high" : "medium",
+          message: `${cat} W${w}: ${lf.toFixed(1)}× capacity (${Math.round(load).toLocaleString()} vs ${Math.round(catWeekCap).toLocaleString()} pcs/wk)`,
+          value: load,
+          threshold: catWeekCap,
+          category: cat,
+        });
+      }
+    }
+  }
+  // Also flag plant-total overload for reporting
   for (const ws of weekStats) {
-    if (ws.loadFactor > 1.05) {
+    if (ws.loadFactor > 1.05 && !remainingWeeks.includes(ws.week)) {
       warnings.push({
         code: "CAPACITY_OVERLOAD",
         severity: ws.loadFactor > 2 ? "critical" : ws.loadFactor > 1.5 ? "high" : "medium",
-        message: `W${ws.week}: load ${ws.loadFactor.toFixed(1)}× capacity (${Math.round(ws.released).toLocaleString()} vs ${Math.round(ws.capacity).toLocaleString()}/wk)`,
+        message: `W${ws.week}: total load ${ws.loadFactor.toFixed(1)}× plant capacity (${Math.round(ws.released).toLocaleString()} vs ${Math.round(ws.capacity).toLocaleString()}/wk)`,
         value: ws.released,
         threshold: ws.capacity,
       });
@@ -451,8 +490,8 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   const [run] = await db.insert(correctivePlanRunsTable).values({
     month,
     weekClosed,
-    dailyCapacity,
-    workingDaysPerWeek,
+    dailyCapacity: Math.round(totalDailyApplied),
+    workingDaysPerWeek: globalWorkingDays,
     producedToDate: producedToDateTotal,
     newOrdersQty,
     originalMonthTotal,
@@ -507,8 +546,8 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     runId: run?.id ?? 0,
     month,
     weekClosed,
-    dailyCapacity,
-    workingDaysPerWeek,
+    dailyCapacity: Math.round(totalDailyApplied),
+    workingDaysPerWeek: globalWorkingDays,
     producedToDate: producedToDateTotal,
     newOrdersQty,
     originalMonthTotal,

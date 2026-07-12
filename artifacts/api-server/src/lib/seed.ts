@@ -144,4 +144,6 @@ export async function ensureSeedData(): Promise<void> {
   await seedPlantSourceConfigs();
   await seedPlantConfigs();
   await seedWeeklyReleaseBands();
+  const { seedCategoryCapacity } = await import("./capacity-engine");
+  await seedCategoryCapacity();
 }

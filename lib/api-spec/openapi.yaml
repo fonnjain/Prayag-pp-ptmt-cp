@@ -229,6 +229,67 @@ paths:
         "404":
           description: Not found
 
+  /capacity/categories:
+    get:
+      operationId: listCategoryCapacities
+      tags: [capacity]
+      responses:
+        "200":
+          description: List of per-category production capacities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CategoryCapacity"
+
+  /capacity/categories/{category}:
+    patch:
+      operationId: updateCategoryCapacity
+      tags: [capacity]
+      parameters:
+        - name: category
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryCapacityUpdate"
+      responses:
+        "200":
+          description: Updated category capacity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CategoryCapacity"
+        "404":
+          description: Not found
+
+  /capacity/recompute:
+    post:
+      operationId: recomputeCategoryCapacity
+      tags: [capacity]
+      summary: Recompute per-category capacity from trailing actuals
+      parameters:
+        - name: trailingDays
+          in: query
+          required: false
+          schema: { type: integer, default: 90 }
+      responses:
+        "200":
+          description: Recomputed category capacities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CategoryCapacity"
+        "500":
+          description: Engine error
+
   /plan:
     get:
       operationId: listPlanItems
@@ -2164,6 +2225,31 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/CorrectiveItemResult" }
+
+    CategoryCapacity:
+      type: object
+      required: [id, category, meanPerDay, p90PerDay, bestDay, daysObserved, trailingDays, isThinData, suggestedCapacity, workingDaysPerWeek, planNeedsPerDay, appliedCapacity, lastComputedAt]
+      properties:
+        id: { type: integer }
+        category: { type: string }
+        meanPerDay: { type: number }
+        p90PerDay: { type: number }
+        bestDay: { type: number }
+        daysObserved: { type: integer }
+        trailingDays: { type: integer }
+        isThinData: { type: integer, description: "1 = fewer than 10 producing days observed — treat as indicative only" }
+        suggestedCapacity: { type: number }
+        overrideCapacity: { type: ["number", "null"] }
+        appliedCapacity: { type: number, description: "override if set, else suggested — all modules use this" }
+        workingDaysPerWeek: { type: integer }
+        planNeedsPerDay: { type: number }
+        lastComputedAt: { type: string }
+
+    CategoryCapacityUpdate:
+      type: object
+      properties:
+        overrideCapacity: { type: ["number", "null"] }
+        workingDaysPerWeek: { type: integer }
 
     CorrectivePlanRunSummary:
       type: object

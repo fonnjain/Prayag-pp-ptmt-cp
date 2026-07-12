@@ -329,6 +329,80 @@ export const exportCorrectiveExcelParams = zod.object({
 })
 
 
+export const listCategoryCapacitiesResponseItem = zod.object({
+  "id": zod.number(),
+  "category": zod.string(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number(),
+  "daysObserved": zod.number(),
+  "trailingDays": zod.number(),
+  "isThinData": zod.number().describe('1 = fewer than 10 producing days observed — treat as indicative only'),
+  "suggestedCapacity": zod.number(),
+  "overrideCapacity": zod.number().nullish(),
+  "appliedCapacity": zod.number().describe('override if set, else suggested — all modules use this'),
+  "workingDaysPerWeek": zod.number(),
+  "planNeedsPerDay": zod.number(),
+  "lastComputedAt": zod.string()
+})
+export const listCategoryCapacitiesResponse = zod.array(listCategoryCapacitiesResponseItem)
+
+
+export const updateCategoryCapacityParams = zod.object({
+  "category": zod.string()
+})
+
+export const updateCategoryCapacityBody = zod.object({
+  "overrideCapacity": zod.number().nullish(),
+  "workingDaysPerWeek": zod.number().optional()
+})
+
+export const updateCategoryCapacityResponse = zod.object({
+  "id": zod.number(),
+  "category": zod.string(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number(),
+  "daysObserved": zod.number(),
+  "trailingDays": zod.number(),
+  "isThinData": zod.number().describe('1 = fewer than 10 producing days observed — treat as indicative only'),
+  "suggestedCapacity": zod.number(),
+  "overrideCapacity": zod.number().nullish(),
+  "appliedCapacity": zod.number().describe('override if set, else suggested — all modules use this'),
+  "workingDaysPerWeek": zod.number(),
+  "planNeedsPerDay": zod.number(),
+  "lastComputedAt": zod.string()
+})
+
+
+/**
+ * @summary Recompute per-category capacity from trailing actuals
+ */
+export const recomputeCategoryCapacityQueryTrailingDaysDefault = 90;
+
+export const recomputeCategoryCapacityQueryParams = zod.object({
+  "trailingDays": zod.number().default(recomputeCategoryCapacityQueryTrailingDaysDefault)
+})
+
+export const recomputeCategoryCapacityResponseItem = zod.object({
+  "id": zod.number(),
+  "category": zod.string(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number(),
+  "daysObserved": zod.number(),
+  "trailingDays": zod.number(),
+  "isThinData": zod.number().describe('1 = fewer than 10 producing days observed — treat as indicative only'),
+  "suggestedCapacity": zod.number(),
+  "overrideCapacity": zod.number().nullish(),
+  "appliedCapacity": zod.number().describe('override if set, else suggested — all modules use this'),
+  "workingDaysPerWeek": zod.number(),
+  "planNeedsPerDay": zod.number(),
+  "lastComputedAt": zod.string()
+})
+export const recomputeCategoryCapacityResponse = zod.array(recomputeCategoryCapacityResponseItem)
+
+
 export const listPlanItemsQueryParams = zod.object({
   "month": zod.string(),
   "category": zod.string().optional()

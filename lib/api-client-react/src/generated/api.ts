@@ -25,6 +25,8 @@ import type {
   AnalyzeAiPlantBody,
   BufferCategory,
   BufferCategoryUpdate,
+  CategoryCapacity,
+  CategoryCapacityUpdate,
   ComparePlanRunsParams,
   CorrectivePlanRunSummary,
   CorrectiveReplanInput,
@@ -83,6 +85,7 @@ import type {
   PlantConfigUpdate,
   PlantSourceConfigUpsert,
   PlantWeeklySummary,
+  RecomputeCategoryCapacityParams,
   RecomputeSeasonalityParams,
   SeasonalityRecomputeResult,
   SyncSource,
@@ -1144,6 +1147,272 @@ export function useExportCorrectiveExcel<TData = Awaited<ReturnType<typeof expor
 
 
 
+export type listCategoryCapacitiesResponse200 = {
+  data: CategoryCapacity[]
+  status: 200
+}
+    
+export type listCategoryCapacitiesResponseSuccess = (listCategoryCapacitiesResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listCategoryCapacitiesResponse = (listCategoryCapacitiesResponseSuccess)
+
+export const getListCategoryCapacitiesUrl = () => {
+
+
+  
+
+  return `/api/capacity/categories`
+}
+
+export const listCategoryCapacities = async ( options?: RequestInit): Promise<listCategoryCapacitiesResponse> => {
+  
+  return customFetch<listCategoryCapacitiesResponse>(getListCategoryCapacitiesUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getListCategoryCapacitiesQueryKey = () => {
+    return [
+    `/api/capacity/categories`
+    ] as const;
+    }
+
+    
+export const getListCategoryCapacitiesQueryOptions = <TData = Awaited<ReturnType<typeof listCategoryCapacities>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCategoryCapacities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCategoryCapacitiesQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCategoryCapacities>>> = ({ signal }) => listCategoryCapacities({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCategoryCapacities>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCategoryCapacitiesQueryResult = NonNullable<Awaited<ReturnType<typeof listCategoryCapacities>>>
+export type ListCategoryCapacitiesQueryError = unknown
+
+
+
+export function useListCategoryCapacities<TData = Awaited<ReturnType<typeof listCategoryCapacities>>, TError = unknown>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCategoryCapacities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCategoryCapacitiesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type updateCategoryCapacityResponse200 = {
+  data: CategoryCapacity
+  status: 200
+}
+
+export type updateCategoryCapacityResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type updateCategoryCapacityResponseSuccess = (updateCategoryCapacityResponse200) & {
+  headers: Headers;
+};
+export type updateCategoryCapacityResponseError = (updateCategoryCapacityResponse404) & {
+  headers: Headers;
+};
+
+export type updateCategoryCapacityResponse = (updateCategoryCapacityResponseSuccess | updateCategoryCapacityResponseError)
+
+export const getUpdateCategoryCapacityUrl = (category: string,) => {
+
+
+  
+
+  return `/api/capacity/categories/${category}`
+}
+
+export const updateCategoryCapacity = async (category: string,
+    categoryCapacityUpdate: CategoryCapacityUpdate, options?: RequestInit): Promise<updateCategoryCapacityResponse> => {
+  
+  return customFetch<updateCategoryCapacityResponse>(getUpdateCategoryCapacityUrl(category),
+  {      
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      categoryCapacityUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdateCategoryCapacityMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCategoryCapacity>>, TError,{category: string;data: CategoryCapacityUpdate}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCategoryCapacity>>, TError,{category: string;data: CategoryCapacityUpdate}, TContext> => {
+
+const mutationKey = ['updateCategoryCapacity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCategoryCapacity>>, {category: string;data: CategoryCapacityUpdate}> = (props) => {
+          const {category,data} = props ?? {};
+
+          return  updateCategoryCapacity(category,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCategoryCapacityMutationResult = NonNullable<Awaited<ReturnType<typeof updateCategoryCapacity>>>
+    export type UpdateCategoryCapacityMutationBody = CategoryCapacityUpdate
+    export type UpdateCategoryCapacityMutationError = void
+
+    export const useUpdateCategoryCapacity = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCategoryCapacity>>, TError,{category: string;data: CategoryCapacityUpdate}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCategoryCapacity>>,
+        TError,
+        {category: string;data: CategoryCapacityUpdate},
+        TContext
+      > => {
+
+      const mutationOptions = getUpdateCategoryCapacityMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+/**
+ * @summary Recompute per-category capacity from trailing actuals
+ */
+export type recomputeCategoryCapacityResponse200 = {
+  data: CategoryCapacity[]
+  status: 200
+}
+
+export type recomputeCategoryCapacityResponse500 = {
+  data: void
+  status: 500
+}
+    
+export type recomputeCategoryCapacityResponseSuccess = (recomputeCategoryCapacityResponse200) & {
+  headers: Headers;
+};
+export type recomputeCategoryCapacityResponseError = (recomputeCategoryCapacityResponse500) & {
+  headers: Headers;
+};
+
+export type recomputeCategoryCapacityResponse = (recomputeCategoryCapacityResponseSuccess | recomputeCategoryCapacityResponseError)
+
+export const getRecomputeCategoryCapacityUrl = (params?: RecomputeCategoryCapacityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/capacity/recompute?${stringifiedParams}` : `/api/capacity/recompute`
+}
+
+export const recomputeCategoryCapacity = async (params?: RecomputeCategoryCapacityParams, options?: RequestInit): Promise<recomputeCategoryCapacityResponse> => {
+  
+  return customFetch<recomputeCategoryCapacityResponse>(getRecomputeCategoryCapacityUrl(params),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+
+
+
+
+export const getRecomputeCategoryCapacityMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recomputeCategoryCapacity>>, TError,{params?: RecomputeCategoryCapacityParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recomputeCategoryCapacity>>, TError,{params?: RecomputeCategoryCapacityParams}, TContext> => {
+
+const mutationKey = ['recomputeCategoryCapacity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recomputeCategoryCapacity>>, {params?: RecomputeCategoryCapacityParams}> = (props) => {
+          const {params} = props ?? {};
+
+          return  recomputeCategoryCapacity(params,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecomputeCategoryCapacityMutationResult = NonNullable<Awaited<ReturnType<typeof recomputeCategoryCapacity>>>
+    
+    export type RecomputeCategoryCapacityMutationError = void
+
+    /**
+ * @summary Recompute per-category capacity from trailing actuals
+ */
+export const useRecomputeCategoryCapacity = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recomputeCategoryCapacity>>, TError,{params?: RecomputeCategoryCapacityParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recomputeCategoryCapacity>>,
+        TError,
+        {params?: RecomputeCategoryCapacityParams},
+        TContext
+      > => {
+
+      const mutationOptions = getRecomputeCategoryCapacityMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
 export type listPlanItemsResponse200 = {
   data: PlanItem[]
   status: 200

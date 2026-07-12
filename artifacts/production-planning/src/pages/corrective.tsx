@@ -30,9 +30,6 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_CAPACITY = 21335;
-const DEFAULT_WORKING_DAYS = 6;
-
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   "on-plan":      { label: "On Plan",       color: "#166534", bg: "#dcfce7" },
   "carried-over": { label: "Carried Over",  color: "#92400e", bg: "#fef3c7" },
@@ -124,7 +121,7 @@ function WarningsCard({ warnings }: { warnings: CorrectiveWarning[] }) {
 function CapacityChart({ weekStats, weekClosed }: { weekStats: CorrectiveWeekStat[]; weekClosed: number }) {
   if (!weekStats || weekStats.length === 0) return null;
 
-  const weekCapacity = weekStats[0]?.capacity ?? DEFAULT_CAPACITY * DEFAULT_WORKING_DAYS;
+  const weekCapacity = weekStats[0]?.capacity ?? 0;
 
   const data = weekStats.map((ws, i) => ({
     name: ws.weekLabel,
@@ -244,7 +241,7 @@ function CorrectiveActionsCard({ result }: { result: CorrectiveReplanResult }) {
     ? result.items.filter(i => i.newWeek === nextWeek).reduce((s, i) => s + i.remainingToProduce, 0)
     : 0;
   const overloadPcs = Math.max(immediateWeekLoad - weekCapacity, 0);
-  const overtimeHrs = overloadPcs > 0 ? Math.round(overloadPcs / (result.dailyCapacity / 8)) : 0;
+  const overtimeHrs = overloadPcs > 0 && result.dailyCapacity > 0 ? Math.round(overloadPcs / (result.dailyCapacity / 8)) : 0;
 
   // Categories that absorbed most new demand
   const catDelta = new Map<string, number>();
@@ -665,8 +662,6 @@ export default function CorrectivePage() {
 
   const [month, setMonth] = useState(defaultMonth);
   const [weekClosed, setWeekClosed] = useState(1);
-  const [dailyCapacity, setDailyCapacity] = useState(DEFAULT_CAPACITY);
-  const [workingDays, setWorkingDays] = useState(DEFAULT_WORKING_DAYS);
   const [runResult, setRunResult] = useState<CorrectiveReplanResult | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"table" | "chart" | "actions">("table");
@@ -687,7 +682,7 @@ export default function CorrectivePage() {
 
   function handleReplan() {
     replan.mutate(
-      { data: { month, weekClosed, dailyCapacity, workingDaysPerWeek: workingDays } },
+      { data: { month, weekClosed } },
       {
         onSuccess: (data) => {
           const result = data as unknown as CorrectiveReplanResult;
@@ -759,26 +754,6 @@ export default function CorrectivePage() {
                   ))}
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Daily capacity (pcs)</label>
-                <Input
-                  type="number"
-                  value={dailyCapacity}
-                  onChange={e => setDailyCapacity(Number(e.target.value) || DEFAULT_CAPACITY)}
-                  className="w-28 h-8 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Working days/week</label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={7}
-                  value={workingDays}
-                  onChange={e => setWorkingDays(Number(e.target.value) || DEFAULT_WORKING_DAYS)}
-                  className="w-20 h-8 text-sm"
-                />
-              </div>
               <Button
                 onClick={handleReplan}
                 disabled={replan.isPending || !month}
@@ -789,7 +764,8 @@ export default function CorrectivePage() {
             </div>
             <p className="text-xs text-gray-400 mt-2">
               Uses live production (PTMT ANUJ), live pending orders, and the latest uploaded stock/pending files.
-              Daily capacity default: {fmtPcs(DEFAULT_CAPACITY)} pcs × {DEFAULT_WORKING_DAYS} days = {fmtPcs(DEFAULT_CAPACITY * DEFAULT_WORKING_DAYS)} pcs/week.
+              Capacity is applied <strong>per category</strong> from the global table on the{" "}
+              <a href="/data" className="underline text-indigo-600 hover:text-indigo-800">Data page</a>.
             </p>
           </CardContent>
         </Card>

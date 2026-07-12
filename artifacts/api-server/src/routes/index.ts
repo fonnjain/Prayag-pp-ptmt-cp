@@ -11,6 +11,7 @@ import plantRouter from "./plant";
 import reportsRouter from "./reports";
 import opsRouter from "./ops";
 import correctiveRouter from "./corrective";
+import capacityRouter from "./capacity";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(plantRouter);
 router.use(reportsRouter);
 router.use(opsRouter);
 router.use(correctiveRouter);
+router.use(capacityRouter);
 
 export default router;
