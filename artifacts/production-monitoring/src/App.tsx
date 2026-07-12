@@ -84,7 +84,7 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
           <AiAnalytics month={month} />
         </Route>
         <Route path="/plant">
-          <PlantDashboard month={month} selectedCategory={selectedCategory} />
+          <PlantDashboard month={month} selectedCategory={selectedCategory} setSelectedCategory={setSelectedCategory} />
         </Route>
         <Route path="/plant/velocity">
           <PlantVelocity month={month} selectedCategory={selectedCategory} />

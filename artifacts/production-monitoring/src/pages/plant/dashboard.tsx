@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Activity, Download, FileSpreadsheet, CalendarRange } from "lucide-react";
+import { useLocation } from "wouter";
 import { fmtDate } from "@/lib/utils";
 import { exportXlsx } from "@/lib/excel";
 
@@ -27,7 +28,8 @@ function ragColors(band: string | null | undefined) {
   return { bg: "bg-red-500/10 border-red-500/30", text: "text-red-600", badge: "bg-red-500/15 text-red-700 border-red-500/30" };
 }
 
-export default function PlantDashboard({ month, selectedCategory }: { month: string; selectedCategory?: string | null }) {
+export default function PlantDashboard({ month, selectedCategory, setSelectedCategory }: { month: string; selectedCategory?: string | null; setSelectedCategory?: (c: string | null) => void }) {
+  const [, navigate] = useLocation();
   const { data, isLoading } = useGetPlantBundle(
     { month },
     { query: { queryKey: getGetPlantBundleQueryKey({ month }) } }
@@ -314,7 +316,14 @@ export default function PlantDashboard({ month, selectedCategory }: { month: str
                 ? (projectedPcs / cat.targetMax) * 100
                 : null;
               return (
-                <div key={cat.category} className="flex items-center gap-3">
+                <button
+                  key={cat.category}
+                  onClick={() => {
+                    setSelectedCategory?.(cat.category);
+                    navigate("/plant/categories");
+                  }}
+                  className="w-full flex items-center gap-3 rounded-md px-2 py-1 -mx-2 hover:bg-muted/50 transition-colors cursor-pointer text-left"
+                >
                   <div className="w-44 text-sm font-medium truncate">{cat.category}</div>
                   <div className="flex-1 bg-muted/40 rounded-full h-2 overflow-hidden">
                     <div
@@ -332,7 +341,7 @@ export default function PlantDashboard({ month, selectedCategory }: { month: str
                     ) : "–"}
                   </div>
                   <div className="text-xs text-muted-foreground w-24 text-right">{fmt(cat.targetMax)}</div>
-                </div>
+                </button>
               );
             })}
           </div>
