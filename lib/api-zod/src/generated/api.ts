@@ -15,7 +15,20 @@ export const listBufferCategoriesResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "multiplier": zod.number(),
-  "updatedAt": zod.string().datetime({})
+  "updatedAt": zod.string().datetime({}),
+  "suggestedMultiplier": zod.number().nullish(),
+  "overrideMultiplier": zod.number().nullish(),
+  "cvValue": zod.number().nullish(),
+  "volatilityClass": zod.string().nullish(),
+  "avgMonth": zod.number().nullish(),
+  "peakMonth": zod.string().nullish(),
+  "peakIndex": zod.number().nullish(),
+  "yoy": zod.number().nullish(),
+  "signal": zod.string().nullish(),
+  "seasonalIndices": zod.string().nullish(),
+  "lastComputedAt": zod.string().datetime({}).nullish(),
+  "dataQuality": zod.string().nullish(),
+  "zScore": zod.number().nullish()
 })
 export const listBufferCategoriesResponse = zod.array(listBufferCategoriesResponseItem)
 
@@ -26,17 +39,81 @@ export const updateBufferCategoryParams = zod.object({
 
 export const updateBufferCategoryBodyMultiplierMin = 0;
 
+export const updateBufferCategoryBodyOverrideMultiplierMin = 0;
+
 
 
 export const updateBufferCategoryBody = zod.object({
-  "multiplier": zod.number().min(updateBufferCategoryBodyMultiplierMin)
+  "multiplier": zod.number().min(updateBufferCategoryBodyMultiplierMin).optional(),
+  "overrideMultiplier": zod.number().min(updateBufferCategoryBodyOverrideMultiplierMin).nullish()
 })
 
 export const updateBufferCategoryResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "multiplier": zod.number(),
-  "updatedAt": zod.string().datetime({})
+  "updatedAt": zod.string().datetime({}),
+  "suggestedMultiplier": zod.number().nullish(),
+  "overrideMultiplier": zod.number().nullish(),
+  "cvValue": zod.number().nullish(),
+  "volatilityClass": zod.string().nullish(),
+  "avgMonth": zod.number().nullish(),
+  "peakMonth": zod.string().nullish(),
+  "peakIndex": zod.number().nullish(),
+  "yoy": zod.number().nullish(),
+  "signal": zod.string().nullish(),
+  "seasonalIndices": zod.string().nullish(),
+  "lastComputedAt": zod.string().datetime({}).nullish(),
+  "dataQuality": zod.string().nullish(),
+  "zScore": zod.number().nullish()
+})
+
+
+/**
+ * @summary Recompute seasonality engine for all PTMT categories
+ */
+export const recomputeSeasonalityQueryZDefault = 1.65;
+
+export const recomputeSeasonalityQueryParams = zod.object({
+  "z": zod.number().default(recomputeSeasonalityQueryZDefault).describe('z-score for service level (1.28=90%, 1.65=95%, 2.05=98%)')
+})
+
+export const recomputeSeasonalityResponse = zod.object({
+  "categories": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "multiplier": zod.number(),
+  "updatedAt": zod.string().datetime({}),
+  "suggestedMultiplier": zod.number().nullish(),
+  "overrideMultiplier": zod.number().nullish(),
+  "cvValue": zod.number().nullish(),
+  "volatilityClass": zod.string().nullish(),
+  "avgMonth": zod.number().nullish(),
+  "peakMonth": zod.string().nullish(),
+  "peakIndex": zod.number().nullish(),
+  "yoy": zod.number().nullish(),
+  "signal": zod.string().nullish(),
+  "seasonalIndices": zod.string().nullish(),
+  "lastComputedAt": zod.string().datetime({}).nullish(),
+  "dataQuality": zod.string().nullish(),
+  "zScore": zod.number().nullish()
+})),
+  "segmentBenchmark": zod.object({
+  "category": zod.string(),
+  "avgMonth": zod.number().nullish(),
+  "cv": zod.number().nullish(),
+  "suggestedMultiplier": zod.number().nullish(),
+  "peakMonth": zod.string().nullish(),
+  "peakIndex": zod.number().nullish(),
+  "yoy": zod.number().nullish(),
+  "signal": zod.string().nullish(),
+  "dataQuality": zod.string().nullish(),
+  "volatilityClass": zod.string().nullish()
+}),
+  "computedAt": zod.string().datetime({}),
+  "zScore": zod.number(),
+  "totalOrderQty": zod.number(),
+  "totalUnmappedQty": zod.number()
 })
 
 

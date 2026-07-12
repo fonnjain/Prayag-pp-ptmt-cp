@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import {
   useListBufferCategories,
   useUpdateBufferCategory,
+  useRecomputeSeasonality,
   useListUploads,
   useCreateUpload,
   useGetSyncStatus,
@@ -125,56 +126,405 @@ function UploadRow({ kind, label, hint, required }: (typeof UPLOAD_KINDS)[number
   );
 }
 
-function BufferMultiplierTable() {
-  const { data, isLoading } = useListBufferCategories();
-  const updateCategory = useUpdateBufferCategory();
-  const { toast } = useToast();
-  const [drafts, setDrafts] = useState<Record<number, string>>({});
+// ─── Seasonality sparkline ────────────────────────────────────────────────────
 
-  if (isLoading) return <p className="text-sm text-gray-500">Loading categories...</p>;
+const MONTHS_ABBR = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"];
 
-  const categories = (data as unknown as BufferCategory[] | undefined) ?? [];
+function SeasonalitySparkline({ indices }: { indices: number[] }) {
+  if (!indices || indices.length !== 12) {
+    return <span className="text-xs text-gray-400">—</span>;
+  }
+  const W = 72;
+  const H = 28;
+  const pad = 2;
+  const barW = (W - pad * 2) / 12 - 1;
+  const max = Math.max(...indices, 1.5);
+  const min = 0;
 
   return (
-    <div className="space-y-2">
-      {categories.map((cat) => {
-        const draft = drafts[cat.id] ?? String(cat.multiplier);
+    <svg width={W} height={H} className="block" aria-label="Seasonal index Apr→Mar">
+      {indices.map((v, i) => {
+        const barH = Math.max(1, ((v - min) / (max - min)) * (H - pad * 2));
+        const x = pad + i * ((W - pad * 2) / 12);
+        const y = H - pad - barH;
+        const isHigh = v >= 1.3;
+        const isLow = v <= 0.7;
+        const fill = isHigh ? "#f97316" : isLow ? "#93c5fd" : "#6366f1";
         return (
-          <div key={cat.id} className="flex items-center justify-between gap-4 py-2 border-b last:border-b-0">
-            <span className="text-sm font-medium">{cat.name}</span>
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                step="0.1"
-                min="0"
-                value={draft}
-                onChange={(e) => setDrafts((d) => ({ ...d, [cat.id]: e.target.value }))}
-                className="w-24 h-8"
-              />
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={updateCategory.isPending || Number(draft) === cat.multiplier}
-                onClick={() => {
-                  const multiplier = Number(draft);
-                  if (Number.isNaN(multiplier) || multiplier < 0) return;
-                  updateCategory.mutate(
-                    { id: cat.id, data: { multiplier } },
-                    {
-                      onSuccess: () =>
-                        toast({ title: "Multiplier updated", description: `${cat.name} → ${multiplier}` }),
-                      onError: () =>
-                        toast({ title: "Update failed", variant: "destructive" }),
-                    },
-                  );
-                }}
-              >
-                Save
-              </Button>
-            </div>
-          </div>
+          <rect
+            key={MONTHS_ABBR[i]}
+            x={x}
+            y={y}
+            width={barW}
+            height={barH}
+            fill={fill}
+            rx={1}
+            aria-label={`${MONTHS_ABBR[i]}: ${v.toFixed(2)}`}
+          />
         );
       })}
+      {/* 1.00 baseline */}
+      <line
+        x1={pad}
+        x2={W - pad}
+        y1={H - pad - ((1.0 - min) / (max - min)) * (H - pad * 2)}
+        y2={H - pad - ((1.0 - min) / (max - min)) * (H - pad * 2)}
+        stroke="#d1d5db"
+        strokeWidth={0.5}
+        strokeDasharray="2,2"
+      />
+    </svg>
+  );
+}
+
+// ─── Volatility class badge ───────────────────────────────────────────────────
+
+function ClassBadge({ cls }: { cls: string | null | undefined }) {
+  if (!cls) return <span className="text-gray-400">—</span>;
+  const colors: Record<string, string> = {
+    Low: "bg-green-100 text-green-800",
+    Medium: "bg-amber-100 text-amber-800",
+    High: "bg-red-100 text-red-800",
+  };
+  return (
+    <Badge className={cn("text-xs font-semibold", colors[cls] ?? "bg-gray-100 text-gray-700")}>
+      {cls}
+    </Badge>
+  );
+}
+
+function SignalBadge({ signal }: { signal: string | null | undefined }) {
+  if (!signal) return <span className="text-gray-400">—</span>;
+  const colors: Record<string, string> = {
+    Growing: "bg-green-100 text-green-800",
+    Stable: "bg-gray-100 text-gray-700",
+    Declining: "bg-red-100 text-red-800",
+  };
+  return (
+    <Badge className={cn("text-xs", colors[signal] ?? "bg-gray-100 text-gray-700")}>
+      {signal}
+    </Badge>
+  );
+}
+
+// ─── Z-score labels ───────────────────────────────────────────────────────────
+
+const Z_OPTIONS = [
+  { value: 1.28, label: "90% (z=1.28)", short: "90%" },
+  { value: 1.65, label: "95% (z=1.65)", short: "95%" },
+  { value: 2.05, label: "98% (z=2.05)", short: "98%" },
+];
+
+// ─── Main Seasonality Table ───────────────────────────────────────────────────
+
+function SeasonalityTable() {
+  const { data, isLoading, refetch } = useListBufferCategories();
+  const updateCategory = useUpdateBufferCategory();
+  const recompute = useRecomputeSeasonality();
+  const { toast } = useToast();
+  const [overrideDrafts, setOverrideDrafts] = useState<Record<number, string>>({});
+  const [selectedZ, setSelectedZ] = useState<number>(1.65);
+
+  const categories = (data as unknown as BufferCategory[] | undefined) ?? [];
+  const lastComputedAt = categories
+    .map((c) => c.lastComputedAt)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+  const hasEngineData = categories.some((c) => c.lastComputedAt != null);
+
+  function getApplied(cat: BufferCategory): number {
+    return cat.overrideMultiplier ?? cat.suggestedMultiplier ?? cat.multiplier;
+  }
+
+  function parseIndices(raw: string | null | undefined): number[] | null {
+    if (!raw) return null;
+    try {
+      const arr = JSON.parse(raw) as unknown;
+      if (Array.isArray(arr) && arr.length === 12) return arr as number[];
+    } catch { /* ignore */ }
+    return null;
+  }
+
+  function handleOverrideSave(cat: BufferCategory, draftStr: string) {
+    const trimmed = draftStr.trim();
+    if (trimmed === "" || trimmed === "—") {
+      // Clear override
+      (updateCategory as unknown as { mutate: (args: object, cbs: object) => void }).mutate(
+        { id: cat.id, data: { overrideMultiplier: null } },
+        {
+          onSuccess: () => {
+            setOverrideDrafts((d) => { const next = { ...d }; delete next[cat.id]; return next; });
+            refetch();
+            toast({ title: "Override cleared", description: `${cat.name} → Suggested ×` });
+          },
+          onError: () => toast({ title: "Update failed", variant: "destructive" }),
+        },
+      );
+      return;
+    }
+    const val = parseFloat(trimmed);
+    if (Number.isNaN(val) || val < 0) {
+      toast({ title: "Invalid value", description: "Enter a positive number or clear to use the suggestion.", variant: "destructive" });
+      return;
+    }
+    (updateCategory as unknown as { mutate: (args: object, cbs: object) => void }).mutate(
+      { id: cat.id, data: { overrideMultiplier: val } },
+      {
+        onSuccess: () => {
+          setOverrideDrafts((d) => { const next = { ...d }; delete next[cat.id]; return next; });
+          refetch();
+          toast({ title: "Override saved", description: `${cat.name} → ${val.toFixed(2)}×` });
+        },
+        onError: () => toast({ title: "Update failed", variant: "destructive" }),
+      },
+    );
+  }
+
+  function handleRecompute() {
+    recompute.mutate(
+      { params: { z: selectedZ } },
+      {
+        onSuccess: () => {
+          refetch();
+          toast({
+            title: "Seasonality computed",
+            description: `Suggested multipliers updated from FY24-25 + FY25-26 order intake (z=${selectedZ}).`,
+          });
+        },
+        onError: () =>
+          toast({ title: "Recompute failed", description: "Check API logs.", variant: "destructive" }),
+      },
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-gray-700">Service level:</span>
+          <div className="flex gap-1">
+            {Z_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setSelectedZ(opt.value)}
+                className={cn(
+                  "px-2 py-1 rounded text-xs font-medium border transition-colors",
+                  selectedZ === opt.value
+                    ? "bg-indigo-600 text-white border-indigo-600"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50",
+                )}
+              >
+                {opt.short}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-gray-400">(z = {selectedZ})</span>
+        </div>
+        <Button
+          size="sm"
+          onClick={handleRecompute}
+          disabled={recompute.isPending}
+          className="shrink-0"
+        >
+          {recompute.isPending ? "Computing… (reads 24 tabs)" : hasEngineData ? "Recompute" : "Compute engine"}
+        </Button>
+      </div>
+
+      {/* Data window label */}
+      <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
+        <strong>Suggested ×</strong> derived from FY2024-25 + FY2025-26 order intake (24 months).
+        FY2026-27 excluded (part-year); FY2023-24 excluded (old ERP layout).
+        {lastComputedAt && (
+          <span className="ml-2 text-blue-600">Last computed: {fmtDateTime(lastComputedAt)}.</span>
+        )}
+      </div>
+
+      {isLoading && <p className="text-sm text-gray-500">Loading…</p>}
+
+      {!isLoading && !hasEngineData && (
+        <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
+          ⚠ Engine has not been run yet. Click <strong>Compute engine</strong> to derive suggested multipliers
+          from historical order intake. This reads 24 Google Sheets tabs — expect 1–2 minutes.
+        </div>
+      )}
+
+      {/* Table */}
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full text-sm min-w-[900px]">
+          <thead>
+            <tr className="bg-gray-50 border-b text-xs text-gray-600 font-semibold uppercase tracking-wide">
+              <th className="px-3 py-2 text-left">Category</th>
+              <th className="px-3 py-2 text-right">Avg month</th>
+              <th className="px-3 py-2 text-right">CV</th>
+              <th className="px-3 py-2 text-center">Class</th>
+              <th className="px-3 py-2 text-right">Suggested ×</th>
+              <th className="px-3 py-2 text-center">Override ×</th>
+              <th className="px-3 py-2 text-right font-bold text-gray-800">Applied ×</th>
+              <th className="px-3 py-2 text-left">Peak</th>
+              <th className="px-3 py-2 text-right">YoY</th>
+              <th className="px-3 py-2 text-center">Signal</th>
+              <th className="px-3 py-2 text-center">Apr → Mar</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {categories.map((cat) => {
+              const indices = parseIndices(cat.seasonalIndices);
+              const isInsufficient = cat.dataQuality === "insufficient" || (!cat.lastComputedAt && !cat.suggestedMultiplier);
+              const isThin = cat.dataQuality === "thin";
+              const applied = getApplied(cat);
+              const draftKey = cat.id;
+              const currentDraft = overrideDrafts[draftKey];
+              const overrideDisplay =
+                currentDraft !== undefined
+                  ? currentDraft
+                  : cat.overrideMultiplier != null
+                  ? String(cat.overrideMultiplier)
+                  : "";
+
+              return (
+                <tr key={cat.id} className={cn("hover:bg-gray-50 transition-colors", isInsufficient && "bg-amber-50/40")}>
+                  {/* Category */}
+                  <td className="px-3 py-2.5">
+                    <div className="font-medium">{cat.name}</div>
+                    {isInsufficient && cat.lastComputedAt && (
+                      <div className="text-xs text-amber-700 mt-0.5">⚠ No order data — override required</div>
+                    )}
+                    {isThin && (
+                      <div className="text-xs text-amber-700 mt-0.5">⚠ Thin data — verify manually</div>
+                    )}
+                  </td>
+
+                  {/* Avg month */}
+                  <td className="px-3 py-2.5 text-right tabular-nums">
+                    {cat.avgMonth != null ? cat.avgMonth.toLocaleString() : <span className="text-gray-400">—</span>}
+                  </td>
+
+                  {/* CV */}
+                  <td className="px-3 py-2.5 text-right tabular-nums">
+                    {cat.cvValue != null ? cat.cvValue.toFixed(2) : <span className="text-gray-400">—</span>}
+                  </td>
+
+                  {/* Class */}
+                  <td className="px-3 py-2.5 text-center">
+                    <ClassBadge cls={cat.volatilityClass} />
+                  </td>
+
+                  {/* Suggested × */}
+                  <td className="px-3 py-2.5 text-right tabular-nums font-medium">
+                    {cat.suggestedMultiplier != null ? (
+                      <span>{cat.suggestedMultiplier.toFixed(2)}×</span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
+
+                  {/* Override × (editable) */}
+                  <td className="px-3 py-2.5 text-center">
+                    <div className="flex items-center justify-center gap-1">
+                      <Input
+                        type="text"
+                        inputMode="decimal"
+                        value={overrideDisplay}
+                        placeholder="—"
+                        onChange={(e) =>
+                          setOverrideDrafts((d) => ({ ...d, [draftKey]: e.target.value }))
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleOverrideSave(cat, overrideDisplay);
+                          if (e.key === "Escape") setOverrideDrafts((d) => { const n = { ...d }; delete n[draftKey]; return n; });
+                        }}
+                        onBlur={() => {
+                          if (currentDraft !== undefined) handleOverrideSave(cat, overrideDisplay);
+                        }}
+                        className="w-20 h-7 text-center text-sm"
+                      />
+                    </div>
+                  </td>
+
+                  {/* Applied × */}
+                  <td className="px-3 py-2.5 text-right font-bold tabular-nums">
+                    <span
+                      className={cn(
+                        "text-base",
+                        cat.overrideMultiplier != null ? "text-indigo-700" : "text-gray-900",
+                      )}
+                    >
+                      {applied.toFixed(2)}×
+                    </span>
+                    {cat.overrideMultiplier != null && (
+                      <span className="ml-1 text-xs text-indigo-500">override</span>
+                    )}
+                  </td>
+
+                  {/* Peak */}
+                  <td className="px-3 py-2.5">
+                    {cat.peakMonth && cat.peakIndex != null ? (
+                      <span className="text-sm">
+                        {cat.peakMonth} <span className="text-xs text-gray-500">({cat.peakIndex.toFixed(2)})</span>
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
+
+                  {/* YoY */}
+                  <td className="px-3 py-2.5 text-right tabular-nums">
+                    {cat.yoy != null ? (
+                      <span
+                        className={cn(
+                          "text-sm font-medium",
+                          cat.yoy > 0.08 ? "text-green-700" : cat.yoy < -0.08 ? "text-red-700" : "text-gray-700",
+                        )}
+                      >
+                        {cat.yoy > 0 ? "+" : ""}{(cat.yoy * 100).toFixed(0)}%
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
+
+                  {/* Signal */}
+                  <td className="px-3 py-2.5 text-center">
+                    <SignalBadge signal={cat.signal} />
+                  </td>
+
+                  {/* Sparkline */}
+                  <td className="px-3 py-2.5 text-center">
+                    {indices ? (
+                      <SeasonalitySparkline indices={indices} />
+                    ) : (
+                      <span className="text-gray-400 text-xs">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Legend */}
+      <div className="text-xs text-gray-500 space-y-1">
+        <p>
+          <strong>Suggested ×</strong> = 1 + z × CV, where CV is measured on deseasonalised FY2024-25 + FY2025-26 order intake.
+          Current hard-coded values (1.5/1.2) were placeholders — engine values are typically lower because
+          seasonal shape is removed before measuring volatility.
+        </p>
+        <p>
+          <strong>Override ×</strong>: type a value and press Enter (or click away) to override a category.
+          Clear the field to snap back to the engine suggestion.
+          <strong className="ml-1 text-indigo-700">Applied ×</strong> is what the plan's Buffer Req uses.
+        </p>
+        <p>
+          <strong>Sparkline</strong> shows the seasonal index Apr→Mar (1.00 = average month).
+          <span className="ml-1 text-orange-500">■</span> above 1.3 ·
+          <span className="ml-1 text-blue-400">■</span> below 0.7 ·
+          <span className="ml-1 text-indigo-500">■</span> near average.
+          Dashed line = 1.00.
+        </p>
+      </div>
     </div>
   );
 }
@@ -186,7 +536,6 @@ function GoogleSheetsStatus() {
 
   const sources = (data as unknown as SyncSource[] | undefined) ?? [];
 
-  // Most recent sync timestamp across all sources
   const lastSyncedAt = sources
     .map((s) => s.lastSyncedAt)
     .filter(Boolean)
@@ -195,7 +544,6 @@ function GoogleSheetsStatus() {
 
   return (
     <div className="space-y-3">
-      {/* Last synced banner */}
       {lastSyncedAt && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-blue-50 border border-blue-200 text-sm text-blue-800">
           <span className="text-base">🔄</span>
@@ -365,7 +713,7 @@ function ValidationPanel() {
 export default function DataPage() {
   return (
     <AppLayout>
-      <div className="max-w-4xl mx-auto space-y-6">
+      <div className="max-w-5xl mx-auto space-y-6">
         <div>
           <h2 className="text-xl font-semibold">Data</h2>
           <p className="text-sm text-gray-500">
@@ -421,9 +769,13 @@ export default function DataPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Buffer-stock multipliers (months of average sale)</CardTitle>
+            <p className="text-xs text-gray-500 mt-1">
+              Three-column model: <strong>Suggested ×</strong> (engine, read-only) ·{" "}
+              <strong>Override ×</strong> (user, optional) · <strong>Applied ×</strong> (= override if set, else suggested). The plan's Buffer Req uses Applied ×.
+            </p>
           </CardHeader>
           <CardContent>
-            <BufferMultiplierTable />
+            <SeasonalityTable />
           </CardContent>
         </Card>
       </div>

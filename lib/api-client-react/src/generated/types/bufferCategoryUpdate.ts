@@ -4,8 +4,11 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { BufferCategoryUpdateOverrideMultiplier } from './bufferCategoryUpdateOverrideMultiplier';
 
 export interface BufferCategoryUpdate {
   /** @minimum 0 */
-  multiplier: number;
+  multiplier?: number;
+  /** @minimum 0 */
+  overrideMultiplier?: BufferCategoryUpdateOverrideMultiplier;
 }

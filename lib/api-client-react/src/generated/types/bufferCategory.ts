@@ -4,10 +4,36 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { BufferCategorySuggestedMultiplier } from './bufferCategorySuggestedMultiplier';
+import type { BufferCategoryOverrideMultiplier } from './bufferCategoryOverrideMultiplier';
+import type { BufferCategoryCvValue } from './bufferCategoryCvValue';
+import type { BufferCategoryVolatilityClass } from './bufferCategoryVolatilityClass';
+import type { BufferCategoryAvgMonth } from './bufferCategoryAvgMonth';
+import type { BufferCategoryPeakMonth } from './bufferCategoryPeakMonth';
+import type { BufferCategoryPeakIndex } from './bufferCategoryPeakIndex';
+import type { BufferCategoryYoy } from './bufferCategoryYoy';
+import type { BufferCategorySignal } from './bufferCategorySignal';
+import type { BufferCategorySeasonalIndices } from './bufferCategorySeasonalIndices';
+import type { BufferCategoryLastComputedAt } from './bufferCategoryLastComputedAt';
+import type { BufferCategoryDataQuality } from './bufferCategoryDataQuality';
+import type { BufferCategoryZScore } from './bufferCategoryZScore';
 
 export interface BufferCategory {
   id: number;
   name: string;
   multiplier: number;
   updatedAt: string;
+  suggestedMultiplier?: BufferCategorySuggestedMultiplier;
+  overrideMultiplier?: BufferCategoryOverrideMultiplier;
+  cvValue?: BufferCategoryCvValue;
+  volatilityClass?: BufferCategoryVolatilityClass;
+  avgMonth?: BufferCategoryAvgMonth;
+  peakMonth?: BufferCategoryPeakMonth;
+  peakIndex?: BufferCategoryPeakIndex;
+  yoy?: BufferCategoryYoy;
+  signal?: BufferCategorySignal;
+  seasonalIndices?: BufferCategorySeasonalIndices;
+  lastComputedAt?: BufferCategoryLastComputedAt;
+  dataQuality?: BufferCategoryDataQuality;
+  zScore?: BufferCategoryZScore;
 }

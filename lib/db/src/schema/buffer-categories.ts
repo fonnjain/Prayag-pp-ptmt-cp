@@ -7,6 +7,19 @@ export const bufferCategoriesTable = pgTable("buffer_categories", {
   name: text("name").notNull().unique(),
   multiplier: real("multiplier").notNull().default(1),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  suggestedMultiplier: real("suggested_multiplier"),
+  overrideMultiplier: real("override_multiplier"),
+  cvValue: real("cv_value"),
+  volatilityClass: text("volatility_class"),
+  avgMonth: real("avg_month"),
+  peakMonth: text("peak_month"),
+  peakIndex: real("peak_index"),
+  yoy: real("yoy"),
+  signal: text("signal"),
+  seasonalIndices: text("seasonal_indices"),
+  lastComputedAt: timestamp("last_computed_at", { withTimezone: true }),
+  dataQuality: text("data_quality"),
+  zScore: real("z_score"),
 });
 
 export const insertBufferCategorySchema = createInsertSchema(bufferCategoriesTable).omit({

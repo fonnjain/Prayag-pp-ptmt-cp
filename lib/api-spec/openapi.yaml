@@ -56,6 +56,27 @@ paths:
         "404":
           description: Not found
 
+  /buffer-categories/recompute:
+    post:
+      operationId: recomputeSeasonality
+      tags: [bufferCategories]
+      summary: Recompute seasonality engine for all PTMT categories
+      parameters:
+        - name: z
+          in: query
+          required: false
+          schema: { type: number, default: 1.65 }
+          description: "z-score for service level (1.28=90%, 1.65=95%, 2.05=98%)"
+      responses:
+        "200":
+          description: Recompute triggered; returns updated categories
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SeasonalityRecomputeResult"
+        "500":
+          description: Engine error
+
   /uploads:
     get:
       operationId: listUploads
@@ -984,12 +1005,55 @@ components:
         name: { type: string }
         multiplier: { type: number }
         updatedAt: { type: string, format: date-time }
+        suggestedMultiplier: { type: ["number", "null"] }
+        overrideMultiplier: { type: ["number", "null"] }
+        cvValue: { type: ["number", "null"] }
+        volatilityClass: { type: ["string", "null"] }
+        avgMonth: { type: ["number", "null"] }
+        peakMonth: { type: ["string", "null"] }
+        peakIndex: { type: ["number", "null"] }
+        yoy: { type: ["number", "null"] }
+        signal: { type: ["string", "null"] }
+        seasonalIndices: { type: ["string", "null"] }
+        lastComputedAt: { type: ["string", "null"], format: date-time }
+        dataQuality: { type: ["string", "null"] }
+        zScore: { type: ["number", "null"] }
 
     BufferCategoryUpdate:
       type: object
-      required: [multiplier]
       properties:
         multiplier: { type: number, minimum: 0 }
+        overrideMultiplier: { type: ["number", "null"], minimum: 0 }
+
+    SeasonalityRecomputeResult:
+      type: object
+      required: [categories, computedAt, zScore, totalOrderQty, totalUnmappedQty, segmentBenchmark]
+      properties:
+        categories:
+          type: array
+          items:
+            $ref: "#/components/schemas/BufferCategory"
+        segmentBenchmark:
+          $ref: "#/components/schemas/SeasonalityBenchmark"
+        computedAt: { type: string, format: date-time }
+        zScore: { type: number }
+        totalOrderQty: { type: number }
+        totalUnmappedQty: { type: number }
+
+    SeasonalityBenchmark:
+      type: object
+      required: [category]
+      properties:
+        category: { type: string }
+        avgMonth: { type: ["number", "null"] }
+        cv: { type: ["number", "null"] }
+        suggestedMultiplier: { type: ["number", "null"] }
+        peakMonth: { type: ["string", "null"] }
+        peakIndex: { type: ["number", "null"] }
+        yoy: { type: ["number", "null"] }
+        signal: { type: ["string", "null"] }
+        dataQuality: { type: ["string", "null"] }
+        volatilityClass: { type: ["string", "null"] }
 
     UploadedFile:
       type: object

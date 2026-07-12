@@ -79,6 +79,8 @@ import type {
   PlantConfigUpdate,
   PlantSourceConfigUpsert,
   PlantWeeklySummary,
+  RecomputeSeasonalityParams,
+  SeasonalityRecomputeResult,
   SyncSource,
   UploadKind,
   UploadedFile,
@@ -340,6 +342,103 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
 
       const mutationOptions = getUpdateBufferCategoryMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+/**
+ * @summary Recompute seasonality engine for all PTMT categories
+ */
+export type recomputeSeasonalityResponse200 = {
+  data: SeasonalityRecomputeResult
+  status: 200
+}
+
+export type recomputeSeasonalityResponse500 = {
+  data: void
+  status: 500
+}
+    
+export type recomputeSeasonalityResponseSuccess = (recomputeSeasonalityResponse200) & {
+  headers: Headers;
+};
+export type recomputeSeasonalityResponseError = (recomputeSeasonalityResponse500) & {
+  headers: Headers;
+};
+
+export type recomputeSeasonalityResponse = (recomputeSeasonalityResponseSuccess | recomputeSeasonalityResponseError)
+
+export const getRecomputeSeasonalityUrl = (params?: RecomputeSeasonalityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/buffer-categories/recompute?${stringifiedParams}` : `/api/buffer-categories/recompute`
+}
+
+export const recomputeSeasonality = async (params?: RecomputeSeasonalityParams, options?: RequestInit): Promise<recomputeSeasonalityResponse> => {
+  
+  return customFetch<recomputeSeasonalityResponse>(getRecomputeSeasonalityUrl(params),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+
+
+
+
+export const getRecomputeSeasonalityMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recomputeSeasonality>>, TError,{params?: RecomputeSeasonalityParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recomputeSeasonality>>, TError,{params?: RecomputeSeasonalityParams}, TContext> => {
+
+const mutationKey = ['recomputeSeasonality'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recomputeSeasonality>>, {params?: RecomputeSeasonalityParams}> = (props) => {
+          const {params} = props ?? {};
+
+          return  recomputeSeasonality(params,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecomputeSeasonalityMutationResult = NonNullable<Awaited<ReturnType<typeof recomputeSeasonality>>>
+    
+    export type RecomputeSeasonalityMutationError = void
+
+    /**
+ * @summary Recompute seasonality engine for all PTMT categories
+ */
+export const useRecomputeSeasonality = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recomputeSeasonality>>, TError,{params?: RecomputeSeasonalityParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recomputeSeasonality>>,
+        TError,
+        {params?: RecomputeSeasonalityParams},
+        TContext
+      > => {
+
+      const mutationOptions = getRecomputeSeasonalityMutationOptions(options);
 
       return useMutation(mutationOptions);
     }
