@@ -97,6 +97,7 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
             </h1>
             <p className="text-muted-foreground text-sm">
               Daily output and burn-up chart in pieces (NOS) — {month} · {context.elapsed}/{context.workingDays} days elapsed
+              {context.snapshotDate && <span className="ml-1 text-xs">· data through <span className="font-medium text-foreground">{fmtDate(context.snapshotDate)}</span></span>}
               {catKPIs && <span className="ml-2 text-xs text-muted-foreground">· KPIs showing {selectedCategory} · burn-up chart is plant-level</span>}
             </p>
           </div>

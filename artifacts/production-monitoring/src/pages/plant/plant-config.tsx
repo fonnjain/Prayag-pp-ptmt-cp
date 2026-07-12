@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Settings, RefreshCw, Plus, Save } from "lucide-react";
+import { Settings, RefreshCw, Plus, Save, CloudDownload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { fmtDate } from "@/lib/utils";
 
@@ -21,6 +21,8 @@ export default function PlantConfig({ month }: { month: string }) {
   const [newNotes, setNewNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [invalidating, setInvalidating] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState<string | null>(null);
 
   if (isLoading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
   if (!cfg) return <div className="text-red-500 p-4">Failed to load plant config.</div>;
@@ -72,6 +74,26 @@ export default function PlantConfig({ month }: { month: string }) {
     }
   }
 
+  async function syncFromSheets() {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/sync/sheets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month }),
+      });
+      if (!res.ok) throw new Error("Sync failed");
+      const now = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+      setLastSynced(now);
+      toast({ title: "Sync complete", description: `Data refreshed from Google Sheets at ${now}` });
+      refetch();
+    } catch {
+      toast({ title: "Sync failed", description: "Check your Google Sheets connection in the integrations panel.", variant: "destructive" });
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   async function invalidateCache() {
     setInvalidating(true);
     try {
@@ -97,6 +119,31 @@ export default function PlantConfig({ month }: { month: string }) {
         </h1>
         <p className="text-muted-foreground text-sm">Calendar settings, snapshot date, and historical master file IDs</p>
       </header>
+
+      {/* Sync from Sheets */}
+      <Card className="border-primary/30">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <CloudDownload className="h-5 w-5 text-primary" /> Sync from Google Sheets
+          </CardTitle>
+          <CardDescription>
+            Pull the latest production data from Google Sheets immediately. Data auto-syncs hourly during IST work hours (08:00–20:00).
+            {cfg.snapshotDate && (
+              <span className="ml-1 font-medium text-foreground">Last data date: {fmtDate(cfg.snapshotDate)}</span>
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-3">
+            <Button onClick={syncFromSheets} disabled={syncing} className="gap-2">
+              <CloudDownload className={`h-4 w-4 ${syncing ? "animate-pulse" : ""}`} />
+              {syncing ? "Syncing from Sheets…" : "Sync Now"}
+            </Button>
+            {lastSynced && <span className="text-xs text-muted-foreground">Synced at {lastSynced}</span>}
+            {syncing && <span className="text-xs text-muted-foreground">This takes ~20 seconds…</span>}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Calendar config */}
       <Card>
