@@ -1,196 +1,328 @@
-import { useGetMonitoringDashboard, getGetMonitoringDashboardQueryKey, type MonitoringDashboard } from "@workspace/api-client-react";
+import { useState } from "react";
+import { useGetPlantLiveSummary, getGetPlantLiveSummaryQueryKey } from "@workspace/api-client-react";
+import type { PlantLiveMachineMetrics } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, Calendar as CalendarIcon, Activity, FileSpreadsheet } from "lucide-react";
-import { fmtDate } from "@/lib/utils";
-import { exportXlsx } from "@/lib/excel";
+import { Input } from "@/components/ui/input";
+import {
+  Cpu, RefreshCw, TrendingDown, TrendingUp, AlertTriangle,
+  CheckCircle2, Activity, Clock, Search, ArrowUpDown,
+} from "lucide-react";
 
-function RagBadge({ band }: { band: "green" | "amber" | "red" | null }) {
-  if (!band) return <Badge variant="outline" className="text-muted-foreground border-muted">N/A</Badge>;
-  const colors = {
-    green: "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border-emerald-500/20",
-    amber: "bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-amber-500/20",
-    red: "bg-red-500/10 text-red-500 hover:bg-red-500/20 border-red-500/20",
-  };
-  return <Badge variant="outline" className={colors[band]}>{band.toUpperCase()}</Badge>;
+type SortKey = "name" | "utilisation" | "output" | "rejection" | "hours";
+type SortDir = "asc" | "desc";
+
+function fmt(n: number | null | undefined, dec = 1): string {
+  if (n == null) return "–";
+  return n.toFixed(dec);
 }
 
-export default function Dashboard({ month }: { month: string }) {
-  const { data: dashboard, isLoading } = useGetMonitoringDashboard(
-    { month },
-    { query: { queryKey: getGetMonitoringDashboardQueryKey({ month }) } }
+function fmtNum(n: number | null | undefined): string {
+  if (n == null) return "–";
+  return Number(n).toLocaleString("en-IN", { maximumFractionDigits: 1 });
+}
+
+function ragBg(rating: string | undefined) {
+  if (rating === "green") return "bg-emerald-500/15 text-emerald-700 border-emerald-500/30";
+  if (rating === "amber") return "bg-amber-500/15 text-amber-700 border-amber-500/30";
+  return "bg-red-500/15 text-red-600 border-red-500/30";
+}
+
+function ragText(rating: string | undefined) {
+  if (rating === "green") return "text-emerald-600";
+  if (rating === "amber") return "text-amber-600";
+  return "text-red-500";
+}
+
+function UtilBar({ pct }: { pct: number | null | undefined }) {
+  const v = Math.min(100, Math.max(0, pct ?? 0));
+  const color = v >= 60 ? "bg-emerald-500" : v >= 35 ? "bg-amber-500" : "bg-red-500";
+  return (
+    <div className="w-20 h-1.5 bg-muted rounded-full overflow-hidden">
+      <div className={`h-full rounded-full ${color}`} style={{ width: `${v}%` }} />
+    </div>
+  );
+}
+
+export default function MachineDashboard({ month }: { month: string }) {
+  const [sortKey, setSortKey] = useState<SortKey>("utilisation");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [search, setSearch] = useState("");
+
+  const { data: raw, isLoading, isRefetching, refetch } = useGetPlantLiveSummary(
+    { period: month, plant: "PTMT" },
+    { query: { queryKey: getGetPlantLiveSummaryQueryKey({ period: month, plant: "PTMT" }), staleTime: 5 * 60 * 1000 } as any }
+  );
+  const d = raw as any;
+  const overall: PlantLiveMachineMetrics | undefined = d?.overall;
+  const period = d?.period;
+  const byMachine: Record<string, PlantLiveMachineMetrics> = d?.by_machine ?? {};
+
+  const machines: [string, PlantLiveMachineMetrics][] = Object.entries(byMachine).filter(
+    ([name]) => !search || name.toLowerCase().includes(search.toLowerCase())
   );
 
-  if (isLoading) {
-    return <div className="animate-pulse space-y-4">
-      <div className="h-32 bg-muted/50 rounded-lg"></div>
-      <div className="grid grid-cols-3 gap-4"><div className="h-40 bg-muted/50 rounded-lg"></div></div>
-    </div>;
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("desc"); }
   }
 
-  if (!dashboard) return null;
+  const sorted = [...machines].sort(([an, a], [bn, b]) => {
+    let av: number, bv: number;
+    switch (sortKey) {
+      case "name":       av = 0; bv = 0; return sortDir === "asc" ? an.localeCompare(bn) : bn.localeCompare(an);
+      case "utilisation": av = a.utilisation ?? -1; bv = b.utilisation ?? -1; break;
+      case "output":     av = a.good_count ?? -1; bv = b.good_count ?? -1; break;
+      case "rejection":  av = a.rejection_pct ?? -1; bv = b.rejection_pct ?? -1; break;
+      case "hours":      av = a.actual_hours ?? -1; bv = b.actual_hours ?? -1; break;
+      default:           av = 0; bv = 0;
+    }
+    return sortDir === "asc" ? av - bv : bv - av;
+  });
 
-  const data = dashboard as unknown as MonitoringDashboard;
+  const activeMachines = machines.filter(([, m]) => (m.actual_hours ?? 0) > 0).length;
+  const topPerformers = [...machines].sort(([, a], [, b]) => (b.utilisation ?? 0) - (a.utilisation ?? 0)).slice(0, 3);
+  const worstRejection = [...machines].filter(([, m]) => (m.rejection_pct ?? 0) > 0)
+    .sort(([, a], [, b]) => (b.rejection_pct ?? 0) - (a.rejection_pct ?? 0)).slice(0, 3);
+
+  function SortIcon({ col }: { col: SortKey }) {
+    return <ArrowUpDown className={`h-3 w-3 ${sortKey === col ? "text-primary" : "opacity-40"}`} />;
+  }
+
+  if (isLoading) return (
+    <div className="space-y-4 animate-pulse">
+      <div className="h-28 bg-muted/40 rounded-xl" />
+      <div className="grid grid-cols-4 gap-4">{[...Array(4)].map((_, i) => <div key={i} className="h-20 bg-muted/40 rounded-xl" />)}</div>
+      <div className="h-64 bg-muted/40 rounded-xl" />
+    </div>
+  );
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-10">
-      <header className="mb-8 flex items-start justify-between">
+    <div className="space-y-6 max-w-[1400px] mx-auto pb-10">
+      {/* Header */}
+      <header className="flex items-start justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Plant Dashboard</h1>
-          <p className="text-muted-foreground flex items-center gap-2">
-            <CalendarIcon className="h-4 w-4" />
-            Data as of {data.lastDataDate ? fmtDate(data.lastDataDate) : "No data"}
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2 mb-1">
+            <Cpu className="h-7 w-7 text-primary" /> Machine Dashboard
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            PTMT machine-level performance &nbsp;·&nbsp;
+            {period ? `${period.label} (${period.from} → ${period.to})` : month}
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => exportXlsx(`dashboard-${month}`, [
-          { name: "Plant Summary", rows: [{ Month: month, Attainment: data.plant?.attainmentPct, TargetKg: data.plant?.targetKg, RequiredPerDay: data.plant?.requiredPerDay, ActualPerDay: data.plant?.actualPerDay, DaysAheadBehind: data.plant?.daysAheadBehind, RAG: data.plant?.ragBand }] },
-          { name: "Categories", rows: (data.categories || []).map((c: any) => ({ Category: c.category, RequiredPerDay: c.requiredPerDay, RAG: c.ragBand })) },
-          { name: "Needs Review", rows: (data.needsReviewItems || []).map((i: any) => ({ ItemCode: i.itemCode, Colour: i.colour, Category: i.category })) },
-        ])}>
-          <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
+        <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isRefetching} className="gap-2 mt-1">
+          <RefreshCw className={`h-3.5 w-3.5 ${isRefetching ? "animate-spin" : ""}`} />
+          {isRefetching ? "Refreshing…" : "Refresh"}
         </Button>
       </header>
 
-      {!data.dataAvailable && (
-        <div className="bg-amber-500/10 border border-amber-500/20 text-amber-600 p-4 rounded-lg flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
-          <div>
-            <h3 className="font-medium">No Report-5 Data Available</h3>
-            <p className="text-sm opacity-90 mt-1">
-              Production data for this month hasn't been synced yet, or no shifts have been recorded.
-            </p>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="border-border/50 shadow-sm md:col-span-2">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Plant Pace & Attainment</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-end justify-between mb-6">
-              <div>
-                <div className="text-4xl font-bold tracking-tighter flex items-center gap-3">
-                  {data.plant?.attainmentPct != null ? `${data.plant.attainmentPct.toFixed(1)}%` : "--"}
-                  <RagBadge band={data.plant?.ragBand ?? null} />
-                </div>
-                <div className="text-sm text-muted-foreground mt-1">Current Attainment</div>
-              </div>
-              <div className="text-right">
-                <div className="text-2xl font-bold tracking-tight">
-                  {data.plant?.targetKg != null ? (data.plant.targetKg / 1000).toFixed(1) + "t" : "--"}
-                </div>
-                <div className="text-sm text-muted-foreground mt-1">Monthly Target</div>
-              </div>
+      {/* Hero KPI row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className={`border ${overall?.util_available ? "border-primary/20 bg-primary/5" : "border-border/50"}`}>
+          <CardContent className="p-5">
+            <div className="flex items-center gap-2 mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Activity className="h-3.5 w-3.5" /> Utilisation
             </div>
-            
-            <div className="grid grid-cols-3 gap-4 pt-4 border-t border-border/50">
-              <div>
-                <div className="text-sm text-muted-foreground mb-1">Required / Day</div>
-                <div className="font-mono">{data.plant?.requiredPerDay != null ? data.plant.requiredPerDay.toFixed(0) : "--"} kg</div>
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground mb-1">Actual / Day</div>
-                <div className="font-mono">{data.plant?.actualPerDay != null ? data.plant.actualPerDay.toFixed(0) : "--"} kg</div>
-              </div>
-              <div>
-                <div className="text-sm text-muted-foreground mb-1">Days Ahead/Behind</div>
-                <div className={`font-mono ${data.plant?.daysAheadBehind && data.plant.daysAheadBehind < 0 ? 'text-red-500' : ''}`}>
-                  {data.plant?.daysAheadBehind != null ? data.plant.daysAheadBehind.toFixed(1) : "--"}
-                </div>
-              </div>
+            <div className={`text-3xl font-bold ${ragText(overall?.util_rating)}`}>
+              {overall?.utilisation != null ? `${fmt(overall.utilisation)}%` : "–"}
             </div>
+            <div className="text-xs text-muted-foreground mt-1">{overall?.util_rating?.toUpperCase() ?? "–"}</div>
           </CardContent>
         </Card>
 
-        <div className="space-y-6">
-          <Card className="border-border/50 shadow-sm bg-primary/5 border-primary/10">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-3 mb-2">
-                <Activity className="h-5 w-5 text-primary" />
-                <h3 className="font-medium text-primary">Utilisation</h3>
-              </div>
-              <p className="text-2xl font-bold tracking-tight">{data.utilisationHeadline || "--"}</p>
-            </CardContent>
-          </Card>
+        <Card className="border-border/50">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-2 mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <TrendingUp className="h-3.5 w-3.5" /> Output (kg)
+            </div>
+            <div className="text-3xl font-bold">{fmtNum(overall?.good_count)}</div>
+            <div className="text-xs text-muted-foreground mt-1">good output · {overall?.unit ?? "kg"}</div>
+          </CardContent>
+        </Card>
 
-          <Card className="border-border/50 shadow-sm bg-destructive/5 border-destructive/10">
-            <CardContent className="p-6 flex items-center justify-between">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <AlertCircle className="h-4 w-4 text-destructive" />
-                  <h3 className="font-medium text-destructive">Active Warnings</h3>
-                </div>
-                <p className="text-sm text-destructive/80">Requires attention</p>
-              </div>
-              <div className="text-3xl font-bold text-destructive">{data.warningCount ?? 0}</div>
-            </CardContent>
-          </Card>
-        </div>
+        <Card className={`border ${(overall?.rejection_pct ?? 0) > 5 ? "border-red-500/20 bg-red-500/5" : "border-border/50"}`}>
+          <CardContent className="p-5">
+            <div className="flex items-center gap-2 mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <TrendingDown className="h-3.5 w-3.5" /> Rejection
+            </div>
+            <div className={`text-3xl font-bold ${(overall?.rejection_pct ?? 0) > 5 ? "text-red-500" : (overall?.rejection_pct ?? 0) > 2 ? "text-amber-600" : "text-emerald-600"}`}>
+              {fmt(overall?.rejection_pct)}%
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">{fmtNum(overall?.reject_count)} kg rejected</div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/50">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-2 mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Clock className="h-3.5 w-3.5" /> Run Hours
+            </div>
+            <div className="text-3xl font-bold">{fmtNum(overall?.actual_hours)}</div>
+            <div className="text-xs text-muted-foreground mt-1">of {fmtNum(overall?.ideal_hours)} ideal · {activeMachines}/{machines.length} machines active</div>
+          </CardContent>
+        </Card>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Category Status</CardTitle>
+      {/* Spotlight cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="border-border/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Top Performers
+              <span className="font-normal text-muted-foreground text-xs">highest utilisation</span>
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {data.categories?.map((cat: any) => (
-                <div key={cat.category} className="flex items-center justify-between p-3 rounded-md bg-muted/30">
-                  <div className="font-medium">{cat.category}</div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right text-sm">
-                      <div className="text-muted-foreground">Req/Day</div>
-                      <div className="font-mono">{cat.requiredPerDay != null ? cat.requiredPerDay.toFixed(0) : "--"} kg</div>
-                    </div>
-                    <RagBadge band={cat.ragBand} />
-                  </div>
+          <CardContent className="space-y-2">
+            {topPerformers.map(([name, m]) => (
+              <div key={name} className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
+                <span className="text-sm font-medium">{name}</span>
+                <div className="flex items-center gap-3">
+                  <UtilBar pct={m.utilisation} />
+                  <span className={`text-sm font-mono font-semibold w-14 text-right ${ragText(m.util_rating)}`}>
+                    {fmt(m.utilisation)}%
+                  </span>
                 </div>
-              ))}
-              {(!data.categories || data.categories.length === 0) && (
-                <div className="text-sm text-muted-foreground text-center py-4">No category data</div>
-              )}
-            </div>
+              </div>
+            ))}
+            {topPerformers.length === 0 && <div className="text-muted-foreground text-sm py-2">No data</div>}
           </CardContent>
         </Card>
 
-        <Card className="border-border/50 shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Needs Review</CardTitle>
-            <Badge variant="secondary">{data.needsReviewItems?.length || 0} items</Badge>
+        <Card className="border-border/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-red-500" /> Highest Rejection
+              <span className="font-normal text-muted-foreground text-xs">needs attention</span>
+            </CardTitle>
           </CardHeader>
-          <CardContent>
-            {data.needsReviewItems && data.needsReviewItems.length > 0 ? (
-              <div className="space-y-3">
-                <p className="text-sm text-muted-foreground mb-4">The following items are missing weights. Target Kg calculations cannot be completed.</p>
-                <div className="max-h-[300px] overflow-y-auto pr-2 space-y-2">
-                  {data.needsReviewItems.map((item: any, i: number) => (
-                    <div key={i} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0 text-sm">
-                      <div>
-                        <span className="font-medium">{item.itemCode}</span>
-                        <span className="text-muted-foreground ml-2">{item.colour}</span>
-                      </div>
-                      <Badge variant="outline" className="text-xs font-normal">{item.category}</Badge>
-                    </div>
-                  ))}
+          <CardContent className="space-y-2">
+            {worstRejection.map(([name, m]) => (
+              <div key={name} className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
+                <span className="text-sm font-medium">{name}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground">{fmtNum(m.reject_count)} kg</span>
+                  <span className={`text-sm font-mono font-semibold w-14 text-right ${(m.rejection_pct ?? 0) > 5 ? "text-red-500" : "text-amber-600"}`}>
+                    {fmt(m.rejection_pct)}%
+                  </span>
                 </div>
               </div>
-            ) : (
-              <div className="text-sm text-muted-foreground text-center py-8 flex flex-col items-center">
-                <CheckCircle className="h-8 w-8 text-emerald-500 mb-2 opacity-50" />
-                All items have configured weights.
+            ))}
+            {worstRejection.length === 0 && (
+              <div className="flex items-center gap-2 text-sm text-emerald-600 py-2">
+                <CheckCircle2 className="h-4 w-4" /> No rejection recorded
               </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      {/* Full machine table */}
+      <Card className="border-border/50">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">All Machines — {sorted.length} of {machines.length}</CardTitle>
+            <div className="relative w-52">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search machines…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="pl-8 h-8 text-sm"
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/30 border-y border-border/50">
+                <tr>
+                  <th className="text-left py-2.5 px-4 font-medium text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => toggleSort("name")}>
+                    <span className="flex items-center gap-1">Machine <SortIcon col="name" /></span>
+                  </th>
+                  <th className="text-center py-2.5 px-3 font-medium text-muted-foreground">Headline</th>
+                  <th className="text-right py-2.5 px-3 font-medium text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => toggleSort("utilisation")}>
+                    <span className="flex items-center gap-1 justify-end">Utilisation <SortIcon col="utilisation" /></span>
+                  </th>
+                  <th className="text-right py-2.5 px-3 font-medium text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => toggleSort("output")}>
+                    <span className="flex items-center gap-1 justify-end">Output (kg) <SortIcon col="output" /></span>
+                  </th>
+                  <th className="text-right py-2.5 px-3 font-medium text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => toggleSort("rejection")}>
+                    <span className="flex items-center gap-1 justify-end">Rejection % <SortIcon col="rejection" /></span>
+                  </th>
+                  <th className="text-right py-2.5 px-4 font-medium text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => toggleSort("hours")}>
+                    <span className="flex items-center gap-1 justify-end">Run / Ideal hrs <SortIcon col="hours" /></span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/30">
+                {sorted.map(([name, m]) => (
+                  <tr key={name} className="hover:bg-muted/20 transition-colors">
+                    <td className="py-2.5 px-4 font-medium">{name}</td>
+                    <td className="py-2.5 px-3 text-center">
+                      <Badge variant="outline" className={`text-xs ${ragBg(m.headline_rating)}`}>
+                        {m.headline != null ? `${fmt(m.headline)}%` : "–"} {m.headline_label}
+                      </Badge>
+                    </td>
+                    <td className="py-2.5 px-3 text-right">
+                      {m.util_available ? (
+                        <div className="flex items-center justify-end gap-2">
+                          <UtilBar pct={m.utilisation} />
+                          <span className={`font-mono font-semibold w-12 text-right ${ragText(m.util_rating)}`}>
+                            {fmt(m.utilisation)}%
+                          </span>
+                        </div>
+                      ) : <span className="text-muted-foreground">–</span>}
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono">{fmtNum(m.good_count)}</td>
+                    <td className="py-2.5 px-3 text-right">
+                      {m.rejection_pct != null ? (
+                        <span className={`font-mono font-semibold ${(m.rejection_pct) > 5 ? "text-red-500" : (m.rejection_pct) > 2 ? "text-amber-600" : "text-emerald-600"}`}>
+                          {fmt(m.rejection_pct)}%
+                        </span>
+                      ) : <span className="text-muted-foreground">–</span>}
+                    </td>
+                    <td className="py-2.5 px-4 text-right font-mono text-muted-foreground text-xs">
+                      {fmt(m.actual_hours, 0)} / {fmt(m.ideal_hours, 0)}
+                    </td>
+                  </tr>
+                ))}
+                {sorted.length === 0 && (
+                  <tr><td colSpan={6} className="py-10 text-center text-muted-foreground">No machines match "{search}"</td></tr>
+                )}
+              </tbody>
+              {/* Totals row */}
+              {overall && (
+                <tfoot className="bg-muted/30 border-t border-border/50 font-semibold">
+                  <tr>
+                    <td className="py-2.5 px-4 text-muted-foreground text-xs uppercase tracking-wider">Total / Plant</td>
+                    <td className="py-2.5 px-3 text-center">
+                      <Badge variant="outline" className={`text-xs ${ragBg(overall.headline_rating)}`}>
+                        {overall.headline != null ? `${fmt(overall.headline)}%` : "–"} {overall.headline_label}
+                      </Badge>
+                    </td>
+                    <td className={`py-2.5 px-3 text-right font-mono ${ragText(overall.util_rating)}`}>
+                      {fmt(overall.utilisation)}%
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono">{fmtNum(overall.good_count)}</td>
+                    <td className={`py-2.5 px-3 text-right font-mono ${(overall.rejection_pct ?? 0) > 5 ? "text-red-500" : "text-emerald-600"}`}>
+                      {fmt(overall.rejection_pct)}%
+                    </td>
+                    <td className="py-2.5 px-4 text-right font-mono text-muted-foreground text-xs">
+                      {fmt(overall.actual_hours, 0)} / {fmt(overall.ideal_hours, 0)}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <p className="text-xs text-muted-foreground text-right">
+        Live data from prayag-plant.com · cached 5 min · {machines.length} machines tracked
+      </p>
     </div>
   );
-}
-
-function CheckCircle(props: any) {
-  return <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>;
 }

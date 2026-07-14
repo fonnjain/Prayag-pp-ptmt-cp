@@ -105,17 +105,17 @@ export function AppLayout({
     { href: "/plant/trend",            label: "Trend",            icon: BarChart2         },
     { href: "/plant/config",           label: "Config",           icon: SlidersHorizontal },
     { href: "/plant/reports",          label: "Reports",          icon: FileText          },
+    { href: "/actions",                label: "Actions",          icon: CheckSquare       },
+    { href: "/backlog",                label: "Backlog",          icon: PackageMinus      },
+    { href: "/ai-analytics",           label: "AI Analytics",     icon: Sparkles          },
+    { href: "/settings",               label: "Settings",         icon: Settings          },
   ];
 
   const machineNavItems = [
     { href: "/",              label: "Dashboard",    icon: LayoutDashboard },
     { href: "/velocity",      label: "Velocity",     icon: Activity        },
     { href: "/warnings",      label: "Warnings",     icon: AlertTriangle   },
-    { href: "/actions",       label: "Actions",      icon: CheckSquare     },
     { href: "/quality",       label: "Quality",      icon: ActivitySquare  },
-    { href: "/backlog",       label: "Backlog",      icon: PackageMinus    },
-    { href: "/ai-analytics",  label: "AI Analytics", icon: Sparkles        },
-    { href: "/settings",      label: "Settings",     icon: Settings        },
   ];
 
   function navLink(item: { href: string; label: string; icon: React.ElementType }) {
