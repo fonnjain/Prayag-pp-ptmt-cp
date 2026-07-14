@@ -12,6 +12,7 @@ import reportsRouter from "./reports";
 import opsRouter from "./ops";
 import correctiveRouter from "./corrective";
 import capacityRouter from "./capacity";
+import apiKeysRouter from "./api-keys";
 
 const router: IRouter = Router();
 
@@ -36,5 +37,6 @@ router.use(reportsRouter);
 router.use(opsRouter);
 router.use(correctiveRouter);
 router.use(capacityRouter);
+router.use(apiKeysRouter);
 
 export default router;

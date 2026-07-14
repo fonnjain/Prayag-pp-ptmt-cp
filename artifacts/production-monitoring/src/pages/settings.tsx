@@ -8,21 +8,30 @@ import {
   useUpdateMonitoringThresholds,
   useGetMonitoringConfig,
   useUpdateMonitoringConfig,
+  useListApiKeys,
+  useCreateApiKey,
+  useDeleteApiKey,
+  useRegenerateApiKey,
   getGetMonitoringThresholdsQueryKey,
   getGetMonitoringConfigQueryKey,
+  getListApiKeysQueryKey,
   type ItemWeight,
   type IdealHoursOverride,
   type MonitoringConfig,
-  type WarningThresholds
+  type WarningThresholds,
+  type ApiKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
+import { Copy, KeyRound, Trash2, RefreshCw, Plus, AlertTriangle, Check } from "lucide-react";
 
 export default function Settings({ month }: { month: string }) {
   return (
@@ -32,13 +41,18 @@ export default function Settings({ month }: { month: string }) {
         <p className="text-muted-foreground">Manage administrative configurations and overrides.</p>
       </header>
 
-      <Tabs defaultValue="weights" className="w-full">
+      <Tabs defaultValue="api-keys" className="w-full">
         <TabsList className="mb-4">
+          <TabsTrigger value="api-keys">API Keys</TabsTrigger>
           <TabsTrigger value="weights">Item Weights</TabsTrigger>
           <TabsTrigger value="overrides">Ideal Hours Overrides</TabsTrigger>
           <TabsTrigger value="config">Monitoring Config</TabsTrigger>
           <TabsTrigger value="thresholds">Warning Thresholds</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="api-keys" className="space-y-4">
+          <ApiKeysTab />
+        </TabsContent>
 
         <TabsContent value="weights" className="space-y-4">
           <ItemWeightsTab />
@@ -57,6 +71,245 @@ export default function Settings({ month }: { month: string }) {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function ApiKeysTab() {
+  const queryClient = useQueryClient();
+  const { data: keysRaw, isLoading } = useListApiKeys({ query: { queryKey: getListApiKeysQueryKey() } });
+  const keys = (keysRaw as unknown as ApiKey[]) ?? [];
+
+  const createKey = useCreateApiKey();
+  const deleteKey = useDeleteApiKey();
+  const regenerateKey = useRegenerateApiKey();
+
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  const [revealedKey, setRevealedKey] = useState<{ key: string; name: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ApiKey | null>(null);
+  const [regenTarget, setRegenTarget] = useState<ApiKey | null>(null);
+
+  function copyKey(k: string) {
+    navigator.clipboard.writeText(k);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) return;
+    createKey.mutate(
+      { data: { name: name.trim(), description: description.trim() || undefined } },
+      {
+        onSuccess: (res) => {
+          const r = res as unknown as ApiKey & { key: string };
+          setRevealedKey({ key: r.key, name: r.name });
+          setName(""); setDescription("");
+          queryClient.invalidateQueries({ queryKey: getListApiKeysQueryKey() });
+        },
+        onError: () => toast({ title: "Failed to create key", variant: "destructive" }),
+      }
+    );
+  }
+
+  function confirmDelete() {
+    if (!deleteTarget) return;
+    deleteKey.mutate(
+      { id: deleteTarget.id },
+      {
+        onSuccess: () => {
+          toast({ title: `Key "${deleteTarget.name}" deleted` });
+          setDeleteTarget(null);
+          queryClient.invalidateQueries({ queryKey: getListApiKeysQueryKey() });
+        },
+        onError: () => toast({ title: "Failed to delete key", variant: "destructive" }),
+      }
+    );
+  }
+
+  function confirmRegenerate() {
+    if (!regenTarget) return;
+    regenerateKey.mutate(
+      { id: regenTarget.id },
+      {
+        onSuccess: (res) => {
+          const r = res as unknown as ApiKey & { key: string };
+          setRevealedKey({ key: r.key, name: r.name });
+          setRegenTarget(null);
+          queryClient.invalidateQueries({ queryKey: getListApiKeysQueryKey() });
+        },
+        onError: () => toast({ title: "Failed to regenerate key", variant: "destructive" }),
+      }
+    );
+  }
+
+  function fmtDate(s: string | null | undefined) {
+    if (!s) return "Never";
+    return new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  }
+
+  return (
+    <>
+      <Card className="border-border/50">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <KeyRound className="h-5 w-5" /> API Key Management
+          </CardTitle>
+          <CardDescription>
+            Issue API keys for external systems (e.g. prayag-plant.com) to send machine data to this platform.
+            Use <code className="text-xs bg-muted px-1 py-0.5 rounded">Authorization: Bearer &lt;key&gt;</code> in request headers.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+
+          {/* Create form */}
+          <form onSubmit={handleCreate} className="bg-muted/30 rounded-lg border border-border/50 p-4 space-y-3">
+            <div className="text-sm font-medium">Issue New Key</div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+              <div className="space-y-1.5">
+                <Label htmlFor="kname">Label <span className="text-red-500">*</span></Label>
+                <Input id="kname" placeholder="e.g. prayag-plant.com" value={name} onChange={e => setName(e.target.value)} required />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="kdesc">Description (optional)</Label>
+                <Input id="kdesc" placeholder="Machine data ingestion" value={description} onChange={e => setDescription(e.target.value)} />
+              </div>
+              <Button type="submit" disabled={createKey.isPending || !name.trim()} className="gap-2">
+                <Plus className="h-4 w-4" /> {createKey.isPending ? "Generating…" : "Generate Key"}
+              </Button>
+            </div>
+          </form>
+
+          {/* Keys table */}
+          {isLoading ? (
+            <div className="text-muted-foreground text-sm py-4">Loading keys…</div>
+          ) : keys.length === 0 ? (
+            <div className="text-center text-muted-foreground py-10 border border-dashed border-border/50 rounded-lg">
+              <KeyRound className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              <div className="text-sm">No API keys yet. Generate one above.</div>
+            </div>
+          ) : (
+            <div className="border border-border/50 rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader className="bg-muted/30">
+                  <TableRow>
+                    <TableHead>Label</TableHead>
+                    <TableHead>Key Prefix</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Last Used</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {keys.map((k) => (
+                    <TableRow key={k.id}>
+                      <TableCell>
+                        <div className="font-medium">{k.name}</div>
+                        {k.description && <div className="text-xs text-muted-foreground">{k.description}</div>}
+                      </TableCell>
+                      <TableCell>
+                        <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{k.keyPrefix}…</code>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={k.isActive ? "default" : "secondary"} className={k.isActive ? "bg-emerald-500/15 text-emerald-700 border-emerald-500/30" : ""}>
+                          {k.isActive ? "Active" : "Revoked"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{fmtDate(k.createdAt)}</TableCell>
+                      <TableCell className="text-xs text-muted-foreground">{fmtDate(k.lastUsedAt)}</TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" onClick={() => setRegenTarget(k)}>
+                            <RefreshCw className="h-3 w-3" /> Regenerate
+                          </Button>
+                          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7 text-red-500 hover:text-red-600 hover:border-red-300" onClick={() => setDeleteTarget(k)}>
+                            <Trash2 className="h-3 w-3" /> Delete
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Revealed key modal */}
+      <Dialog open={!!revealedKey} onOpenChange={(open) => { if (!open) setRevealedKey(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-primary" /> Your API Key
+            </DialogTitle>
+            <DialogDescription>
+              Copy this key now — it will <strong>never be shown again</strong>. Store it securely.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground">Key for: <span className="font-medium text-foreground">{revealedKey?.name}</span></div>
+            <div className="flex items-center gap-2 bg-muted rounded-lg p-3">
+              <code className="flex-1 text-xs font-mono break-all select-all">{revealedKey?.key}</code>
+              <Button size="sm" variant="outline" onClick={() => revealedKey && copyKey(revealedKey.key)} className="shrink-0 gap-1.5">
+                {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+            <div className="text-xs text-muted-foreground bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded p-3">
+              Use this key as: <code className="font-mono">Authorization: Bearer {revealedKey?.key?.slice(0, 20)}…</code>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setRevealedKey(null)}>Done — I've saved the key</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation modal */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" /> Delete API Key
+            </DialogTitle>
+            <DialogDescription>
+              This permanently revokes access for <strong>"{deleteTarget?.name}"</strong>. Any system using this key will stop working immediately.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={deleteKey.isPending}>
+              {deleteKey.isPending ? "Deleting…" : "Delete Key"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Regenerate confirmation modal */}
+      <Dialog open={!!regenTarget} onOpenChange={(open) => { if (!open) setRegenTarget(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5 text-amber-500" /> Regenerate API Key
+            </DialogTitle>
+            <DialogDescription>
+              This issues a <strong>new secret</strong> for <strong>"{regenTarget?.name}"</strong>. The old key stops working <strong>immediately</strong> — update your integration before regenerating.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setRegenTarget(null)}>Cancel</Button>
+            <Button onClick={confirmRegenerate} disabled={regenerateKey.isPending} className="gap-2">
+              <RefreshCw className={`h-4 w-4 ${regenerateKey.isPending ? "animate-spin" : ""}`} />
+              {regenerateKey.isPending ? "Regenerating…" : "Regenerate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 

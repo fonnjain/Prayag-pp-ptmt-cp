@@ -1297,3 +1297,59 @@ export const getPlantWeeklySummaryResponse = zod.object({
 }))
 }))
 })
+
+
+/**
+ * @summary List all API keys (hashes never returned)
+ */
+export const listApiKeysResponseItem = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "keyPrefix": zod.string().describe('First 14 chars of the key for identification — safe to display'),
+  "isActive": zod.boolean(),
+  "createdAt": zod.string(),
+  "lastUsedAt": zod.string().nullish()
+})
+export const listApiKeysResponse = zod.array(listApiKeysResponseItem)
+
+
+/**
+ * @summary Create a new API key — returns the full key exactly once
+ */
+export const createApiKeyBody = zod.object({
+  "name": zod.string().describe('Human-readable label for this key, e.g. prayag-plant.com'),
+  "description": zod.string().optional().describe('Optional notes about where this key is used')
+})
+
+
+/**
+ * @summary Permanently delete an API key
+ */
+export const deleteApiKeyParams = zod.object({
+  "id": zod.number()
+})
+
+export const deleteApiKeyResponse = zod.object({
+  "ok": zod.boolean().optional()
+})
+
+
+/**
+ * @summary Regenerate — issues a new secret, old key stops working immediately
+ */
+export const regenerateApiKeyParams = zod.object({
+  "id": zod.number()
+})
+
+export const regenerateApiKeyResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "description": zod.string().nullish(),
+  "keyPrefix": zod.string().describe('First 14 chars of the key for identification — safe to display'),
+  "isActive": zod.boolean(),
+  "createdAt": zod.string(),
+  "lastUsedAt": zod.string().nullish()
+}).and(zod.object({
+  "key": zod.string().describe('Full API key — shown exactly once on create\/regenerate, never stored in plaintext')
+}))

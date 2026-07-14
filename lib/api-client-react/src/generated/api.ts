@@ -23,6 +23,8 @@ import type {
   AiAnalysisSummary,
   AiPlantAnalysisDetail,
   AnalyzeAiPlantBody,
+  ApiKey,
+  ApiKeyWithSecret,
   BufferCategory,
   BufferCategoryUpdate,
   CategoryCapacity,
@@ -31,9 +33,11 @@ import type {
   CorrectivePlanRunSummary,
   CorrectiveReplanInput,
   CorrectiveReplanResult,
+  CreateApiKeyRequest,
   CreatePlanRunRequest,
   CreateUploadBody,
   DashboardSnapshot,
+  DeleteApiKey200,
   ExportMonitoringExcelParams,
   ExportMonitoringPdfParams,
   ExportPlanExcelParams,
@@ -5369,3 +5373,367 @@ export function useGetPlantWeeklySummary<TData = Awaited<ReturnType<typeof getPl
 
   return query;
 }
+
+
+
+
+
+/**
+ * @summary List all API keys (hashes never returned)
+ */
+export type listApiKeysResponse200 = {
+  data: ApiKey[]
+  status: 200
+}
+    
+export type listApiKeysResponseSuccess = (listApiKeysResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listApiKeysResponse = (listApiKeysResponseSuccess)
+
+export const getListApiKeysUrl = () => {
+
+
+  
+
+  return `/api/api-keys`
+}
+
+export const listApiKeys = async ( options?: RequestInit): Promise<listApiKeysResponse> => {
+  
+  return customFetch<listApiKeysResponse>(getListApiKeysUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getListApiKeysQueryKey = () => {
+    return [
+    `/api/api-keys`
+    ] as const;
+    }
+
+    
+export const getListApiKeysQueryOptions = <TData = Awaited<ReturnType<typeof listApiKeys>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listApiKeys>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListApiKeysQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listApiKeys>>> = ({ signal }) => listApiKeys({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listApiKeys>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListApiKeysQueryResult = NonNullable<Awaited<ReturnType<typeof listApiKeys>>>
+export type ListApiKeysQueryError = unknown
+
+
+/**
+ * @summary List all API keys (hashes never returned)
+ */
+
+export function useListApiKeys<TData = Awaited<ReturnType<typeof listApiKeys>>, TError = unknown>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listApiKeys>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListApiKeysQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
+ * @summary Create a new API key — returns the full key exactly once
+ */
+export type createApiKeyResponse201 = {
+  data: ApiKeyWithSecret
+  status: 201
+}
+
+export type createApiKeyResponse400 = {
+  data: void
+  status: 400
+}
+    
+export type createApiKeyResponseSuccess = (createApiKeyResponse201) & {
+  headers: Headers;
+};
+export type createApiKeyResponseError = (createApiKeyResponse400) & {
+  headers: Headers;
+};
+
+export type createApiKeyResponse = (createApiKeyResponseSuccess | createApiKeyResponseError)
+
+export const getCreateApiKeyUrl = () => {
+
+
+  
+
+  return `/api/api-keys`
+}
+
+export const createApiKey = async (createApiKeyRequest: CreateApiKeyRequest, options?: RequestInit): Promise<createApiKeyResponse> => {
+  
+  return customFetch<createApiKeyResponse>(getCreateApiKeyUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      createApiKeyRequest,)
+  }
+);}
+
+
+
+
+export const getCreateApiKeyMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createApiKey>>, TError,{data: CreateApiKeyRequest}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createApiKey>>, TError,{data: CreateApiKeyRequest}, TContext> => {
+
+const mutationKey = ['createApiKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createApiKey>>, {data: CreateApiKeyRequest}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createApiKey(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateApiKeyMutationResult = NonNullable<Awaited<ReturnType<typeof createApiKey>>>
+    export type CreateApiKeyMutationBody = CreateApiKeyRequest
+    export type CreateApiKeyMutationError = void
+
+    /**
+ * @summary Create a new API key — returns the full key exactly once
+ */
+export const useCreateApiKey = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createApiKey>>, TError,{data: CreateApiKeyRequest}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createApiKey>>,
+        TError,
+        {data: CreateApiKeyRequest},
+        TContext
+      > => {
+
+      const mutationOptions = getCreateApiKeyMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+/**
+ * @summary Permanently delete an API key
+ */
+export type deleteApiKeyResponse200 = {
+  data: DeleteApiKey200
+  status: 200
+}
+
+export type deleteApiKeyResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type deleteApiKeyResponseSuccess = (deleteApiKeyResponse200) & {
+  headers: Headers;
+};
+export type deleteApiKeyResponseError = (deleteApiKeyResponse404) & {
+  headers: Headers;
+};
+
+export type deleteApiKeyResponse = (deleteApiKeyResponseSuccess | deleteApiKeyResponseError)
+
+export const getDeleteApiKeyUrl = (id: number,) => {
+
+
+  
+
+  return `/api/api-keys/${id}`
+}
+
+export const deleteApiKey = async (id: number, options?: RequestInit): Promise<deleteApiKeyResponse> => {
+  
+  return customFetch<deleteApiKeyResponse>(getDeleteApiKeyUrl(id),
+  {      
+    ...options,
+    method: 'DELETE'
+    
+    
+  }
+);}
+
+
+
+
+export const getDeleteApiKeyMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApiKey>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteApiKey>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteApiKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteApiKey>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteApiKey(id,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteApiKeyMutationResult = NonNullable<Awaited<ReturnType<typeof deleteApiKey>>>
+    
+    export type DeleteApiKeyMutationError = void
+
+    /**
+ * @summary Permanently delete an API key
+ */
+export const useDeleteApiKey = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApiKey>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteApiKey>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+
+      const mutationOptions = getDeleteApiKeyMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+/**
+ * @summary Regenerate — issues a new secret, old key stops working immediately
+ */
+export type regenerateApiKeyResponse200 = {
+  data: ApiKeyWithSecret
+  status: 200
+}
+
+export type regenerateApiKeyResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type regenerateApiKeyResponseSuccess = (regenerateApiKeyResponse200) & {
+  headers: Headers;
+};
+export type regenerateApiKeyResponseError = (regenerateApiKeyResponse404) & {
+  headers: Headers;
+};
+
+export type regenerateApiKeyResponse = (regenerateApiKeyResponseSuccess | regenerateApiKeyResponseError)
+
+export const getRegenerateApiKeyUrl = (id: number,) => {
+
+
+  
+
+  return `/api/api-keys/${id}/regenerate`
+}
+
+export const regenerateApiKey = async (id: number, options?: RequestInit): Promise<regenerateApiKeyResponse> => {
+  
+  return customFetch<regenerateApiKeyResponse>(getRegenerateApiKeyUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+
+
+
+
+export const getRegenerateApiKeyMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateApiKey>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof regenerateApiKey>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['regenerateApiKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof regenerateApiKey>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  regenerateApiKey(id,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RegenerateApiKeyMutationResult = NonNullable<Awaited<ReturnType<typeof regenerateApiKey>>>
+    
+    export type RegenerateApiKeyMutationError = void
+
+    /**
+ * @summary Regenerate — issues a new secret, old key stops working immediately
+ */
+export const useRegenerateApiKey = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof regenerateApiKey>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof regenerateApiKey>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+
+      const mutationOptions = getRegenerateApiKeyMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }

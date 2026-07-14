@@ -1125,6 +1125,82 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlantWeeklySummary"
 
+  /api-keys:
+    get:
+      operationId: listApiKeys
+      tags: [apiKeys]
+      summary: List all API keys (hashes never returned)
+      responses:
+        "200":
+          description: List of API keys
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiKey"
+    post:
+      operationId: createApiKey
+      tags: [apiKeys]
+      summary: Create a new API key — returns the full key exactly once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApiKeyRequest"
+      responses:
+        "201":
+          description: Created — includes full key (shown once only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyWithSecret"
+        "400":
+          description: Validation error
+
+  /api-keys/{id}:
+    delete:
+      operationId: deleteApiKey
+      tags: [apiKeys]
+      summary: Permanently delete an API key
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "404":
+          description: Not found
+
+  /api-keys/{id}/regenerate:
+    post:
+      operationId: regenerateApiKey
+      tags: [apiKeys]
+      summary: Regenerate — issues a new secret, old key stops working immediately
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: New key issued — shown once only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyWithSecret"
+        "404":
+          description: Not found
+
 components:
   schemas:
     HealthStatus:
@@ -2308,3 +2384,32 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PlantWeeklyCategoryRow"
+
+    ApiKey:
+      type: object
+      required: [id, name, keyPrefix, isActive, createdAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        description: { type: ["string", "null"] }
+        keyPrefix: { type: string, description: "First 14 chars of the key for identification — safe to display" }
+        isActive: { type: boolean }
+        createdAt: { type: string }
+        lastUsedAt: { type: ["string", "null"] }
+
+    ApiKeyWithSecret:
+      allOf:
+        - $ref: "#/components/schemas/ApiKey"
+        - type: object
+          required: [key]
+          properties:
+            key:
+              type: string
+              description: "Full API key — shown exactly once on create/regenerate, never stored in plaintext"
+
+    CreateApiKeyRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, description: "Human-readable label for this key, e.g. prayag-plant.com" }
+        description: { type: string, description: "Optional notes about where this key is used" }
