@@ -13,6 +13,7 @@ import opsRouter from "./ops";
 import correctiveRouter from "./corrective";
 import capacityRouter from "./capacity";
 import apiKeysRouter from "./api-keys";
+import plantLiveRouter from "./plant-live";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use(opsRouter);
 router.use(correctiveRouter);
 router.use(capacityRouter);
 router.use(apiKeysRouter);
+router.use(plantLiveRouter);
 
 export default router;

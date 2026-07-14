@@ -1,8 +1,9 @@
-import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle, useGetPlantWeeklySummary, getGetPlantWeeklySummaryQueryKey } from "@workspace/api-client-react";
+import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle, useGetPlantWeeklySummary, getGetPlantWeeklySummaryQueryKey, useGetPlantLiveSummary, getGetPlantLiveSummaryQueryKey } from "@workspace/api-client-react";
+import type { PlantLiveMachineMetrics } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Activity, Download, FileSpreadsheet, CalendarRange } from "lucide-react";
+import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Activity, Download, FileSpreadsheet, CalendarRange, Zap, RefreshCw } from "lucide-react";
 import { useLocation } from "wouter";
 import { fmtDate } from "@/lib/utils";
 import { exportXlsx } from "@/lib/excel";
@@ -38,6 +39,12 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
     { month },
     { query: { queryKey: getGetPlantWeeklySummaryQueryKey({ month }), staleTime: 0 } as any }
   );
+
+  const { data: liveRaw, isLoading: isLiveLoading, refetch: refetchLive, isRefetching: isLiveRefetching } = useGetPlantLiveSummary(
+    { period: month, plant: "PTMT" },
+    { query: { queryKey: getGetPlantLiveSummaryQueryKey({ period: month, plant: "PTMT" }), staleTime: 5 * 60 * 1000 } as any }
+  );
+  const liveData = liveRaw as any;
 
   if (isLoading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading plant data...</div>;
   if (!data) return <div className="text-red-500 p-4">Failed to load plant data.</div>;
@@ -369,6 +376,126 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
           </CardContent>
         </Card>
       )}
+
+      <LiveMachinePanel
+        liveData={liveData}
+        isLoading={isLiveLoading}
+        isRefetching={isLiveRefetching}
+        onRefresh={() => refetchLive()}
+      />
     </div>
+  );
+}
+
+function ragBadge(rating: string) {
+  if (rating === "green") return "bg-emerald-500/15 text-emerald-700 border-emerald-500/30";
+  if (rating === "amber") return "bg-amber-500/15 text-amber-700 border-amber-500/30";
+  return "bg-red-500/15 text-red-600 border-red-500/30";
+}
+
+function fmtLive(n: number | null | undefined, dec = 1): string {
+  if (n === null || n === undefined) return "–";
+  return n.toFixed(dec);
+}
+
+function LiveMachinePanel({
+  liveData,
+  isLoading,
+  isRefetching,
+  onRefresh,
+}: {
+  liveData: any;
+  isLoading: boolean;
+  isRefetching: boolean;
+  onRefresh: () => void;
+}) {
+  const machines: [string, PlantLiveMachineMetrics][] = liveData?.by_machine
+    ? Object.entries<PlantLiveMachineMetrics>(liveData.by_machine).sort((a, b) => a[0].localeCompare(b[0]))
+    : [];
+  const period = liveData?.period;
+
+  return (
+    <Card className="border-border/50">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Zap className="h-4 w-4 text-amber-500" /> Live Machine Performance
+            <span className="text-xs font-normal text-muted-foreground ml-1">via prayag-plant.com</span>
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            {period && (
+              <span className="text-xs text-muted-foreground">
+                {period.label} · {period.from} → {period.to}
+              </span>
+            )}
+            <Button size="sm" variant="outline" onClick={onRefresh} disabled={isRefetching} className="h-7 gap-1.5 text-xs">
+              <RefreshCw className={`h-3 w-3 ${isRefetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="text-muted-foreground text-sm py-6 text-center">Loading live data…</div>
+        ) : machines.length === 0 ? (
+          <div className="text-muted-foreground text-sm py-6 text-center">No machine data available for this period.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border/50 text-xs text-muted-foreground">
+                  <th className="text-left py-2 pr-3 font-medium">Machine</th>
+                  <th className="text-center py-2 px-3 font-medium">Headline</th>
+                  <th className="text-right py-2 px-3 font-medium">Utilisation</th>
+                  <th className="text-right py-2 px-3 font-medium">Output Eff.</th>
+                  <th className="text-right py-2 px-3 font-medium">Output (kg)</th>
+                  <th className="text-right py-2 px-3 font-medium">Rejection %</th>
+                  <th className="text-right py-2 pl-3 font-medium">Run / Ideal hrs</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/30">
+                {machines.map(([name, m]) => (
+                  <tr key={name} className="hover:bg-muted/20 transition-colors">
+                    <td className="py-2 pr-3 font-medium text-foreground">{name}</td>
+                    <td className="py-2 px-3 text-center">
+                      <Badge variant="outline" className={`text-xs ${ragBadge(m.headline_rating)}`}>
+                        {m.headline !== null && m.headline !== undefined ? `${fmtLive(m.headline)}%` : "–"} {m.headline_label}
+                      </Badge>
+                    </td>
+                    <td className="py-2 px-3 text-right">
+                      {m.util_available ? (
+                        <span className={m.util_rating === "green" ? "text-emerald-600" : m.util_rating === "amber" ? "text-amber-600" : "text-red-500"}>
+                          {fmtLive(m.utilisation)}%
+                        </span>
+                      ) : <span className="text-muted-foreground">–</span>}
+                    </td>
+                    <td className="py-2 px-3 text-right text-muted-foreground">
+                      {m.output_efficiency !== null && m.output_efficiency !== undefined ? `${fmtLive(m.output_efficiency)}%` : "–"}
+                    </td>
+                    <td className="py-2 px-3 text-right font-mono text-xs">
+                      {m.good_count !== null && m.good_count !== undefined ? Number(m.good_count).toLocaleString() : "–"}
+                    </td>
+                    <td className="py-2 px-3 text-right">
+                      {m.rejection_pct !== null && m.rejection_pct !== undefined ? (
+                        <span className={(m.rejection_pct ?? 0) > 5 ? "text-red-500" : (m.rejection_pct ?? 0) > 2 ? "text-amber-600" : "text-emerald-600"}>
+                          {fmtLive(m.rejection_pct)}%
+                        </span>
+                      ) : <span className="text-muted-foreground">–</span>}
+                    </td>
+                    <td className="py-2 pl-3 text-right font-mono text-xs text-muted-foreground">
+                      {fmtLive(m.actual_hours, 0)} / {fmtLive(m.ideal_hours, 0)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="mt-3 pt-3 border-t border-border/30 text-xs text-muted-foreground">
+              {machines.length} machines · data sourced from prayag-plant.com production sheets
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

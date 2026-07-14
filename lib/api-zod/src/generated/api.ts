@@ -1353,3 +1353,80 @@ export const regenerateApiKeyResponse = zod.object({
 }).and(zod.object({
   "key": zod.string().describe('Full API key — shown exactly once on create\/regenerate, never stored in plaintext')
 }))
+
+
+/**
+ * @summary List all plants from prayag-plant.com live API
+ */
+export const getPlantLivePlantsResponse = zod.object({
+  "plants": zod.array(zod.object({
+  "code": zod.string(),
+  "name": zod.string(),
+  "location": zod.string(),
+  "daily_wired": zod.boolean(),
+  "daily_months": zod.array(zod.string())
+}))
+})
+
+
+/**
+ * @summary Machine-level performance summary from prayag-plant.com live API
+ */
+export const getPlantLiveSummaryQueryPeriodDefault = "last_updated";
+
+export const getPlantLiveSummaryQueryParams = zod.object({
+  "period": zod.string().default(getPlantLiveSummaryQueryPeriodDefault).describe('Period token e.g. last_updated, last_month, 2026-07'),
+  "plant": zod.string().optional().describe('Plant code e.g. PTMT, PIPE, GARDEN')
+})
+
+export const getPlantLiveSummaryResponse = zod.object({
+  "period": zod.object({
+  "requested": zod.string(),
+  "label": zod.string(),
+  "from": zod.string(),
+  "to": zod.string()
+}),
+  "row_count": zod.number().optional(),
+  "by_machine": zod.record(zod.string(), zod.object({
+  "headline": zod.number().nullable(),
+  "headline_label": zod.string(),
+  "headline_rating": zod.string(),
+  "utilisation": zod.number().nullish(),
+  "util_rating": zod.string().optional(),
+  "util_available": zod.boolean().optional(),
+  "output_efficiency": zod.number().nullish(),
+  "oee": zod.number().nullish(),
+  "oee_rating": zod.string().optional(),
+  "good_count": zod.number().nullish(),
+  "total_count": zod.number().nullish(),
+  "reject_count": zod.number().nullish(),
+  "rejection_pct": zod.number().nullish(),
+  "actual_hours": zod.number().nullish(),
+  "ideal_hours": zod.number().nullish(),
+  "unit": zod.string(),
+  "row_count": zod.number().optional(),
+  "baseline_set": zod.boolean().optional(),
+  "warnings": zod.array(zod.string()).optional()
+})),
+  "by_date": zod.record(zod.string(), zod.object({
+  "headline": zod.number().nullable(),
+  "headline_label": zod.string(),
+  "headline_rating": zod.string(),
+  "utilisation": zod.number().nullish(),
+  "util_rating": zod.string().optional(),
+  "util_available": zod.boolean().optional(),
+  "output_efficiency": zod.number().nullish(),
+  "oee": zod.number().nullish(),
+  "oee_rating": zod.string().optional(),
+  "good_count": zod.number().nullish(),
+  "total_count": zod.number().nullish(),
+  "reject_count": zod.number().nullish(),
+  "rejection_pct": zod.number().nullish(),
+  "actual_hours": zod.number().nullish(),
+  "ideal_hours": zod.number().nullish(),
+  "unit": zod.string(),
+  "row_count": zod.number().optional(),
+  "baseline_set": zod.boolean().optional(),
+  "warnings": zod.array(zod.string()).optional()
+}))
+})

@@ -55,6 +55,7 @@ import type {
   GetPlanSummaryParams,
   GetPlantBundleParams,
   GetPlantConfigParams,
+  GetPlantLiveSummaryParams,
   GetPlantTrend200,
   GetPlantTrendParams,
   GetPlantWeeklySummaryParams,
@@ -87,6 +88,9 @@ import type {
   PlantBundle,
   PlantConfigData,
   PlantConfigUpdate,
+  PlantLiveError,
+  PlantLivePlantsResponse,
+  PlantLiveSummaryResponse,
   PlantSourceConfigUpsert,
   PlantWeeklySummary,
   RecomputeCategoryCapacityParams,
@@ -5737,3 +5741,191 @@ export const useRegenerateApiKey = <TError = void,
 
       return useMutation(mutationOptions);
     }
+    
+/**
+ * @summary List all plants from prayag-plant.com live API
+ */
+export type getPlantLivePlantsResponse200 = {
+  data: PlantLivePlantsResponse
+  status: 200
+}
+    
+export type getPlantLivePlantsResponseSuccess = (getPlantLivePlantsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPlantLivePlantsResponse = (getPlantLivePlantsResponseSuccess)
+
+export const getGetPlantLivePlantsUrl = () => {
+
+
+  
+
+  return `/api/plant-live/plants`
+}
+
+export const getPlantLivePlants = async ( options?: RequestInit): Promise<getPlantLivePlantsResponse> => {
+  
+  return customFetch<getPlantLivePlantsResponse>(getGetPlantLivePlantsUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetPlantLivePlantsQueryKey = () => {
+    return [
+    `/api/plant-live/plants`
+    ] as const;
+    }
+
+    
+export const getGetPlantLivePlantsQueryOptions = <TData = Awaited<ReturnType<typeof getPlantLivePlants>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantLivePlants>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlantLivePlantsQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlantLivePlants>>> = ({ signal }) => getPlantLivePlants({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlantLivePlants>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlantLivePlantsQueryResult = NonNullable<Awaited<ReturnType<typeof getPlantLivePlants>>>
+export type GetPlantLivePlantsQueryError = unknown
+
+
+/**
+ * @summary List all plants from prayag-plant.com live API
+ */
+
+export function useGetPlantLivePlants<TData = Awaited<ReturnType<typeof getPlantLivePlants>>, TError = unknown>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantLivePlants>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlantLivePlantsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
+ * @summary Machine-level performance summary from prayag-plant.com live API
+ */
+export type getPlantLiveSummaryResponse200 = {
+  data: PlantLiveSummaryResponse
+  status: 200
+}
+
+export type getPlantLiveSummaryResponse502 = {
+  data: PlantLiveError
+  status: 502
+}
+    
+export type getPlantLiveSummaryResponseSuccess = (getPlantLiveSummaryResponse200) & {
+  headers: Headers;
+};
+export type getPlantLiveSummaryResponseError = (getPlantLiveSummaryResponse502) & {
+  headers: Headers;
+};
+
+export type getPlantLiveSummaryResponse = (getPlantLiveSummaryResponseSuccess | getPlantLiveSummaryResponseError)
+
+export const getGetPlantLiveSummaryUrl = (params?: GetPlantLiveSummaryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/plant-live/summary?${stringifiedParams}` : `/api/plant-live/summary`
+}
+
+export const getPlantLiveSummary = async (params?: GetPlantLiveSummaryParams, options?: RequestInit): Promise<getPlantLiveSummaryResponse> => {
+  
+  return customFetch<getPlantLiveSummaryResponse>(getGetPlantLiveSummaryUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetPlantLiveSummaryQueryKey = (params?: GetPlantLiveSummaryParams,) => {
+    return [
+    `/api/plant-live/summary`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetPlantLiveSummaryQueryOptions = <TData = Awaited<ReturnType<typeof getPlantLiveSummary>>, TError = PlantLiveError>(params?: GetPlantLiveSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantLiveSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlantLiveSummaryQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlantLiveSummary>>> = ({ signal }) => getPlantLiveSummary(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlantLiveSummary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlantLiveSummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getPlantLiveSummary>>>
+export type GetPlantLiveSummaryQueryError = PlantLiveError
+
+
+/**
+ * @summary Machine-level performance summary from prayag-plant.com live API
+ */
+
+export function useGetPlantLiveSummary<TData = Awaited<ReturnType<typeof getPlantLiveSummary>>, TError = PlantLiveError>(
+ params?: GetPlantLiveSummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantLiveSummary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlantLiveSummaryQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}

@@ -1201,6 +1201,49 @@ paths:
         "404":
           description: Not found
 
+  /plant-live/plants:
+    get:
+      operationId: getPlantLivePlants
+      tags: [plantLive]
+      summary: List all plants from prayag-plant.com live API
+      responses:
+        "200":
+          description: Plant list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantLivePlantsResponse"
+
+  /plant-live/summary:
+    get:
+      operationId: getPlantLiveSummary
+      tags: [plantLive]
+      summary: Machine-level performance summary from prayag-plant.com live API
+      parameters:
+        - name: period
+          in: query
+          required: false
+          schema: { type: string, default: "last_updated" }
+          description: "Period token e.g. last_updated, last_month, 2026-07"
+        - name: plant
+          in: query
+          required: false
+          schema: { type: string }
+          description: "Plant code e.g. PTMT, PIPE, GARDEN"
+      responses:
+        "200":
+          description: Summary with by_machine and by_date breakdowns
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantLiveSummaryResponse"
+        "502":
+          description: Upstream API unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantLiveError"
+
 components:
   schemas:
     HealthStatus:
@@ -2413,3 +2456,82 @@ components:
       properties:
         name: { type: string, description: "Human-readable label for this key, e.g. prayag-plant.com" }
         description: { type: string, description: "Optional notes about where this key is used" }
+
+    PlantLiveError:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    PlantLivePlant:
+      type: object
+      required: [code, name, location, daily_wired, daily_months]
+      properties:
+        code: { type: string }
+        name: { type: string }
+        location: { type: string }
+        daily_wired: { type: boolean }
+        daily_months:
+          type: array
+          items: { type: string }
+
+    PlantLivePlantsResponse:
+      type: object
+      required: [plants]
+      properties:
+        plants:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantLivePlant"
+
+    PlantLiveMachineMetrics:
+      type: object
+      required: [headline, headline_label, headline_rating, unit]
+      properties:
+        headline: { type: ["number", "null"] }
+        headline_label: { type: string }
+        headline_rating: { type: string }
+        utilisation: { type: ["number", "null"] }
+        util_rating: { type: string }
+        util_available: { type: boolean }
+        output_efficiency: { type: ["number", "null"] }
+        oee: { type: ["number", "null"] }
+        oee_rating: { type: string }
+        good_count: { type: ["number", "null"] }
+        total_count: { type: ["number", "null"] }
+        reject_count: { type: ["number", "null"] }
+        rejection_pct: { type: ["number", "null"] }
+        actual_hours: { type: ["number", "null"] }
+        ideal_hours: { type: ["number", "null"] }
+        unit: { type: string }
+        row_count: { type: integer }
+        baseline_set: { type: boolean }
+        warnings:
+          type: array
+          items: { type: string }
+
+    PlantLivePeriod:
+      type: object
+      required: [requested, label, from, to]
+      properties:
+        requested: { type: string }
+        label: { type: string }
+        from: { type: string }
+        to: { type: string }
+
+    PlantLiveSummaryResponse:
+      type: object
+      required: [period, by_machine, by_date]
+      properties:
+        period:
+          $ref: "#/components/schemas/PlantLivePeriod"
+        row_count: { type: integer }
+        by_machine:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/PlantLiveMachineMetrics"
+        by_date:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/PlantLiveMachineMetrics"
+
