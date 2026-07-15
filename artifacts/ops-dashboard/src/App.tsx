@@ -6,11 +6,11 @@ import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import { useState, useMemo, Fragment } from "react";
+import { useState, useMemo, Fragment, useRef, useCallback } from "react";
 import {
   LayoutDashboard, ShoppingCart, Factory, TrendingUp, Database,
   RefreshCw, ChevronRight, AlertCircle, Loader2, Layers, ChevronDown, ChevronUp,
-  ClipboardList, Download,
+  ClipboardList, Download, KeyRound, Plus, Trash2, Copy, Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import SEED from "./data/seed.json";
@@ -145,6 +145,7 @@ const NAV_ITEMS = [
   { href: "/stock-buffer",label: "Stock Buffer",        icon: <Layers size={15} /> },
   { href: "/sales",       label: "Sales",               icon: <TrendingUp size={15} /> },
   { href: "/sources",     label: "Data Sources",        icon: <Database size={15} /> },
+  { href: "/api-keys",    label: "API Keys",            icon: <KeyRound size={15} /> },
 ];
 
 function SidebarLink({ href, label, icon }: { href: string; label: string; icon: React.ReactNode }) {
@@ -1659,6 +1660,235 @@ function SourcesPage() {
   );
 }
 
+// ─── API Keys Page ────────────────────────────────────────────────────────────
+function ApiKeysPage() {
+  const [keys, setKeys] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [label, setLabel] = useState("");
+  const [description, setDescription] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [newKey, setNewKey] = useState<{ key: string; label: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const mounted = useRef(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/api-keys");
+      if (res.ok) setKeys(await res.json());
+    } finally {
+      if (mounted.current) setLoading(false);
+    }
+  }, []);
+
+  useState(() => { load(); return () => { mounted.current = false; }; });
+
+  async function create() {
+    if (!label.trim()) return;
+    setCreating(true);
+    try {
+      const res = await fetch("/api/api-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: label.trim(), description: description.trim() || undefined }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setNewKey({ key: created.rawKey ?? created.key, label: created.label });
+        setLabel(""); setDescription("");
+        load();
+      }
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function deleteKey(id: string) {
+    setActionLoading(id + "-del");
+    try {
+      await fetch(`/api/api-keys/${id}`, { method: "DELETE" });
+      load();
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function regenerate(id: string) {
+    setActionLoading(id + "-regen");
+    try {
+      const res = await fetch(`/api/api-keys/${id}/regenerate`, { method: "POST" });
+      if (res.ok) {
+        const updated = await res.json();
+        setNewKey({ key: updated.rawKey ?? updated.key, label: updated.label });
+        load();
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  function copyKey() {
+    if (!newKey) return;
+    navigator.clipboard.writeText(newKey.key);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function fmtDate(s: string) {
+    return s ? new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+  }
+
+  return (
+    <div className="max-w-3xl">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+          <KeyRound size={22} className="text-amber-500" /> API Key Management
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          Issue API keys for external systems. Use{" "}
+          <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">Authorization: Bearer &lt;key&gt;</code>{" "}
+          in request headers.
+        </p>
+      </div>
+
+      {/* New key reveal dialog */}
+      {newKey && (
+        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-4">
+          <p className="text-sm font-semibold text-amber-800 mb-1">
+            ⚠ Copy your key now — it won't be shown again
+          </p>
+          <p className="text-xs text-amber-700 mb-3">Key for: <strong>{newKey.label}</strong></p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 bg-white border border-amber-200 rounded px-3 py-2 text-xs font-mono break-all select-all">
+              {newKey.key}
+            </code>
+            <button
+              onClick={copyKey}
+              className="flex items-center gap-1.5 text-xs px-3 py-2 bg-amber-500 text-white rounded-md font-medium hover:bg-amber-600 transition-colors shrink-0"
+            >
+              {copied ? <Check size={13} /> : <Copy size={13} />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <button
+            onClick={() => setNewKey(null)}
+            className="mt-3 text-xs text-amber-600 hover:underline"
+          >
+            I've saved it — dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Create form */}
+      <div className="bg-card border border-card-border rounded-lg p-5 mb-6">
+        <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-1.5">
+          <Plus size={14} /> Issue New Key
+        </h2>
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <label className="text-xs text-muted-foreground font-medium block mb-1">
+              Label <span className="text-red-500">*</span>
+            </label>
+            <input
+              value={label}
+              onChange={e => setLabel(e.target.value)}
+              placeholder="e.g. prayag-plant.com"
+              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+              onKeyDown={e => e.key === "Enter" && create()}
+            />
+          </div>
+          <div className="flex-1">
+            <label className="text-xs text-muted-foreground font-medium block mb-1">Description</label>
+            <input
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Optional note"
+              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+              onKeyDown={e => e.key === "Enter" && create()}
+            />
+          </div>
+          <button
+            onClick={create}
+            disabled={creating || !label.trim()}
+            className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white rounded-md text-sm font-medium hover:bg-amber-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          >
+            {creating ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+            Generate Key
+          </button>
+        </div>
+      </div>
+
+      {/* Keys table */}
+      <div className="bg-card border border-card-border rounded-lg overflow-hidden">
+        <div className="px-5 py-3 border-b border-border">
+          <h2 className="text-sm font-semibold text-foreground">Active Keys</h2>
+        </div>
+        {loading ? (
+          <div className="py-10 flex items-center justify-center gap-2 text-muted-foreground text-sm">
+            <Loader2 size={15} className="animate-spin" /> Loading…
+          </div>
+        ) : keys.length === 0 ? (
+          <div className="py-10 text-center text-muted-foreground text-sm">
+            <KeyRound size={28} className="mx-auto mb-2 opacity-30" />
+            No API keys yet. Generate one above.
+          </div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-muted/30 border-b border-border text-left">
+              <tr>
+                <th className="py-2.5 px-4 font-medium text-muted-foreground">Label</th>
+                <th className="py-2.5 px-4 font-medium text-muted-foreground">Description</th>
+                <th className="py-2.5 px-4 font-medium text-muted-foreground">Prefix</th>
+                <th className="py-2.5 px-4 font-medium text-muted-foreground">Created</th>
+                <th className="py-2.5 px-4 font-medium text-muted-foreground">Last Used</th>
+                <th className="py-2.5 px-3 font-medium text-muted-foreground text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/40">
+              {keys.map((k: any) => (
+                <tr key={k.id} className="hover:bg-muted/20 transition-colors">
+                  <td className="py-2.5 px-4 font-medium">{k.label}</td>
+                  <td className="py-2.5 px-4 text-muted-foreground text-xs">{k.description || "—"}</td>
+                  <td className="py-2.5 px-4">
+                    <code className="bg-muted px-1.5 py-0.5 rounded text-xs font-mono">{k.keyPrefix}…</code>
+                  </td>
+                  <td className="py-2.5 px-4 text-xs text-muted-foreground">{fmtDate(k.createdAt)}</td>
+                  <td className="py-2.5 px-4 text-xs text-muted-foreground">{k.lastUsedAt ? fmtDate(k.lastUsedAt) : "Never"}</td>
+                  <td className="py-2.5 px-3 text-right">
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        onClick={() => regenerate(k.id)}
+                        disabled={actionLoading === k.id + "-regen"}
+                        title="Regenerate key"
+                        className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+                      >
+                        {actionLoading === k.id + "-regen"
+                          ? <Loader2 size={13} className="animate-spin" />
+                          : <RefreshCw size={13} />}
+                      </button>
+                      <button
+                        onClick={() => deleteKey(k.id)}
+                        disabled={actionLoading === k.id + "-del"}
+                        title="Delete key"
+                        className="p-1.5 rounded hover:bg-red-50 text-muted-foreground hover:text-red-600 transition-colors disabled:opacity-50"
+                      >
+                        {actionLoading === k.id + "-del"
+                          ? <Loader2 size={13} className="animate-spin" />
+                          : <Trash2 size={13} />}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Layout ───────────────────────────────────────────────────────────────────
 function AppLayout({ children, fy, setFy }: { children: React.ReactNode; fy: string; setFy: (v: string) => void }) {
   return (
@@ -1687,6 +1917,7 @@ function AppRouter() {
         <Route path="/stock-buffer" component={() => <StockBufferPage />} />
         <Route path="/sales"        component={() => <SalesPage fy={fy} />} />
         <Route path="/sources"      component={() => <SourcesPage />} />
+        <Route path="/api-keys"     component={() => <ApiKeysPage />} />
         <Route component={() => (
           <div className="text-center py-20">
             <h2 className="text-lg font-semibold text-foreground">Page not found</h2>
