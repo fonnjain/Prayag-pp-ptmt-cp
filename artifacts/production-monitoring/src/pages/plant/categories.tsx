@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from "recharts";
 
 function pct(n: number | null | undefined) { return n !== null && n !== undefined ? `${n.toFixed(1)}%` : "–"; }
-function fmt(n: number | null | undefined) { return n !== null && n !== undefined ? n.toLocaleString() : "–"; }
+function fmt(n: number | null | undefined) { return n !== null && n !== undefined ? Math.round(n).toLocaleString() : "–"; }
 
 const RAG_COLORS = { green: "#10b981", amber: "#f59e0b", red: "#ef4444" };
 
