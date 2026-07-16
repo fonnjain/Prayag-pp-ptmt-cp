@@ -38,4 +38,20 @@ Every planning table has `segment TEXT NOT NULL DEFAULT 'PTMT'`. All DB reads in
 - 8 buffer_categories: CPVC/UPVC/SWR/AGRI × Pipe/Fitting, multiplier=1.5
 - 8 weekly_release_bands: cover bands 0.3/0.5/0.8/1.5 months
 - Daily workbook IDs in PLUMBING_DAILY_WORKBOOK_IDS map in sheets.ts
-- Item master seeding: done at upload-time (Plumbing stock upload populates item_master with segment='Plumbing')
+- Item master seeding: done at upload-time (plumbing_current_stock upload upserts item_master via inferPlumbingCategory)
+
+## kg-from-BOM (Plumbing only)
+- BOM sheet: 1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA, tab "Combined" or "NEW"
+- CRITICAL: master's own kg column is ~1000× too low — never copy it
+- fetchPlumbingBomWeights() reads ITEM CODE → Weight/pcs, 15-min cache
+- weightKg = maxProduction × weight_per_pcs; noBomWeight=true when no BOM entry (show 0 kg, never drop)
+- /plan/bom-quality endpoint: lists missing-BOM items with missingPct (~3% expected)
+- PTMT plan items never carry weightKg or noBomWeight (these fields are Plumbing-only)
+
+## Validate endpoint isolation
+- /plan/validate MUST filter itemMasterTable and bufferCategoriesTable by segment='PTMT'
+  (originally read ALL rows — would mix segments once Plumbing data exists)
+
+## Upload kinds
+- uploads.ts VALID_KINDS must include: plumbing_current_stock, plumbing_pending_orders, plumbing_last_month_pending
+- plumbing_current_stock handler: extract rows AND upsert item_master(segment='Plumbing') via inferPlumbingCategory

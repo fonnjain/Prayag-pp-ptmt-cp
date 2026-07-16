@@ -1,13 +1,20 @@
 import { Router, type IRouter } from "express";
 import multer from "multer";
 import * as XLSX from "xlsx";
-import { db, uploadedFilesTable } from "@workspace/db";
+import { db, uploadedFilesTable, itemMasterTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
-const VALID_KINDS = new Set(["pending_orders", "last_month_pending", "current_stock"]);
+const VALID_KINDS = new Set([
+  "pending_orders",
+  "last_month_pending",
+  "current_stock",
+  "plumbing_current_stock",
+  "plumbing_pending_orders",
+  "plumbing_last_month_pending",
+]);
 
 router.get("/uploads", async (_req, res): Promise<void> => {
   const rows = await db
@@ -45,6 +52,18 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
     return;
   }
 
+  // For Plumbing stock uploads: also upsert item_master (segment='Plumbing').
+  // This is the mechanism that seeds Plumbing items into the planning catalogue.
+  let itemMasterUpsert: { upserted: number; skipped: number } | undefined;
+  if (raw === "plumbing_current_stock") {
+    try {
+      itemMasterUpsert = await upsertPlumbingItemMaster(rows);
+      req.log.info(itemMasterUpsert, "Plumbing item_master upserted from stock upload");
+    } catch (err) {
+      req.log.warn({ err }, "Plumbing item_master upsert failed — stock stored, item_master unchanged");
+    }
+  }
+
   const [record] = await db
     .insert(uploadedFilesTable)
     .values({
@@ -61,7 +80,7 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
       uploadedAt: uploadedFilesTable.uploadedAt,
     });
 
-  res.status(201).json(record);
+  res.status(201).json({ ...record, ...(itemMasterUpsert ? { itemMasterUpsert } : {}) });
 });
 
 const HEADER_HINTS = ["item code", "item no.", "old item code", "colour", "color", "qty", "balance_qty", "segment"];
@@ -95,6 +114,22 @@ function sheetToObjects(sheet: XLSX.WorkSheet): Record<string, unknown>[] {
     out.push(obj);
   }
   return out;
+}
+
+/**
+ * Map a raw material/group/category string from the Plumbing stock file to
+ * one of the 8 canonical Plumbing categories used in item_master.
+ * Mirrors the mapGroupToCategory logic in seasonality-engine.ts.
+ * Returns null for strings that cannot be mapped (row is skipped for item_master).
+ */
+function inferPlumbingCategory(raw: string): string | null {
+  const g = raw.trim().toUpperCase();
+  const isFitting = g.includes("FITTING") || g.includes("FTG");
+  if (g.includes("CPVC")) return isFitting ? "CPVC Fitting" : "CPVC Pipe";
+  if (g.includes("UPVC")) return isFitting ? "UPVC Fitting" : "UPVC Pipe";
+  if (g.includes("SWR")) return isFitting ? "SWR Fitting" : "SWR Pipe";
+  if (g.includes("AGRI") || g.includes("AGRICULTURE")) return isFitting ? "AGRI Fitting" : "AGRI Pipe";
+  return null;
 }
 
 /**
@@ -181,9 +216,103 @@ function extractRows(workbook: XLSX.WorkBook, kind: string): Record<string, unkn
     return sheetToObjects(sheet);
   }
 
+  if (kind === "plumbing_pending_orders") {
+    // Plumbing pending orders: DATA.xlsx or similar; filter for PLUMBING segment rows.
+    const sheetName =
+      workbook.SheetNames.find((n) => /pending/i.test(n)) ?? workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const json = sheetToObjects(sheet);
+    return json.filter((row) => {
+      const seg = String(row["Segment"] ?? "").trim().toUpperCase();
+      // Accept rows that are explicitly PLUMBING, or have no Segment filter (Plumbing-only files)
+      return !seg || seg === "PLUMBING" || seg === "P";
+    });
+  }
+
+  if (kind === "plumbing_last_month_pending") {
+    // Plumbing last-month pending: look for a Plumbing or first tab.
+    const sheetName =
+      workbook.SheetNames.find((n) => /plumbing/i.test(n)) ??
+      workbook.SheetNames.find((n) => /pending/i.test(n)) ??
+      workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    return sheetToObjects(sheet);
+  }
+
+  if (kind === "plumbing_current_stock") {
+    // Plumbing stock file: look for a Plumbing or F.G. sheet tab.
+    // Normalizes C/Stock → Qty. Category info is extracted separately for item_master.
+    const sheetName =
+      workbook.SheetNames.find((n) => /plumbing/i.test(n)) ??
+      workbook.SheetNames.find((n) => /f\.g\.?\s*sheet/i.test(n)) ??
+      workbook.SheetNames.find((n) => /f\.g/i.test(n)) ??
+      workbook.SheetNames.find((n) => /stock/i.test(n)) ??
+      workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = sheetToObjects(sheet);
+    return rows.map((row) => {
+      const normalized: Record<string, unknown> = { ...row };
+      const cstockKey = Object.keys(normalized).find((k) => /c[\s/\\]?stock|stock\s*qty/i.test(k));
+      if (cstockKey && cstockKey !== "Qty") {
+        normalized["Qty"] = normalized[cstockKey];
+        delete normalized[cstockKey];
+      }
+      return normalized;
+    });
+  }
+
   const sheetName = workbook.SheetNames.find((name) => /^ptmt$/i.test(name)) ?? workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
   return sheetToObjects(sheet);
+}
+
+/**
+ * Upsert Plumbing item_master rows from the parsed plumbing_current_stock file.
+ * Expects rows to have Item Code, Colour, and a Category/Group/Material column.
+ * Skips rows where the category cannot be mapped to a canonical Plumbing category.
+ * Uses ON CONFLICT DO NOTHING — the unique constraint is (item_code, colour, category).
+ */
+async function upsertPlumbingItemMaster(rows: Record<string, unknown>[]): Promise<{ upserted: number; skipped: number }> {
+  const toInsert: { segment: string; category: string; itemCode: string; colour: string }[] = [];
+  const seen = new Set<string>();
+
+  for (const row of rows) {
+    const itemCode = String(
+      row["Item Code"] ?? row["ITEM CODE"] ?? row["ItemCode"] ?? row["item_code"] ?? ""
+    ).trim().toUpperCase();
+    if (!itemCode) continue;
+
+    const colour = String(
+      row["Colour"] ?? row["Color"] ?? row["COLOR"] ?? ""
+    ).trim().toUpperCase();
+
+    // Category column: try direct "Category", "GROUP", "Group", "Material", "Material Type"
+    const rawCategory = String(
+      row["Category"] ?? row["GROUP"] ?? row["Group"] ?? row["Material"] ??
+      row["Material Type"] ?? row["MATERIAL"] ?? row["type"] ?? ""
+    ).trim();
+
+    const category = rawCategory ? inferPlumbingCategory(rawCategory) : null;
+    if (!category) continue; // skip rows we can't categorize
+
+    const key = `${itemCode}::${colour}::${category}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    toInsert.push({ segment: "Plumbing", category, itemCode, colour });
+  }
+
+  if (toInsert.length === 0) return { upserted: 0, skipped: rows.length };
+
+  // Batch insert in chunks of 500 to avoid parameter limits
+  const CHUNK = 500;
+  for (let i = 0; i < toInsert.length; i += CHUNK) {
+    await db
+      .insert(itemMasterTable)
+      .values(toInsert.slice(i, i + CHUNK))
+      .onConflictDoNothing();
+  }
+
+  return { upserted: toInsert.length, skipped: rows.length - toInsert.length };
 }
 
 export default router;

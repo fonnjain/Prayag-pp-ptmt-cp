@@ -426,6 +426,46 @@ paths:
                 type: string
                 format: binary
 
+  /plan/bom-quality:
+    get:
+      operationId: getPlumbingBomQuality
+      tags: [plan]
+      description: "Data-quality report: lists Plumbing plan items with no BOM weight entry (~3% of planned pcs). These show 0 kg and must be flagged in UI."
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "Plumbing" }
+      responses:
+        "200":
+          description: BOM data-quality report
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [segment, month, totalItems, missingBomItems, missingPcs, totalPcs, missingPct]
+                properties:
+                  segment: { type: string }
+                  month: { type: string }
+                  totalItems: { type: integer }
+                  missingBomItems:
+                    type: array
+                    items:
+                      type: object
+                      required: [itemCode, colour, category, pcs]
+                      properties:
+                        itemCode: { type: string }
+                        colour: { type: string }
+                        category: { type: string }
+                        pcs: { type: number }
+                  missingPcs: { type: integer }
+                  totalPcs: { type: integer }
+                  missingPct: { type: number, description: "Percentage of total pcs with no BOM weight" }
+
   /plan/weekly-bands:
     get:
       operationId: listWeeklyReleaseBands
@@ -1421,6 +1461,8 @@ components:
         w2: { type: number }
         w3: { type: number }
         w4: { type: number }
+        weightKg: { type: number, description: "Total kg for this item (Plumbing only). Computed as maxProduction × weight_per_pcs from BOM sheet. 0 when noBomWeight is true. Absent for PTMT items." }
+        noBomWeight: { type: boolean, description: "True when item has no BOM weight entry — must be flagged in UI, never silently dropped. Absent for PTMT items." }
 
     CategorySummary:
       type: object

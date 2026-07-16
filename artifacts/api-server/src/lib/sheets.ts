@@ -351,6 +351,65 @@ export async function fetchLiveOrderByMonthTab(month: string): Promise<DualTotal
 }
 
 /**
+ * Plumbing Material BOM — ITEM CODE → Weight/pcs (kg per piece).
+ * Sheet: 1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA, tab "Combined" or "NEW".
+ * CRITICAL: the master's own kg column is ~1000× too low — NEVER copy it.
+ * Weights here are per-piece; kg = pieces × weightPerPcs.
+ * Cached 15 min in-process.
+ */
+const PLUMBING_BOM_SHEET_ID = "1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA";
+let _bomWeightsCache: { weights: Map<string, number>; expires: number } | null = null;
+
+export async function fetchPlumbingBomWeights(): Promise<Map<string, number>> {
+  const now = Date.now();
+  if (_bomWeightsCache && _bomWeightsCache.expires > now) return _bomWeightsCache.weights;
+
+  const tabs = await listTabs(PLUMBING_BOM_SHEET_ID);
+  const tab =
+    tabs.find((t) => /^combined$/i.test(t.trim())) ??
+    tabs.find((t) => /^new$/i.test(t.trim())) ??
+    tabs.find((t) => /combined|new/i.test(t)) ??
+    tabs[0];
+
+  if (!tab) {
+    logger.warn({ sheetId: PLUMBING_BOM_SHEET_ID }, "Plumbing BOM sheet has no tabs — weights will be empty");
+    return new Map();
+  }
+
+  const values = await getTabValues(PLUMBING_BOM_SHEET_ID, tab, "A1:Z100000");
+  const weights = new Map<string, number>();
+
+  // Find header row with ITEM CODE and Weight/pcs columns
+  let headerIdx = -1;
+  let codeColIdx = -1;
+  let weightColIdx = -1;
+  for (let i = 0; i < Math.min(15, values.length); i++) {
+    const row = values[i];
+    const c = row.findIndex((h) => /^item\s*code$/i.test(String(h ?? "").trim()));
+    const w = row.findIndex((h) => /weight[^a-z]*pcs|wt[^a-z]*pcs/i.test(String(h ?? "").trim()));
+    if (c >= 0 && w >= 0) { headerIdx = i; codeColIdx = c; weightColIdx = w; break; }
+  }
+
+  if (headerIdx < 0) {
+    logger.warn({ tab, sheetId: PLUMBING_BOM_SHEET_ID }, "Plumbing BOM: cannot find ITEM CODE + Weight/pcs columns in first 15 rows");
+    return new Map();
+  }
+
+  for (let i = headerIdx + 1; i < values.length; i++) {
+    const row = values[i];
+    const code = String(row[codeColIdx] ?? "").trim().toUpperCase();
+    if (!code) continue;
+    const weight = toNumber(row[weightColIdx]);
+    // Only store positive weights — zero/blank means no BOM entry for this item
+    if (weight > 0) weights.set(code, weight);
+  }
+
+  _bomWeightsCache = { weights, expires: now + 15 * 60 * 1000 };
+  logger.info({ tab, count: weights.size }, "Plumbing BOM weights loaded");
+  return weights;
+}
+
+/**
  * Live order-book qty for the target month, from Order Sheet 26-27 "Combined" tab.
  * @param group ERP GROUP value to filter on — "PTMT" for PTMT segment, "PLUMBING" for Plumbing.
  */

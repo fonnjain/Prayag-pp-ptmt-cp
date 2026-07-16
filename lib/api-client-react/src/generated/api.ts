@@ -59,6 +59,8 @@ import type {
   GetPlantTrend200,
   GetPlantTrendParams,
   GetPlantWeeklySummaryParams,
+  GetPlumbingBomQuality200,
+  GetPlumbingBomQualityParams,
   HealthStatus,
   IdealHoursOverride,
   IdealHoursOverrideUpsert,
@@ -1951,6 +1953,99 @@ export function useExportWeeklyReleaseExcel<TData = Awaited<ReturnType<typeof ex
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getExportWeeklyReleaseExcelQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
+ * Data-quality report: lists Plumbing plan items with no BOM weight entry (~3% of planned pcs). These show 0 kg and must be flagged in UI.
+ */
+export type getPlumbingBomQualityResponse200 = {
+  data: GetPlumbingBomQuality200
+  status: 200
+}
+    
+export type getPlumbingBomQualityResponseSuccess = (getPlumbingBomQualityResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getPlumbingBomQualityResponse = (getPlumbingBomQualityResponseSuccess)
+
+export const getGetPlumbingBomQualityUrl = (params: GetPlumbingBomQualityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/plan/bom-quality?${stringifiedParams}` : `/api/plan/bom-quality`
+}
+
+export const getPlumbingBomQuality = async (params: GetPlumbingBomQualityParams, options?: RequestInit): Promise<getPlumbingBomQualityResponse> => {
+  
+  return customFetch<getPlumbingBomQualityResponse>(getGetPlumbingBomQualityUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetPlumbingBomQualityQueryKey = (params?: GetPlumbingBomQualityParams,) => {
+    return [
+    `/api/plan/bom-quality`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetPlumbingBomQualityQueryOptions = <TData = Awaited<ReturnType<typeof getPlumbingBomQuality>>, TError = unknown>(params: GetPlumbingBomQualityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlumbingBomQuality>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlumbingBomQualityQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlumbingBomQuality>>> = ({ signal }) => getPlumbingBomQuality(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlumbingBomQuality>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlumbingBomQualityQueryResult = NonNullable<Awaited<ReturnType<typeof getPlumbingBomQuality>>>
+export type GetPlumbingBomQualityQueryError = unknown
+
+
+
+export function useGetPlumbingBomQuality<TData = Awaited<ReturnType<typeof getPlumbingBomQuality>>, TError = unknown>(
+ params: GetPlumbingBomQualityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlumbingBomQuality>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlumbingBomQualityQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

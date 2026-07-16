@@ -5,6 +5,7 @@ import { computeItemPlan, annotateWeeklyRelease, summarizePlan, type ItemSourceR
 import {
   fetchAvg3MoSaleTotals,
   fetchLiveOrderTotals,
+  fetchPlumbingBomWeights,
   itemKey,
   normalizeCode,
   type DualTotals,
@@ -60,16 +61,28 @@ function hasEntry(totals: DualTotals, itemCode: string, colour: string, isSingle
 }
 
 /**
+ * Plan item augmented with Plumbing BOM weight fields.
+ * weightKg and noBomWeight are present for Plumbing items only.
+ *   weightKg = maxProduction × weight_per_pcs (from BOM sheet); 0 when no BOM entry.
+ *   noBomWeight = true when item has no BOM weight entry (must be flagged, never silently dropped).
+ * PTMT items do not carry these fields (undefined).
+ */
+export type PlanItemWithBom = ReturnType<typeof computeItemPlan> & {
+  weightKg?: number;
+  noBomWeight?: boolean;
+};
+
+/**
  * Build plan items for a given month and segment.
  * segment defaults to "PTMT" — passing "Plumbing" scopes every DB read and
  * upload-kind lookup to the Plumbing category set without touching PTMT data.
  */
-export async function buildPlanItems(month: string, segment: string = "PTMT") {
+export async function buildPlanItems(month: string, segment: string = "PTMT"): Promise<PlanItemWithBom[]> {
   const isPlumbing = segment === "Plumbing";
   const uploadPrefix = isPlumbing ? "plumbing_" : "";
   const orderGroup = isPlumbing ? "PLUMBING" : "PTMT";
 
-  const [itemRows, bufferRows, bandRows, pendingOrderRows, pendingLastMoRows, currentStockRows, avg3MoTotals, liveOrderTotals] =
+  const [itemRows, bufferRows, bandRows, pendingOrderRows, pendingLastMoRows, currentStockRows, avg3MoTotals, liveOrderTotals, bomWeights] =
     await Promise.all([
       db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, segment)),
       db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
@@ -83,6 +96,8 @@ export async function buildPlanItems(month: string, segment: string = "PTMT") {
       loadLatestUploadRowsByKind(`${uploadPrefix}current_stock`),
       fetchAvg3MoSaleTotals(month),
       fetchLiveOrderTotals(month, orderGroup),
+      // Plumbing: fetch BOM weights for kg computation. PTMT: skip (empty map).
+      isPlumbing ? fetchPlumbingBomWeights() : Promise.resolve(new Map<string, number>()),
     ]);
 
   const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
@@ -122,7 +137,7 @@ export async function buildPlanItems(month: string, segment: string = "PTMT") {
     codeCounts.set(codeKey, (codeCounts.get(codeKey) ?? 0) + 1);
   }
 
-  const items = itemRows.map((item) => {
+  const items: PlanItemWithBom[] = itemRows.map((item) => {
     const isSingleVariant = (codeCounts.get(`${item.category}::${normalizeCode(item.itemCode)}`) ?? 0) <= 1;
     const source: ItemSourceRow = {
       itemCode: item.itemCode,
@@ -136,7 +151,17 @@ export async function buildPlanItems(month: string, segment: string = "PTMT") {
       order: resolveTotal(liveOrderTotals, item.itemCode, item.colour, isSingleVariant),
     };
     const multiplier = bufferByCategory.get(item.category) ?? 1;
-    return computeItemPlan(source, item.category, multiplier);
+    const computed = computeItemPlan(source, item.category, multiplier);
+
+    // Plumbing: attach kg computed from BOM (never from master kg column).
+    // ~3% of items may have no BOM entry — flag them, never drop or guess.
+    if (isPlumbing) {
+      const weightPcs = bomWeights.get(normalizeCode(item.itemCode));
+      const noBomWeight = weightPcs === undefined;
+      const weightKg = noBomWeight ? 0 : Math.round(computed.maxProduction * weightPcs! * 100) / 100;
+      return { ...computed, weightKg, noBomWeight };
+    }
+    return computed;
   });
 
   annotateWeeklyRelease(items, bandsByCategory);
@@ -225,6 +250,36 @@ router.get("/plan/export/weekly-excel", async (req, res): Promise<void> => {
   res.send(buffer);
 });
 
+/**
+ * BOM data-quality report for Plumbing: lists items whose maxProduction > 0
+ * but have no BOM weight entry. These must be flagged (shown as 0 kg) and
+ * never silently dropped. Spec: ~3% of planned pieces lack BOM weight.
+ */
+router.get("/plan/bom-quality", async (req, res): Promise<void> => {
+  const month = String(req.query.month ?? "");
+  if (!month) { res.status(400).json({ error: "month is required" }); return; }
+  const segment = String(req.query.segment ?? "Plumbing");
+  const items = await buildPlanItems(month, segment);
+  const missing = items.filter((i) => i.noBomWeight && (i.maxProduction ?? 0) > 0);
+  const missingPcs = missing.reduce((s, i) => s + (i.maxProduction ?? 0), 0);
+  const totalPcs = items.reduce((s, i) => s + (i.maxProduction ?? 0), 0);
+  const missingPct = totalPcs > 0 ? Math.round(missingPcs / totalPcs * 10000) / 100 : 0;
+  res.json({
+    segment,
+    month,
+    totalItems: items.length,
+    missingBomItems: missing.map((i) => ({
+      itemCode: i.itemCode,
+      colour: i.colour,
+      category: i.category,
+      pcs: i.maxProduction,
+    })),
+    missingPcs: Math.round(missingPcs),
+    totalPcs: Math.round(totalPcs),
+    missingPct,
+  });
+});
+
 router.get("/plan/weekly-bands", async (req, res): Promise<void> => {
   const segment = req.query.segment ? String(req.query.segment) : undefined;
   const bands = segment
@@ -299,8 +354,8 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     loadLatestUploadRowsByKind("current_stock"),
     loadLatestUploadRowsByKind("pending_orders"),
     loadLatestUploadRowsByKind("last_month_pending"),
-    db.select().from(itemMasterTable),
-    db.select().from(bufferCategoriesTable),
+    db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, "PTMT")),
+    db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "PTMT")),
     fetchAvg3MoSaleTotals(month),
     fetchLiveOrderTotals(month),
   ]);

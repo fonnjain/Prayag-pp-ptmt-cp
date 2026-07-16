@@ -27,4 +27,8 @@ export interface PlanItem {
   w2: number;
   w3: number;
   w4: number;
+  /** Total kg for this item (Plumbing only). Computed as maxProduction × weight_per_pcs from BOM sheet. 0 when noBomWeight is true. Absent for PTMT items. */
+  weightKg?: number;
+  /** True when item has no BOM weight entry — must be flagged in UI, never silently dropped. Absent for PTMT items. */
+  noBomWeight?: boolean;
 }

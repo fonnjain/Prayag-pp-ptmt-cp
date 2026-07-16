@@ -439,7 +439,9 @@ export const listPlanItemsResponseItem = zod.object({
   "w1": zod.number(),
   "w2": zod.number(),
   "w3": zod.number(),
-  "w4": zod.number()
+  "w4": zod.number(),
+  "weightKg": zod.number().optional().describe('Total kg for this item (Plumbing only). Computed as maxProduction × weight_per_pcs from BOM sheet. 0 when noBomWeight is true. Absent for PTMT items.'),
+  "noBomWeight": zod.boolean().optional().describe('True when item has no BOM weight entry — must be flagged in UI, never silently dropped. Absent for PTMT items.')
 })
 export const listPlanItemsResponse = zod.array(listPlanItemsResponseItem)
 
@@ -494,6 +496,32 @@ export const exportWeeklyReleaseExcelQuerySegmentDefault = "PTMT";
 export const exportWeeklyReleaseExcelQueryParams = zod.object({
   "month": zod.string(),
   "segment": zod.string().default(exportWeeklyReleaseExcelQuerySegmentDefault)
+})
+
+
+/**
+ * Data-quality report: lists Plumbing plan items with no BOM weight entry (~3% of planned pcs). These show 0 kg and must be flagged in UI.
+ */
+export const getPlumbingBomQualityQuerySegmentDefault = "Plumbing";
+
+export const getPlumbingBomQualityQueryParams = zod.object({
+  "month": zod.string(),
+  "segment": zod.string().default(getPlumbingBomQualityQuerySegmentDefault)
+})
+
+export const getPlumbingBomQualityResponse = zod.object({
+  "segment": zod.string(),
+  "month": zod.string(),
+  "totalItems": zod.number(),
+  "missingBomItems": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "category": zod.string(),
+  "pcs": zod.number()
+})),
+  "missingPcs": zod.number(),
+  "totalPcs": zod.number(),
+  "missingPct": zod.number().describe('Percentage of total pcs with no BOM weight')
 })
 
 
