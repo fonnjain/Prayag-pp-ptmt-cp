@@ -40,6 +40,14 @@ export const PTMT_DAILY_WORKBOOK_IDS: Record<string, string> = {
   "2026-07": "1AjMLfcBkI0rGY8JdYP3MO8Ocn8lO-HIpol1tHgvK9O8",
 };
 
+/**
+ * Plumbing monthly daily-production workbook file IDs.
+ * Tab name: "Daily Production PLUMBING <Month> 2026"
+ */
+export const PLUMBING_DAILY_WORKBOOK_IDS: Record<string, string> = {
+  "2026-07": "1wlB4Y4lnP7Y2SLZX6atFN-nrKA--ByYF8m2TVHuBxD0",
+};
+
 async function proxyJson(path: string): Promise<any> {
   const MAX_RETRIES = 4;
   let delay = 1000;
@@ -342,17 +350,21 @@ export async function fetchLiveOrderByMonthTab(month: string): Promise<DualTotal
   return totals;
 }
 
-/** Live order-book qty for the target month, from Order Sheet 26-27 "Combined" tab, GROUP=PTMT. */
-export async function fetchLiveOrderTotals(month: string): Promise<DualTotals> {
+/**
+ * Live order-book qty for the target month, from Order Sheet 26-27 "Combined" tab.
+ * @param group ERP GROUP value to filter on — "PTMT" for PTMT segment, "PLUMBING" for Plumbing.
+ */
+export async function fetchLiveOrderTotals(month: string, group: string = "PTMT"): Promise<DualTotals> {
   const [y, m] = month.split("-").map(Number);
   const label = monthLabel(y, m - 1).toLowerCase();
   const values = await throttledGetTabValues(SHEET_IDS.orderSheet, "Combined");
   const rows = rowsToObjects(values);
   const totals: DualTotals = { exact: new Map(), byCode: new Map() };
+  const groupUpper = group.toUpperCase();
   for (const row of rows) {
-    const group = String(row["GROUP"] ?? "").trim().toUpperCase();
+    const rowGroup = String(row["GROUP"] ?? "").trim().toUpperCase();
     const rowMonth = String(row["Month"] ?? "").trim().toLowerCase();
-    if (group !== "PTMT") continue;
+    if (rowGroup !== groupUpper) continue;
     if (rowMonth && rowMonth !== label) continue;
     const code = row["Old ERP Code"];
     const colour = row["Item.Color"];

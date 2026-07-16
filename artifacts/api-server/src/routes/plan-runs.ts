@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, bufferCategoriesTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import { buildPlanItems, loadLatestUploadRowsByKind } from "./plan";
 import { summarizePlan } from "../lib/calc";
 
@@ -12,6 +12,7 @@ function makeSummary(run: typeof planRunsTable.$inferSelect, items: typeof planR
   return {
     id: run.id,
     month: run.month,
+    segment: run.segment,
     asOfAt: run.asOfAt,
     status: run.status,
     note: run.note ?? null,
@@ -24,31 +25,31 @@ function makeSummary(run: typeof planRunsTable.$inferSelect, items: typeof planR
 
 /** POST /api/plan/runs — create a draft run, snapshot all inputs & computed results */
 router.post("/plan/runs", async (req, res): Promise<void> => {
-  const { month, note } = req.body ?? {};
+  const { month, note, segment: segmentRaw } = req.body ?? {};
+  const segment: string = typeof segmentRaw === "string" && segmentRaw ? segmentRaw : "PTMT";
   if (!month || typeof month !== "string") {
     res.status(400).json({ error: "month is required (YYYY-MM)" });
     return;
   }
 
-  // Read current buffer factors for the snapshot
-  const bufferRows = await db.select().from(bufferCategoriesTable);
+  // Read current buffer factors for the snapshot (scoped to segment)
+  const bufferRows = await db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment));
   const factorsJson: Record<string, number> = {};
   for (const b of bufferRows) factorsJson[b.name] = b.multiplier;
 
+  const uploadPrefix = segment === "Plumbing" ? "plumbing_" : "";
+
   // Compute plan from uploaded files + Google Sheets in parallel with loading
   // the raw pending_orders rows for the audit snapshot.
-  // Per spec §4: current pending comes from DATA.xlsx (uploaded), not the live sheet.
   const [planItems, pendingOrderRows] = await Promise.all([
-    buildPlanItems(month),
-    // Load the same rows used by buildPlanItems for pending_orders —
-    // these are the filtered+aliased rows from the uploaded DATA.xlsx file.
-    loadLatestUploadRowsByKind("pending_orders"),
+    buildPlanItems(month, segment),
+    loadLatestUploadRowsByKind(`${uploadPrefix}pending_orders`),
   ]);
 
   // Create the plan run record
   const [run] = await db
     .insert(planRunsTable)
-    .values({ month, status: "draft", factorsJson, note: note ?? null })
+    .values({ month, segment, status: "draft", factorsJson, note: note ?? null })
     .returning();
 
   const runId = run.id;
@@ -113,18 +114,19 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
   res.status(201).json(summary);
 });
 
-/** GET /api/plan/runs?month=YYYY-MM — list all runs for a month, newest first */
+/** GET /api/plan/runs?month=YYYY-MM&segment=PTMT — list all runs for a month, newest first */
 router.get("/plan/runs", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");
   if (!month) {
     res.status(400).json({ error: "month is required" });
     return;
   }
+  const segment = String(req.query.segment ?? "PTMT");
 
   const runs = await db
     .select()
     .from(planRunsTable)
-    .where(eq(planRunsTable.month, month))
+    .where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, segment)))
     .orderBy(desc(planRunsTable.createdAt));
 
   const summaries = await Promise.all(

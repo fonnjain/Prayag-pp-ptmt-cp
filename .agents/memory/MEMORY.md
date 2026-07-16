@@ -21,3 +21,4 @@
 - [Prod API build command](prod-api-build.md) — pnpm build step in artifact.toml takes ~32s in prod (healthchecks fail); use direct esbuild instead.
 - [Prod startup blocking — lazy init](prod-startup-blocking.md) — top-level `new ReplitConnectors()` and `import puppeteer` block module load for ~30s in prod; both must be lazy-initialized.
 - [Plan runs + pending order source](plan-runs-system.md) — THREE uploads required (current_stock/pending_orders/last_month_pending); current pending MUST come from DATA.xlsx upload NOT live sheet (drifts daily); plan_runs schema in 003_plan_runs.sql; last_month_pending reads PTMT tab; F.G. STOCK reads F.G Sheet only.
+- [Segment discriminator pattern](segment-discriminator.md) — `segment TEXT NOT NULL DEFAULT 'PTMT'` on all planning tables; Plumbing upload kinds prefixed `plumbing_`; ERP GROUP filter "PLUMBING"; SegmentContext + sidebar toggle; categories sidebar is dynamic from API, not static list.

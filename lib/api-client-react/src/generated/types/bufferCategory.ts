@@ -20,6 +20,7 @@ import type { BufferCategoryZScore } from './bufferCategoryZScore';
 
 export interface BufferCategory {
   id: number;
+  segment: string;
   name: string;
   multiplier: number;
   updatedAt: string;

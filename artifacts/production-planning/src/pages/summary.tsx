@@ -1,5 +1,6 @@
 import { useGetPlanSummary, useListPlanItems, type PlanSummary, type PlanItem, useGetPlantWeeklySummary, getGetPlantWeeklySummaryQueryKey, useCreatePlanRun } from "@workspace/api-client-react";
 import { AppLayout, categorySlug } from "@/components/layout/app-layout";
+import { useSegment } from "@/contexts/segment-context";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -89,13 +90,14 @@ function WeekCell({
 
 export default function SummaryPage() {
   const month = currentMonth();
-  const { data, isLoading, isError } = useGetPlanSummary({ month });
+  const { segment } = useSegment();
+  const { data, isLoading, isError } = useGetPlanSummary({ month, segment });
   const createRun = useCreatePlanRun();
   const { toast } = useToast();
 
   function handleRunPlan() {
     createRun.mutate(
-      { data: { month } },
+      { data: { month, segment } },
       {
         onSuccess: () =>
           toast({ title: "Plan run created", description: `Snapshot for ${formatMonthLabel(month)} saved to Plan Runs.` }),
@@ -105,7 +107,7 @@ export default function SummaryPage() {
     );
   }
   const { data: itemsData, isLoading: itemsLoading } = useListPlanItems(
-    { month },
+    { month, segment },
     { query: { staleTime: 5 * 60 * 1000 } as any },
   );
   const { data: weeklyRaw } = useGetPlantWeeklySummary(

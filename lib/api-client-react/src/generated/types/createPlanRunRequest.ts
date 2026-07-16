@@ -7,5 +7,6 @@
 
 export interface CreatePlanRunRequest {
   month: string;
+  segment?: string;
   note?: string;
 }

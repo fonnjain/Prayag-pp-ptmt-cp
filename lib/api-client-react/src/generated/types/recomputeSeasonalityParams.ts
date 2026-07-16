@@ -10,4 +10,5 @@ export type RecomputeSeasonalityParams = {
  * z-score for service level (1.28=90%, 1.65=95%, 2.05=98%)
  */
 z?: number;
+segment?: string;
 };

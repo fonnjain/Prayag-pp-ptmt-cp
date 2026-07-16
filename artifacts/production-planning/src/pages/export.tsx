@@ -7,6 +7,7 @@ import { currentMonth, formatMonthLabel } from "@/lib/month";
 import { useCreatePlanRun } from "@workspace/api-client-react";
 import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSegment } from "@/contexts/segment-context";
 
 async function downloadFile(url: string, filename: string) {
   const response = await fetch(url);
@@ -28,13 +29,14 @@ type ExportKind = "excel" | "pdf" | "weekly-excel";
 
 export default function ExportPage() {
   const month = currentMonth();
+  const { segment } = useSegment();
   const { toast } = useToast();
   const [downloading, setDownloading] = useState<ExportKind | null>(null);
   const createRun = useCreatePlanRun();
 
   function handleRunPlan() {
     createRun.mutate(
-      { data: { month } },
+      { data: { month, segment } },
       {
         onSuccess: () =>
           toast({ title: "Plan run created", description: `Snapshot for ${formatMonthLabel(month)} saved to Plan Runs.` }),
@@ -48,20 +50,21 @@ export default function ExportPage() {
 
   const handleExport = async (kind: ExportKind) => {
     setDownloading(kind);
+    const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
     try {
       let path: string;
       let filename: string;
       if (kind === "excel") {
         path = "plan/export/excel";
-        filename = `PTMT_Production_Plan_${month}.xlsx`;
+        filename = `${prefix}_Production_Plan_${month}.xlsx`;
       } else if (kind === "pdf") {
         path = "plan/export/pdf";
-        filename = `PTMT_Production_Plan_${month}.pdf`;
+        filename = `${prefix}_Production_Plan_${month}.pdf`;
       } else {
         path = "plan/export/weekly-excel";
-        filename = `PTMT_Weekly_Release_Plan_${month}.xlsx`;
+        filename = `${prefix}_Weekly_Release_Plan_${month}.xlsx`;
       }
-      await downloadFile(`${base}api/${path}?month=${month}`, filename);
+      await downloadFile(`${base}api/${path}?month=${month}&segment=${encodeURIComponent(segment)}`, filename);
     } catch {
       toast({
         title: "Export failed",

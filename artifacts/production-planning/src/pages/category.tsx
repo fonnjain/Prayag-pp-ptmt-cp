@@ -4,10 +4,13 @@ import {
   useListPlanItems,
   useListWeeklyReleaseBands,
   useUpdateWeeklyReleaseBand,
+  useListBufferCategories,
   type PlanItem,
   type WeeklyReleaseBand,
+  type BufferCategory,
 } from "@workspace/api-client-react";
-import { AppLayout, CATEGORIES, categorySlug } from "@/components/layout/app-layout";
+import { AppLayout, categorySlug } from "@/components/layout/app-layout";
+import { useSegment } from "@/contexts/segment-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -145,17 +148,23 @@ function BandEditor({ band, category, onClose }: BandEditorProps) {
 
 export default function CategoryPage() {
   const { slug } = useParams<{ slug: string }>();
-  const category = CATEGORIES.find((c) => categorySlug(c) === slug);
+  const { segment } = useSegment();
   const month = currentMonth();
   const [weeklyView, setWeeklyView] = useState(false);
   const [editingBands, setEditingBands] = useState(false);
 
+  // Resolve category name dynamically from the API (supports PTMT + Plumbing)
+  const { data: catData } = useListBufferCategories({ segment } as any);
+  const allCategories = (catData as unknown as BufferCategory[] | undefined) ?? [];
+  const category = allCategories.find((c) => categorySlug(c.name) === slug)?.name;
+
   const { data, isLoading, isError } = useListPlanItems(
-    { month, category: category ?? "" },
+    { month, segment, category: category ?? "" },
     { query: { enabled: Boolean(category) } as any },
   );
 
   const { data: bandsData } = useListWeeklyReleaseBands(
+    { segment, ...(({} as any)) },
     { query: { enabled: Boolean(category) } as any },
   );
   const bands = (bandsData as unknown as WeeklyReleaseBand[] | undefined) ?? [];

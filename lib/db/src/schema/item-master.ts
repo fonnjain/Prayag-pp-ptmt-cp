@@ -6,6 +6,7 @@ export const itemMasterTable = pgTable(
   "item_master",
   {
     id: serial("id").primaryKey(),
+    segment: text("segment").notNull().default("PTMT"),
     category: text("category").notNull(),
     itemCode: text("item_code").notNull(),
     colour: text("colour").notNull(),

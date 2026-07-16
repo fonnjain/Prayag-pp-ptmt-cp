@@ -21,6 +21,12 @@ paths:
     get:
       operationId: listBufferCategories
       tags: [bufferCategories]
+      parameters:
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
+          description: "Filter by segment: PTMT or Plumbing"
       responses:
         "200":
           description: List of buffer categories
@@ -67,6 +73,10 @@ paths:
           required: false
           schema: { type: number, default: 1.65 }
           description: "z-score for service level (1.28=90%, 1.65=95%, 2.05=98%)"
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
       responses:
         "200":
           description: Recompute triggered; returns updated categories
@@ -299,6 +309,10 @@ paths:
           in: query
           required: true
           schema: { type: string }
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
         - name: category
           in: query
           required: false
@@ -322,6 +336,10 @@ paths:
           in: query
           required: true
           schema: { type: string }
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
       responses:
         "200":
           description: Per-category and grand totals for the month
@@ -351,6 +369,10 @@ paths:
           in: query
           required: true
           schema: { type: string }
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
       responses:
         "200":
           description: Excel workbook of the production plan
@@ -369,6 +391,10 @@ paths:
           in: query
           required: true
           schema: { type: string }
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
       responses:
         "200":
           description: PDF report of the production plan
@@ -387,6 +413,10 @@ paths:
           in: query
           required: true
           schema: { type: string }
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
       responses:
         "200":
           description: Excel workbook of the weekly release plan
@@ -400,6 +430,11 @@ paths:
     get:
       operationId: listWeeklyReleaseBands
       tags: [plan]
+      parameters:
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
       responses:
         "200":
           description: Weekly release band configs per category
@@ -464,6 +499,10 @@ paths:
           in: query
           required: true
           schema: { type: string }
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
       responses:
         "200":
           description: List of plan runs for the month, newest first
@@ -1254,13 +1293,14 @@ components:
 
     UploadKind:
       type: string
-      enum: [pending_orders, last_month_pending, current_stock]
+      enum: [pending_orders, last_month_pending, current_stock, plumbing_pending_orders, plumbing_last_month_pending, plumbing_current_stock]
 
     BufferCategory:
       type: object
-      required: [id, name, multiplier, updatedAt]
+      required: [id, name, segment, multiplier, updatedAt]
       properties:
         id: { type: integer }
+        segment: { type: string }
         name: { type: string }
         multiplier: { type: number }
         updatedAt: { type: string, format: date-time }
@@ -1407,14 +1447,16 @@ components:
       required: [month]
       properties:
         month: { type: string }
+        segment: { type: string }
         note: { type: string }
 
     PlanRunSummary:
       type: object
-      required: [id, month, asOfAt, status, note, itemCount, grandMinTotal, grandMaxTotal, createdAt]
+      required: [id, month, segment, asOfAt, status, note, itemCount, grandMinTotal, grandMaxTotal, createdAt]
       properties:
         id: { type: integer }
         month: { type: string }
+        segment: { type: string }
         asOfAt: { type: string, format: date-time }
         status: { type: string, enum: [draft, finalized] }
         note: { type: ["string", "null"] }

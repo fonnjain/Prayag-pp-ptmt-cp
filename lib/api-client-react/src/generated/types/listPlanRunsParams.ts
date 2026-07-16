@@ -7,4 +7,5 @@
 
 export type ListPlanRunsParams = {
 month: string;
+segment?: string;
 };

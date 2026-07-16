@@ -7,5 +7,6 @@
 
 export type ListPlanItemsParams = {
 month: string;
+segment?: string;
 category?: string;
 };

@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { currentMonth, formatMonthLabel } from "@/lib/month";
 import { cn, fmtDateTime } from "@/lib/utils";
 import { useListPlanRuns, useCreatePlanRun, useFinalizePlanRun, useComparePlanRuns, type PlanRunSummary } from "@workspace/api-client-react";
+import { useSegment } from "@/contexts/segment-context";
 
 function statusColor(status: string) {
   return status === "finalized"
@@ -107,8 +108,9 @@ function DiffView({ run1Id, run2Id, onClose }: { run1Id: number; run2Id: number;
 
 export default function RunsPage() {
   const month = currentMonth();
+  const { segment } = useSegment();
   const { toast } = useToast();
-  const { data, isLoading, refetch } = useListPlanRuns({ month });
+  const { data, isLoading, refetch } = useListPlanRuns({ month, segment });
   const createRun = useCreatePlanRun();
   const finalizeRun = useFinalizePlanRun();
   const [compareIds, setCompareIds] = useState<[number, number] | null>(null);
@@ -135,7 +137,7 @@ export default function RunsPage() {
 
   const handleCreate = () => {
     createRun.mutate(
-      { data: { month } },
+      { data: { month, segment } },
       {
         onSuccess: () => {
           toast({ title: "Plan run created", description: `Draft snapshot for ${formatMonthLabel(month)} saved.` });

@@ -71,6 +71,17 @@ async function buildCodeToCategoryMap(): Promise<Map<string, string>> {
 function mapGroupToCategory(group: string): string | null {
   if (!group) return null;
   const g = group.toUpperCase().replace(/[^A-Z&/ ]/g, " ").replace(/\s+/g, " ").trim();
+
+  // ── Plumbing segment (MATERIAL × TYPE) ────────────────────────────────────
+  // Match more-specific "Fitting" patterns before bare material names so that
+  // e.g. "CPVC FITTING" doesn't fall through to "CPVC Pipe".
+  const isFitting = g.includes("FITTING") || g.includes("FTG");
+  if (g.includes("CPVC")) return isFitting ? "CPVC Fitting" : "CPVC Pipe";
+  if (g.includes("UPVC")) return isFitting ? "UPVC Fitting" : "UPVC Pipe";
+  if (g.includes("SWR"))  return isFitting ? "SWR Fitting"  : "SWR Pipe";
+  if (g.includes("AGRI") || g.includes("AGRICULTURE")) return isFitting ? "AGRI Fitting" : "AGRI Pipe";
+
+  // ── PTMT segment ───────────────────────────────────────────────────────────
   if (g.includes("BALL") && (g.includes("COCK") || g.includes("COCKE") || g.length < 15)) return "Ball Cock";
   if (g.includes("CABINET")) return "Cabinet";
   if (g.includes("CISTERN") || (g.includes("SEAT") && (g.includes("COVER") || g.includes("CVR")))) return "Cistern & Seat Cover";

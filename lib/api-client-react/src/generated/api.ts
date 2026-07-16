@@ -67,10 +67,12 @@ import type {
   ItemWeightUpsert,
   ListAiAnalysesParams,
   ListAiPlantAnalysesParams,
+  ListBufferCategoriesParams,
   ListCorrectiveRunsParams,
   ListIdealHoursOverridesParams,
   ListPlanItemsParams,
   ListPlanRunsParams,
+  ListWeeklyReleaseBandsParams,
   MonitoringActions,
   MonitoringBacklog,
   MonitoringConfig,
@@ -204,17 +206,24 @@ export type listBufferCategoriesResponseSuccess = (listBufferCategoriesResponse2
 
 export type listBufferCategoriesResponse = (listBufferCategoriesResponseSuccess)
 
-export const getListBufferCategoriesUrl = () => {
+export const getListBufferCategoriesUrl = (params?: ListBufferCategoriesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
-  
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/buffer-categories`
+  return stringifiedParams.length > 0 ? `/api/buffer-categories?${stringifiedParams}` : `/api/buffer-categories`
 }
 
-export const listBufferCategories = async ( options?: RequestInit): Promise<listBufferCategoriesResponse> => {
+export const listBufferCategories = async (params?: ListBufferCategoriesParams, options?: RequestInit): Promise<listBufferCategoriesResponse> => {
   
-  return customFetch<listBufferCategoriesResponse>(getListBufferCategoriesUrl(),
+  return customFetch<listBufferCategoriesResponse>(getListBufferCategoriesUrl(params),
   {      
     ...options,
     method: 'GET'
@@ -227,23 +236,23 @@ export const listBufferCategories = async ( options?: RequestInit): Promise<list
 
 
 
-export const getListBufferCategoriesQueryKey = () => {
+export const getListBufferCategoriesQueryKey = (params?: ListBufferCategoriesParams,) => {
     return [
-    `/api/buffer-categories`
+    `/api/buffer-categories`, ...(params ? [params]: [])
     ] as const;
     }
 
     
-export const getListBufferCategoriesQueryOptions = <TData = Awaited<ReturnType<typeof listBufferCategories>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBufferCategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListBufferCategoriesQueryOptions = <TData = Awaited<ReturnType<typeof listBufferCategories>>, TError = unknown>(params?: ListBufferCategoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBufferCategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListBufferCategoriesQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListBufferCategoriesQueryKey(params);
 
   
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listBufferCategories>>> = ({ signal }) => listBufferCategories({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listBufferCategories>>> = ({ signal }) => listBufferCategories(params, { signal, ...requestOptions });
 
       
 
@@ -258,11 +267,11 @@ export type ListBufferCategoriesQueryError = unknown
 
 
 export function useListBufferCategories<TData = Awaited<ReturnType<typeof listBufferCategories>>, TError = unknown>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBufferCategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListBufferCategoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBufferCategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
   
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListBufferCategoriesQueryOptions(options)
+  const queryOptions = getListBufferCategoriesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -1966,17 +1975,24 @@ export type listWeeklyReleaseBandsResponseSuccess = (listWeeklyReleaseBandsRespo
 
 export type listWeeklyReleaseBandsResponse = (listWeeklyReleaseBandsResponseSuccess)
 
-export const getListWeeklyReleaseBandsUrl = () => {
+export const getListWeeklyReleaseBandsUrl = (params?: ListWeeklyReleaseBandsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
-  
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/plan/weekly-bands`
+  return stringifiedParams.length > 0 ? `/api/plan/weekly-bands?${stringifiedParams}` : `/api/plan/weekly-bands`
 }
 
-export const listWeeklyReleaseBands = async ( options?: RequestInit): Promise<listWeeklyReleaseBandsResponse> => {
+export const listWeeklyReleaseBands = async (params?: ListWeeklyReleaseBandsParams, options?: RequestInit): Promise<listWeeklyReleaseBandsResponse> => {
   
-  return customFetch<listWeeklyReleaseBandsResponse>(getListWeeklyReleaseBandsUrl(),
+  return customFetch<listWeeklyReleaseBandsResponse>(getListWeeklyReleaseBandsUrl(params),
   {      
     ...options,
     method: 'GET'
@@ -1989,23 +2005,23 @@ export const listWeeklyReleaseBands = async ( options?: RequestInit): Promise<li
 
 
 
-export const getListWeeklyReleaseBandsQueryKey = () => {
+export const getListWeeklyReleaseBandsQueryKey = (params?: ListWeeklyReleaseBandsParams,) => {
     return [
-    `/api/plan/weekly-bands`
+    `/api/plan/weekly-bands`, ...(params ? [params]: [])
     ] as const;
     }
 
     
-export const getListWeeklyReleaseBandsQueryOptions = <TData = Awaited<ReturnType<typeof listWeeklyReleaseBands>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWeeklyReleaseBands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListWeeklyReleaseBandsQueryOptions = <TData = Awaited<ReturnType<typeof listWeeklyReleaseBands>>, TError = unknown>(params?: ListWeeklyReleaseBandsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWeeklyReleaseBands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListWeeklyReleaseBandsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListWeeklyReleaseBandsQueryKey(params);
 
   
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWeeklyReleaseBands>>> = ({ signal }) => listWeeklyReleaseBands({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listWeeklyReleaseBands>>> = ({ signal }) => listWeeklyReleaseBands(params, { signal, ...requestOptions });
 
       
 
@@ -2020,11 +2036,11 @@ export type ListWeeklyReleaseBandsQueryError = unknown
 
 
 export function useListWeeklyReleaseBands<TData = Awaited<ReturnType<typeof listWeeklyReleaseBands>>, TError = unknown>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWeeklyReleaseBands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListWeeklyReleaseBandsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listWeeklyReleaseBands>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
   
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListWeeklyReleaseBandsQueryOptions(options)
+  const queryOptions = getListWeeklyReleaseBandsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

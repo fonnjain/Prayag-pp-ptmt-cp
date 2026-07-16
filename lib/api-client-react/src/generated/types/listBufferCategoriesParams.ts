@@ -5,7 +5,9 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export type ExportPlanPdfParams = {
-month: string;
+export type ListBufferCategoriesParams = {
+/**
+ * Filter by segment: PTMT or Plumbing
+ */
 segment?: string;
 };

@@ -5,7 +5,6 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export type ExportPlanPdfParams = {
-month: string;
+export type ListWeeklyReleaseBandsParams = {
 segment?: string;
 };

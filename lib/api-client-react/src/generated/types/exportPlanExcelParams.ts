@@ -7,4 +7,5 @@
 
 export type ExportPlanExcelParams = {
 month: string;
+segment?: string;
 };

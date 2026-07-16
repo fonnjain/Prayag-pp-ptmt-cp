@@ -17,6 +17,7 @@ import {
   type CategoryCapacity,
 } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/app-layout";
+import { useSegment } from "@/contexts/segment-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +25,9 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { cn, fmtDateTime } from "@/lib/utils";
 
-const UPLOAD_KINDS: { kind: (typeof UploadKind)[keyof typeof UploadKind]; label: string; hint: string; required: boolean }[] = [
+type UploadKindDef = { kind: (typeof UploadKind)[keyof typeof UploadKind]; label: string; hint: string; required: boolean };
+
+const PTMT_UPLOAD_KINDS: UploadKindDef[] = [
   {
     kind: UploadKind.current_stock,
     label: "1 · F.G. STOCK Factory Excel",
@@ -45,6 +48,27 @@ const UPLOAD_KINDS: { kind: (typeof UploadKind)[keyof typeof UploadKind]; label:
   },
 ];
 
+const PLUMBING_UPLOAD_KINDS: UploadKindDef[] = [
+  {
+    kind: UploadKind.plumbing_current_stock,
+    label: "1 · Plumbing F.G. STOCK Excel",
+    hint: "Plumbing F.G. STOCK <month>.xlsx — col A = Item Code, col B = Colour, col C = C/Stock. Current stock for Plumbing items.",
+    required: true,
+  },
+  {
+    kind: UploadKind.plumbing_pending_orders,
+    label: "2 · Plumbing Pending Orders (ERP export)",
+    hint: "Plumbing DATA.xlsx — PendingOrder sheet filtered to Plumbing segment codes. Old Item Code + Color + Balance_Qty. Current Pending Order.",
+    required: true,
+  },
+  {
+    kind: UploadKind.plumbing_last_month_pending,
+    label: "3 · Plumbing Last-Month Pending Orders",
+    hint: "LAST_MONTH_PENDING_PLUMBING_<month>.xlsx — Item Code + Colour + Qty for last month's Plumbing pending.",
+    required: true,
+  },
+];
+
 function statusColor(status: SyncSource["status"]): string {
   switch (status) {
     case "success":
@@ -58,7 +82,7 @@ function statusColor(status: SyncSource["status"]): string {
   }
 }
 
-function UploadRow({ kind, label, hint, required }: (typeof UPLOAD_KINDS)[number]) {
+function UploadRow({ kind, label, hint, required }: UploadKindDef) {
   const { toast } = useToast();
   const { data: uploads, refetch } = useListUploads();
   const createUpload = useCreateUpload();
@@ -379,8 +403,8 @@ function CapacityTable() {
 
 // ─── Main Seasonality Table ───────────────────────────────────────────────────
 
-function SeasonalityTable() {
-  const { data, isLoading, refetch } = useListBufferCategories();
+function SeasonalityTable({ segment }: { segment: string }) {
+  const { data, isLoading, refetch } = useListBufferCategories({ segment } as any);
   const updateCategory = useUpdateBufferCategory();
   const recompute = useRecomputeSeasonality();
   const { toast } = useToast();
@@ -873,11 +897,14 @@ function ValidationPanel() {
 }
 
 export default function DataPage() {
+  const { segment } = useSegment();
+  const uploadKinds = segment === "Plumbing" ? PLUMBING_UPLOAD_KINDS : PTMT_UPLOAD_KINDS;
+
   return (
     <AppLayout>
       <div className="max-w-5xl mx-auto space-y-6">
         <div>
-          <h2 className="text-xl font-semibold">Data</h2>
+          <h2 className="text-xl font-semibold">Data — {segment}</h2>
           <p className="text-sm text-gray-500">
             All three monthly file uploads are required before a plan can be built. The Avg 3-Month Sale
             figure is computed live from the Sale 26-27 Google Sheets connection below.
@@ -886,27 +913,29 @@ export default function DataPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Monthly file uploads (3 required each month)</CardTitle>
+            <CardTitle className="text-base">Monthly file uploads — {segment} (3 required)</CardTitle>
           </CardHeader>
           <CardContent>
-            {UPLOAD_KINDS.map((u) => (
+            {uploadKinds.map((u) => (
               <UploadRow key={u.kind} {...u} />
             ))}
-            <div className="pt-3 text-xs text-gray-500 space-y-1 border-t mt-2">
-              <p>
-                <strong>Stock</strong> comes from the F.G Sheet of the F.G. STOCK factory Excel (col A/B/C).
-                The LAST MONTH PENDING ITEMS tab inside that file is <em>not</em> used — upload file 3 instead.
-              </p>
-              <p>
-                <strong>Current Pending Order</strong> comes from DATA.xlsx PendingOrder sheet — an ERP
-                export that is reproducible and audit-friendly. The live "Pending order" Google Sheet
-                drifts daily and is not used for planning.
-              </p>
-              <p>
-                <strong>Last-Month Pending</strong> comes from the dedicated LAST_MONTH file's PTMT tab
-                (not from F.G. STOCK). PTMT-segment total should be ~137,939.
-              </p>
-            </div>
+            {segment === "PTMT" && (
+              <div className="pt-3 text-xs text-gray-500 space-y-1 border-t mt-2">
+                <p>
+                  <strong>Stock</strong> comes from the F.G Sheet of the F.G. STOCK factory Excel (col A/B/C).
+                  The LAST MONTH PENDING ITEMS tab inside that file is <em>not</em> used — upload file 3 instead.
+                </p>
+                <p>
+                  <strong>Current Pending Order</strong> comes from DATA.xlsx PendingOrder sheet — an ERP
+                  export that is reproducible and audit-friendly. The live "Pending order" Google Sheet
+                  drifts daily and is not used for planning.
+                </p>
+                <p>
+                  <strong>Last-Month Pending</strong> comes from the dedicated LAST_MONTH file's PTMT tab
+                  (not from F.G. STOCK). PTMT-segment total should be ~137,939.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -951,7 +980,7 @@ export default function DataPage() {
             </p>
           </CardHeader>
           <CardContent>
-            <SeasonalityTable />
+            <SeasonalityTable segment={segment} />
           </CardContent>
         </Card>
       </div>

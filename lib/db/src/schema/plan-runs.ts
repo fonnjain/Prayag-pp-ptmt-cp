@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 
 export const planRunsTable = pgTable("plan_runs", {
   id: serial("id").primaryKey(),
+  segment: text("segment").notNull().default("PTMT"),
   month: text("month").notNull(),
   asOfAt: timestamp("as_of_at", { withTimezone: true }).notNull().defaultNow(),
   status: text("status").notNull().default("draft"),

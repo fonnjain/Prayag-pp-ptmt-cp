@@ -3,6 +3,7 @@ import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 
 export const categoryCapacityTable = pgTable("category_capacity", {
   id: serial("id").primaryKey(),
+  segment: text("segment").notNull().default("PTMT"),
   category: text("category").notNull().unique(),
   meanPerDay: real("mean_per_day").notNull().default(0),
   p90PerDay: real("p90_per_day").notNull().default(0),

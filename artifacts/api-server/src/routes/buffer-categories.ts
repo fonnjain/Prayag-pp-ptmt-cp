@@ -8,11 +8,12 @@ const router: IRouter = Router();
 
 // ─── GET /buffer-categories ───────────────────────────────────────────────────
 
-router.get("/buffer-categories", async (_req, res): Promise<void> => {
-  const categories = await db
-    .select()
-    .from(bufferCategoriesTable)
-    .orderBy(bufferCategoriesTable.name);
+router.get("/buffer-categories", async (req, res): Promise<void> => {
+  const segment = req.query.segment ? String(req.query.segment) : undefined;
+  const query = db.select().from(bufferCategoriesTable).orderBy(bufferCategoriesTable.name);
+  const categories = segment
+    ? await db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)).orderBy(bufferCategoriesTable.name)
+    : await query;
   res.json(categories);
 });
 

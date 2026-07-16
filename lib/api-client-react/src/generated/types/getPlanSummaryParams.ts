@@ -7,4 +7,5 @@
 
 export type GetPlanSummaryParams = {
 month: string;
+segment?: string;
 };

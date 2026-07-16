@@ -10,6 +10,7 @@ import type { PlanRunSummaryNote } from './planRunSummaryNote';
 export interface PlanRunSummary {
   id: number;
   month: string;
+  segment: string;
   asOfAt: string;
   status: PlanRunSummaryStatus;
   note: PlanRunSummaryNote;

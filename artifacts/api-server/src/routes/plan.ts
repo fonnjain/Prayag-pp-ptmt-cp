@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, itemMasterTable, bufferCategoriesTable, uploadedFilesTable, weeklyReleaseBandsTable } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { computeItemPlan, annotateWeeklyRelease, summarizePlan, type ItemSourceRow, type WeeklyBandConfig } from "../lib/calc";
 import {
   fetchAvg3MoSaleTotals,
@@ -59,22 +59,30 @@ function hasEntry(totals: DualTotals, itemCode: string, colour: string, isSingle
   return totals.exact.has(itemKey(itemCode, colour));
 }
 
-export async function buildPlanItems(month: string) {
+/**
+ * Build plan items for a given month and segment.
+ * segment defaults to "PTMT" — passing "Plumbing" scopes every DB read and
+ * upload-kind lookup to the Plumbing category set without touching PTMT data.
+ */
+export async function buildPlanItems(month: string, segment: string = "PTMT") {
+  const isPlumbing = segment === "Plumbing";
+  const uploadPrefix = isPlumbing ? "plumbing_" : "";
+  const orderGroup = isPlumbing ? "PLUMBING" : "PTMT";
+
   const [itemRows, bufferRows, bandRows, pendingOrderRows, pendingLastMoRows, currentStockRows, avg3MoTotals, liveOrderTotals] =
     await Promise.all([
-      db.select().from(itemMasterTable),
-      db.select().from(bufferCategoriesTable),
-      db.select().from(weeklyReleaseBandsTable),
-      // Current pending: uploaded DATA.xlsx → PendingOrder sheet (Segment ∈ {PTMT, PT},
-      // Old Item Code + Color, Balance_Qty). Per spec §4: do NOT use the live
-      // "Pending order" Google Sheet — it drifts daily and breaks reproducibility.
-      loadLatestUploadRowsByKind("pending_orders"),
-      // Last-month pending: uploaded LAST_MONTH_PENDING_ORDERS file → PTMT tab.
-      loadLatestUploadRowsByKind("last_month_pending"),
-      // Current stock: uploaded F.G. STOCK factory Excel → F.G Sheet (col A/B/C).
-      loadLatestUploadRowsByKind("current_stock"),
+      db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, segment)),
+      db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
+      db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
+      // Current pending: uploaded file → filtered per segment.
+      // PTMT: DATA.xlsx PendingOrder sheet; Plumbing: plumbing_pending_orders.
+      loadLatestUploadRowsByKind(`${uploadPrefix}pending_orders`),
+      // Last-month pending: uploaded file for the segment.
+      loadLatestUploadRowsByKind(`${uploadPrefix}last_month_pending`),
+      // Current stock: uploaded factory Excel for the segment.
+      loadLatestUploadRowsByKind(`${uploadPrefix}current_stock`),
       fetchAvg3MoSaleTotals(month),
-      fetchLiveOrderTotals(month),
+      fetchLiveOrderTotals(month, orderGroup),
     ]);
 
   const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
@@ -151,8 +159,9 @@ router.get("/plan", async (req, res): Promise<void> => {
     res.status(400).json({ error: "month is required" });
     return;
   }
+  const segment = String(req.query.segment ?? "PTMT");
   const category = req.query.category ? String(req.query.category) : undefined;
-  const items = await buildPlanItems(month);
+  const items = await buildPlanItems(month, segment);
   const filtered = category ? items.filter((i) => i.category === category) : items;
   res.json(filtered);
 });
@@ -163,7 +172,8 @@ router.get("/plan/summary", async (req, res): Promise<void> => {
     res.status(400).json({ error: "month is required" });
     return;
   }
-  const items = await buildPlanItems(month);
+  const segment = String(req.query.segment ?? "PTMT");
+  const items = await buildPlanItems(month, segment);
   const summary = summarizePlan(items);
   res.json({ month, ...summary });
 });
@@ -174,11 +184,13 @@ router.get("/plan/export/excel", async (req, res): Promise<void> => {
     res.status(400).json({ error: "month is required" });
     return;
   }
-  const items = await buildPlanItems(month);
+  const segment = String(req.query.segment ?? "PTMT");
+  const items = await buildPlanItems(month, segment);
   const summary = summarizePlan(items);
   const buffer = await exportPlanExcel(month, items, summary);
+  const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="PTMT_Production_Plan_${month}.xlsx"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Production_Plan_${month}.xlsx"`);
   res.send(buffer);
 });
 
@@ -188,11 +200,13 @@ router.get("/plan/export/pdf", async (req, res): Promise<void> => {
     res.status(400).json({ error: "month is required" });
     return;
   }
-  const items = await buildPlanItems(month);
+  const segment = String(req.query.segment ?? "PTMT");
+  const items = await buildPlanItems(month, segment);
   const summary = summarizePlan(items);
   const buffer = await exportPlanPdf(month, items, summary);
+  const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="PTMT_Production_Plan_${month}.pdf"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Production_Plan_${month}.pdf"`);
   res.send(buffer);
 });
 
@@ -202,15 +216,20 @@ router.get("/plan/export/weekly-excel", async (req, res): Promise<void> => {
     res.status(400).json({ error: "month is required" });
     return;
   }
-  const items = await buildPlanItems(month);
+  const segment = String(req.query.segment ?? "PTMT");
+  const items = await buildPlanItems(month, segment);
   const buffer = await exportWeeklyReleaseExcel(month, items);
+  const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="PTMT_Weekly_Release_Plan_${month}.xlsx"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Weekly_Release_Plan_${month}.xlsx"`);
   res.send(buffer);
 });
 
-router.get("/plan/weekly-bands", async (_req, res): Promise<void> => {
-  const bands = await db.select().from(weeklyReleaseBandsTable);
+router.get("/plan/weekly-bands", async (req, res): Promise<void> => {
+  const segment = req.query.segment ? String(req.query.segment) : undefined;
+  const bands = segment
+    ? await db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment))
+    : await db.select().from(weeklyReleaseBandsTable);
   res.json(bands);
 });
 

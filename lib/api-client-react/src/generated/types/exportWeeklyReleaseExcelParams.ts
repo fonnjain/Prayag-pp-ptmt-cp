@@ -7,4 +7,5 @@
 
 export type ExportWeeklyReleaseExcelParams = {
 month: string;
+segment?: string;
 };

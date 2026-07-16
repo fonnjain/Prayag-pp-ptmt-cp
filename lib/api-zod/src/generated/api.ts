@@ -11,8 +11,15 @@ export const getHealthzResponse = zod.object({
 })
 
 
+export const listBufferCategoriesQuerySegmentDefault = "PTMT";
+
+export const listBufferCategoriesQueryParams = zod.object({
+  "segment": zod.string().default(listBufferCategoriesQuerySegmentDefault).describe('Filter by segment: PTMT or Plumbing')
+})
+
 export const listBufferCategoriesResponseItem = zod.object({
   "id": zod.number(),
+  "segment": zod.string(),
   "name": zod.string(),
   "multiplier": zod.number(),
   "updatedAt": zod.string().datetime({}),
@@ -50,6 +57,7 @@ export const updateBufferCategoryBody = zod.object({
 
 export const updateBufferCategoryResponse = zod.object({
   "id": zod.number(),
+  "segment": zod.string(),
   "name": zod.string(),
   "multiplier": zod.number(),
   "updatedAt": zod.string().datetime({}),
@@ -72,15 +80,17 @@ export const updateBufferCategoryResponse = zod.object({
 /**
  * @summary Recompute seasonality engine for all PTMT categories
  */
-export const recomputeSeasonalityQueryZDefault = 1.65;
+export const recomputeSeasonalityQueryZDefault = 1.65;export const recomputeSeasonalityQuerySegmentDefault = "PTMT";
 
 export const recomputeSeasonalityQueryParams = zod.object({
-  "z": zod.number().default(recomputeSeasonalityQueryZDefault).describe('z-score for service level (1.28=90%, 1.65=95%, 2.05=98%)')
+  "z": zod.number().default(recomputeSeasonalityQueryZDefault).describe('z-score for service level (1.28=90%, 1.65=95%, 2.05=98%)'),
+  "segment": zod.string().default(recomputeSeasonalityQuerySegmentDefault)
 })
 
 export const recomputeSeasonalityResponse = zod.object({
   "categories": zod.array(zod.object({
   "id": zod.number(),
+  "segment": zod.string(),
   "name": zod.string(),
   "multiplier": zod.number(),
   "updatedAt": zod.string().datetime({}),
@@ -119,7 +129,7 @@ export const recomputeSeasonalityResponse = zod.object({
 
 export const listUploadsResponseItem = zod.object({
   "id": zod.number(),
-  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock']),
+  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock', 'plumbing_pending_orders', 'plumbing_last_month_pending', 'plumbing_current_stock']),
   "filename": zod.string(),
   "uploadedAt": zod.string().datetime({}),
   "rowCount": zod.number()
@@ -128,7 +138,7 @@ export const listUploadsResponse = zod.array(listUploadsResponseItem)
 
 
 export const createUploadParams = zod.object({
-  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock'])
+  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock', 'plumbing_pending_orders', 'plumbing_last_month_pending', 'plumbing_current_stock'])
 })
 
 export const createUploadBody = zod.object({
@@ -403,8 +413,11 @@ export const recomputeCategoryCapacityResponseItem = zod.object({
 export const recomputeCategoryCapacityResponse = zod.array(recomputeCategoryCapacityResponseItem)
 
 
+export const listPlanItemsQuerySegmentDefault = "PTMT";
+
 export const listPlanItemsQueryParams = zod.object({
   "month": zod.string(),
+  "segment": zod.string().default(listPlanItemsQuerySegmentDefault),
   "category": zod.string().optional()
 })
 
@@ -431,8 +444,11 @@ export const listPlanItemsResponseItem = zod.object({
 export const listPlanItemsResponse = zod.array(listPlanItemsResponseItem)
 
 
+export const getPlanSummaryQuerySegmentDefault = "PTMT";
+
 export const getPlanSummaryQueryParams = zod.object({
-  "month": zod.string()
+  "month": zod.string(),
+  "segment": zod.string().default(getPlanSummaryQuerySegmentDefault)
 })
 
 export const getPlanSummaryResponse = zod.object({
@@ -457,20 +473,35 @@ export const getDashboardResponse = zod.object({
 })
 
 
+export const exportPlanExcelQuerySegmentDefault = "PTMT";
+
 export const exportPlanExcelQueryParams = zod.object({
-  "month": zod.string()
+  "month": zod.string(),
+  "segment": zod.string().default(exportPlanExcelQuerySegmentDefault)
 })
 
+
+export const exportPlanPdfQuerySegmentDefault = "PTMT";
 
 export const exportPlanPdfQueryParams = zod.object({
-  "month": zod.string()
+  "month": zod.string(),
+  "segment": zod.string().default(exportPlanPdfQuerySegmentDefault)
 })
 
+
+export const exportWeeklyReleaseExcelQuerySegmentDefault = "PTMT";
 
 export const exportWeeklyReleaseExcelQueryParams = zod.object({
-  "month": zod.string()
+  "month": zod.string(),
+  "segment": zod.string().default(exportWeeklyReleaseExcelQuerySegmentDefault)
 })
 
+
+export const listWeeklyReleaseBandsQuerySegmentDefault = "PTMT";
+
+export const listWeeklyReleaseBandsQueryParams = zod.object({
+  "segment": zod.string().default(listWeeklyReleaseBandsQuerySegmentDefault)
+})
 
 export const listWeeklyReleaseBandsResponseItem = zod.object({
   "id": zod.number(),
@@ -508,17 +539,22 @@ export const updateWeeklyReleaseBandResponse = zod.object({
 
 export const createPlanRunBody = zod.object({
   "month": zod.string(),
+  "segment": zod.string().optional(),
   "note": zod.string().optional()
 })
 
 
+export const listPlanRunsQuerySegmentDefault = "PTMT";
+
 export const listPlanRunsQueryParams = zod.object({
-  "month": zod.string()
+  "month": zod.string(),
+  "segment": zod.string().default(listPlanRunsQuerySegmentDefault)
 })
 
 export const listPlanRunsResponseItem = zod.object({
   "id": zod.number(),
   "month": zod.string(),
+  "segment": zod.string(),
   "asOfAt": zod.string().datetime({}),
   "status": zod.enum(['draft', 'finalized']),
   "note": zod.string().nullable(),
@@ -560,6 +596,7 @@ export const getPlanRunResponse = zod.object({
   "run": zod.object({
   "id": zod.number(),
   "month": zod.string(),
+  "segment": zod.string(),
   "asOfAt": zod.string().datetime({}),
   "status": zod.enum(['draft', 'finalized']),
   "note": zod.string().nullable(),
@@ -590,6 +627,7 @@ export const finalizePlanRunParams = zod.object({
 export const finalizePlanRunResponse = zod.object({
   "id": zod.number(),
   "month": zod.string(),
+  "segment": zod.string(),
   "asOfAt": zod.string().datetime({}),
   "status": zod.enum(['draft', 'finalized']),
   "note": zod.string().nullable(),

@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 
 export const bufferCategoriesTable = pgTable("buffer_categories", {
   id: serial("id").primaryKey(),
+  segment: text("segment").notNull().default("PTMT"),
   name: text("name").notNull().unique(),
   multiplier: real("multiplier").notNull().default(1),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
