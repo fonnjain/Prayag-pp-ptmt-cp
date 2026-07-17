@@ -115,41 +115,51 @@ function sheetToObjects(sheet: XLSX.WorkSheet): Record<string, unknown>[] {
 }
 
 /**
- * Map a raw material/group/category string from the Plumbing FG Stock file to
- * one of the 12 canonical Plumbing categories used in item_master.
- * Mirrors the mapGroupToCategory logic in seasonality-engine.ts.
+ * Map a raw FG-Stock Category string (+ optional item name) to one of the 12 canonical
+ * Plumbing planning categories.
  *
- * FG Stock file Category column uses the format: CPVC-PIPE, CPVC-FG, UPVC-PIPE,
- * UPVC-FG, SWR-PIPE, SWR-FG, Agri-Pipe, AGRI-FG, CPVC-SOLVENT, SWR-CEMENT, etc.
- * The "-FG" suffix means "Fitting/Finished Goods" (= Fitting in the canonical catalogue).
- *
- * 12 canonical categories: 4 materials (CPVC, UPVC, SWR, AGRI) × 3 types (Pipe, Fitting, Solvent).
- *
- * Returns null for strings that cannot be mapped (row is skipped for item_master).
+ * Solvent items in the actual FG Stock file appear under *-TRADING categories
+ * (e.g. "CPVC-TRADING", "UPVC-TRADING", "Agri-Trading") rather than a dedicated
+ * "CPVC-SOLVENT" category.  We detect them via the item *name* containing
+ * "SOLVENT" or "CEMENT", and resolve the material from the category string.
+ * All other TRADING rows are excluded (they are procured/traded, not produced).
  */
-function inferPlumbingCategory(raw: string): string | null {
+function inferPlumbingCategory(raw: string, itemName = ""): string | null {
   const g = raw.trim().toUpperCase();
+  const n = itemName.trim().toUpperCase();
 
-  // Explicitly exclude non-manufactured categories that must not enter the production plan.
-  // These appear in the FG Stock file but are traded (not produced) or otherwise out of scope.
+  // ── TRADING rows ─────────────────────────────────────────────────────────────
+  // Solvent/cement items appear under *-TRADING categories in the actual ERP export.
+  // Detect them by item name; resolve material from the category string itself.
+  if (g.includes("TRADING")) {
+    const nameIsSolvent = n.includes("SOLVENT") || n.includes("CEMENT");
+    if (!nameIsSolvent) return null; // non-Solvent trading item — skip
+    if (g.includes("CPVC")) return "CPVC Solvent";
+    if (g.includes("UPVC")) return "UPVC Solvent";
+    if (g.includes("SWR"))  return "SWR Solvent";
+    if (g.includes("AGRI") || g.includes("AGRICULTURE")) return "AGRI Solvent";
+    return null; // unknown material — skip
+  }
+
+  // ── Other explicitly excluded categories ─────────────────────────────────────
   if (
-    g.includes("TRADING") ||         // e.g. CPVC-TRADING — traded, not manufactured
-    g.includes("WATER TANK") ||       // Water tanks — out of scope
-    g.includes("COLUMN PIPE") ||      // Column Pipe — separate category
-    g.includes("PPR")                 // PPR fittings — separate category
+    g.includes("WATER TANK") ||   // Water tanks — out of scope
+    g.includes("COLUMN PIPE") ||  // Column Pipe — separate category
+    g.includes("PPR")             // PPR fittings — separate category
   ) {
     return null;
   }
 
-  // Detect SOLVENT/CEMENT BEFORE the generic Pipe/Fitting check — material is resolved first
-  // so that "CPVC-SOLVENT" → "CPVC Solvent" (not "CPVC Pipe") and "SWR CEMENT" → "SWR Solvent".
+  // ── Solvent/Cement by category name (future-proofing) ────────────────────────
+  // Detect SOLVENT/CEMENT BEFORE the generic Pipe/Fitting check so that
+  // "CPVC-SOLVENT" maps to "CPVC Solvent" (not "CPVC Pipe").
   const isSolvent = g.includes("SOLVENT") || g.includes("CEMENT");
   if (isSolvent) {
     if (g.includes("CPVC")) return "CPVC Solvent";
     if (g.includes("UPVC")) return "UPVC Solvent";
     if (g.includes("SWR"))  return "SWR Solvent";
     if (g.includes("AGRI") || g.includes("AGRICULTURE")) return "AGRI Solvent";
-    return null; // SOLVENT without a known material prefix — skip
+    return null;
   }
 
   // "-FG" suffix = Fitting (FG Stock file convention); also honour legacy FITTING / FTG spellings.
@@ -279,8 +289,11 @@ function extractRows(workbook: XLSX.WorkBook, kind: string): Record<string, unkn
     }
 
     const headers = (raw[headerIdx] ?? []).map((h) => String(h ?? "").trim());
-    // Resolve column indices from headers — fall back to fixed A/C/R positions if not found
+    // Resolve column indices from headers — fall back to fixed A/B/C/R positions if not found
     const iCode = Math.max(0, headers.findIndex((h) => /item\s*code/i.test(h)));
+    const iName = headers.findIndex((h) => /item.*(name|desc)/i.test(h)) >= 0
+      ? headers.findIndex((h) => /item.*(name|desc)/i.test(h))
+      : 1; // Column B
     const iCat  = headers.findIndex((h) => /^cat(egory)?$/i.test(h)) >= 0
       ? headers.findIndex((h) => /^cat(egory)?$/i.test(h))
       : 2; // Column C
@@ -293,6 +306,7 @@ function extractRows(workbook: XLSX.WorkBook, kind: string): Record<string, unkn
       const row = raw[i] ?? [];
       const itemCode = String(row[iCode] ?? "").trim();
       if (!itemCode || /^total$/i.test(itemCode)) continue;
+      const itemName = String(row[iName] ?? "").trim();
       const category = String(row[iCat] ?? "").trim();
       const netStockRaw = row[iNet];
       const netStock =
@@ -300,7 +314,9 @@ function extractRows(workbook: XLSX.WorkBook, kind: string): Record<string, unkn
           ? netStockRaw
           : Number(String(netStockRaw ?? "").replace(/,/g, "")) || 0;
       if (netStock === 0) continue; // skip zero rows
-      out.push({ "Item Code": itemCode, Category: category, "Net Stock": netStock });
+      // Item Name is carried through so upsertPlumbingItemMaster can detect Solvent items
+      // whose Category is *-TRADING rather than a dedicated Solvent category string.
+      out.push({ "Item Code": itemCode, "Item Name": itemName, Category: category, "Net Stock": netStock });
     }
     return out;
   }
@@ -330,13 +346,16 @@ async function upsertPlumbingItemMaster(rows: Record<string, unknown>[]): Promis
       row["Colour"] ?? row["Color"] ?? row["COLOR"] ?? ""
     ).trim().toUpperCase();
 
+    // Item name — used by inferPlumbingCategory to detect Solvent items in TRADING rows
+    const itemName = String(row["Item Name"] ?? row["Item/Service Description"] ?? "").trim();
+
     // Category column: try direct "Category", "GROUP", "Group", "Material", "Material Type"
     const rawCategory = String(
       row["Category"] ?? row["GROUP"] ?? row["Group"] ?? row["Material"] ??
       row["Material Type"] ?? row["MATERIAL"] ?? row["type"] ?? ""
     ).trim();
 
-    const category = rawCategory ? inferPlumbingCategory(rawCategory) : null;
+    const category = rawCategory ? inferPlumbingCategory(rawCategory, itemName) : null;
     if (!category) continue; // skip rows we can't categorize
 
     const key = `${itemCode}::${colour}::${category}`;

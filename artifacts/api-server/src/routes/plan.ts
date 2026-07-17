@@ -98,7 +98,10 @@ export async function buildPlanItems(month: string, segment: string = "PTMT"): P
   // Filter DATA.xlsx rows to this segment (file stores rows for all segments)
   const pendingOrderRows = rawPendingOrderRows.filter((row) => {
     const seg = String(row["Segment"] ?? "").trim().toUpperCase();
-    if (isPlumbing) return seg === "PLUMBING" || seg === "P";
+    // "PLUMBING" and "P" are the primary segment codes.
+    // "PL" covers SWR Selfit pipes/fittings and UPVC SCH40 items in the ERP export.
+    // "AGRI" covers AGRI pipe items that appear under their own segment code.
+    if (isPlumbing) return seg === "PLUMBING" || seg === "P" || seg === "PL" || seg === "AGRI";
     return seg === "PTMT" || seg === "PT";
   });
 

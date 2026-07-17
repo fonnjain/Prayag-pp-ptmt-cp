@@ -7,6 +7,10 @@ description: July 2026 Production Required golden values for Plumbing validate �
 The Plumbing self-check asserts 12 exact integer golden values (one per planning line).
 AGRI Solvent = 0 is correct this month — no items in positive swragri formula territory.
 
+**⚠ Solvent golden values must be re-verified after the TRADING-row fix (see below).**
+Previously, Solvent items never entered item_master (TRADING rows were blanket-skipped),
+so plan computed 0 for them. Now they are correctly loaded and values will change.
+
 ## Verified July 2026 values
 
 | Category      | Prod Required | Formula  |
