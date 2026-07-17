@@ -50,21 +50,15 @@ const PTMT_UPLOAD_KINDS: UploadKindDef[] = [
 
 const PLUMBING_UPLOAD_KINDS: UploadKindDef[] = [
   {
-    kind: UploadKind.plumbing_current_stock,
-    label: "1 · Plumbing F.G. STOCK Excel",
-    hint: "Plumbing F.G. STOCK <month>.xlsx — col A = Item Code, col B = Colour, col C = C/Stock. Current stock for Plumbing items.",
+    kind: UploadKind.plumbing_fg_stock,
+    label: "1 · FG Stock file (stock + pending last month)",
+    hint: 'e.g. "FG Stock and Pending Production month of June.xlsx" → worksheet "FG Stock". Col A = Item Code, Col C = Category, Col R = Net Stock. POSITIVE Net Stock → opening stock as on 1st of the planning month. NEGATIVE Net Stock → absolute value = pending order last month (oversold item). Both inputs come from this single file.',
     required: true,
   },
   {
-    kind: UploadKind.plumbing_pending_orders,
-    label: "2 · Plumbing Pending Orders (ERP export)",
-    hint: "Plumbing DATA.xlsx — PendingOrder sheet filtered to Plumbing segment codes. Old Item Code + Color + Balance_Qty. Current Pending Order.",
-    required: true,
-  },
-  {
-    kind: UploadKind.plumbing_last_month_pending,
-    label: "3 · Plumbing Last-Month Pending Orders",
-    hint: "LAST_MONTH_PENDING_PLUMBING_<month>.xlsx — Item Code + Colour + Qty for last month's Plumbing pending.",
+    kind: UploadKind.pending_orders,
+    label: "2 · DATA.xlsx — shared (PTMT + Plumbing)",
+    hint: "DATA.xlsx — same file as PTMT. PendingOrder sheet: rows tagged Segment = Plumbing are consumed for current Plumbing pending orders. Upload once; both segments use it.",
     required: true,
   },
 ];

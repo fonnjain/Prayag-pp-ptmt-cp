@@ -13,7 +13,5 @@ export const UploadKind = {
   pending_orders: 'pending_orders',
   last_month_pending: 'last_month_pending',
   current_stock: 'current_stock',
-  plumbing_pending_orders: 'plumbing_pending_orders',
-  plumbing_last_month_pending: 'plumbing_last_month_pending',
-  plumbing_current_stock: 'plumbing_current_stock',
+  plumbing_fg_stock: 'plumbing_fg_stock',
 } as const;

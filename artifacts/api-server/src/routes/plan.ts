@@ -79,26 +79,57 @@ export type PlanItemWithBom = ReturnType<typeof computeItemPlan> & {
  */
 export async function buildPlanItems(month: string, segment: string = "PTMT"): Promise<PlanItemWithBom[]> {
   const isPlumbing = segment === "Plumbing";
-  const uploadPrefix = isPlumbing ? "plumbing_" : "";
   const orderGroup = isPlumbing ? "PLUMBING" : "PTMT";
 
-  const [itemRows, bufferRows, bandRows, pendingOrderRows, pendingLastMoRows, currentStockRows, avg3MoTotals, liveOrderTotals, bomWeights] =
+  // ── Shared data (loads in parallel for both segments) ───────────────────────
+  const [itemRows, bufferRows, bandRows, rawPendingOrderRows, avg3MoTotals, liveOrderTotals, bomWeights] =
     await Promise.all([
       db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, segment)),
       db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
       db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
-      // Current pending: uploaded file → filtered per segment.
-      // PTMT: DATA.xlsx PendingOrder sheet; Plumbing: plumbing_pending_orders.
-      loadLatestUploadRowsByKind(`${uploadPrefix}pending_orders`),
-      // Last-month pending: uploaded file for the segment.
-      loadLatestUploadRowsByKind(`${uploadPrefix}last_month_pending`),
-      // Current stock: uploaded factory Excel for the segment.
-      loadLatestUploadRowsByKind(`${uploadPrefix}current_stock`),
+      // DATA.xlsx (pending_orders) — global upload serving both PTMT + Plumbing.
+      // Rows for all segments are stored; we filter to this segment below.
+      loadLatestUploadRowsByKind("pending_orders"),
       fetchAvg3MoSaleTotals(month),
       fetchLiveOrderTotals(month, orderGroup),
-      // Plumbing: fetch BOM weights for kg computation. PTMT: skip (empty map).
       isPlumbing ? fetchPlumbingBomWeights() : Promise.resolve(new Map<string, number>()),
     ]);
+
+  // Filter DATA.xlsx rows to this segment (file stores rows for all segments)
+  const pendingOrderRows = rawPendingOrderRows.filter((row) => {
+    const seg = String(row["Segment"] ?? "").trim().toUpperCase();
+    if (isPlumbing) return seg === "PLUMBING" || seg === "P";
+    return seg === "PTMT" || seg === "PT";
+  });
+
+  // ── Segment-specific stock + last-month-pending data ────────────────────────
+  // Plumbing: single "plumbing_fg_stock" upload provides both inputs via Col R sign.
+  //   Positive Net Stock → opening stock as on 1st of planning month (→ Stock input)
+  //   Negative Net Stock → |value| = pending order last month (→ Pending-LM input)
+  // PTMT: two separate uploads unchanged (current_stock, last_month_pending).
+  let currentStockRows: Record<string, unknown>[] = [];
+  let pendingLastMoRows: Record<string, unknown>[] = [];
+
+  if (isPlumbing) {
+    const fgStockRows = await loadLatestUploadRowsByKind("plumbing_fg_stock");
+    for (const row of fgStockRows) {
+      const ns =
+        typeof row["Net Stock"] === "number"
+          ? row["Net Stock"]
+          : Number(String(row["Net Stock"] ?? 0).replace(/,/g, ""));
+      if (ns > 0) {
+        currentStockRows.push({ ...row, Qty: ns });
+      } else if (ns < 0) {
+        pendingLastMoRows.push({ ...row, Qty: Math.abs(ns) });
+      }
+      // ns === 0: skip (no stock and no pending-LM contribution)
+    }
+  } else {
+    [currentStockRows, pendingLastMoRows] = await Promise.all([
+      loadLatestUploadRowsByKind("current_stock"),
+      loadLatestUploadRowsByKind("last_month_pending"),
+    ]);
+  }
 
   const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
   const bandsByCategory = new Map<string, WeeklyBandConfig>(

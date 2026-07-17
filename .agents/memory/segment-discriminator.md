@@ -52,6 +52,12 @@ Every planning table has `segment TEXT NOT NULL DEFAULT 'PTMT'`. All DB reads in
 - /plan/validate MUST filter itemMasterTable and bufferCategoriesTable by segment='PTMT'
   (originally read ALL rows — would mix segments once Plumbing data exists)
 
-## Upload kinds
-- uploads.ts VALID_KINDS must include: plumbing_current_stock, plumbing_pending_orders, plumbing_last_month_pending
-- plumbing_current_stock handler: extract rows AND upsert item_master(segment='Plumbing') via inferPlumbingCategory
+## Upload kinds (Plumbing — current design)
+- VALID_KINDS: pending_orders, last_month_pending, current_stock, plumbing_fg_stock
+- plumbing_fg_stock = single FG Stock file: Col A=Item Code, Col C=Category, Col R=Net Stock (signed)
+  Positive R → Stock; Negative R → |value| = Pending-LM; both from one file
+  On upload: also upserts item_master(segment='Plumbing') via inferPlumbingCategory
+- pending_orders = DATA.xlsx shared across ALL segments (no segment filter at parse time)
+  plan.ts filters rows by segment when consuming: PTMT rows for PTMT, PLUMBING rows for Plumbing
+- inferPlumbingCategory: "-FG" suffix = Fitting (CPVC-FG→CPVC Fitting); "-PIPE"/"no suffix" = Pipe
+- Old kinds (plumbing_current_stock, plumbing_pending_orders, plumbing_last_month_pending) REMOVED

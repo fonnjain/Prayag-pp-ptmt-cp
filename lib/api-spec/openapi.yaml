@@ -1333,7 +1333,7 @@ components:
 
     UploadKind:
       type: string
-      enum: [pending_orders, last_month_pending, current_stock, plumbing_pending_orders, plumbing_last_month_pending, plumbing_current_stock]
+      enum: [pending_orders, last_month_pending, current_stock, plumbing_fg_stock]
 
     BufferCategory:
       type: object

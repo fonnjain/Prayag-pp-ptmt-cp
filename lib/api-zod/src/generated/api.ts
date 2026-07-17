@@ -129,7 +129,7 @@ export const recomputeSeasonalityResponse = zod.object({
 
 export const listUploadsResponseItem = zod.object({
   "id": zod.number(),
-  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock', 'plumbing_pending_orders', 'plumbing_last_month_pending', 'plumbing_current_stock']),
+  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock', 'plumbing_fg_stock']),
   "filename": zod.string(),
   "uploadedAt": zod.string().datetime({}),
   "rowCount": zod.number()
@@ -138,7 +138,7 @@ export const listUploadsResponse = zod.array(listUploadsResponseItem)
 
 
 export const createUploadParams = zod.object({
-  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock', 'plumbing_pending_orders', 'plumbing_last_month_pending', 'plumbing_current_stock'])
+  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock', 'plumbing_fg_stock'])
 })
 
 export const createUploadBody = zod.object({
