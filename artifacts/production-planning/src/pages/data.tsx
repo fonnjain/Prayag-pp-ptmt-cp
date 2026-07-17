@@ -248,7 +248,7 @@ function headroomColor(headroom: number, planNeedsPerDay: number): string {
 
 function CapacityTable() {
   const { segment } = useSegment();
-  const { data, isLoading, refetch } = useListCategoryCapacities({ params: { segment } } as any);
+  const { data, isLoading, refetch } = useListCategoryCapacities({ segment } as any);
   const updateCapacity = useUpdateCategoryCapacity();
   const recompute = useRecomputeCategoryCapacity();
   const { toast } = useToast();
