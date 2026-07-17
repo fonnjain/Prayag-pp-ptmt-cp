@@ -89,13 +89,21 @@ export async function exportPlanExcel(
   month: string,
   items: CalcPlanItem[],
   summary: PlanSummaryResult,
+  requiredCategories?: string[],
 ): Promise<Buffer> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ExcelJS = require("exceljs") as typeof import("exceljs").default;
   const workbook = new ExcelJS.Workbook();
   addSummarySheet(workbook, month, summary);
 
+  // Pre-seed with required categories so tabs always exist (e.g. SWR Solvent even when 0 pcs,
+  // AGRI Solvent when all items are ≤ 0 under the swragri formula).
   const byCategory = new Map<string, CalcPlanItem[]>();
+  if (requiredCategories) {
+    for (const cat of requiredCategories) {
+      byCategory.set(cat, []);
+    }
+  }
   for (const item of items) {
     const list = byCategory.get(item.category) ?? [];
     list.push(item);

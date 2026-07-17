@@ -157,8 +157,14 @@ export async function buildPlanItems(month: string, segment: string = "PTMT"): P
     ["Qty", "Balance_Qty", "Balance Qty"],
   );
 
-  // Stock: F.G Sheet columns: "Item Code" → code; "Colour" / "Color" → colour; "Qty" (normalized from C/Stock) → qty.
-  const stockTotals = sumByKey(currentStockRows, ["Item Code"], ["Colour", "Color"], ["Qty"]);
+  // Stock: F.G Sheet — try every item-code column variant the FG Stock upload may carry.
+  // The Plumbing FG Stock export uses "Old Item Code" in most sheets; CPVC sometimes uses "Item Code".
+  const stockTotals = sumByKey(
+    currentStockRows,
+    ["Item Code", "Old Item Code", "Cat No", "Cat-No", "Item No."],
+    ["Colour", "Color"],
+    ["Qty"],
+  );
 
   // Scoped per category: the same item code can legitimately exist in two
   // different categories (e.g. a code split by colour under one category,
@@ -187,8 +193,12 @@ export async function buildPlanItems(month: string, segment: string = "PTMT"): P
     const multiplier = bufferByCategory.get(item.category) ?? 1;
     // SWR and AGRI use a different production formula (verified cell-by-cell vs master).
     // Item codes for SWR/AGRI can be numeric (e.g. 5111, 5711) — stored as strings in item_master.
+    // Use toUpperCase + includes so the check is robust to mixed-case category names in item_master
+    // (e.g. "Swr Pipe", "AGRI FITTING") — a strict startsWith("SWR") on mixed-case would silently
+    // fall through to the standard formula, producing the wrong (CPVC/UPVC-style) result.
+    const catUpper = item.category.toUpperCase();
     const formula =
-      isPlumbing && (item.category.startsWith("SWR") || item.category.startsWith("AGRI"))
+      isPlumbing && (catUpper.includes("SWR") || catUpper.includes("AGRI"))
         ? ("swragri" as const)
         : ("standard" as const);
     const computed = computeItemPlan(source, item.category, multiplier, formula);
@@ -243,6 +253,15 @@ router.get("/plan/summary", async (req, res): Promise<void> => {
   res.json({ month, ...summary });
 });
 
+// All 12 Plumbing category tabs that must always appear in the export,
+// even when an individual category has zero items (e.g. AGRI Solvent = 0, SWR Solvent tab).
+const PLUMBING_CATEGORIES = [
+  "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
+  "UPVC Pipe", "UPVC Fitting", "UPVC Solvent",
+  "SWR Pipe",  "SWR Fitting",  "SWR Solvent",
+  "AGRI Pipe", "AGRI Fitting", "AGRI Solvent",
+];
+
 router.get("/plan/export/excel", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");
   if (!month) {
@@ -252,7 +271,8 @@ router.get("/plan/export/excel", async (req, res): Promise<void> => {
   const segment = String(req.query.segment ?? "PTMT");
   const items = await buildPlanItems(month, segment);
   const summary = summarizePlan(items);
-  const buffer = await exportPlanExcel(month, items, summary);
+  const requiredCategories = segment === "Plumbing" ? PLUMBING_CATEGORIES : undefined;
+  const buffer = await exportPlanExcel(month, items, summary, requiredCategories);
   const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Production_Plan_${month}.xlsx"`);
