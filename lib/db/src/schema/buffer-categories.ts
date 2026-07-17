@@ -21,6 +21,7 @@ export const bufferCategoriesTable = pgTable("buffer_categories", {
   lastComputedAt: timestamp("last_computed_at", { withTimezone: true }),
   dataQuality: text("data_quality"),
   zScore: real("z_score"),
+  reliabilityFlag: text("reliability_flag"),
 });
 
 export const insertBufferCategorySchema = createInsertSchema(bufferCategoriesTable).omit({

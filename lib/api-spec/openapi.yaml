@@ -1434,6 +1434,7 @@ components:
         lastComputedAt: { type: ["string", "null"], format: date-time }
         dataQuality: { type: ["string", "null"] }
         zScore: { type: ["number", "null"] }
+        reliabilityFlag: { type: ["string", "null"], description: "null=clean | 'insufficient data — override required' | 'unreliable — structural growth/launch, override recommended' | 'thin data — review'" }
 
     BufferCategoryUpdate:
       type: object

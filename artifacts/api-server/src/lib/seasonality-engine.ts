@@ -7,6 +7,30 @@ import { logger } from "./logger";
 export const FISCAL_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"] as const;
 export type FiscalMonth = typeof FISCAL_MONTHS[number];
 
+/** Some sheets use full month names (e.g. "July") instead of 3-letter abbreviations */
+const MONTH_ALIASES: Record<string, FiscalMonth> = {
+  April: "Apr", May: "May", June: "Jun", July: "Jul",
+  August: "Aug", September: "Sep", October: "Oct",
+  November: "Nov", December: "Dec", January: "Jan",
+  February: "Feb", March: "Mar",
+};
+
+/** Returns the FiscalMonth key if `tab` is a recognised month tab (exact or aliased), else null */
+function normTab(tab: string): FiscalMonth | null {
+  if ((FISCAL_MONTHS as readonly string[]).includes(tab)) return tab as FiscalMonth;
+  return MONTH_ALIASES[tab] ?? null;
+}
+
+/** Build a Map<FiscalMonth → actual tab name> from a raw sheet tab list */
+function buildTabMap(tabs: string[]): Map<FiscalMonth, string> {
+  const m = new Map<FiscalMonth, string>();
+  for (const tab of tabs) {
+    const norm = normTab(tab);
+    if (norm && !m.has(norm)) m.set(norm, tab);
+  }
+  return m;
+}
+
 /** Engine inputs: FY2024-25 + FY2025-26 only — FY2023-24 excluded (old ERP layout); FY2026-27 excluded (part-year) */
 const ENGINE_ORDER_SHEETS: Record<string, string> = {
   "2024-25": "1cT6lWRPJ3oSeYhab-cqeVjJidGitFQsr0DOq-vNn6cI",
@@ -20,8 +44,19 @@ export const CURRENT_FY = "2026-27";
 export const Z_VALUES = { 90: 1.28, 95: 1.65, 98: 2.05 } as const;
 export type ServiceLevel = keyof typeof Z_VALUES;
 
-/** Avg monthly units below this → "thin" data quality */
+/** Avg monthly units below this → "thin" data quality (PTMT) */
 const THIN_THRESHOLD = 100;
+
+/** Avg monthly units below this → "thin" data quality (Plumbing) */
+export const PLUMBING_THIN_THRESHOLD = 3000;
+
+/** All 12 Plumbing categories: material × type */
+export const ALL_PLUMBING_CATEGORIES = [
+  "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
+  "UPVC Pipe", "UPVC Fitting", "UPVC Solvent",
+  "SWR Pipe",  "SWR Fitting",  "SWR Solvent",
+  "AGRI Pipe", "AGRI Fitting", "AGRI Solvent",
+] as const;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -46,16 +81,31 @@ export interface SeasonalityCategoryResult {
 
 export interface SeasonalityEngineOutput {
   categories: SeasonalityCategoryResult[];
-  segmentBenchmark: Omit<SeasonalityCategoryResult, "category"> & { category: "PTMT Total" };
+  segmentBenchmark: Omit<SeasonalityCategoryResult, "category"> & { category: string };
   totalUnmappedQty: number;
   totalOrderQty: number;
   computedAt: Date;
   zScore: number;
 }
 
+// ─── Reliability flag ─────────────────────────────────────────────────────────
+
+/**
+ * Compute the reliability flag for a Plumbing category result.
+ * Priority: insufficient > unreliable (CV or YoY) > thin.
+ * Returns null for clean categories that need no special treatment.
+ */
+export function computeReliabilityFlag(cat: SeasonalityCategoryResult): string | null {
+  if (cat.dataQuality === "insufficient") return "insufficient data — override required";
+  if (cat.cv !== null && cat.cv > 0.40) return "unreliable — structural growth/launch, override recommended";
+  if (cat.yoy !== null && Math.abs(cat.yoy) > 0.60) return "unreliable — structural growth/launch, override recommended";
+  if (cat.dataQuality === "thin") return "thin data — review";
+  return null;
+}
+
 // ─── Category mapping ─────────────────────────────────────────────────────────
 
-/** Map item_master codes to PTMT categories */
+/** Map item_master codes to categories */
 async function buildCodeToCategoryMap(): Promise<Map<string, string>> {
   const rows = await db.select({ itemCode: itemMasterTable.itemCode, category: itemMasterTable.category }).from(itemMasterTable);
   const map = new Map<string, string>();
@@ -64,22 +114,57 @@ async function buildCodeToCategoryMap(): Promise<Map<string, string>> {
 }
 
 /**
- * Map an order row's GROUP field to a PTMT category using keyword matching.
- * Returns null for rows that cannot be mapped (e.g. Cistern items are
- * ordered under CP/Sanitaryware GROUP and won't match).
+ * Classify a Plumbing item as Pipe / Fitting / Solvent from the combined
+ * GROUP + item-name string. Called only after the material (CPVC/UPVC/SWR/AGRI)
+ * has been identified from GROUP.
+ *
+ * The GROUP field in Plumbing ERP exports only carries the material name;
+ * the type (Pipe / Fitting / Solvent) must be inferred from the item description.
  */
-function mapGroupToCategory(group: string): string | null {
+function classifyPlumbingType(combined: string): "Solvent" | "Fitting" | "Pipe" {
+  // Solvent first — most distinct keyword set
+  if (
+    combined.includes("SOLVENT") || combined.includes("CEMENT") ||
+    combined.includes("ADHESIVE") || combined.includes("PRIMER")
+  ) return "Solvent";
+
+  // Fitting — explicit fitting keywords in name
+  if (
+    combined.includes("FITTING") || combined.includes(" FTG") ||
+    combined.includes("TEE") || combined.includes("ELBOW") ||
+    combined.includes("BEND") || combined.includes("COUPLER") ||
+    combined.includes("REDUCER") || combined.includes("SOCKET") ||
+    combined.includes("UNION") || combined.includes("CROSS") ||
+    combined.includes(" CAP") || combined.includes("END CAP") ||
+    combined.includes("PLUG") || combined.includes("MTA") ||
+    combined.includes("FTA") || combined.includes("ADAPTOR") ||
+    combined.includes("ADAPTER") || combined.includes("CLAMP") ||
+    combined.includes("CLIP") || combined.includes("SADDLE") ||
+    combined.includes("BRASS") || combined.includes("VALVE") ||
+    combined.includes("BUSH") || combined.includes("NIPPLE")
+  ) return "Fitting";
+
+  // Default: Pipe (also matches explicit "PIPE" keyword)
+  return "Pipe";
+}
+
+/**
+ * Map GROUP + optional item name to a category.
+ * For Plumbing: GROUP gives the material, item name gives the type.
+ * For PTMT: GROUP alone is sufficient.
+ */
+function mapGroupToCategory(group: string, itemName: string = ""): string | null {
   if (!group) return null;
   const g = group.toUpperCase().replace(/[^A-Z&/ ]/g, " ").replace(/\s+/g, " ").trim();
+  const combined = `${g} ${itemName.toUpperCase()}`;
 
   // ── Plumbing segment (MATERIAL × TYPE) ────────────────────────────────────
-  // Match more-specific "Fitting" patterns before bare material names so that
-  // e.g. "CPVC FITTING" doesn't fall through to "CPVC Pipe".
-  const isFitting = g.includes("FITTING") || g.includes("FTG");
-  if (g.includes("CPVC")) return isFitting ? "CPVC Fitting" : "CPVC Pipe";
-  if (g.includes("UPVC")) return isFitting ? "UPVC Fitting" : "UPVC Pipe";
-  if (g.includes("SWR"))  return isFitting ? "SWR Fitting"  : "SWR Pipe";
-  if (g.includes("AGRI") || g.includes("AGRICULTURE")) return isFitting ? "AGRI Fitting" : "AGRI Pipe";
+  if (g.includes("CPVC")) { const t = classifyPlumbingType(combined); return `CPVC ${t}`; }
+  if (g.includes("UPVC")) { const t = classifyPlumbingType(combined); return `UPVC ${t}`; }
+  if (g.includes("SWR"))  { const t = classifyPlumbingType(combined); return `SWR ${t}`;  }
+  if (g.includes("AGRI") || g.includes("AGRICULTURE")) {
+    const t = classifyPlumbingType(combined); return `AGRI ${t}`;
+  }
 
   // ── PTMT segment ───────────────────────────────────────────────────────────
   if (g.includes("BALL") && (g.includes("COCK") || g.includes("COCKE") || g.length < 15)) return "Ball Cock";
@@ -92,10 +177,17 @@ function mapGroupToCategory(group: string): string | null {
   return null;
 }
 
+// ─── Diagnostic state (first-row sampling for column discovery) ───────────────
+let _sampledPlumbingRow = false;
+
 /**
- * Attempt to map an order row to a PTMT category:
- * 1. Try item_code lookup in item_master
- * 2. Fall back to GROUP keyword match
+ * Attempt to map an order row to a category:
+ * 1. Try item_code lookup in item_master (PTMT items)
+ * 2. Fall back to GROUP + item-name keyword match (Plumbing items)
+ *
+ * Plumbing order sheet column variants tried for the item name:
+ *   "Name", "Item Name", "Stock Item Name", "Particulars",
+ *   "Description", "Item.Name", "Ledger.Name", "Item Description"
  */
 function mapRowToCategory(
   row: Record<string, string>,
@@ -103,7 +195,7 @@ function mapRowToCategory(
 ): string | null {
   const itemCode = (
     row["Item Code"] || row["ITEM CODE"] || row["Code"] || row["CODE"] ||
-    row["Item.Code"] || row["Description.Code"] || row["Grp.Name"] || ""
+    row["Item.Code"] || row["Description.Code"] || ""
   ).trim().toUpperCase();
 
   if (itemCode) {
@@ -111,8 +203,26 @@ function mapRowToCategory(
     if (fromMaster) return fromMaster;
   }
 
-  const group = row["GROUP"] || row["Group"] || row["group"] || "";
-  return mapGroupToCategory(group);
+  const group = (row["GROUP"] || row["Group"] || row["group"] || "").toUpperCase();
+  const isPlumbing = group.includes("CPVC") || group.includes("UPVC") ||
+                     group.includes("SWR") || group.includes("AGRI");
+
+  // For Plumbing rows, extract item name for Pipe/Fitting/Solvent detection
+  const itemName = isPlumbing
+    ? (row["Name"] || row["Item Name"] || row["Stock Item Name"] || row["Particulars"] ||
+       row["Description"] || row["Item.Name"] || row["Ledger.Name"] || row["ITEM NAME"] ||
+       row["Item Description"] || row["Grp.Name"] || "")
+    : "";
+
+  // Log first Plumbing row keys for diagnostics (once per engine run)
+  if (isPlumbing && !_sampledPlumbingRow) {
+    _sampledPlumbingRow = true;
+    const keys = Object.keys(row).slice(0, 20);
+    const nameSample = itemName.slice(0, 60);
+    logger.info({ keys, groupVal: group, itemNameVal: nameSample }, "plumbing-seasonality: first row column sample");
+  }
+
+  return mapGroupToCategory(group, itemName);
 }
 
 // ─── Sheet helpers ───────────────────────────────────────────────────────────
@@ -132,14 +242,16 @@ function rowsToObjects(values: string[][]): Record<string, string>[] {
   });
 }
 
-// ─── Algorithm steps ──────────────────────────────────────────────────────────
+// ─── Algorithm ────────────────────────────────────────────────────────────────
 
 function runAlgorithm(
   fy2425: number[],
   fy2526: number[],
   z: number,
   category: string,
+  thinThreshold: number = THIN_THRESHOLD,
 ): Omit<SeasonalityCategoryResult, "category" | "unmappedQty" | "totalOrderQty" | "zScore" | "fy2425monthly" | "fy2526monthly"> {
+  void category; // used for logging only if needed
   const annual2425 = fy2425.reduce((s, v) => s + v, 0);
   const annual2526 = fy2526.reduce((s, v) => s + v, 0);
 
@@ -157,7 +269,7 @@ function runAlgorithm(
   }
   const seasonalIndices = weighted.map((w) => w / avgMonth);
 
-  // Step 3 — Deseasonalise, measure CV on 24 observations
+  // Step 3 — Deseasonalise, measure CV on up to 24 observations
   const deseasonalised: number[] = [];
   for (let i = 0; i < 12; i++) {
     const si = seasonalIndices[i];
@@ -180,7 +292,7 @@ function runAlgorithm(
   // Step 4 — Suggested multiplier
   const suggestedMultiplier = round2(1 + z * cv);
 
-  // Step 5 — YoY, damped and capped
+  // Step 5 — YoY
   const yoy = annual2425 > 0 ? (annual2526 - annual2425) / annual2425 : null;
   const signal: "Growing" | "Stable" | "Declining" | null =
     yoy === null ? null : yoy > 0.08 ? "Growing" : yoy < -0.08 ? "Declining" : "Stable";
@@ -190,7 +302,7 @@ function runAlgorithm(
   const peakMonth = FISCAL_MONTHS[peakIdx];
   const peakIndex = round2(seasonalIndices[peakIdx]);
 
-  const dataQuality: "ok" | "thin" = avgMonth < THIN_THRESHOLD ? "thin" : "ok";
+  const dataQuality: "ok" | "thin" = avgMonth < thinThreshold ? "thin" : "ok";
 
   return {
     dataQuality,
@@ -210,7 +322,97 @@ function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
-// ─── Main engine ─────────────────────────────────────────────────────────────
+// ─── Shared sheet reader ──────────────────────────────────────────────────────
+
+/**
+ * Reads all tabs from both FY order sheets and accumulates monthly totals
+ * per category. Only categories in `categorySet` are counted; everything
+ * else is tallied as unmapped.
+ */
+async function readOrderSheets(
+  categorySet: Set<string>,
+  codeMap: Map<string, string>,
+  logPrefix: string,
+): Promise<{
+  monthly2425: Record<string, number[]>;
+  monthly2526: Record<string, number[]>;
+  totalMonthly2425: number[];
+  totalMonthly2526: number[];
+  totalOrderQty: number;
+  unmappedQty: number;
+  perCategoryTotal: Record<string, number>;
+}> {
+  const categories = [...categorySet];
+  const monthly2425: Record<string, number[]> = {};
+  const monthly2526: Record<string, number[]> = {};
+  for (const cat of categories) {
+    monthly2425[cat] = Array(12).fill(0);
+    monthly2526[cat] = Array(12).fill(0);
+  }
+
+  let totalOrderQty = 0;
+  let unmappedQty = 0;
+  const perCategoryTotal: Record<string, number> = Object.fromEntries(categories.map((c) => [c, 0]));
+  const totalMonthly2425 = Array(12).fill(0);
+  const totalMonthly2526 = Array(12).fill(0);
+
+  for (const fy of ["2024-25", "2025-26"] as const) {
+    const sheetId = ENGINE_ORDER_SHEETS[fy];
+    let tabs: string[];
+    try {
+      tabs = await listTabs(sheetId);
+    } catch (err) {
+      logger.warn({ err, fy }, `${logPrefix}: could not list tabs for FY`);
+      continue;
+    }
+
+    const tabMap = buildTabMap(tabs);
+    const monthlyTabs = FISCAL_MONTHS.filter((m) => tabMap.has(m));
+    logger.info({ fy, monthlyTabs: monthlyTabs.length }, `${logPrefix}: reading order tabs`);
+
+    for (const tab of monthlyTabs) {
+      const mIdx = FISCAL_MONTHS.indexOf(tab as FiscalMonth);
+      if (mIdx === -1) continue;
+      const actualTab = tabMap.get(tab) ?? tab;
+
+      try {
+        const values = await getTabValues(sheetId, actualTab, "A1:Z50000");
+        const rows = rowsToObjects(values);
+
+        for (const row of rows) {
+          const qty = toNum(row["Quantity"]);
+          if (qty <= 0) continue;
+
+          const cat = mapRowToCategory(row, codeMap);
+          if (!cat || !categorySet.has(cat)) {
+            // Only count as unmapped if it could plausibly belong to this segment
+            unmappedQty += qty;
+            continue;
+          }
+
+          totalOrderQty += qty;
+          perCategoryTotal[cat] = (perCategoryTotal[cat] ?? 0) + qty;
+
+          if (fy === "2024-25") {
+            monthly2425[cat][mIdx] += qty;
+            totalMonthly2425[mIdx] += qty;
+          } else {
+            monthly2526[cat][mIdx] += qty;
+            totalMonthly2526[mIdx] += qty;
+          }
+        }
+
+        await delay(350);
+      } catch (err) {
+        logger.warn({ err, fy, tab }, `${logPrefix}: failed to read tab`);
+      }
+    }
+  }
+
+  return { monthly2425, monthly2526, totalMonthly2425, totalMonthly2526, totalOrderQty, unmappedQty, perCategoryTotal };
+}
+
+// ─── PTMT engine ─────────────────────────────────────────────────────────────
 
 export async function runSeasonalityEngine(
   zScore: number = Z_VALUES[95],
@@ -227,118 +429,51 @@ export async function runSeasonalityEngine(
     "Ball Cock",
   ];
 
-  // Per-category monthly totals: [Apr, May, ..., Mar]
-  const monthly2425: Record<string, number[]> = {};
-  const monthly2526: Record<string, number[]> = {};
-  for (const cat of ALL_CATEGORIES) {
-    monthly2425[cat] = Array(12).fill(0);
-    monthly2526[cat] = Array(12).fill(0);
-  }
+  const { monthly2425, monthly2526, totalMonthly2425, totalMonthly2526, totalOrderQty, unmappedQty, perCategoryTotal } =
+    await readOrderSheets(new Set(ALL_CATEGORIES), codeMap, "seasonality");
 
-  let totalOrderQty = 0;
-  let unmappedQty = 0;
-  const perCategoryUnmapped: Record<string, number> = Object.fromEntries(ALL_CATEGORIES.map((c) => [c, 0]));
-  const perCategoryTotal: Record<string, number> = Object.fromEntries(ALL_CATEGORIES.map((c) => [c, 0]));
-
-  // Total for segment benchmark
-  const totalMonthly2425 = Array(12).fill(0);
-  const totalMonthly2526 = Array(12).fill(0);
-
-  for (const fy of ["2024-25", "2025-26"] as const) {
-    const sheetId = ENGINE_ORDER_SHEETS[fy];
-    let tabs: string[];
-    try {
-      tabs = await listTabs(sheetId);
-    } catch (err) {
-      logger.warn({ err, fy }, "seasonality: could not list tabs for FY");
-      continue;
-    }
-
-    const monthlyTabs = FISCAL_MONTHS.filter((m) => tabs.includes(m));
-    logger.info({ fy, monthlyTabs: monthlyTabs.length }, "seasonality: reading order tabs");
-
-    for (const tab of monthlyTabs) {
-      const mIdx = FISCAL_MONTHS.indexOf(tab as FiscalMonth);
-      if (mIdx === -1) continue;
-
-      try {
-        const values = await getTabValues(sheetId, tab, "A1:Z50000");
-        const rows = rowsToObjects(values);
-
-        for (const row of rows) {
-          const qty = toNum(row["Quantity"]);
-          if (qty <= 0) continue;
-
-          totalOrderQty += qty;
-
-          const cat = mapRowToCategory(row, codeMap);
-          if (!cat || !ALL_CATEGORIES.includes(cat)) {
-            unmappedQty += qty;
-            continue;
-          }
-
-          perCategoryTotal[cat] = (perCategoryTotal[cat] ?? 0) + qty;
-
-          if (fy === "2024-25") {
-            monthly2425[cat][mIdx] += qty;
-            totalMonthly2425[mIdx] += qty;
-          } else {
-            monthly2526[cat][mIdx] += qty;
-            totalMonthly2526[mIdx] += qty;
-          }
-        }
-
-        // Polite delay between sheet reads to avoid 429s
-        await delay(350);
-      } catch (err) {
-        logger.warn({ err, fy, tab }, "seasonality: failed to read tab");
-      }
-    }
-  }
-
-  // Compute per-category results
   const categories: SeasonalityCategoryResult[] = ALL_CATEGORIES.map((cat) => {
     const algo = runAlgorithm(monthly2425[cat], monthly2526[cat], zScore, cat);
-    return {
-      category: cat,
-      ...algo,
-      unmappedQty: perCategoryUnmapped[cat] ?? 0,
-      totalOrderQty: perCategoryTotal[cat] ?? 0,
-      zScore,
-      fy2425monthly: monthly2425[cat],
-      fy2526monthly: monthly2526[cat],
-    };
+    return { category: cat, ...algo, unmappedQty: 0, totalOrderQty: perCategoryTotal[cat] ?? 0, zScore, fy2425monthly: monthly2425[cat], fy2526monthly: monthly2526[cat] };
   });
 
-  // Segment benchmark (all PTMT orders, including unmapped)
   const segAlgo = runAlgorithm(totalMonthly2425, totalMonthly2526, zScore, "PTMT Total");
-  const segmentBenchmark: SeasonalityEngineOutput["segmentBenchmark"] = {
-    category: "PTMT Total",
-    ...segAlgo,
-    unmappedQty,
-    totalOrderQty,
-    zScore,
-    fy2425monthly: totalMonthly2425,
-    fy2526monthly: totalMonthly2526,
-  };
+  const segmentBenchmark = { category: "PTMT Total", ...segAlgo, unmappedQty, totalOrderQty, zScore, fy2425monthly: totalMonthly2425, fy2526monthly: totalMonthly2526 };
+
+  logger.info({ categories: categories.length, totalOrderQty, unmappedQty, segmentCV: segmentBenchmark.cv, segmentSuggested: segmentBenchmark.suggestedMultiplier }, "seasonality: engine complete");
+
+  return { categories, segmentBenchmark, totalUnmappedQty: unmappedQty, totalOrderQty, computedAt: new Date(), zScore };
+}
+
+// ─── Plumbing engine ──────────────────────────────────────────────────────────
+
+export async function runPlumbingSeasonalityEngine(
+  zScore: number = Z_VALUES[95],
+): Promise<SeasonalityEngineOutput> {
+  const codeMap = await buildCodeToCategoryMap();
+  const plumbingCatSet = new Set<string>(ALL_PLUMBING_CATEGORIES);
+
+  const { monthly2425, monthly2526, totalMonthly2425, totalMonthly2526, totalOrderQty, unmappedQty, perCategoryTotal } =
+    await readOrderSheets(plumbingCatSet, codeMap, "plumbing-seasonality");
+
+  const categories: SeasonalityCategoryResult[] = [...ALL_PLUMBING_CATEGORIES].map((cat) => {
+    const algo = runAlgorithm(monthly2425[cat], monthly2526[cat], zScore, cat, PLUMBING_THIN_THRESHOLD);
+    return { category: cat, ...algo, unmappedQty: 0, totalOrderQty: perCategoryTotal[cat] ?? 0, zScore, fy2425monthly: monthly2425[cat], fy2526monthly: monthly2526[cat] };
+  });
+
+  // Segment benchmark: all Plumbing orders combined
+  const segAlgo = runAlgorithm(totalMonthly2425, totalMonthly2526, zScore, "Plumbing Total");
+  const segmentBenchmark = { category: "Plumbing Total", ...segAlgo, unmappedQty, totalOrderQty, zScore, fy2425monthly: totalMonthly2425, fy2526monthly: totalMonthly2526 };
 
   logger.info({
     categories: categories.length,
     totalOrderQty,
-    unmappedQty,
-    unmappedPct: totalOrderQty > 0 ? Math.round((unmappedQty / totalOrderQty) * 100) : 0,
     segmentCV: segmentBenchmark.cv,
     segmentSuggested: segmentBenchmark.suggestedMultiplier,
-  }, "seasonality: engine complete");
+    peakMonth: segmentBenchmark.peakMonth,
+  }, "plumbing-seasonality: engine complete");
 
-  return {
-    categories,
-    segmentBenchmark,
-    totalUnmappedQty: unmappedQty,
-    totalOrderQty,
-    computedAt: new Date(),
-    zScore,
-  };
+  return { categories, segmentBenchmark, totalUnmappedQty: unmappedQty, totalOrderQty, computedAt: new Date(), zScore };
 }
 
 // ─── Drift monitor ───────────────────────────────────────────────────────────
@@ -355,11 +490,6 @@ export interface DriftResult {
   consecutiveMonthsOutside: number;
 }
 
-/**
- * For FY2026-27 (current year), compare actual order intake against the
- * expected seasonal shape. Raises SEASONALITY_DRIFT if a category deviates
- * outside ±z×CV band for 2+ consecutive months.
- */
 export async function computeDriftMonitor(
   engineCategories: SeasonalityCategoryResult[],
 ): Promise<DriftResult[]> {
@@ -371,14 +501,15 @@ export async function computeDriftMonitor(
     return [];
   }
 
-  const monthlyTabs = FISCAL_MONTHS.filter((m) => tabs.includes(m));
+  const tabMap2 = buildTabMap(tabs);
+  const monthlyTabs = FISCAL_MONTHS.filter((m) => tabMap2.has(m));
   const codeMap = await buildCodeToCategoryMap();
 
-  // Actual FY2026-27 per category per month
   const actual: Record<string, Record<string, number>> = {};
   for (const tab of monthlyTabs) {
+    const actualTab2 = tabMap2.get(tab) ?? tab;
     try {
-      const values = await getTabValues(sheetId, tab, "A1:Z50000");
+      const values = await getTabValues(sheetId, actualTab2, "A1:Z50000");
       const rows = rowsToObjects(values);
       for (const row of rows) {
         const qty = toNum(row["Quantity"]);

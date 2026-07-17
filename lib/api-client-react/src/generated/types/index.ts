@@ -55,6 +55,7 @@ export * from './bufferCategoryLastComputedAt';
 export * from './bufferCategoryOverrideMultiplier';
 export * from './bufferCategoryPeakIndex';
 export * from './bufferCategoryPeakMonth';
+export * from './bufferCategoryReliabilityFlag';
 export * from './bufferCategorySeasonalIndices';
 export * from './bufferCategorySignal';
 export * from './bufferCategorySuggestedMultiplier';

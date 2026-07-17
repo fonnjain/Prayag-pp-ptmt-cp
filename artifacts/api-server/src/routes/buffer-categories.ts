@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, bufferCategoriesTable } from "@workspace/db";
-import { runSeasonalityEngine, Z_VALUES } from "../lib/seasonality-engine";
+import { runSeasonalityEngine, runPlumbingSeasonalityEngine, computeReliabilityFlag, Z_VALUES } from "../lib/seasonality-engine";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -10,10 +10,9 @@ const router: IRouter = Router();
 
 router.get("/buffer-categories", async (req, res): Promise<void> => {
   const segment = req.query.segment ? String(req.query.segment) : undefined;
-  const query = db.select().from(bufferCategoriesTable).orderBy(bufferCategoriesTable.name);
   const categories = segment
     ? await db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)).orderBy(bufferCategoriesTable.name)
-    : await query;
+    : await db.select().from(bufferCategoriesTable).orderBy(bufferCategoriesTable.name);
   res.json(categories);
 });
 
@@ -38,12 +37,7 @@ router.patch("/buffer-categories/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  // Fetch current row
-  const [current] = await db
-    .select()
-    .from(bufferCategoriesTable)
-    .where(eq(bufferCategoriesTable.id, id));
-
+  const [current] = await db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.id, id));
   if (!current) {
     res.status(404).json({ error: "Buffer category not found" });
     return;
@@ -54,7 +48,6 @@ router.patch("/buffer-categories/:id", async (req, res): Promise<void> => {
   if (hasOverride) {
     const rawOverride = body["overrideMultiplier"];
     if (rawOverride === null || rawOverride === undefined) {
-      // Clear override → snap back to suggested
       updates.overrideMultiplier = null;
       updates.multiplier = current.suggestedMultiplier ?? current.multiplier;
     } else {
@@ -67,7 +60,6 @@ router.patch("/buffer-categories/:id", async (req, res): Promise<void> => {
       updates.multiplier = override;
     }
   } else if (hasMultiplier) {
-    // Legacy: plain multiplier update (hard-code, no engine context)
     const m = Number(body["multiplier"]);
     if (Number.isNaN(m) || m < 0) {
       res.status(400).json({ error: "multiplier must be a non-negative number" });
@@ -76,12 +68,7 @@ router.patch("/buffer-categories/:id", async (req, res): Promise<void> => {
     updates.multiplier = m;
   }
 
-  const [updated] = await db
-    .update(bufferCategoriesTable)
-    .set(updates)
-    .where(eq(bufferCategoriesTable.id, id))
-    .returning();
-
+  const [updated] = await db.update(bufferCategoriesTable).set(updates).where(eq(bufferCategoriesTable.id, id)).returning();
   if (!updated) {
     res.status(404).json({ error: "Buffer category not found" });
     return;
@@ -92,81 +79,133 @@ router.patch("/buffer-categories/:id", async (req, res): Promise<void> => {
 
 // ─── POST /buffer-categories/recompute ───────────────────────────────────────
 
-let _recomputeInFlight: Promise<void> | null = null;
+let _ptmtRecomputeInFlight: Promise<void> | null = null;
+let _plumbingRecomputeInFlight: Promise<void> | null = null;
 
 router.post("/buffer-categories/recompute", async (req, res): Promise<void> => {
   const rawZ = req.query.z ?? req.body?.z;
   const zInput = rawZ !== undefined ? Number(rawZ) : 1.65;
   const validZValues = Object.values(Z_VALUES);
   const zScore = validZValues.includes(zInput as typeof validZValues[number]) ? zInput : 1.65;
+  const segmentParam = req.query.segment ? String(req.query.segment) : "PTMT";
 
-  if (_recomputeInFlight) {
-    res.status(202).json({ message: "Recompute already in progress — please wait" });
-    return;
-  }
+  if (segmentParam === "Plumbing") {
+    // ── Plumbing recompute ─────────────────────────────────────────────────
+    if (_plumbingRecomputeInFlight) {
+      res.status(202).json({ message: "Plumbing recompute already in progress — please wait" });
+      return;
+    }
 
-  const run = async () => {
-    try {
-      logger.info({ zScore }, "seasonality: starting recompute");
-      const result = await runSeasonalityEngine(zScore);
+    const runPlumbing = async () => {
+      try {
+        logger.info({ zScore }, "plumbing-seasonality: starting recompute");
+        const result = await runPlumbingSeasonalityEngine(zScore);
 
-      // Persist per-category engine results to DB
-      for (const cat of result.categories) {
-        const appliedMultiplier = await (async () => {
+        for (const cat of result.categories) {
+          const reliabilityFlag = computeReliabilityFlag(cat);
+
+          const [row] = await db
+            .select({ overrideMultiplier: bufferCategoriesTable.overrideMultiplier })
+            .from(bufferCategoriesTable)
+            .where(and(eq(bufferCategoriesTable.name, cat.category), eq(bufferCategoriesTable.segment, "Plumbing")));
+
+          const appliedMultiplier = (row?.overrideMultiplier) ?? cat.suggestedMultiplier ?? 1.5;
+
+          await db
+            .update(bufferCategoriesTable)
+            .set({
+              suggestedMultiplier: cat.suggestedMultiplier,
+              cvValue: cat.cv,
+              volatilityClass: cat.volatilityClass,
+              avgMonth: cat.avgMonth,
+              peakMonth: cat.peakMonth,
+              peakIndex: cat.peakIndex,
+              yoy: cat.yoy,
+              signal: cat.signal,
+              seasonalIndices: cat.seasonalIndices ? JSON.stringify(cat.seasonalIndices) : null,
+              lastComputedAt: new Date(),
+              dataQuality: cat.dataQuality,
+              zScore: cat.zScore,
+              multiplier: appliedMultiplier,
+              reliabilityFlag,
+            })
+            .where(and(eq(bufferCategoriesTable.name, cat.category), eq(bufferCategoriesTable.segment, "Plumbing")));
+        }
+
+        logger.info({
+          categories: result.categories.length,
+          segmentCV: result.segmentBenchmark.cv,
+          segmentSuggested: result.segmentBenchmark.suggestedMultiplier,
+          peakMonth: result.segmentBenchmark.peakMonth,
+        }, "plumbing-seasonality: recompute persisted to DB");
+      } catch (err) {
+        logger.error({ err }, "plumbing-seasonality: recompute failed");
+      } finally {
+        _plumbingRecomputeInFlight = null;
+      }
+    };
+
+    _plumbingRecomputeInFlight = runPlumbing();
+    try { await _plumbingRecomputeInFlight; } catch { /* already logged */ }
+
+  } else {
+    // ── PTMT recompute ────────────────────────────────────────────────────
+    if (_ptmtRecomputeInFlight) {
+      res.status(202).json({ message: "PTMT recompute already in progress — please wait" });
+      return;
+    }
+
+    const runPtmt = async () => {
+      try {
+        logger.info({ zScore }, "seasonality: starting recompute");
+        const result = await runSeasonalityEngine(zScore);
+
+        for (const cat of result.categories) {
           const [row] = await db
             .select({ overrideMultiplier: bufferCategoriesTable.overrideMultiplier, multiplier: bufferCategoriesTable.multiplier })
             .from(bufferCategoriesTable)
             .where(eq(bufferCategoriesTable.name, cat.category));
-          if (!row) return cat.suggestedMultiplier ?? 1;
-          // If user already has an override, keep it; otherwise use suggested
-          return row.overrideMultiplier ?? cat.suggestedMultiplier ?? row.multiplier;
-        })();
+          const appliedMultiplier = row?.overrideMultiplier ?? cat.suggestedMultiplier ?? row?.multiplier ?? 1;
 
-        await db
-          .update(bufferCategoriesTable)
-          .set({
-            suggestedMultiplier: cat.suggestedMultiplier,
-            cvValue: cat.cv,
-            volatilityClass: cat.volatilityClass,
-            avgMonth: cat.avgMonth,
-            peakMonth: cat.peakMonth,
-            peakIndex: cat.peakIndex,
-            yoy: cat.yoy,
-            signal: cat.signal,
-            seasonalIndices: cat.seasonalIndices ? JSON.stringify(cat.seasonalIndices) : null,
-            lastComputedAt: new Date(),
-            dataQuality: cat.dataQuality,
-            zScore: cat.zScore,
-            multiplier: appliedMultiplier,
-          })
-          .where(eq(bufferCategoriesTable.name, cat.category));
+          await db
+            .update(bufferCategoriesTable)
+            .set({
+              suggestedMultiplier: cat.suggestedMultiplier,
+              cvValue: cat.cv,
+              volatilityClass: cat.volatilityClass,
+              avgMonth: cat.avgMonth,
+              peakMonth: cat.peakMonth,
+              peakIndex: cat.peakIndex,
+              yoy: cat.yoy,
+              signal: cat.signal,
+              seasonalIndices: cat.seasonalIndices ? JSON.stringify(cat.seasonalIndices) : null,
+              lastComputedAt: new Date(),
+              dataQuality: cat.dataQuality,
+              zScore: cat.zScore,
+              multiplier: appliedMultiplier,
+            })
+            .where(eq(bufferCategoriesTable.name, cat.category));
+        }
+
+        logger.info({ categories: result.categories.length }, "seasonality: recompute persisted to DB");
+      } catch (err) {
+        logger.error({ err }, "seasonality: recompute failed");
+      } finally {
+        _ptmtRecomputeInFlight = null;
       }
+    };
 
-      logger.info({ categories: result.categories.length }, "seasonality: recompute persisted to DB");
-    } catch (err) {
-      logger.error({ err }, "seasonality: recompute failed");
-    } finally {
-      _recomputeInFlight = null;
-    }
-  };
+    _ptmtRecomputeInFlight = runPtmt();
+    try { await _ptmtRecomputeInFlight; } catch { /* already logged */ }
+  }
 
-  _recomputeInFlight = run();
+  const categories = await db
+    .select()
+    .from(bufferCategoriesTable)
+    .where(eq(bufferCategoriesTable.segment, segmentParam))
+    .orderBy(bufferCategoriesTable.name);
 
-  // Wait for completion (up to 5 minutes — reading 24 Google Sheets tabs takes time)
-  try {
-    await _recomputeInFlight;
-  } catch { /* already logged */ }
-
-  // Return only the categories for the segment that was being served.
-  // The seasonality engine is currently PTMT-only; for Plumbing, the recompute
-  // is a no-op on the engine but the Plumbing rows are returned as-is.
-  const segmentParam = req.query.segment ? String(req.query.segment) : undefined;
-  const categoriesQuery = db.select().from(bufferCategoriesTable).orderBy(bufferCategoriesTable.name);
-  const categories = segmentParam
-    ? await db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segmentParam)).orderBy(bufferCategoriesTable.name)
-    : await categoriesQuery;
-
-  res.json({ categories, computedAt: new Date().toISOString(), zScore });
+  res.json({ categories, computedAt: new Date().toISOString(), zScore, segment: segmentParam });
 });
 
 export default router;

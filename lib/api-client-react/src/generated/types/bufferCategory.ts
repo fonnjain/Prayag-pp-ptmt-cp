@@ -17,6 +17,7 @@ import type { BufferCategorySeasonalIndices } from './bufferCategorySeasonalIndi
 import type { BufferCategoryLastComputedAt } from './bufferCategoryLastComputedAt';
 import type { BufferCategoryDataQuality } from './bufferCategoryDataQuality';
 import type { BufferCategoryZScore } from './bufferCategoryZScore';
+import type { BufferCategoryReliabilityFlag } from './bufferCategoryReliabilityFlag';
 
 export interface BufferCategory {
   id: number;
@@ -37,4 +38,6 @@ export interface BufferCategory {
   lastComputedAt?: BufferCategoryLastComputedAt;
   dataQuality?: BufferCategoryDataQuality;
   zScore?: BufferCategoryZScore;
+  /** null=clean | 'insufficient data — override required' | 'unreliable — structural growth/launch, override recommended' | 'thin data — review' */
+  reliabilityFlag?: BufferCategoryReliabilityFlag;
 }

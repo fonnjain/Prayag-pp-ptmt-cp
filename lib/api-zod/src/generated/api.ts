@@ -35,7 +35,8 @@ export const listBufferCategoriesResponseItem = zod.object({
   "seasonalIndices": zod.string().nullish(),
   "lastComputedAt": zod.string().datetime({}).nullish(),
   "dataQuality": zod.string().nullish(),
-  "zScore": zod.number().nullish()
+  "zScore": zod.number().nullish(),
+  "reliabilityFlag": zod.string().nullish().describe('null=clean | \'insufficient data — override required\' | \'unreliable — structural growth\/launch, override recommended\' | \'thin data — review\'')
 })
 export const listBufferCategoriesResponse = zod.array(listBufferCategoriesResponseItem)
 
@@ -73,7 +74,8 @@ export const updateBufferCategoryResponse = zod.object({
   "seasonalIndices": zod.string().nullish(),
   "lastComputedAt": zod.string().datetime({}).nullish(),
   "dataQuality": zod.string().nullish(),
-  "zScore": zod.number().nullish()
+  "zScore": zod.number().nullish(),
+  "reliabilityFlag": zod.string().nullish().describe('null=clean | \'insufficient data — override required\' | \'unreliable — structural growth\/launch, override recommended\' | \'thin data — review\'')
 })
 
 
@@ -106,7 +108,8 @@ export const recomputeSeasonalityResponse = zod.object({
   "seasonalIndices": zod.string().nullish(),
   "lastComputedAt": zod.string().datetime({}).nullish(),
   "dataQuality": zod.string().nullish(),
-  "zScore": zod.number().nullish()
+  "zScore": zod.number().nullish(),
+  "reliabilityFlag": zod.string().nullish().describe('null=clean | \'insufficient data — override required\' | \'unreliable — structural growth\/launch, override recommended\' | \'thin data — review\'')
 })),
   "segmentBenchmark": zod.object({
   "category": zod.string(),

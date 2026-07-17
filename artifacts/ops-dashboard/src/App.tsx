@@ -6,7 +6,7 @@ import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import { useState, useMemo, Fragment, useRef, useCallback } from "react";
+import { useState, useMemo, Fragment, useRef, useCallback, useEffect } from "react";
 import {
   LayoutDashboard, ShoppingCart, Factory, TrendingUp, Database,
   RefreshCw, ChevronRight, AlertCircle, Loader2, Layers, ChevronDown, ChevronUp,
@@ -1172,8 +1172,29 @@ function ProductionPage() {
   );
 }
 
-// ─── Stock Buffer Engine ───────────────────────────────────────────────────────
-type SeedCategory = (typeof SEED.stock_buffer.categories)[number];
+// ─── Stock Buffer Engine ─────────────────────────────────────────────────────
+
+interface BufferCategory {
+  id: number;
+  name: string;
+  segment: string;
+  multiplier: number;
+  updatedAt: string;
+  suggestedMultiplier: number | null;
+  overrideMultiplier: number | null;
+  cvValue: number | null;
+  volatilityClass: string | null;
+  avgMonth: number | null;
+  peakMonth: string | null;
+  peakIndex: number | null;
+  yoy: number | null;
+  signal: string | null;
+  seasonalIndices: string | null;
+  dataQuality: string | null;
+  zScore: number | null;
+  reliabilityFlag: string | null;
+  lastComputedAt: string | null;
+}
 
 const Z_LEVELS = [
   { label: "90%", z: 1.28 },
@@ -1181,14 +1202,38 @@ const Z_LEVELS = [
   { label: "98%", z: 2.05 },
 ];
 
-function BufferHeatmap({ cat, applied }: { cat: SeedCategory; applied: number }) {
-  const values = FISCAL_MONTHS.map((m) => {
-    const si = (cat.seasonal_index as Record<string, number>)[m] ?? 0;
-    return si * applied;
-  });
-  const min = Math.min(...values);
-  const max = Math.max(...values);
+function reliabilityBadge(flag: string | null) {
+  if (!flag) return <span className="text-[10px] text-emerald-600 font-medium">✓ Clean</span>;
+  if (flag.includes("insufficient"))
+    return <span className="text-[10px] bg-red-100 text-red-700 font-medium px-1.5 py-0.5 rounded" title={flag}>No data</span>;
+  if (flag.includes("unreliable"))
+    return <span className="text-[10px] bg-orange-100 text-orange-700 font-medium px-1.5 py-0.5 rounded" title={flag}>⚠ Unreliable</span>;
+  if (flag.includes("thin"))
+    return <span className="text-[10px] bg-amber-100 text-amber-700 font-medium px-1.5 py-0.5 rounded" title={flag}>Thin data</span>;
+  return <span className="text-[10px] text-muted-foreground" title={flag}>⚠ Review</span>;
+}
 
+function parseIndices(raw: string | null): Record<string, number> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      // Plumbing engine stores indices as number[] aligned to FISCAL_MONTHS order
+      const result: Record<string, number> = {};
+      FISCAL_MONTHS.forEach((m, i) => { if (parsed[i] != null) result[m] = parsed[i] as number; });
+      return result;
+    }
+    return parsed as Record<string, number>;
+  } catch { return {}; }
+}
+
+function LiveBufferHeatmap({ indices, applied }: { indices: Record<string, number>; applied: number }) {
+  const values = FISCAL_MONTHS.map((m) => (indices[m] ?? 0) * applied);
+  const hasData = values.some((v) => v > 0);
+  if (!hasData) return <p className="text-xs text-muted-foreground mt-2 italic">No seasonal index data available.</p>;
+  const positiveVals = values.filter((v) => v > 0);
+  const min = Math.min(...positiveVals);
+  const max = Math.max(...positiveVals);
   return (
     <div className="mt-4">
       <h4 className="text-xs font-semibold text-foreground mb-2 uppercase tracking-wide">
@@ -1197,95 +1242,224 @@ function BufferHeatmap({ cat, applied }: { cat: SeedCategory; applied: number })
       <div className="grid grid-cols-12 gap-1">
         {FISCAL_MONTHS.map((m, i) => {
           const v = values[i];
-          const bg = heatColor(v, min, max);
+          const bg = v > 0 ? heatColor(v, min, max) : "#d1d5db";
           return (
             <div key={m} className="flex flex-col items-center gap-0.5">
               <div
                 className="w-full h-9 rounded flex items-center justify-center text-[10px] font-bold text-white"
                 style={{ background: bg }}
               >
-                {v.toFixed(2)}
+                {v > 0 ? v.toFixed(2) : "–"}
               </div>
               <span className="text-[9px] text-muted-foreground">{m}</span>
             </div>
           );
         })}
       </div>
-      <div className="flex items-center gap-3 mt-2 text-[10px] text-muted-foreground">
-        <span>▪ Low (trim)</span>
-        <div className="flex gap-0.5">
-          {[0,0.25,0.5,0.75,1].map((t) => (
-            <div key={t} className="w-6 h-2 rounded-sm" style={{ background: heatColor(min + t*(max-min), min, max) }} />
-          ))}
-        </div>
-        <span>▪ High (build up)</span>
-      </div>
-    </div>
-  );
-}
-
-function BufferTargets({ cat, applied }: { cat: SeedCategory; applied: number }) {
-  const growth = cat.planning_growth;
-  const rows = FISCAL_MONTHS.map((m) => {
-    const si = (cat.seasonal_index as Record<string, number>)[m] ?? 0;
-    const target = cat.avg_month_units * (1 + growth) * si * applied;
-    return { month: m, seasonal_index: si, target };
-  });
-  return (
-    <div className="mt-4">
-      <h4 className="text-xs font-semibold text-foreground mb-2 uppercase tracking-wide">
-        Next-Year Monthly Targets
-        <span className="ml-2 font-normal text-muted-foreground normal-case">
-          ({growth >= 0 ? "+" : ""}{(growth * 100).toFixed(1)}% growth assumption)
-        </span>
-      </h4>
-      <div className="grid grid-cols-12 gap-1">
-        {rows.map(({ month, seasonal_index, target }) => (
-          <div key={month} className="flex flex-col items-center gap-0.5 text-center">
-            <div className="text-[10px] font-bold text-foreground">{fmtQty(Math.round(target))}</div>
-            <div className="text-[9px] text-muted-foreground">{month}</div>
-            <div className="text-[9px] text-muted-foreground/60">si:{seasonal_index.toFixed(2)}</div>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
 
 function StockBufferPage() {
+  const [segment, setSegment] = useState<"PTMT" | "Plumbing">("PTMT");
   const [z, setZ] = useState(1.65);
-  const [overrides, setOverrides] = useState<Record<string, string>>(() => {
-    try { return JSON.parse(localStorage.getItem("buf-overrides") ?? "{}"); }
-    catch { return {}; }
+  const [expanded, setExpanded] = useState<number | null>(null);
+  const [overrideDrafts, setOverrideDrafts] = useState<Record<number, string>>({});
+  const [savingId, setSavingId] = useState<number | null>(null);
+  const [recomputing, setRecomputing] = useState(false);
+  const [recomputeError, setRecomputeError] = useState<string | null>(null);
+
+  const { data: categories = [], isLoading, error, refetch } = useQuery<BufferCategory[]>({
+    queryKey: ["buffer-categories", segment],
+    queryFn: async () => {
+      const res = await fetch(`/api/buffer-categories?segment=${segment}`);
+      if (!res.ok) throw new Error("Failed to load categories");
+      return res.json();
+    },
   });
-  const [expanded, setExpanded] = useState<string | null>(null);
 
-  const categories = SEED.stock_buffer.categories;
+  // Sync drafts from persisted overrides whenever API data changes
+  useEffect(() => {
+    setOverrideDrafts((prev) => {
+      const next: Record<number, string> = {};
+      for (const cat of categories) {
+        next[cat.id] = prev[cat.id] ?? (cat.overrideMultiplier != null ? cat.overrideMultiplier.toFixed(3) : "");
+      }
+      return next;
+    });
+  }, [categories]);
 
-  function getSuggested(cat: SeedCategory) { return 1 + z * cat.cv; }
-  function getApplied(cat: SeedCategory) {
-    const ov = overrides[cat.category];
-    const num = ov !== undefined && ov !== "" ? parseFloat(ov) : NaN;
-    return isNaN(num) ? getSuggested(cat) : num;
+  // Reset on segment change
+  useEffect(() => {
+    setOverrideDrafts({});
+    setExpanded(null);
+    setRecomputeError(null);
+  }, [segment]);
+
+  function computedSuggested(cat: BufferCategory): number | null {
+    if (cat.cvValue == null) return cat.suggestedMultiplier;
+    return parseFloat((1 + z * cat.cvValue).toFixed(3));
   }
 
-  function setOverride(category: string, val: string) {
-    const next = { ...overrides, [category]: val };
-    setOverrides(next);
-    localStorage.setItem("buf-overrides", JSON.stringify(next));
-  }
-  function clearOverride(category: string) {
-    const next = { ...overrides };
-    delete next[category];
-    setOverrides(next);
-    localStorage.setItem("buf-overrides", JSON.stringify(next));
+  async function saveOverride(cat: BufferCategory, forceNull = false) {
+    const draft = overrideDrafts[cat.id] ?? "";
+    const val = forceNull ? null : (draft === "" ? null : parseFloat(draft));
+    if (!forceNull && draft !== "" && (isNaN(val as number) || (val as number) < 0.5 || (val as number) > 10)) return;
+    setSavingId(cat.id);
+    try {
+      const res = await fetch(`/api/buffer-categories/${cat.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ overrideMultiplier: val }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      await refetch();
+    } finally {
+      setSavingId(null);
+    }
   }
 
-  const overrideCount = Object.values(overrides).filter((v) => v !== "").length;
+  async function doRecompute() {
+    setRecomputing(true);
+    setRecomputeError(null);
+    try {
+      const res = await fetch(`/api/buffer-categories/recompute?segment=${segment}&z=${z}`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? "Recompute failed");
+      }
+      await refetch();
+    } catch (e) {
+      setRecomputeError((e as Error).message);
+    } finally {
+      setRecomputing(false);
+    }
+  }
+
+  // Group Plumbing categories by material prefix
+  const grouped = useMemo(() => {
+    if (segment !== "Plumbing") return null;
+    const map: Record<string, BufferCategory[]> = {};
+    for (const cat of categories) {
+      const material = cat.name.split(" ")[0];
+      if (!map[material]) map[material] = [];
+      map[material].push(cat);
+    }
+    return map;
+  }, [categories, segment]);
+
+  const overrideCount = categories.filter((c) => c.overrideMultiplier != null).length;
+  const lastComputed = categories[0]?.lastComputedAt ?? null;
+  const storedZ = categories[0]?.zScore ?? null;
+
+  const theadCols = ["Category", "Avg/Month", "Vol", "Trend", "Peak", "Reliability", "Suggested ×", "Override ×", "Applied ×", ""];
+
+  const renderRow = (cat: BufferCategory) => {
+    const suggested = computedSuggested(cat);
+    const draft = overrideDrafts[cat.id] ?? "";
+    const isExpanded = expanded === cat.id;
+    const isSaving = savingId === cat.id;
+    const indices = parseIndices(cat.seasonalIndices);
+    const applied = cat.multiplier;
+
+    return (
+      <Fragment key={cat.id}>
+        <tr
+          className={cn(
+            "border-b border-border last:border-0 transition-colors",
+            isExpanded ? "bg-muted/30" : "hover:bg-muted/20 cursor-pointer"
+          )}
+          onClick={() => setExpanded(isExpanded ? null : cat.id)}
+        >
+          <td className="px-3 py-2.5 font-medium text-foreground whitespace-nowrap">{cat.name}</td>
+          <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">
+            {cat.avgMonth != null ? `${fmtQty(Math.round(cat.avgMonth))}/mo` : "–"}
+          </td>
+          <td className="px-3 py-2.5">{cat.volatilityClass ? volBadge(cat.volatilityClass) : <span className="text-muted-foreground">–</span>}</td>
+          <td className="px-3 py-2.5">{cat.signal ? trendBadge(cat.signal) : <span className="text-muted-foreground">–</span>}</td>
+          <td className="px-3 py-2.5 text-muted-foreground text-xs">{cat.peakMonth ?? "–"}</td>
+          <td className="px-3 py-2.5">{reliabilityBadge(cat.reliabilityFlag)}</td>
+          <td className="px-3 py-2.5 font-mono text-foreground">
+            {suggested != null ? suggested.toFixed(3) : <span className="text-muted-foreground text-xs">no data</span>}
+          </td>
+          <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                step="0.05"
+                min="0.5"
+                max="10"
+                value={draft}
+                placeholder={suggested != null ? suggested.toFixed(3) : "–"}
+                onChange={(e) => setOverrideDrafts((p) => ({ ...p, [cat.id]: e.target.value }))}
+                className="w-20 text-xs font-mono border border-border rounded px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+              <button
+                onClick={() => saveOverride(cat)}
+                disabled={isSaving}
+                title="Save override"
+                className="text-xs text-primary hover:text-primary/70 disabled:opacity-40 px-0.5"
+              >
+                {isSaving ? <Loader2 size={11} className="animate-spin" /> : "✓"}
+              </button>
+              {cat.overrideMultiplier != null && (
+                <button
+                  onClick={() => { setOverrideDrafts((p) => ({ ...p, [cat.id]: "" })); saveOverride(cat, true); }}
+                  title="Clear override"
+                  className="text-xs text-muted-foreground hover:text-destructive px-0.5"
+                >×</button>
+              )}
+            </div>
+          </td>
+          <td className="px-3 py-2.5">
+            <span className={cn("font-mono font-semibold", cat.overrideMultiplier != null ? "text-amber-600" : "text-foreground")}>
+              {applied.toFixed(3)}
+            </span>
+            {cat.overrideMultiplier != null && <span className="ml-1 text-[9px] text-amber-600 font-medium">OVR</span>}
+          </td>
+          <td className="px-3 py-2.5 text-muted-foreground">
+            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </td>
+        </tr>
+        {isExpanded && (
+          <tr key={`${cat.id}-detail`} className="bg-muted/10 border-b border-border">
+            <td colSpan={10} className="px-4 py-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <div className="flex flex-wrap gap-4 mb-3">
+                    {cat.cvValue != null && <span><strong>CV:</strong> {(cat.cvValue * 100).toFixed(1)}%</span>}
+                    {cat.yoy != null && <span><strong>YoY:</strong> {cat.yoy >= 0 ? "+" : ""}{(cat.yoy * 100).toFixed(1)}%</span>}
+                    {cat.avgMonth != null && <span><strong>Avg/month:</strong> {cat.avgMonth.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</span>}
+                    {cat.dataQuality && <span><strong>Quality:</strong> {cat.dataQuality}</span>}
+                  </div>
+                  {cat.reliabilityFlag && (
+                    <p className="text-amber-700 bg-amber-50 rounded px-2 py-1 mb-3">{cat.reliabilityFlag}</p>
+                  )}
+                  <LiveBufferHeatmap indices={indices} applied={applied} />
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground mb-2">Seasonal Indices</p>
+                  <div className="grid grid-cols-3 gap-1">
+                    {FISCAL_MONTHS.map((m) => (
+                      <div key={m} className="flex justify-between pr-2">
+                        <span className="text-muted-foreground">{m}:</span>
+                        <span className="font-mono">{indices[m] != null ? indices[m].toFixed(3) : "–"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </td>
+          </tr>
+        )}
+      </Fragment>
+    );
+  };
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Stock Buffer Engine</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
@@ -1294,7 +1468,25 @@ function StockBufferPage() {
         </div>
       </div>
 
-      {/* Service level selector */}
+      {/* Segment toggle */}
+      <div className="flex gap-2 mb-4">
+        {(["PTMT", "Plumbing"] as const).map((seg) => (
+          <button
+            key={seg}
+            onClick={() => setSegment(seg)}
+            className={cn(
+              "px-4 py-1.5 rounded-full text-sm font-medium border transition-colors",
+              segment === seg
+                ? "bg-primary text-primary-foreground border-primary"
+                : "border-border text-muted-foreground hover:bg-muted"
+            )}
+          >
+            {seg}
+          </button>
+        ))}
+      </div>
+
+      {/* Controls */}
       <div className="bg-card border border-card-border rounded-lg p-4 mb-5 flex items-center gap-6 flex-wrap">
         <div>
           <p className="text-xs font-semibold text-foreground uppercase tracking-wide mb-1.5">Service Level (z)</p>
@@ -1316,163 +1508,115 @@ function StockBufferPage() {
           </div>
         </div>
         <div className="text-xs text-muted-foreground">
-          <strong className="text-foreground">Suggested ×</strong> = 1 + z × CV
-          &nbsp;·&nbsp; <strong className="text-foreground">Applied</strong> = override if set, else suggested
-          &nbsp;·&nbsp; {overrideCount > 0 && (
-            <span className="text-amber-600 font-medium">{overrideCount} override{overrideCount > 1 ? "s" : ""} active</span>
+          <strong className="text-foreground">Suggested ×</strong> = 1 + z × CV (live preview)
+          &nbsp;·&nbsp; <strong className="text-foreground">Applied</strong> = DB-persisted (override ?? computed)
+          {overrideCount > 0 && (
+            <span className="text-amber-600 font-medium ml-2">{overrideCount} override{overrideCount > 1 ? "s" : ""} active</span>
           )}
         </div>
-        <div className="ml-auto text-xs text-muted-foreground">
-          Basis: {SEED.stock_buffer.basis}
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="bg-card border border-card-border rounded-lg overflow-hidden mb-5">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-muted/40">
-                {["Category","Avg/Month","Vol Class","Trend","Peak","Suggested ×","Override ×","Applied ×",""].map((h) => (
-                  <th key={h} className="text-left px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {categories.map((cat) => {
-                const suggested = getSuggested(cat);
-                const applied = getApplied(cat);
-                const hasOverride = overrides[cat.category] !== undefined && overrides[cat.category] !== "";
-                const isExpanded = expanded === cat.category;
-
-                return (
-                  <Fragment key={cat.category}>
-                    <tr
-                      className={cn(
-                        "border-b border-border last:border-0 transition-colors",
-                        isExpanded ? "bg-muted/30" : "hover:bg-muted/20 cursor-pointer"
-                      )}
-                      onClick={() => setExpanded(isExpanded ? null : cat.category)}
-                    >
-                      <td className="px-3 py-2.5 font-medium text-foreground whitespace-nowrap">
-                        {cat.category}
-                      </td>
-                      <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">
-                        {fmtQty(cat.avg_month_units)}/mo
-                      </td>
-                      <td className="px-3 py-2.5">{volBadge(cat.vol_class)}</td>
-                      <td className="px-3 py-2.5">{trendBadge(cat.trend_signal)}</td>
-                      <td className="px-3 py-2.5 text-muted-foreground">{cat.peak_month}</td>
-                      <td className="px-3 py-2.5 font-mono text-foreground">{suggested.toFixed(3)}</td>
-                      <td className="px-3 py-2.5" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            step="0.05"
-                            min="1"
-                            max="5"
-                            value={overrides[cat.category] ?? ""}
-                            placeholder={suggested.toFixed(3)}
-                            onChange={(e) => setOverride(cat.category, e.target.value)}
-                            className="w-20 text-xs font-mono border border-border rounded px-2 py-1 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                          />
-                          {hasOverride && (
-                            <button
-                              onClick={() => clearOverride(cat.category)}
-                              className="text-xs text-muted-foreground hover:text-destructive px-1"
-                              title="Clear override"
-                            >×</button>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <span className={cn(
-                          "font-mono font-semibold",
-                          hasOverride ? "text-amber-600" : "text-foreground"
-                        )}>
-                          {applied.toFixed(3)}
-                        </span>
-                        {hasOverride && (
-                          <span className="ml-1 text-[9px] text-amber-600 font-medium">OVR</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2.5 text-muted-foreground">
-                        {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                      </td>
-                    </tr>
-
-                    {/* Expanded detail row */}
-                    {isExpanded && (
-                      <tr key={`${cat.category}-detail`} className="bg-muted/10 border-b border-border">
-                        <td colSpan={9} className="px-4 py-4">
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
-                            <div>
-                              <div className="flex flex-wrap gap-2 mb-3">
-                                <span><strong>CV:</strong> {(cat.cv * 100).toFixed(1)}%</span>
-                                <span><strong>YoY:</strong> {cat.yoy >= 0 ? "+" : ""}{(cat.yoy * 100).toFixed(1)}%</span>
-                                <span><strong>Planning growth:</strong> {cat.planning_growth >= 0 ? "+" : ""}{(cat.planning_growth * 100).toFixed(1)}%</span>
-                                <span><strong>Avg/month:</strong> {cat.avg_month_units.toLocaleString()}</span>
-                              </div>
-                              <BufferHeatmap cat={cat} applied={applied} />
-                            </div>
-                            <div>
-                              <BufferTargets cat={cat} applied={applied} />
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Summary chart: Applied × across all categories */}
-      <div className="bg-card border border-card-border rounded-lg p-5">
-        <h3 className="text-sm font-semibold text-foreground mb-1">Applied Multiplier by Category</h3>
-        <p className="text-xs text-muted-foreground mb-4">Higher = wider safety buffer. Overrides shown in amber.</p>
-        <ResponsiveContainer width="100%" height={260}>
-          <BarChart
-            data={categories.map((cat) => ({
-              name: cat.category.length > 10 ? cat.category.slice(0, 10) + "…" : cat.category,
-              fullName: cat.category,
-              applied: parseFloat(getApplied(cat).toFixed(3)),
-              suggested: parseFloat(getSuggested(cat).toFixed(3)),
-              hasOverride: overrides[cat.category] !== undefined && overrides[cat.category] !== "",
-            }))}
-            margin={{ top: 4, right: 16, left: 0, bottom: 40 }}
+        <div className="ml-auto flex items-center gap-3">
+          {lastComputed && (
+            <span className="text-[11px] text-muted-foreground">
+              Computed {new Date(lastComputed).toLocaleDateString("en-IN")}{storedZ != null ? ` · z=${storedZ}` : ""}
+            </span>
+          )}
+          <button
+            onClick={doRecompute}
+            disabled={recomputing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-            <XAxis dataKey="name" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" interval={0} />
-            <YAxis tick={{ fontSize: 11 }} domain={[1, "auto"]} />
-            <Tooltip
-              content={({ active, payload }) => {
-                if (!active || !payload?.length) return null;
-                const d = payload[0].payload;
-                return (
-                  <div className="bg-card border border-card-border rounded-md px-3 py-2 text-xs shadow-md">
-                    <p className="font-semibold mb-1">{d.fullName}</p>
-                    <p>Applied ×: <strong>{d.applied}</strong></p>
-                    <p>Suggested ×: {d.suggested}</p>
-                    {d.hasOverride && <p className="text-amber-600 mt-1">Override active</p>}
-                  </div>
-                );
-              }}
-            />
-            <Bar dataKey="applied" radius={[3, 3, 0, 0]}>
-              {categories.map((cat) => {
-                const hasOvr = overrides[cat.category] !== undefined && overrides[cat.category] !== "";
-                return <Cell key={cat.category} fill={hasOvr ? AMBER : BLUE} />;
-              })}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+            {recomputing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            {recomputing ? "Computing…" : "Recompute"}
+          </button>
+        </div>
       </div>
+
+      {recomputeError && (
+        <div className="bg-red-50 border border-red-200 rounded-md px-4 py-2.5 mb-4 text-xs text-red-700 flex items-center gap-2">
+          <AlertCircle size={13} /> {recomputeError}
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground py-12 justify-center">
+          <Loader2 size={16} className="animate-spin" /> Loading categories…
+        </div>
+      )}
+      {error && <div className="text-sm text-destructive py-4 text-center">Failed to load categories. Check API connection.</div>}
+
+      {!isLoading && !error && (
+        <div className="bg-card border border-card-border rounded-lg overflow-hidden mb-5">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/40">
+                  {theadCols.map((h) => (
+                    <th key={h} className="text-left px-3 py-2.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground whitespace-nowrap">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {segment === "Plumbing" && grouped
+                  ? Object.entries(grouped).map(([material, cats]) => (
+                      <Fragment key={material}>
+                        <tr className="bg-muted/50 border-b border-border">
+                          <td colSpan={10} className="px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                            {material}
+                          </td>
+                        </tr>
+                        {cats.map(renderRow)}
+                      </Fragment>
+                    ))
+                  : categories.map(renderRow)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {!isLoading && categories.length > 0 && (
+        <div className="bg-card border border-card-border rounded-lg p-5">
+          <h3 className="text-sm font-semibold text-foreground mb-1">Applied Multiplier by Category</h3>
+          <p className="text-xs text-muted-foreground mb-4">Higher = wider safety buffer. Overrides shown in amber.</p>
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart
+              data={categories.map((cat) => ({
+                name: cat.name.length > 12 ? cat.name.slice(0, 12) + "…" : cat.name,
+                fullName: cat.name,
+                applied: cat.multiplier,
+                suggested: computedSuggested(cat) ?? cat.multiplier,
+                hasOverride: cat.overrideMultiplier != null,
+              }))}
+              margin={{ top: 4, right: 16, left: 0, bottom: 40 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis dataKey="name" tick={{ fontSize: 9 }} angle={-35} textAnchor="end" interval={0} />
+              <YAxis tick={{ fontSize: 11 }} domain={[1, "auto"]} />
+              <Tooltip
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const d = payload[0].payload;
+                  return (
+                    <div className="bg-card border border-card-border rounded-md px-3 py-2 text-xs shadow-md">
+                      <p className="font-semibold mb-1">{d.fullName}</p>
+                      <p>Applied ×: <strong>{(d.applied as number).toFixed(3)}</strong></p>
+                      <p>Suggested ×: {(d.suggested as number).toFixed(3)}</p>
+                      {d.hasOverride && <p className="text-amber-600 mt-1">Override active</p>}
+                    </div>
+                  );
+                }}
+              />
+              <Bar dataKey="applied" radius={[3, 3, 0, 0]}>
+                {categories.map((cat) => (
+                  <Cell key={cat.id} fill={cat.overrideMultiplier != null ? AMBER : BLUE} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
     </div>
   );
 }
