@@ -116,13 +116,19 @@ export async function buildPlanItems(month: string, segment: string = "PTMT"): P
   if (isPlumbing) {
     const fgStockRows = await loadLatestUploadRowsByKind("plumbing_fg_stock");
     for (const row of fgStockRows) {
+      // "Net Stock" is the canonical column name; also try hyphenated and lower-case variants
+      // that some ERP exports produce.
+      const rawNs = row["Net Stock"] ?? row["Net-Stock"] ?? row["Net stock"] ?? row["NetStock"];
       const ns =
-        typeof row["Net Stock"] === "number"
-          ? row["Net Stock"]
-          : Number(String(row["Net Stock"] ?? 0).replace(/,/g, ""));
+        typeof rawNs === "number"
+          ? rawNs
+          : Number(String(rawNs ?? 0).replace(/,/g, ""));
       if (ns > 0) {
         currentStockRows.push({ ...row, Qty: ns });
       } else if (ns < 0) {
+        // Negative Net Stock: stock = 0, pending-LM = |ns|.
+        // Push into pendingLastMoRows so the value is captured as Pending-LM.
+        // Do NOT push into currentStockRows — stock is intentionally zero for this item.
         pendingLastMoRows.push({ ...row, Qty: Math.abs(ns) });
       }
       // ns === 0: skip (no stock and no pending-LM contribution)
@@ -191,17 +197,10 @@ export async function buildPlanItems(month: string, segment: string = "PTMT"): P
       order: resolveTotal(liveOrderTotals, item.itemCode, item.colour, isSingleVariant),
     };
     const multiplier = bufferByCategory.get(item.category) ?? 1;
-    // SWR and AGRI use a different production formula (verified cell-by-cell vs master).
-    // Item codes for SWR/AGRI can be numeric (e.g. 5111, 5711) — stored as strings in item_master.
-    // Use toUpperCase + includes so the check is robust to mixed-case category names in item_master
-    // (e.g. "Swr Pipe", "AGRI FITTING") — a strict startsWith("SWR") on mixed-case would silently
-    // fall through to the standard formula, producing the wrong (CPVC/UPVC-style) result.
-    const catUpper = item.category.toUpperCase();
-    const formula =
-      isPlumbing && (catUpper.includes("SWR") || catUpper.includes("AGRI"))
-        ? ("swragri" as const)
-        : ("standard" as const);
-    const computed = computeItemPlan(source, item.category, multiplier, formula);
+    // One formula for all categories: max(BufferReq − Stock + PendingLM + Pending, 0).
+    // Buffer multiplier differs by material: CPVC/UPVC/AGRI = 1.5×, SWR = 1.0×.
+    // Stored in buffer_categories.multiplier — editable per category.
+    const computed = computeItemPlan(source, item.category, multiplier);
 
     // Plumbing: attach kg computed from BOM (never from master kg column).
     // ~3% of items may have no BOM entry — flag them, never drop or guess.

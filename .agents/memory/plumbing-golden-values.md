@@ -1,57 +1,61 @@
 ---
 name: Plumbing golden values
-description: July 2026 Production Required golden values for Plumbing validate — 12 categories, two formulas, grand total 1,922,309 pcs.
+description: July 2026 Production Required golden values for Plumbing — 12 categories, ONE formula for all, grand total 1,922,309 pcs.
 ---
-
-## Rule
-The Plumbing self-check asserts 12 exact integer golden values (one per planning line).
-AGRI Solvent = 0 is correct this month — no items in positive swragri formula territory.
-
-**⚠ Solvent golden values must be re-verified after the TRADING-row fix (see below).**
-Previously, Solvent items never entered item_master (TRADING rows were blanket-skipped),
-so plan computed 0 for them. Now they are correctly loaded and values will change.
 
 ## Verified July 2026 values
 
-| Category      | Prod Required | Formula  |
-|---------------|-------------:|----------|
-| CPVC Pipe     |      130,451 | standard |
-| CPVC Fitting  |      763,253 | standard |
-| CPVC Solvent  |       16,539 | standard |
-| UPVC Pipe     |       51,899 | standard |
-| UPVC Fitting  |      633,038 | standard |
-| UPVC Solvent  |          542 | standard |
-| SWR Pipe      |       64,515 | swragri  |
-| SWR Fitting   |      236,315 | swragri  |
-| SWR Solvent   |        1,255 | swragri  |
-| AGRI Pipe     |        9,688 | swragri  |
-| AGRI Fitting  |       14,814 | swragri  |
-| AGRI Solvent  |            0 | swragri  |
-| **TOTAL**     |  **1,922,309** |        |
+| Category      | Prod Required |
+|---------------|-------------:|
+| CPVC Pipe     |      130,451 |
+| CPVC Fitting  |      763,253 |
+| CPVC Solvent  |       16,539 |
+| UPVC Pipe     |       51,899 |
+| UPVC Fitting  |      633,038 |
+| UPVC Solvent  |          542 |
+| SWR Pipe      |       64,515 |
+| SWR Fitting   |      236,315 |
+| SWR Solvent   |        1,255 |
+| AGRI Pipe     |        9,688 |
+| AGRI Fitting  |       14,814 |
+| AGRI Solvent  |            0 |
+| **TOTAL**     |  **1,922,309** |
 
-## Two formulas
+## Formula — ONE formula for ALL 12 categories
 
-- **standard** (CPVC, UPVC): `max((BufferReq − Stock) + PendingLM + Pending, 0)`
-- **swragri** (SWR, AGRI): `max((Stock + Pending) − BufferReq + PendingLM, 0)`
+```
+MaxProduction = max(BufferReq − Stock + PendingLM + Pending, 0)
+BufferReq = Avg3MoSale × bufferMultiplier
+```
 
-Routed in `buildPlanItems` by `item.category.startsWith("SWR") || item.category.startsWith("AGRI")`.
-SWR/AGRI item codes can be numeric (5111, 5711); stored as strings in item_master — no special handling needed.
+**Why one formula:** A previous "swragri" variant (`max(stock + pending − buffer + lastMo, 0)`)
+was implemented based on incorrect instructions; it is wrong and has been removed (migration 011).
+The per-item `max(…,0)` clamp makes negative items contribute 0, which is equivalent to
+"sum only positive items" (master's SUMIFS > 0) without a separate code path.
 
-## 12 categories: 4 materials × 3 types
+## Buffer multipliers
 
-Pipe + Fitting + Solvent for CPVC, UPVC, SWR, AGRI.
-The 3 Solvent categories added in migration 008 (CPVC, UPVC, AGRI Solvent; SWR Solvent was migration 007).
+| Material | Default | Applied (DB) |
+|---|---|---|
+| CPVC | 1.5× | AI-tuned ~1.23–1.30 |
+| UPVC | 1.5× | AI-tuned ~1.23–1.29 |
+| AGRI | 1.5× | AI-tuned ~1.27–1.60 |
+| **SWR** | **1.0×** | **1.0× (fixed by migration 011)** |
 
-## Solvent detection in inferPlumbingCategory
+SWR was incorrectly seeded at 1.5× (migrations 006/007). Migration 011 corrects this.
+Multipliers stored in `buffer_categories.multiplier` (editable via Suggested/Override/Applied UI).
 
-Detect SOLVENT/CEMENT **before** generic Pipe/Fitting check. Resolve material first:
-- CPVC → "CPVC Solvent"
-- UPVC → "UPVC Solvent"
-- SWR  → "SWR Solvent"
-- AGRI → "AGRI Solvent"
-- No recognised material → null (row skipped)
+## Stock / Pending-LM from FG Stock upload
 
-## Source column per master tab
+`plumbing_fg_stock` Net Stock column (signed):
+- Net Stock > 0 → Stock = value; Pending-LM = 0
+- Net Stock < 0 → Stock = 0; Pending-LM = |value|
+- Net Stock = 0 → skip
 
-Detect by header label "PRODUCTION REQUIRED FOR JulXX (PCS)" — do NOT hard-code a column letter.
-Column shifts: CPVC→O, UPVC→Q, SWR→S, AGRI→S.
+Column name fallbacks tried: "Net Stock", "Net-Stock", "Net stock", "NetStock".
+
+## 12 categories
+
+4 materials (CPVC, UPVC, SWR, AGRI) × 3 types (Pipe, Fitting, Solvent).
+Solvent rows detected via item name (SOLVENT/CEMENT keyword) before Pipe/Fitting check.
+AGRI Solvent = 0 is correct — no items in positive territory this month.
