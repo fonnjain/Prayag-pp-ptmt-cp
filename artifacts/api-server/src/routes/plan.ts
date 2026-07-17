@@ -182,7 +182,13 @@ export async function buildPlanItems(month: string, segment: string = "PTMT"): P
       order: resolveTotal(liveOrderTotals, item.itemCode, item.colour, isSingleVariant),
     };
     const multiplier = bufferByCategory.get(item.category) ?? 1;
-    const computed = computeItemPlan(source, item.category, multiplier);
+    // SWR and AGRI use a different production formula (verified cell-by-cell vs master).
+    // Item codes for SWR/AGRI can be numeric (e.g. 5111, 5711) — stored as strings in item_master.
+    const formula =
+      isPlumbing && (item.category.startsWith("SWR") || item.category.startsWith("AGRI"))
+        ? ("swragri" as const)
+        : ("standard" as const);
+    const computed = computeItemPlan(source, item.category, multiplier, formula);
 
     // Plumbing: attach kg computed from BOM (never from master kg column).
     // ~3% of items may have no BOM entry — flag them, never drop or guess.
@@ -363,12 +369,10 @@ router.put("/plan/weekly-bands/:category", async (req, res): Promise<void> => {
  *   5. Grand Max total ≈ 576,037 (±5 %)
  *   6. Grand Min total ≈ 301,918 (±5 %)
  *
- * Plumbing checks (4) — exact integer match, verified July 2026 vs master Excel:
- *   1. CPVC Pipe Production Required   = 130,451
- *   2. CPVC Fitting Production Required = 763,253
- *   3. UPVC Pipe Production Required   = 51,899
- *   4. UPVC Fitting Production Required = 633,038
- *   SWR + AGRI are informational only (separate material planning sheets; 0 this month is correct).
+ * Plumbing checks (12) — exact integer match, verified cell-by-cell vs Daily Production PLUMBING master.
+ * 12 lines = 4 materials (CPVC, UPVC, SWR, AGRI) × 3 types (Pipe, Fitting, Solvent).
+ * Grand total = 1,922,309 pcs (matches Pipe Summary management tab).
+ * CPVC/UPVC use the "standard" formula; SWR/AGRI use the "swragri" formula.
  *
  * Data sources (Plumbing):
  *   Stock + Pending-LM  → plumbing_fg_stock upload, Col R split by sign
@@ -412,18 +416,23 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     //   UPVC tab → col Q header "PRODUCTION REQUIRED FOR Jul26 (PCS)"
     //   SWR  tab → col S header "PRODUCTION REQUIRED FOR Jul26 (PCS)"
     //   AGRI tab → col S header "PRODUCTION REQUIRED FOR Jul26 (PCS)"
-    // Grand total = 1,905,228 pcs (matches Pipe Summary management tab).
-    // All 9 categories carry real plan quantities — none may be zero.
+    // Do NOT use a fixed column letter — detect by header label per tab.
+    // Grand total = 1,922,309 pcs (matches Pipe Summary management tab).
+    // All 12 categories present; AGRI Solvent = 0 this month (no items in positive territory).
+    // CPVC/UPVC → standard formula; SWR/AGRI → swragri formula.
     const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
       { cat: "CPVC Pipe",    expected: 130451 },
       { cat: "CPVC Fitting", expected: 763253 },
+      { cat: "CPVC Solvent", expected: 16539  },
       { cat: "UPVC Pipe",    expected: 51899  },
       { cat: "UPVC Fitting", expected: 633038 },
+      { cat: "UPVC Solvent", expected: 542    },
       { cat: "SWR Pipe",     expected: 64515  },
       { cat: "SWR Fitting",  expected: 236315 },
       { cat: "SWR Solvent",  expected: 1255   },
       { cat: "AGRI Pipe",    expected: 9688   },
       { cat: "AGRI Fitting", expected: 14814  },
+      { cat: "AGRI Solvent", expected: 0      },
     ];
 
     const checks: CheckResult[] = PLUMBING_GOLDEN.map(({ cat, expected }) => {

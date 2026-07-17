@@ -54,25 +54,38 @@ const round = (n: number): number => Math.round(n * 100) / 100;
 
 /**
  * Computes a single item's production plan line.
- * Formulas (confirmed against PTMT_Production_Plan_July_2026 workbook):
- *   Avg3MoSale   = sum(last 3 months sale) / 3
- *   BufferReq    = Avg3MoSale * bufferMultiplier
- *   MinProduction = max(Avg3MoSale - Stock, 0)
- *   MaxProduction = max((BufferReq - Stock) + PendingOrderLastMonth + PendingOrder, 0)
- *   Order is a separate live order-book figure and is NOT part of the Max formula.
- *   Cover = Stock / Avg3MoSale (months of cover); "OS" when Avg3MoSale = 0.
+ *
+ * Two formulas, verified cell-by-cell against the master production workbooks:
+ *
+ * "standard" — used by PTMT (all categories) and Plumbing CPVC/UPVC:
+ *   MaxProduction = max((BufferReq − Stock) + PendingOrderLastMonth + PendingOrder, 0)
+ *   Produces MORE when stock is LOW vs. the buffer target.
+ *
+ * "swragri" — used by Plumbing SWR and AGRI categories:
+ *   MaxProduction = max((Stock + PendingOrder) − BufferReq + PendingOrderLastMonth, 0)
+ *   Produces MORE when stock+pending is HIGH; only POSITIVE item values contribute
+ *   to the category subtotal (negative items are correctly zeroed out by max(…,0)).
+ *
+ * Common to both:
+ *   Avg3MoSale    = sum(last 3 months sale) / 3
+ *   BufferReq     = Avg3MoSale × bufferMultiplier
+ *   MinProduction = max(Avg3MoSale − Stock, 0)
+ *   Cover         = Stock / Avg3MoSale (months of cover); "OS" when Avg3MoSale = 0.
+ *   Order is a separate live order-book figure and is NOT included in MaxProduction.
  */
 export function computeItemPlan(
   source: ItemSourceRow,
   category: string,
   bufferMultiplier: number,
+  formula: "standard" | "swragri" = "standard",
 ): CalcPlanItem {
   const avg3MoSale = round(source.avg3MoSaleTotal3Mo / 3);
   const bufferReq = round(avg3MoSale * bufferMultiplier);
   const minProduction = round(Math.max(avg3MoSale - source.stock, 0));
-  const maxProduction = round(
-    Math.max(bufferReq - source.stock + source.pendingOrderLastMonth + source.pendingOrder, 0),
-  );
+  const maxProduction =
+    formula === "swragri"
+      ? round(Math.max(source.stock + source.pendingOrder - bufferReq + source.pendingOrderLastMonth, 0))
+      : round(Math.max(bufferReq - source.stock + source.pendingOrderLastMonth + source.pendingOrder, 0));
   const cover: number | "OS" = avg3MoSale > 0 ? round(source.stock / avg3MoSale) : "OS";
 
   return {

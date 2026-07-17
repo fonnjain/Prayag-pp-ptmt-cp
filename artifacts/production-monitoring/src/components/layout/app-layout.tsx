@@ -88,6 +88,7 @@ export function AppLayout({
 }: AppLayoutProps) {
   const [location] = useLocation();
   const isPlantPage = PLANT_PATHS.has(location);
+  const isPlumbingPage = location === "/plumbing";
 
   const { data: bundleRaw } = useGetPlantBundle(
     { month },
@@ -151,25 +152,63 @@ export function AppLayout({
         <div className="p-6 border-b border-sidebar-border">
           <div className="flex items-center gap-3 font-bold text-sidebar-primary tracking-tight uppercase text-xl">
             <div className="w-4 h-4 bg-sidebar-primary"></div>
-            PTMT Mon
+            {isPlumbingPage ? "Plumbing Mon" : "PTMT Mon"}
           </div>
         </div>
         <div className="flex-1 overflow-y-auto py-4 space-y-4">
-          <div className="px-3">
-            {sectionLabel("Plant Level", Factory)}
-            <nav className="space-y-1">{plantNavItems.map(navLink)}</nav>
-          </div>
-          <div className="px-3">
-            {sectionLabel("Machine Level", Cpu)}
-            <nav className="space-y-1">{machineNavItems.map(navLink)}</nav>
-          </div>
+          {isPlumbingPage ? (
+            <div className="px-3">
+              {sectionLabel("Plumbing", Factory)}
+              <nav className="space-y-1">
+                {navLink({ href: "/plumbing", label: "Plan Overview", icon: LayoutDashboard })}
+              </nav>
+              <p className="mt-4 px-3 text-xs text-muted-foreground leading-relaxed">
+                Live machine feed not yet connected. Plumbing plan targets are computed from uploaded FG Stock
+                and live Google Sheets data.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="px-3">
+                {sectionLabel("Plant Level", Factory)}
+                <nav className="space-y-1">{plantNavItems.map(navLink)}</nav>
+              </div>
+              <div className="px-3">
+                {sectionLabel("Machine Level", Cpu)}
+                <nav className="space-y-1">{machineNavItems.map(navLink)}</nav>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="h-16 border-b border-border bg-card shrink-0 sticky top-0 z-10 flex items-center justify-between px-8">
-          <h1 className="font-semibold text-lg">Production Performance &amp; Monitoring</h1>
+          <div className="flex items-center gap-4">
+            <h1 className="font-semibold text-lg">Production Performance &amp; Monitoring</h1>
+            {/* PTMT / Plumbing segment toggle */}
+            <div className="flex bg-muted rounded-md p-0.5 gap-0.5 text-sm">
+              <a
+                href="/monitoring/plant"
+                className={cn(
+                  "px-3 py-1 rounded transition-colors",
+                  !isPlumbingPage
+                    ? "bg-background shadow text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >PTMT</a>
+              <a
+                href="/monitoring/plumbing"
+                className={cn(
+                  "px-3 py-1 rounded transition-colors",
+                  isPlumbingPage
+                    ? "bg-background shadow text-foreground font-medium"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >Plumbing</a>
+            </div>
+          </div>
 
           <div className="flex items-center gap-3">
             {/* Type (category) filter — only on plant pages */}

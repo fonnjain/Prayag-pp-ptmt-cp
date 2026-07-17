@@ -1,42 +1,53 @@
 ---
 name: Plumbing golden values
-description: July 2026 verified Production Required (PCS) per category; column letter varies per master tab; SWR Solvent is 9th category.
+description: July 2026 Production Required golden values for Plumbing validate — 12 categories, two formulas, grand total 1,922,309 pcs.
 ---
 
 ## Rule
-The Plumbing self-check asserts 9 exact integer golden values against the live plan.
-Every category must be non-zero — none are informational/optional.
+The Plumbing self-check asserts 12 exact integer golden values (one per planning line).
+AGRI Solvent = 0 is correct this month — no items in positive swragri formula territory.
 
 ## Verified July 2026 values
-| Category      | Production Required (PCS) |
-|---------------|--------------------------|
-| CPVC Pipe     | 130,451                  |
-| CPVC Fitting  | 763,253                  |
-| UPVC Pipe     |  51,899                  |
-| UPVC Fitting  | 633,038                  |
-| SWR Pipe      |  64,515                  |
-| SWR Fitting   | 236,315                  |
-| SWR Solvent   |   1,255                  |
-| AGRI Pipe     |   9,688                  |
-| AGRI Fitting  |  14,814                  |
-| **TOTAL**     | **1,905,228**            |
 
-Source: Daily Production PLUMBING master Excel, per-material tabs.
+| Category      | Prod Required | Formula  |
+|---------------|-------------:|----------|
+| CPVC Pipe     |      130,451 | standard |
+| CPVC Fitting  |      763,253 | standard |
+| CPVC Solvent  |       16,539 | standard |
+| UPVC Pipe     |       51,899 | standard |
+| UPVC Fitting  |      633,038 | standard |
+| UPVC Solvent  |          542 | standard |
+| SWR Pipe      |       64,515 | swragri  |
+| SWR Fitting   |      236,315 | swragri  |
+| SWR Solvent   |        1,255 | swragri  |
+| AGRI Pipe     |        9,688 | swragri  |
+| AGRI Fitting  |       14,814 | swragri  |
+| AGRI Solvent  |            0 | swragri  |
+| **TOTAL**     |  **1,922,309** |        |
 
-## Why column letter differs per tab
-The "PRODUCTION REQUIRED FOR Jul26 (PCS)" column sits at a different position per tab:
-- CPVC tab → col O
-- UPVC tab → col Q
-- SWR  tab → col S
-- AGRI tab → col S
+## Two formulas
 
-Do not assume a fixed column; detect by the header label.
+- **standard** (CPVC, UPVC): `max((BufferReq − Stock) + PendingLM + Pending, 0)`
+- **swragri** (SWR, AGRI): `max((Stock + Pending) − BufferReq + PendingLM, 0)`
 
-## SWR Solvent is the 9th category
-SWR Solvent (solvent cement) is a manufactured product separate from SWR Pipe/Fitting.
-In the FG Stock file its Category column contains "SOLVENT" or "SWR CEMENT".
-`inferPlumbingCategory` detects SOLVENT/SWR+CEMENT BEFORE the generic SWR check to prevent misclassification.
-Seeded in `buffer_categories` and `weekly_release_bands` via migration 007.
+Routed in `buildPlanItems` by `item.category.startsWith("SWR") || item.category.startsWith("AGRI")`.
+SWR/AGRI item codes can be numeric (5111, 5711); stored as strings in item_master — no special handling needed.
 
-**Why:**
-Previous session incorrectly noted "SWR and AGRI may show 0, which is correct" — that was based on reading the wrong column in the master Excel. All 9 categories have real plan quantities.
+## 12 categories: 4 materials × 3 types
+
+Pipe + Fitting + Solvent for CPVC, UPVC, SWR, AGRI.
+The 3 Solvent categories added in migration 008 (CPVC, UPVC, AGRI Solvent; SWR Solvent was migration 007).
+
+## Solvent detection in inferPlumbingCategory
+
+Detect SOLVENT/CEMENT **before** generic Pipe/Fitting check. Resolve material first:
+- CPVC → "CPVC Solvent"
+- UPVC → "UPVC Solvent"
+- SWR  → "SWR Solvent"
+- AGRI → "AGRI Solvent"
+- No recognised material → null (row skipped)
+
+## Source column per master tab
+
+Detect by header label "PRODUCTION REQUIRED FOR JulXX (PCS)" — do NOT hard-code a column letter.
+Column shifts: CPVC→O, UPVC→Q, SWR→S, AGRI→S.

@@ -27,7 +27,19 @@ import { cn, fmtDateTime } from "@/lib/utils";
 
 type UploadKindDef = { kind: (typeof UploadKind)[keyof typeof UploadKind]; label: string; hint: string; required: boolean };
 
-const PTMT_UPLOAD_KINDS: UploadKindDef[] = [
+// ── Global uploads — shared by ALL segments ──────────────────────────────────
+// Upload once; the plan engine routes rows to PTMT or Plumbing via the Segment column.
+const GLOBAL_UPLOAD_KINDS: UploadKindDef[] = [
+  {
+    kind: UploadKind.pending_orders,
+    label: "DATA.xlsx — current pending orders (shared)",
+    hint: "DATA.xlsx PendingOrder sheet. Rows tagged Segment ∈ {PTMT, PT} → PTMT pending. Rows tagged Segment = Plumbing → Plumbing pending. Upload once; both segments read from it automatically.",
+    required: true,
+  },
+];
+
+// ── Segment-local uploads — consumed only by the active segment ───────────────
+const PTMT_LOCAL_UPLOAD_KINDS: UploadKindDef[] = [
   {
     kind: UploadKind.current_stock,
     label: "1 · F.G. STOCK Factory Excel",
@@ -35,30 +47,18 @@ const PTMT_UPLOAD_KINDS: UploadKindDef[] = [
     required: true,
   },
   {
-    kind: UploadKind.pending_orders,
-    label: "2 · DATA.xlsx (ERP export)",
-    hint: "DATA.xlsx — reads PendingOrder sheet: filters Segment ∈ {PTMT, PT}, groups by Old Item Code + Color, sums Balance_Qty. Provides current Pending Order.",
-    required: true,
-  },
-  {
     kind: UploadKind.last_month_pending,
-    label: "3 · LAST_MONTH_PENDING_ORDERS file",
+    label: "2 · LAST_MONTH_PENDING_ORDERS file",
     hint: "LAST_MONTH_PENDING_ORDERS_<month>.xlsx — reads PTMT tab: Item Code + Colour + Qty. Provides last-month Pending Order. Total should be ~137,939.",
     required: true,
   },
 ];
 
-const PLUMBING_UPLOAD_KINDS: UploadKindDef[] = [
+const PLUMBING_LOCAL_UPLOAD_KINDS: UploadKindDef[] = [
   {
     kind: UploadKind.plumbing_fg_stock,
-    label: "1 · FG Stock file (stock + pending last month)",
-    hint: 'e.g. "FG Stock and Pending Production month of June.xlsx" → worksheet "FG Stock". Col A = Item Code, Col C = Category, Col R = Net Stock. POSITIVE Net Stock → opening stock as on 1st of the planning month. NEGATIVE Net Stock → absolute value = pending order last month (oversold item). Both inputs come from this single file.',
-    required: true,
-  },
-  {
-    kind: UploadKind.pending_orders,
-    label: "2 · DATA.xlsx — shared (PTMT + Plumbing)",
-    hint: "DATA.xlsx — same file as PTMT. PendingOrder sheet: rows tagged Segment = Plumbing are consumed for current Plumbing pending orders. Upload once; both segments use it.",
+    label: "FG Stock file (stock + pending last month)",
+    hint: 'e.g. "FG Stock and Pending Production month of June.xlsx" → worksheet "FG Stock". Col R = Net Stock: POSITIVE → opening stock (1st of month). NEGATIVE → absolute value = pending order last month. Category col maps to one of 12 planning lines (CPVC/UPVC/SWR/AGRI × Pipe/Fitting/Solvent).',
     required: true,
   },
 ];
@@ -829,7 +829,7 @@ function ValidationPanel({ segment }: { segment: string }) {
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
         {isPlumbing
-          ? "Runs 9 golden-value spot-checks (per-category Production Required vs. verified July 2026 master Excel). All must pass before the Plumbing plan is trustworthy."
+          ? "Runs 12 golden-value spot-checks — one per planning line (4 materials × 3 types: Pipe/Fitting/Solvent), verified cell-by-cell vs July 2026 master Excel. All must pass before the Plumbing plan is trustworthy."
           : "Runs 6 golden-value spot-checks against the uploaded files and live sheet data. All checks must pass before the plan is trustworthy. Fails are shown loudly — no silent fallbacks."}
       </p>
 
@@ -898,7 +898,7 @@ function ValidationPanel({ segment }: { segment: string }) {
 
 export default function DataPage() {
   const { segment } = useSegment();
-  const uploadKinds = segment === "Plumbing" ? PLUMBING_UPLOAD_KINDS : PTMT_UPLOAD_KINDS;
+  const localUploadKinds = segment === "Plumbing" ? PLUMBING_LOCAL_UPLOAD_KINDS : PTMT_LOCAL_UPLOAD_KINDS;
 
   return (
     <AppLayout>
@@ -907,35 +907,60 @@ export default function DataPage() {
           <h2 className="text-xl font-semibold">Data — {segment}</h2>
           <p className="text-sm text-gray-500">
             {segment === "Plumbing"
-              ? "Two monthly file uploads are required before a Plumbing plan can be built. Avg 3-Month Sale is computed live from the Sale 26-27 Google Sheets connection."
-              : "All three monthly file uploads are required before a plan can be built. The Avg 3-Month Sale figure is computed live from the Sale 26-27 Google Sheets connection below."}
+              ? "One global upload (DATA.xlsx, shared with PTMT) + one local Plumbing upload. Avg 3-Month Sale comes live from the Sale 26-27 Google Sheets connection."
+              : "One global upload (DATA.xlsx, shared with Plumbing) + two local PTMT uploads. Avg 3-Month Sale comes live from the Sale 26-27 Google Sheets connection."}
           </p>
         </div>
 
+        {/* ── Global uploads — shared by both PTMT and Plumbing ── */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Global uploads — shared by all segments (1 required)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {GLOBAL_UPLOAD_KINDS.map((u) => (
+              <UploadRow key={u.kind} {...u} />
+            ))}
+            <div className="pt-3 text-xs text-gray-500 border-t mt-2">
+              DATA.xlsx must be uploaded here once. The plan engine reads the PendingOrder sheet and routes
+              rows to PTMT or Plumbing automatically based on the Segment column — no duplicate upload needed.
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── Local uploads — segment-specific ── */}
         <Card>
           <CardHeader>
             <CardTitle className="text-base">
-              Monthly file uploads — {segment} ({segment === "Plumbing" ? 2 : 3} required)
+              Local uploads — {segment} ({segment === "Plumbing" ? 1 : 2} required)
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {uploadKinds.map((u) => (
+            {localUploadKinds.map((u) => (
               <UploadRow key={u.kind} {...u} />
             ))}
             {segment === "PTMT" && (
               <div className="pt-3 text-xs text-gray-500 space-y-1 border-t mt-2">
                 <p>
                   <strong>Stock</strong> comes from the F.G Sheet of the F.G. STOCK factory Excel (col A/B/C).
-                  The LAST MONTH PENDING ITEMS tab inside that file is <em>not</em> used — upload file 3 instead.
-                </p>
-                <p>
-                  <strong>Current Pending Order</strong> comes from DATA.xlsx PendingOrder sheet — an ERP
-                  export that is reproducible and audit-friendly. The live "Pending order" Google Sheet
-                  drifts daily and is not used for planning.
+                  The LAST MONTH PENDING ITEMS tab inside that file is <em>not</em> used — upload file 2 instead.
                 </p>
                 <p>
                   <strong>Last-Month Pending</strong> comes from the dedicated LAST_MONTH file's PTMT tab
                   (not from F.G. STOCK). PTMT-segment total should be ~137,939.
+                </p>
+              </div>
+            )}
+            {segment === "Plumbing" && (
+              <div className="pt-3 text-xs text-gray-500 space-y-1 border-t mt-2">
+                <p>
+                  <strong>Net Stock column (Col R)</strong>: positive values → opening stock as on 1st of month;
+                  negative values → absolute value = pending order last month. Both come from this single file.
+                </p>
+                <p>
+                  <strong>Category column</strong> maps each row to one of 12 planning lines:
+                  CPVC/UPVC/SWR/AGRI × Pipe/Fitting/Solvent. TRADING, WATER TANK, PPR, and Column Pipe rows
+                  are excluded from the plan automatically.
                 </p>
               </div>
             )}

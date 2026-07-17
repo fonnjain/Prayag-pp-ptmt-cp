@@ -25,6 +25,7 @@ import PlantTrend from "@/pages/plant/trend";
 import PlantConfig from "@/pages/plant/plant-config";
 import PlantReports from "@/pages/plant/reports";
 import PlantCategories from "@/pages/plant/categories";
+import PlumbingMonitoring from "@/pages/plumbing";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -109,6 +110,9 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
         </Route>
         <Route path="/plant/categories">
           <PlantCategories month={month} selectedCategory={selectedCategory} />
+        </Route>
+        <Route path="/plumbing">
+          <PlumbingMonitoring month={month} />
         </Route>
         <Route component={NotFound} />
       </Switch>

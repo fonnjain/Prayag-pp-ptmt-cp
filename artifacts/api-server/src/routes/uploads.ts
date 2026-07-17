@@ -116,12 +116,14 @@ function sheetToObjects(sheet: XLSX.WorkSheet): Record<string, unknown>[] {
 
 /**
  * Map a raw material/group/category string from the Plumbing FG Stock file to
- * one of the 8 canonical Plumbing categories used in item_master.
+ * one of the 12 canonical Plumbing categories used in item_master.
  * Mirrors the mapGroupToCategory logic in seasonality-engine.ts.
  *
  * FG Stock file Category column uses the format: CPVC-PIPE, CPVC-FG, UPVC-PIPE,
- * UPVC-FG, SWR-PIPE, SWR-FG, Agri-Pipe, AGRI-FG.
+ * UPVC-FG, SWR-PIPE, SWR-FG, Agri-Pipe, AGRI-FG, CPVC-SOLVENT, SWR-CEMENT, etc.
  * The "-FG" suffix means "Fitting/Finished Goods" (= Fitting in the canonical catalogue).
+ *
+ * 12 canonical categories: 4 materials (CPVC, UPVC, SWR, AGRI) × 3 types (Pipe, Fitting, Solvent).
  *
  * Returns null for strings that cannot be mapped (row is skipped for item_master).
  */
@@ -139,14 +141,22 @@ function inferPlumbingCategory(raw: string): string | null {
     return null;
   }
 
+  // Detect SOLVENT/CEMENT BEFORE the generic Pipe/Fitting check — material is resolved first
+  // so that "CPVC-SOLVENT" → "CPVC Solvent" (not "CPVC Pipe") and "SWR CEMENT" → "SWR Solvent".
+  const isSolvent = g.includes("SOLVENT") || g.includes("CEMENT");
+  if (isSolvent) {
+    if (g.includes("CPVC")) return "CPVC Solvent";
+    if (g.includes("UPVC")) return "UPVC Solvent";
+    if (g.includes("SWR"))  return "SWR Solvent";
+    if (g.includes("AGRI") || g.includes("AGRICULTURE")) return "AGRI Solvent";
+    return null; // SOLVENT without a known material prefix — skip
+  }
+
   // "-FG" suffix = Fitting (FG Stock file convention); also honour legacy FITTING / FTG spellings.
   // "*-PIPE" or bare material name = Pipe.
-  // SWR Solvent (solvent cement) must be detected BEFORE the generic SWR check so that
-  // "SWR-SOLVENT" / "SWR CEMENT" / "SOLVENT CEMENT" does not fall through to SWR Pipe/Fitting.
   const isFitting = g.includes("FITTING") || g.includes("FTG") || g.endsWith("-FG") || g.endsWith(" FG");
   if (g.includes("CPVC")) return isFitting ? "CPVC Fitting" : "CPVC Pipe";
   if (g.includes("UPVC")) return isFitting ? "UPVC Fitting" : "UPVC Pipe";
-  if (g.includes("SOLVENT") || (g.includes("CEMENT") && g.includes("SWR"))) return "SWR Solvent";
   if (g.includes("SWR"))  return isFitting ? "SWR Fitting"  : "SWR Pipe";
   if (g.includes("AGRI") || g.includes("AGRICULTURE")) return isFitting ? "AGRI Fitting" : "AGRI Pipe";
   return null;
