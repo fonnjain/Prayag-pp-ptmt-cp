@@ -339,6 +339,12 @@ export const exportCorrectiveExcelParams = zod.object({
 })
 
 
+export const listCategoryCapacitiesQuerySegmentDefault = "PTMT";
+
+export const listCategoryCapacitiesQueryParams = zod.object({
+  "segment": zod.string().default(listCategoryCapacitiesQuerySegmentDefault).describe('Filter by segment: PTMT or Plumbing')
+})
+
 export const listCategoryCapacitiesResponseItem = zod.object({
   "id": zod.number(),
   "category": zod.string(),
@@ -388,10 +394,11 @@ export const updateCategoryCapacityResponse = zod.object({
 /**
  * @summary Recompute per-category capacity from trailing actuals
  */
-export const recomputeCategoryCapacityQueryTrailingDaysDefault = 90;
+export const recomputeCategoryCapacityQueryTrailingDaysDefault = 90;export const recomputeCategoryCapacityQuerySegmentDefault = "PTMT";
 
 export const recomputeCategoryCapacityQueryParams = zod.object({
-  "trailingDays": zod.number().default(recomputeCategoryCapacityQueryTrailingDaysDefault)
+  "trailingDays": zod.number().default(recomputeCategoryCapacityQueryTrailingDaysDefault),
+  "segment": zod.string().default(recomputeCategoryCapacityQuerySegmentDefault).describe('Segment to recompute: PTMT or Plumbing')
 })
 
 export const recomputeCategoryCapacityResponseItem = zod.object({

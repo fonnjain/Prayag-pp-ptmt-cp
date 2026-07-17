@@ -8,7 +8,10 @@ const router = Router();
 
 router.get("/capacity/categories", async (req, res) => {
   try {
-    const rows = await db.select().from(categoryCapacityTable);
+    const segment = req.query.segment ? String(req.query.segment) : undefined;
+    const rows = segment
+      ? await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment))
+      : await db.select().from(categoryCapacityTable);
     const result = rows.map(r => ({
       ...r,
       appliedCapacity: r.overrideCapacity != null ? r.overrideCapacity : r.suggestedCapacity,
@@ -59,8 +62,9 @@ router.patch("/capacity/categories/:category", async (req, res) => {
 
 router.post("/capacity/recompute", async (req, res) => {
   const trailingDays = req.query.trailingDays ? Number(req.query.trailingDays) : 90;
+  const segment = req.query.segment ? String(req.query.segment) : "PTMT";
   try {
-    const rows = await computeCategoryCapacity(trailingDays);
+    const rows = await computeCategoryCapacity(trailingDays, segment);
     const result = rows.map(r => ({
       ...r,
       appliedCapacity: r.overrideCapacity != null ? r.overrideCapacity : r.suggestedCapacity,

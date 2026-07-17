@@ -243,6 +243,12 @@ paths:
     get:
       operationId: listCategoryCapacities
       tags: [capacity]
+      parameters:
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
+          description: "Filter by segment: PTMT or Plumbing"
       responses:
         "200":
           description: List of per-category production capacities
@@ -288,6 +294,11 @@ paths:
           in: query
           required: false
           schema: { type: integer, default: 90 }
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
+          description: "Segment to recompute: PTMT or Plumbing"
       responses:
         "200":
           description: Recomputed category capacities

@@ -5,10 +5,9 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export type RecomputeCategoryCapacityParams = {
-trailingDays?: number;
+export type ListCategoryCapacitiesParams = {
 /**
- * Segment to recompute: PTMT or Plumbing
+ * Filter by segment: PTMT or Plumbing
  */
 segment?: string;
 };

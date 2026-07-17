@@ -157,10 +157,14 @@ router.post("/buffer-categories/recompute", async (req, res): Promise<void> => {
     await _recomputeInFlight;
   } catch { /* already logged */ }
 
-  const categories = await db
-    .select()
-    .from(bufferCategoriesTable)
-    .orderBy(bufferCategoriesTable.name);
+  // Return only the categories for the segment that was being served.
+  // The seasonality engine is currently PTMT-only; for Plumbing, the recompute
+  // is a no-op on the engine but the Plumbing rows are returned as-is.
+  const segmentParam = req.query.segment ? String(req.query.segment) : undefined;
+  const categoriesQuery = db.select().from(bufferCategoriesTable).orderBy(bufferCategoriesTable.name);
+  const categories = segmentParam
+    ? await db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segmentParam)).orderBy(bufferCategoriesTable.name)
+    : await categoriesQuery;
 
   res.json({ categories, computedAt: new Date().toISOString(), zScore });
 });

@@ -127,6 +127,7 @@ export * from './itemWeightWeightKg';
 export * from './listAiAnalysesParams';
 export * from './listAiPlantAnalysesParams';
 export * from './listBufferCategoriesParams';
+export * from './listCategoryCapacitiesParams';
 export * from './listCorrectiveRunsParams';
 export * from './listIdealHoursOverridesParams';
 export * from './listPlanItemsParams';

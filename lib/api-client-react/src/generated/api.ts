@@ -70,6 +70,7 @@ import type {
   ListAiAnalysesParams,
   ListAiPlantAnalysesParams,
   ListBufferCategoriesParams,
+  ListCategoryCapacitiesParams,
   ListCorrectiveRunsParams,
   ListIdealHoursOverridesParams,
   ListPlanItemsParams,
@@ -1178,17 +1179,24 @@ export type listCategoryCapacitiesResponseSuccess = (listCategoryCapacitiesRespo
 
 export type listCategoryCapacitiesResponse = (listCategoryCapacitiesResponseSuccess)
 
-export const getListCategoryCapacitiesUrl = () => {
+export const getListCategoryCapacitiesUrl = (params?: ListCategoryCapacitiesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
 
-  
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/capacity/categories`
+  return stringifiedParams.length > 0 ? `/api/capacity/categories?${stringifiedParams}` : `/api/capacity/categories`
 }
 
-export const listCategoryCapacities = async ( options?: RequestInit): Promise<listCategoryCapacitiesResponse> => {
+export const listCategoryCapacities = async (params?: ListCategoryCapacitiesParams, options?: RequestInit): Promise<listCategoryCapacitiesResponse> => {
   
-  return customFetch<listCategoryCapacitiesResponse>(getListCategoryCapacitiesUrl(),
+  return customFetch<listCategoryCapacitiesResponse>(getListCategoryCapacitiesUrl(params),
   {      
     ...options,
     method: 'GET'
@@ -1201,23 +1209,23 @@ export const listCategoryCapacities = async ( options?: RequestInit): Promise<li
 
 
 
-export const getListCategoryCapacitiesQueryKey = () => {
+export const getListCategoryCapacitiesQueryKey = (params?: ListCategoryCapacitiesParams,) => {
     return [
-    `/api/capacity/categories`
+    `/api/capacity/categories`, ...(params ? [params]: [])
     ] as const;
     }
 
     
-export const getListCategoryCapacitiesQueryOptions = <TData = Awaited<ReturnType<typeof listCategoryCapacities>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCategoryCapacities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListCategoryCapacitiesQueryOptions = <TData = Awaited<ReturnType<typeof listCategoryCapacities>>, TError = unknown>(params?: ListCategoryCapacitiesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCategoryCapacities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListCategoryCapacitiesQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListCategoryCapacitiesQueryKey(params);
 
   
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCategoryCapacities>>> = ({ signal }) => listCategoryCapacities({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCategoryCapacities>>> = ({ signal }) => listCategoryCapacities(params, { signal, ...requestOptions });
 
       
 
@@ -1232,11 +1240,11 @@ export type ListCategoryCapacitiesQueryError = unknown
 
 
 export function useListCategoryCapacities<TData = Awaited<ReturnType<typeof listCategoryCapacities>>, TError = unknown>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCategoryCapacities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ params?: ListCategoryCapacitiesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCategoryCapacities>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
   
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListCategoryCapacitiesQueryOptions(options)
+  const queryOptions = getListCategoryCapacitiesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -247,7 +247,8 @@ function headroomColor(headroom: number, planNeedsPerDay: number): string {
 }
 
 function CapacityTable() {
-  const { data, isLoading, refetch } = useListCategoryCapacities();
+  const { segment } = useSegment();
+  const { data, isLoading, refetch } = useListCategoryCapacities({ params: { segment } } as any);
   const updateCapacity = useUpdateCategoryCapacity();
   const recompute = useRecomputeCategoryCapacity();
   const { toast } = useToast();
@@ -283,7 +284,7 @@ function CapacityTable() {
 
   function handleRecompute() {
     (recompute as unknown as { mutate: (args: object, cbs: object) => void }).mutate(
-      {},
+      { params: { segment } },
       {
         onSuccess: () => {
           refetch();
@@ -294,12 +295,15 @@ function CapacityTable() {
     );
   }
 
+  const actualsSource = segment === "Plumbing" ? "Plumbing production actuals (wiring in progress)" : "PTMT ANUJ daily actuals";
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div className="text-xs text-gray-500">
-          <strong>Suggested</strong> = p90 of trailing 90-day daily output (from PTMT ANUJ). <strong>Applied</strong> = Override if set, else Suggested — consumed by all levelling modules.
+          <strong>Suggested</strong> = p90 of trailing 90-day daily output (from {actualsSource}). <strong>Applied</strong> = Override if set, else Suggested — consumed by all levelling modules.
           {lastComputedAt && <span className="ml-2">Last recomputed: {fmtDateTime(lastComputedAt)}.</span>}
+          {segment === "Plumbing" && <span className="ml-2 text-amber-600">Plumbing actuals feed not yet wired — all values show thin-data until connected.</span>}
         </div>
         <Button size="sm" onClick={handleRecompute} disabled={(recompute as { isPending?: boolean }).isPending} className="shrink-0">
           {(recompute as { isPending?: boolean }).isPending ? "Computing…" : "Recompute"}
@@ -310,7 +314,9 @@ function CapacityTable() {
 
       {!isLoading && rows.length === 0 && (
         <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
-          ⚠ No capacity data yet. Click <strong>Recompute</strong> to derive from PTMT ANUJ daily actuals.
+          {segment === "Plumbing"
+            ? <>⚠ No {segment} capacity data yet. Click <strong>Recompute</strong> to initialise rows, then set <strong>Override</strong> values manually until Plumbing actuals are wired.</>
+            : <>⚠ No capacity data yet. Click <strong>Recompute</strong> to derive from PTMT ANUJ daily actuals.</>}
         </div>
       )}
 

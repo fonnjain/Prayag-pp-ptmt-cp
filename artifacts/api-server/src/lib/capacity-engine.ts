@@ -7,21 +7,45 @@ import { logger } from "./logger";
 
 const THIN_DATA_THRESHOLD = 10;
 
-const SEED_VALUES: Array<{
+type SeedRow = {
   category: string;
   meanPerDay: number;
   p90PerDay: number;
   bestDay: number;
   daysObserved: number;
   planNeedsPerDay: number;
-}> = [
-  { category: "Cocks Standard", meanPerDay: 14034, p90PerDay: 17449, bestDay: 19880, daysObserved: 30, planNeedsPerDay: 14527 },
-  { category: "Cocks Premium", meanPerDay: 871, p90PerDay: 1242, bestDay: 2419, daysObserved: 30, planNeedsPerDay: 518 },
-  { category: "Faucets & Jetsprays & Shower", meanPerDay: 1565, p90PerDay: 2431, bestDay: 3561, daysObserved: 30, planNeedsPerDay: 2343 },
-  { category: "Accessorise", meanPerDay: 1318, p90PerDay: 2940, bestDay: 4808, daysObserved: 30, planNeedsPerDay: 1132 },
-  { category: "Cistern & Seat Cover", meanPerDay: 831, p90PerDay: 1050, bestDay: 1320, daysObserved: 30, planNeedsPerDay: 970 },
-  { category: "Cabinet", meanPerDay: 77, p90PerDay: 147, bestDay: 219, daysObserved: 5, planNeedsPerDay: 37 },
-  { category: "Ball Cock", meanPerDay: 3900, p90PerDay: 6567, bestDay: 17592, daysObserved: 30, planNeedsPerDay: 1808 },
+};
+
+/** PTMT seed values derived from ANUJ daily production actuals. */
+const PTMT_SEED_VALUES: SeedRow[] = [
+  { category: "Cocks Standard",              meanPerDay: 14034, p90PerDay: 17449, bestDay: 19880, daysObserved: 30, planNeedsPerDay: 14527 },
+  { category: "Cocks Premium",               meanPerDay:   871, p90PerDay:  1242, bestDay:  2419, daysObserved: 30, planNeedsPerDay:   518 },
+  { category: "Faucets & Jetsprays & Shower", meanPerDay: 1565, p90PerDay:  2431, bestDay:  3561, daysObserved: 30, planNeedsPerDay:  2343 },
+  { category: "Accessorise",                 meanPerDay:  1318, p90PerDay:  2940, bestDay:  4808, daysObserved: 30, planNeedsPerDay:  1132 },
+  { category: "Cistern & Seat Cover",        meanPerDay:   831, p90PerDay:  1050, bestDay:  1320, daysObserved: 30, planNeedsPerDay:   970 },
+  { category: "Cabinet",                     meanPerDay:    77, p90PerDay:   147, bestDay:   219, daysObserved:  5, planNeedsPerDay:    37 },
+  { category: "Ball Cock",                   meanPerDay:  3900, p90PerDay:  6567, bestDay: 17592, daysObserved: 30, planNeedsPerDay:  1808 },
+];
+
+/**
+ * Plumbing seed values — all zeros / thin-data because Plumbing production
+ * actuals feed is not yet wired to the live ingestion pipeline.
+ * Once "Daily Production PLUMBING" actuals are ingested, recompute will
+ * replace these with real p90 values.
+ */
+const PLUMBING_SEED_VALUES: SeedRow[] = [
+  { category: "CPVC Pipe",     meanPerDay: 0, p90PerDay: 0, bestDay: 0, daysObserved: 0, planNeedsPerDay: 0 },
+  { category: "CPVC Fitting",  meanPerDay: 0, p90PerDay: 0, bestDay: 0, daysObserved: 0, planNeedsPerDay: 0 },
+  { category: "CPVC Solvent",  meanPerDay: 0, p90PerDay: 0, bestDay: 0, daysObserved: 0, planNeedsPerDay: 0 },
+  { category: "UPVC Pipe",     meanPerDay: 0, p90PerDay: 0, bestDay: 0, daysObserved: 0, planNeedsPerDay: 0 },
+  { category: "UPVC Fitting",  meanPerDay: 0, p90PerDay: 0, bestDay: 0, daysObserved: 0, planNeedsPerDay: 0 },
+  { category: "UPVC Solvent",  meanPerDay: 0, p90PerDay: 0, bestDay: 0, daysObserved: 0, planNeedsPerDay: 0 },
+  { category: "SWR Pipe",      meanPerDay: 0, p90PerDay: 0, bestDay: 0, daysObserved: 0, planNeedsPerDay: 0 },
+  { category: "SWR Fitting",   meanPerDay: 0, p90PerDay: 0, bestDay: 0, daysObserved: 0, planNeedsPerDay: 0 },
+  { category: "SWR Solvent",   meanPerDay: 0, p90PerDay: 0, bestDay: 0, daysObserved: 0, planNeedsPerDay: 0 },
+  { category: "AGRI Pipe",     meanPerDay: 0, p90PerDay: 0, bestDay: 0, daysObserved: 0, planNeedsPerDay: 0 },
+  { category: "AGRI Fitting",  meanPerDay: 0, p90PerDay: 0, bestDay: 0, daysObserved: 0, planNeedsPerDay: 0 },
+  { category: "AGRI Solvent",  meanPerDay: 0, p90PerDay: 0, bestDay: 0, daysObserved: 0, planNeedsPerDay: 0 },
 ];
 
 function p90(values: number[]): number {
@@ -46,12 +70,24 @@ function trailingMonths(trailingDays: number): string[] {
   return [...months];
 }
 
+/**
+ * Seed initial capacity rows for both PTMT and Plumbing segments.
+ * Idempotent per category — skips rows that already exist.
+ */
 export async function seedCategoryCapacity(): Promise<void> {
-  const existing = await db.select().from(categoryCapacityTable);
-  if (existing.length > 0) return;
-  logger.info("capacity-engine: seeding initial category capacity values");
-  for (const s of SEED_VALUES) {
+  const existing = await db.select({ category: categoryCapacityTable.category }).from(categoryCapacityTable);
+  const existingCategories = new Set(existing.map(r => r.category));
+
+  const toSeed: Array<{ segment: string } & SeedRow> = [
+    ...PTMT_SEED_VALUES.map(s => ({ segment: "PTMT", ...s })),
+    ...PLUMBING_SEED_VALUES.map(s => ({ segment: "Plumbing", ...s })),
+  ];
+
+  let seeded = 0;
+  for (const s of toSeed) {
+    if (existingCategories.has(s.category)) continue;
     await db.insert(categoryCapacityTable).values({
+      segment: s.segment,
       category: s.category,
       meanPerDay: s.meanPerDay,
       p90PerDay: s.p90PerDay,
@@ -63,12 +99,22 @@ export async function seedCategoryCapacity(): Promise<void> {
       trailingDays: 90,
       workingDaysPerWeek: 6,
     });
+    seeded++;
   }
-  logger.info({ count: SEED_VALUES.length }, "capacity-engine: seed complete");
+  if (seeded > 0) logger.info({ seeded }, "capacity-engine: seeded capacity rows");
 }
 
-export async function computeCategoryCapacity(trailingDays = 90): Promise<CategoryCapacity[]> {
-  logger.info({ trailingDays }, "capacity-engine: computing per-category capacity");
+/**
+ * Recompute production capacity for a given segment from trailing actuals.
+ *
+ * For PTMT: reads ANUJ daily production actuals and computes p90/mean/best.
+ * For Plumbing: actuals feed not yet wired — returns existing rows (thin-data flagged).
+ * In both cases the plan_needs_per_day is derived from the current month's plan.
+ */
+export async function computeCategoryCapacity(trailingDays = 90, segment = "PTMT"): Promise<CategoryCapacity[]> {
+  logger.info({ trailingDays, segment }, "capacity-engine: computing per-category capacity");
+
+  const seedValues = segment === "Plumbing" ? PLUMBING_SEED_VALUES : PTMT_SEED_VALUES;
 
   const today = new Date();
   const cutoffDate = new Date(today.getTime() - trailingDays * 24 * 60 * 60 * 1000);
@@ -77,7 +123,7 @@ export async function computeCategoryCapacity(trailingDays = 90): Promise<Catego
   const months = trailingMonths(trailingDays);
 
   const [itemRows, ...actualsArrays] = await Promise.all([
-    db.select().from(itemMasterTable),
+    db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, segment)),
     ...months.map(m => fetchDailyActuals(m).catch(err => {
       logger.warn({ err, m }, "capacity-engine: failed to fetch actuals for month");
       return [];
@@ -101,6 +147,8 @@ export async function computeCategoryCapacity(trailingDays = 90): Promise<Catego
         catByCode.get(row.itemCode) ??
         row.group;
       if (!category) continue;
+      // Only accumulate data for categories that belong to this segment
+      if (!seedValues.some(s => s.category === category)) continue;
       if (!catDateQty.has(category)) catDateQty.set(category, new Map());
       const dateMap = catDateQty.get(category)!;
       dateMap.set(row.date, (dateMap.get(row.date) ?? 0) + row.qty);
@@ -110,24 +158,27 @@ export async function computeCategoryCapacity(trailingDays = 90): Promise<Catego
   const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
   let planItems: Awaited<ReturnType<typeof buildPlanItems>> = [];
   try {
-    planItems = await buildPlanItems(currentMonth);
+    planItems = await buildPlanItems(currentMonth, segment);
   } catch (err) {
     logger.warn({ err }, "capacity-engine: could not load plan items for plan_needs_per_day");
   }
 
-  const existingRows = await db.select().from(categoryCapacityTable);
+  const existingRows = await db
+    .select()
+    .from(categoryCapacityTable)
+    .where(eq(categoryCapacityTable.segment, segment));
   const existingByCategory = new Map(existingRows.map(r => [r.category, r]));
 
   const WORKING_DAYS_PER_MONTH = 27;
   const catPlanNeeds = new Map<string, number>();
-  for (const cat of SEED_VALUES.map(s => s.category)) {
+  for (const cat of seedValues.map(s => s.category)) {
     const catPlan = planItems.filter(i => i.category === cat).reduce((s, i) => s + i.maxProduction, 0);
     if (catPlan > 0) catPlanNeeds.set(cat, Math.round(catPlan / WORKING_DAYS_PER_MONTH));
   }
 
   const allCategories = new Set([
     ...catDateQty.keys(),
-    ...SEED_VALUES.map(s => s.category),
+    ...seedValues.map(s => s.category),
   ]);
 
   const results: CategoryCapacity[] = [];
@@ -148,6 +199,7 @@ export async function computeCategoryCapacity(trailingDays = 90): Promise<Catego
     const suggestedCapacity = computedP90 > 0 ? computedP90 : (existing?.suggestedCapacity ?? 0);
 
     const values = {
+      segment,
       category,
       meanPerDay: computedMean,
       p90PerDay: computedP90,
@@ -178,7 +230,7 @@ export async function computeCategoryCapacity(trailingDays = 90): Promise<Catego
     }
   }
 
-  logger.info({ categories: results.length }, "capacity-engine: computation complete");
+  logger.info({ segment, categories: results.length }, "capacity-engine: computation complete");
   return results;
 }
 
