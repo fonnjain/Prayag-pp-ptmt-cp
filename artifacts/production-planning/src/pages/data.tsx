@@ -786,13 +786,15 @@ type CheckResult = {
 
 type ValidationResponse = {
   month: string;
+  segment?: string;
   allPass: boolean;
   passCount: number;
   failCount: number;
   checks: CheckResult[];
+  categoryTotals?: Record<string, number>;
 };
 
-function ValidationPanel() {
+function ValidationPanel({ segment }: { segment: string }) {
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const [month, setMonth] = useState(defaultMonth);
@@ -800,13 +802,16 @@ function ValidationPanel() {
   const [result, setResult] = useState<ValidationResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const isPlumbing = segment === "Plumbing";
+
   const runChecks = async () => {
     if (!month) return;
     setRunning(true);
     setResult(null);
     setError(null);
     try {
-      const res = await fetch(`/api/plan/validate?month=${encodeURIComponent(month)}`);
+      const url = `/api/plan/validate?month=${encodeURIComponent(month)}&segment=${encodeURIComponent(segment)}`;
+      const res = await fetch(url);
       if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { error?: string };
         throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -823,8 +828,9 @@ function ValidationPanel() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
-        Runs 6 golden-value spot-checks against the uploaded files and live sheet data. All checks must pass
-        before the plan is trustworthy. Fails are shown loudly — no silent fallbacks.
+        {isPlumbing
+          ? "Runs 9 golden-value spot-checks (per-category Production Required vs. verified July 2026 master Excel). All must pass before the Plumbing plan is trustworthy."
+          : "Runs 6 golden-value spot-checks against the uploaded files and live sheet data. All checks must pass before the plan is trustworthy. Fails are shown loudly — no silent fallbacks."}
       </p>
 
       <div className="flex items-center gap-3">
@@ -900,14 +906,17 @@ export default function DataPage() {
         <div>
           <h2 className="text-xl font-semibold">Data — {segment}</h2>
           <p className="text-sm text-gray-500">
-            All three monthly file uploads are required before a plan can be built. The Avg 3-Month Sale
-            figure is computed live from the Sale 26-27 Google Sheets connection below.
+            {segment === "Plumbing"
+              ? "Two monthly file uploads are required before a Plumbing plan can be built. Avg 3-Month Sale is computed live from the Sale 26-27 Google Sheets connection."
+              : "All three monthly file uploads are required before a plan can be built. The Avg 3-Month Sale figure is computed live from the Sale 26-27 Google Sheets connection below."}
           </p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Monthly file uploads — {segment} (3 required)</CardTitle>
+            <CardTitle className="text-base">
+              Monthly file uploads — {segment} ({segment === "Plumbing" ? 2 : 3} required)
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {uploadKinds.map((u) => (
@@ -947,7 +956,7 @@ export default function DataPage() {
             <CardTitle className="text-base">Golden-value validation checks</CardTitle>
           </CardHeader>
           <CardContent>
-            <ValidationPanel />
+            <ValidationPanel segment={segment} />
           </CardContent>
         </Card>
 

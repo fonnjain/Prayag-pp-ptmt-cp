@@ -353,16 +353,28 @@ router.put("/plan/weekly-bands/:category", async (req, res): Promise<void> => {
 });
 
 /**
- * Golden-value validation checks. Returns pass/fail per check with expected vs actual.
- * Fail loudly: each check is independent so all failures are reported, not just the first.
+ * Golden-value self-check. Accepts ?segment= (default "PTMT").
  *
- * Checks:
+ * PTMT checks (6):
  *   1. Stock 121-O / WHITE = 1,644
  *   2. Last-month pending total = 137,939
  *   3. Current pending 144-O / WHITE = 132
  *   4. Avg 3-Mo Sale 144-O / WHITE = 5,222
  *   5. Grand Max total ≈ 576,037 (±5 %)
  *   6. Grand Min total ≈ 301,918 (±5 %)
+ *
+ * Plumbing checks (4) — exact integer match, verified July 2026 vs master Excel:
+ *   1. CPVC Pipe Production Required   = 130,451
+ *   2. CPVC Fitting Production Required = 763,253
+ *   3. UPVC Pipe Production Required   = 51,899
+ *   4. UPVC Fitting Production Required = 633,038
+ *   SWR + AGRI are informational only (separate material planning sheets; 0 this month is correct).
+ *
+ * Data sources (Plumbing):
+ *   Stock + Pending-LM  → plumbing_fg_stock upload, Col R split by sign
+ *   Avg-3-Mo sale       → live Sale 26-27 Google Sheet (NOT from DATA.xlsx — that holds one month only)
+ *   Current pending     → DATA.xlsx pending_orders upload, filtered to Plumbing segment
+ *   KGs                 → BOM sheet (1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA)
  */
 router.get("/plan/validate", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");
@@ -370,12 +382,76 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     res.status(400).json({ error: "month is required" });
     return;
   }
+  const segment = String(req.query.segment ?? "PTMT");
 
+  type CheckResult = {
+    name: string;
+    expected: number;
+    actual: number;
+    pass: boolean;
+    tolerance?: string;
+  };
+
+  // ── PLUMBING self-check ────────────────────────────────────────────────────
+  if (segment === "Plumbing") {
+    // Run the full Plumbing plan (FG Stock upload + live sheets).
+    // buildPlanItems handles all data-source wiring: Col R sign split, segment filter
+    // on pending_orders, avg-3mo from live Sale 26-27, BOM weights from Sheets.
+    const items = await buildPlanItems(month, "Plumbing");
+
+    // Sum maxProduction (= Production Required) by category
+    const byCategory = new Map<string, number>();
+    for (const item of items) {
+      byCategory.set(item.category, (byCategory.get(item.category) ?? 0) + item.maxProduction);
+    }
+    const roundInt = (v: number) => Math.round(v);
+
+    // Verified July 2026 golden values — Production Required (PCS) per category.
+    // Source: Daily Production PLUMBING master Excel per-material tabs.
+    //   CPVC tab → col O header "PRODUCTION REQUIRED FOR Jul26 (PCS)"
+    //   UPVC tab → col Q header "PRODUCTION REQUIRED FOR Jul26 (PCS)"
+    //   SWR  tab → col S header "PRODUCTION REQUIRED FOR Jul26 (PCS)"
+    //   AGRI tab → col S header "PRODUCTION REQUIRED FOR Jul26 (PCS)"
+    // Grand total = 1,905,228 pcs (matches Pipe Summary management tab).
+    // All 9 categories carry real plan quantities — none may be zero.
+    const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
+      { cat: "CPVC Pipe",    expected: 130451 },
+      { cat: "CPVC Fitting", expected: 763253 },
+      { cat: "UPVC Pipe",    expected: 51899  },
+      { cat: "UPVC Fitting", expected: 633038 },
+      { cat: "SWR Pipe",     expected: 64515  },
+      { cat: "SWR Fitting",  expected: 236315 },
+      { cat: "SWR Solvent",  expected: 1255   },
+      { cat: "AGRI Pipe",    expected: 9688   },
+      { cat: "AGRI Fitting", expected: 14814  },
+    ];
+
+    const checks: CheckResult[] = PLUMBING_GOLDEN.map(({ cat, expected }) => {
+      const actual = roundInt(byCategory.get(cat) ?? 0);
+      return { name: `${cat} Production Required`, expected, actual, pass: actual === expected };
+    });
+
+    // Full category totals map for display (keyed by category name, rounded pcs)
+    const categoryTotals: Record<string, number> = {};
+    for (const [cat, total] of byCategory.entries()) {
+      categoryTotals[cat] = roundInt(total);
+    }
+    for (const { cat } of PLUMBING_GOLDEN) {
+      if (!(cat in categoryTotals)) categoryTotals[cat] = 0;
+    }
+
+    const allPass = checks.every((c) => c.pass);
+    const failCount = checks.filter((c) => !c.pass).length;
+    res.json({ month, segment, allPass, passCount: checks.length - failCount, failCount, checks, categoryTotals });
+    return;
+  }
+
+  // ── PTMT self-check ────────────────────────────────────────────────────────
   // Fetch everything in one parallel batch — DB reads + both Sheets calls
   // so we only pay the throttle penalty once (they overlap in Promise.all).
   const [
     stockRows,
-    pendingRows,
+    rawPendingRows,
     lastMoRows,
     itemRows,
     bufferRows,
@@ -391,13 +467,11 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     fetchLiveOrderTotals(month),
   ]);
 
-  type CheckResult = {
-    name: string;
-    expected: number;
-    actual: number;
-    pass: boolean;
-    tolerance?: string;
-  };
+  // Filter DATA.xlsx rows to PTMT segment (file now stores all segments; filter here mirrors buildPlanItems)
+  const pendingRows = rawPendingRows.filter((row) => {
+    const seg = String(row["Segment"] ?? "").trim().toUpperCase();
+    return seg === "PTMT" || seg === "PT";
+  });
 
   const checks: CheckResult[] = [];
 
@@ -492,7 +566,7 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
   const allPass = checks.every((c) => c.pass);
   const failCount = checks.filter((c) => !c.pass).length;
 
-  res.json({ month, allPass, passCount: checks.length - failCount, failCount, checks });
+  res.json({ month, segment, allPass, passCount: checks.length - failCount, failCount, checks });
 });
 
 export default router;

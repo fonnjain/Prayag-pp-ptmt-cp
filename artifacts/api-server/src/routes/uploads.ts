@@ -127,10 +127,26 @@ function sheetToObjects(sheet: XLSX.WorkSheet): Record<string, unknown>[] {
  */
 function inferPlumbingCategory(raw: string): string | null {
   const g = raw.trim().toUpperCase();
-  // "-FG" suffix = Fitting (FG Stock file convention); also honour legacy FITTING / FTG spellings
+
+  // Explicitly exclude non-manufactured categories that must not enter the production plan.
+  // These appear in the FG Stock file but are traded (not produced) or otherwise out of scope.
+  if (
+    g.includes("TRADING") ||         // e.g. CPVC-TRADING — traded, not manufactured
+    g.includes("WATER TANK") ||       // Water tanks — out of scope
+    g.includes("COLUMN PIPE") ||      // Column Pipe — separate category
+    g.includes("PPR")                 // PPR fittings — separate category
+  ) {
+    return null;
+  }
+
+  // "-FG" suffix = Fitting (FG Stock file convention); also honour legacy FITTING / FTG spellings.
+  // "*-PIPE" or bare material name = Pipe.
+  // SWR Solvent (solvent cement) must be detected BEFORE the generic SWR check so that
+  // "SWR-SOLVENT" / "SWR CEMENT" / "SOLVENT CEMENT" does not fall through to SWR Pipe/Fitting.
   const isFitting = g.includes("FITTING") || g.includes("FTG") || g.endsWith("-FG") || g.endsWith(" FG");
   if (g.includes("CPVC")) return isFitting ? "CPVC Fitting" : "CPVC Pipe";
   if (g.includes("UPVC")) return isFitting ? "UPVC Fitting" : "UPVC Pipe";
+  if (g.includes("SOLVENT") || (g.includes("CEMENT") && g.includes("SWR"))) return "SWR Solvent";
   if (g.includes("SWR"))  return isFitting ? "SWR Fitting"  : "SWR Pipe";
   if (g.includes("AGRI") || g.includes("AGRICULTURE")) return isFitting ? "AGRI Fitting" : "AGRI Pipe";
   return null;
