@@ -5,7 +5,7 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export type ListCorrectiveRunsParams = {
-month?: string;
+export type ExportLatestCorrectiveExcelParams = {
+month: string;
 segment?: string;
 };

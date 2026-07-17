@@ -11,6 +11,7 @@ import type { CorrectiveItemResult } from './correctiveItemResult';
 export interface CorrectiveReplanResult {
   runId: number;
   month: string;
+  segment: string;
   weekClosed: number;
   dailyCapacity: number;
   workingDaysPerWeek: number;

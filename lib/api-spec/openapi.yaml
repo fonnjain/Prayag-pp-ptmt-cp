@@ -192,6 +192,10 @@ paths:
           in: query
           required: false
           schema: { type: string }
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string }
       responses:
         "200":
           description: List of corrective plan runs
@@ -238,6 +242,68 @@ paths:
               schema: { type: string, format: binary }
         "404":
           description: Not found
+
+  /corrective/runs/{id}/export/pdf:
+    get:
+      operationId: exportCorrectivePdf
+      tags: [corrective]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: PDF report
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "404":
+          description: Not found
+
+  /corrective/export/excel:
+    get:
+      operationId: exportLatestCorrectiveExcel
+      tags: [corrective]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
+      responses:
+        "200":
+          description: Excel workbook for latest corrective run
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
+        "404":
+          description: No corrective run found for month/segment
+
+  /corrective/export/pdf:
+    get:
+      operationId: exportLatestCorrectivePdf
+      tags: [corrective]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
+      responses:
+        "200":
+          description: PDF report for latest corrective run
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "404":
+          description: No corrective run found for month/segment
 
   /capacity/categories:
     get:
@@ -2353,6 +2419,7 @@ components:
       properties:
         month: { type: string, description: "YYYY-MM" }
         weekClosed: { type: integer, description: "Week just closed (0=none, 1=W1 done, 2=W2 done, 3=W3 done)" }
+        segment: { type: string, description: "PTMT or Plumbing (default PTMT)" }
         dailyCapacity: { type: number, description: "Pieces per day (default 21335)" }
         workingDaysPerWeek: { type: integer, description: "Working days per week (default 6)" }
 
@@ -2418,10 +2485,11 @@ components:
 
     CorrectiveReplanResult:
       type: object
-      required: [runId, month, weekClosed, dailyCapacity, workingDaysPerWeek, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, weekStats, warnings, items]
+      required: [runId, month, segment, weekClosed, dailyCapacity, workingDaysPerWeek, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, weekStats, warnings, items]
       properties:
         runId: { type: integer }
         month: { type: string }
+        segment: { type: string }
         weekClosed: { type: integer }
         dailyCapacity: { type: number }
         workingDaysPerWeek: { type: integer }
@@ -2467,9 +2535,10 @@ components:
 
     CorrectivePlanRunSummary:
       type: object
-      required: [id, month, weekClosed, dailyCapacity, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, warnings, createdAt]
+      required: [id, segment, month, weekClosed, dailyCapacity, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, warnings, createdAt]
       properties:
         id: { type: integer }
+        segment: { type: string }
         month: { type: string }
         weekClosed: { type: integer }
         dailyCapacity: { type: number }

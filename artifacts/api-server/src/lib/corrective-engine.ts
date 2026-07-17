@@ -1,5 +1,6 @@
 import { db, itemMasterTable, bufferCategoriesTable, weeklyReleaseBandsTable, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable } from "@workspace/db";
 import type { CorrectiveWeekStat, CorrectiveWarning } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import { fetchDailyActuals } from "./plant-ingestion";
 import { fetchLivePendingOrderTotals, itemKey, normalizeCode } from "./sheets";
 import { buildPlanItems, loadLatestUploadRowsByKind } from "../routes/plan";
@@ -10,6 +11,7 @@ const round = (n: number) => Math.round(n * 100) / 100;
 export interface CorrectiveReplanInput {
   month: string;
   weekClosed: number;
+  segment?: string;
   dailyCapacity?: number;
   workingDaysPerWeek?: number;
 }
@@ -47,6 +49,7 @@ export interface CorrectiveItemResult {
 export interface CorrectiveReplanResult {
   runId: number;
   month: string;
+  segment: string;
   weekClosed: number;
   dailyCapacity: number;
   workingDaysPerWeek: number;
@@ -87,25 +90,49 @@ function sumPendingUploads(rows: Record<string, unknown>[]): Map<string, number>
   return m;
 }
 
+/** Compute revised plan quantity for a single item.
+ * Plumbing SWR/AGRI use an inverted formula: demand-driven not buffer-driven.
+ * PTMT and Plumbing CPVC/UPVC use the standard buffer formula.
+ */
+function computePlanRev(opts: {
+  segment: string;
+  category: string;
+  bufferReqRev: number;
+  stockNow: number;
+  pendingNow: number;
+  pendingLastMonth: number;
+}): number {
+  const { segment, category, bufferReqRev, stockNow, pendingNow, pendingLastMonth } = opts;
+  const isSwrAgri = segment === "Plumbing" && (category.startsWith("SWR") || category.startsWith("AGRI"));
+  if (isSwrAgri) {
+    // SWR/AGRI: produce what demand (pending) exceeds buffer, plus carry-over from last month
+    return round(Math.max(stockNow + pendingNow - bufferReqRev + pendingLastMonth, 0));
+  }
+  // Standard (PTMT + Plumbing CPVC/UPVC): replenish to buffer considering current position
+  return round(Math.max(bufferReqRev - stockNow + pendingLastMonth + pendingNow, 0));
+}
+
 export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise<CorrectiveReplanResult> {
   const { month, weekClosed } = input;
+  const segment = input.segment ?? "PTMT";
   const dailyCapacity = input.dailyCapacity ?? 21335;
   const workingDaysPerWeek = input.workingDaysPerWeek ?? 6;
 
-  logger.info({ month, weekClosed, dailyCapacity }, "corrective-engine: starting replan");
+  logger.info({ month, weekClosed, segment, dailyCapacity }, "corrective-engine: starting replan");
 
   // ── Fetch everything in parallel ────────────────────────────────────────────
   const [originalItems, dailyActuals, livePendingTotals, pendingOrderRows, pendingLastMoRows, bufferRows, bandRows, itemRows, catCapRows] =
     await Promise.all([
-      buildPlanItems(month),
+      buildPlanItems(month, segment),
+      // For PTMT: reads PTMT ANUJ sheet. For Plumbing: actuals are not item-level, falls back to [] gracefully.
       fetchDailyActuals(month).catch(err => { logger.warn({ err }, "corrective-engine: fetchDailyActuals failed, using zeros"); return []; }),
       fetchLivePendingOrderTotals().catch(err => { logger.warn({ err }, "corrective-engine: fetchLivePendingOrderTotals failed, using zeros"); return { exact: new Map<string, number>(), byCode: new Map<string, number>() }; }),
       loadLatestUploadRowsByKind("pending_orders"),
       loadLatestUploadRowsByKind("last_month_pending"),
-      db.select().from(bufferCategoriesTable),
-      db.select().from(weeklyReleaseBandsTable),
-      db.select().from(itemMasterTable),
-      db.select().from(categoryCapacityTable),
+      db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
+      db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
+      db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, segment)),
+      db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment)),
     ]);
 
   // ── Map original plan items by key ──────────────────────────────────────────
@@ -135,9 +162,8 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   const pendingAtPlanMap = sumPendingUploads(pendingOrderRows);
 
   // ── Last-month pending (constant for the month) ──────────────────────────────
-  const lastMoPendingRows = pendingLastMoRows;
   const lastMoPendingMap = new Map<string, number>();
-  for (const row of lastMoPendingRows) {
+  for (const row of pendingLastMoRows) {
     const code = (["Item Code", "Cat No", "Cat-No", "Old Item Code"].map(k => row[k]).find(v => v != null && v !== "") as string | undefined);
     const colour = (["Colour", "Color"].map(k => row[k]).find(v => v != null && v !== "") as string | undefined) ?? "";
     const rawQty = (["Qty", "Balance_Qty", "Balance Qty"].map(k => row[k]).find(v => v != null));
@@ -155,13 +181,10 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
 
   // ── Build corrective items ────────────────────────────────────────────────────
   const items: CorrectiveItemResult[] = [];
-  const allItemKeys = new Set<string>();
 
   // Process all items from original plan
   for (const orig of originalItems) {
     const k = itemKey(orig.itemCode, orig.colour);
-    allItemKeys.add(k);
-
     const sv = isSingleVariant(orig.category, orig.itemCode);
     const codeOnlyKey = `__code__${normalizeCode(orig.itemCode)}`;
 
@@ -173,24 +196,30 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     const stockNow = round(stockOpen + producedToDate);
 
     // Live pending — use exact map from fetchLivePendingOrderTotals
-    const pendingNow = sv
-      ? (livePendingTotals.byCode.get(normalizeCode(orig.itemCode)) ?? 0)
-      : (livePendingTotals.exact.get(k) ?? 0);
+    const pendingNow = resolveFromDualTotals(
+      livePendingTotals.exact,
+      livePendingTotals.byCode,
+      orig.itemCode,
+      orig.colour,
+      sv,
+    );
 
-    const pendingAtPlan = sv
-      ? (pendingAtPlanMap.get(k) ?? 0) // pending upload is already exact-keyed
-      : (pendingAtPlanMap.get(k) ?? 0);
-
+    const pendingAtPlan = pendingAtPlanMap.get(k) ?? 0;
     const pendingLastMonth = orig.pendingOrderLastMonth;
 
-    const multiplier = bufferByCategory.get(orig.category) ?? orig.avg3MoSale > 0 ? (bufferByCategory.get(orig.category) ?? 1) : 1;
+    const multiplier = bufferByCategory.get(orig.category) ?? 1;
     const avg3MoSale = orig.avg3MoSale;
     const bufferReqRev = round(avg3MoSale * multiplier);
 
-    const planRev = round(Math.max(
-      bufferReqRev - stockNow + pendingLastMonth + pendingNow,
-      0,
-    ));
+    const planRev = computePlanRev({
+      segment,
+      category: orig.category,
+      bufferReqRev,
+      stockNow,
+      pendingNow,
+      pendingLastMonth,
+    });
+
     const remainingToProduce = round(Math.max(planRev - producedToDate, 0));
 
     const deltaNewOrders = round(pendingNow - pendingAtPlan);
@@ -233,7 +262,6 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   // ── Per-category capacity map ─────────────────────────────────────────────────
   const catCapMap = new Map(catCapRows.map(r => [r.category, r]));
   const globalWorkingDays = catCapRows[0]?.workingDaysPerWeek ?? workingDaysPerWeek;
-  // Total applied capacity per day (for weekStats reporting only)
   const totalDailyApplied = catCapRows.reduce((s, r) => s + (r.overrideCapacity ?? r.suggestedCapacity), 0) || dailyCapacity;
   const weekCapacity = globalWorkingDays * totalDailyApplied;
 
@@ -266,11 +294,9 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       else if (c < band.w4Upper && remainingWeeks.includes(4)) assignedWeek = 4;
     }
 
-    // If band assigns to an already-passed week, move forward
     if (assignedWeek !== null && !remainingWeeks.includes(assignedWeek)) {
       assignedWeek = remainingWeeks[0] ?? null;
     }
-    // If no band assignment, start at earliest remaining week
     if (assignedWeek === null) assignedWeek = remainingWeeks[0] ?? null;
     if (assignedWeek === null) {
       item.status = "unfulfillable";
@@ -323,7 +349,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     }
   }
 
-  // Mark items with 0 remaining as completed (no further action needed)
+  // Mark items with 0 remaining as completed
   for (const item of items) {
     if (item.remainingToProduce === 0 && item.status === "on-plan") {
       item.status = "replenished";
@@ -337,12 +363,10 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       return sum + (w === 1 ? i.w1 : w === 2 ? i.w2 : w === 3 ? i.w3 : i.w4);
     }, 0);
 
-    // Produced for this week's original items (items originally assigned to this week)
     const producedForWeek = items
       .filter(i => i.originalWeek === w)
       .reduce((sum, i) => sum + i.producedToDate, 0);
 
-    // Total load for this week = sum of all category loads
     const catMap = catWeekBuckets.get(w);
     const weekLoad = catMap ? [...catMap.values()].reduce((s, v) => s + v, 0) : 0;
     const revLoad = w <= weekClosed ? origReleased : weekLoad;
@@ -370,7 +394,6 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   // ── Generate warnings ─────────────────────────────────────────────────────────
   const warnings: CorrectiveWarning[] = [];
 
-  // WEEK_LAG: produced < released for closed week
   if (weekClosed > 0) {
     for (let w = 1; w <= weekClosed; w++) {
       const ws = weekStats[w - 1];
@@ -387,7 +410,6 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     }
   }
 
-  // CAPACITY_OVERLOAD: per-category check for remaining weeks
   for (const w of remainingWeeks) {
     const catMap = catWeekBuckets.get(w);
     if (!catMap) continue;
@@ -409,7 +431,6 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       }
     }
   }
-  // Also flag plant-total overload for reporting
   for (const ws of weekStats) {
     if (ws.loadFactor > 1.05 && !remainingWeeks.includes(ws.week)) {
       warnings.push({
@@ -422,7 +443,6 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     }
   }
 
-  // UNFULFILLABLE_THIS_MONTH
   if (unfulfillableQty > 0) {
     const unfulfItems = items.filter(i => i.status === "unfulfillable");
     warnings.push({
@@ -434,7 +454,6 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     });
   }
 
-  // NEW_DEMAND_SPIKE: category where new orders > 20% of original plan
   const byCategory = new Map<string, { origPlan: number; deltaNewOrders: number }>();
   for (const item of items) {
     const c = byCategory.get(item.category) ?? { origPlan: 0, deltaNewOrders: 0 };
@@ -456,7 +475,6 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     }
   }
 
-  // STOCKOUT_IMMINENT: cover_now ≈ 0 and not in immediate week
   const immediateWeek = remainingWeeks[0];
   if (immediateWeek !== undefined) {
     const stockoutItems = items.filter(
@@ -472,7 +490,6 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     }
   }
 
-  // PLAN_DRIFT: revised total deviates > 10% from original
   if (originalMonthTotal > 0) {
     const driftPct = Math.abs(revisedMonthTotal - originalMonthTotal) / originalMonthTotal;
     if (driftPct > 0.1) {
@@ -488,6 +505,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
 
   // ── Persist to DB ─────────────────────────────────────────────────────────────
   const [run] = await db.insert(correctivePlanRunsTable).values({
+    segment,
     month,
     weekClosed,
     dailyCapacity: Math.round(totalDailyApplied),
@@ -540,11 +558,12 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     }
   }
 
-  logger.info({ runId: run?.id, month, items: items.length, warnings: warnings.length }, "corrective-engine: replan complete");
+  logger.info({ runId: run?.id, month, segment, items: items.length, warnings: warnings.length }, "corrective-engine: replan complete");
 
   return {
     runId: run?.id ?? 0,
     month,
+    segment,
     weekClosed,
     dailyCapacity: Math.round(totalDailyApplied),
     workingDaysPerWeek: globalWorkingDays,

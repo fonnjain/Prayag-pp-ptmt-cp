@@ -10,6 +10,7 @@ import {
   type CorrectivePlanRunSummary,
 } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/app-layout";
+import { useSegment } from "@/contexts/segment-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -349,7 +350,7 @@ function CorrectiveActionsCard({ result }: { result: CorrectiveReplanResult }) {
 
 // ─── Revised Release Table ────────────────────────────────────────────────────
 
-const CATEGORY_ORDER = [
+const PTMT_CATEGORY_ORDER = [
   "Cocks Standard",
   "Cocks Premium",
   "Faucets & Jetsprays & Shower",
@@ -359,19 +360,44 @@ const CATEGORY_ORDER = [
   "Ball Cock",
 ];
 
+const PLUMBING_CATEGORY_ORDER = [
+  "CPVC Pipe",
+  "CPVC Fitting",
+  "CPVC Solvent",
+  "UPVC Pipe",
+  "UPVC Fitting",
+  "UPVC Solvent",
+  "SWR Pipe",
+  "SWR Fitting",
+  "SWR Solvent",
+  "AGRI Pipe",
+  "AGRI Fitting",
+  "AGRI Solvent",
+];
+
 function RevisedReleaseTable({
   items,
   weekClosed,
+  segment,
 }: {
   items: CorrectiveItemResult[];
   weekClosed: number;
+  segment: string;
 }) {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
 
+  const CATEGORY_ORDER = segment === "Plumbing" ? PLUMBING_CATEGORY_ORDER : PTMT_CATEGORY_ORDER;
   const allStatuses = [...new Set(items.map(i => i.status))].sort();
-  const allCategories = CATEGORY_ORDER.filter(c => items.some(i => i.category === c));
+  const allCategories = [...new Set(items.map(i => i.category))].sort((a, b) => {
+    const ai = CATEGORY_ORDER.indexOf(a);
+    const bi = CATEGORY_ORDER.indexOf(b);
+    if (ai >= 0 && bi >= 0) return ai - bi;
+    if (ai >= 0) return -1;
+    if (bi >= 0) return 1;
+    return a.localeCompare(b);
+  });
 
   const filtered = items.filter(item => {
     if (filterStatus !== "all" && item.status !== filterStatus) return false;
@@ -529,6 +555,7 @@ function RevisedReleaseTable({
 function CategoryRollup({ result }: { result: CorrectiveReplanResult }) {
   const weekCapacity = result.dailyCapacity * result.workingDaysPerWeek;
   const remainingWeeks = [1, 2, 3, 4].filter(w => w > result.weekClosed);
+  const CATEGORY_ORDER = result.segment === "Plumbing" ? PLUMBING_CATEGORY_ORDER : PTMT_CATEGORY_ORDER;
 
   const byCat = new Map<string, { w1: number; w2: number; w3: number; w4: number; original: number }>();
   for (const item of result.items) {
@@ -541,7 +568,16 @@ function CategoryRollup({ result }: { result: CorrectiveReplanResult }) {
     byCat.set(item.category, c);
   }
 
-  const data = CATEGORY_ORDER
+  const ordered = [...byCat.keys()].sort((a, b) => {
+    const ai = CATEGORY_ORDER.indexOf(a);
+    const bi = CATEGORY_ORDER.indexOf(b);
+    if (ai >= 0 && bi >= 0) return ai - bi;
+    if (ai >= 0) return -1;
+    if (bi >= 0) return 1;
+    return a.localeCompare(b);
+  });
+
+  const data = ordered
     .filter(c => byCat.has(c))
     .map(c => {
       const v = byCat.get(c)!;
@@ -618,8 +654,9 @@ function HeaderSummary({ result }: { result: CorrectiveReplanResult }) {
 
 // ─── Run History Sidebar ──────────────────────────────────────────────────────
 
-function RunHistory({ month, selectedRunId, onSelect }: { month: string; selectedRunId: number | null; onSelect: (id: number) => void }) {
-  const { data, isLoading } = useListCorrectiveRuns({ month } as Parameters<typeof useListCorrectiveRuns>[0]);
+function RunHistory({ month, segment, selectedRunId, onSelect }: { month: string; segment: string; selectedRunId: number | null; onSelect: (id: number) => void }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, isLoading } = useListCorrectiveRuns({ month, segment } as any);
   const runs = (data as unknown as CorrectivePlanRunSummary[] | undefined) ?? [];
 
   if (isLoading) return <p className="text-xs text-gray-400">Loading history…</p>;
@@ -660,6 +697,7 @@ export default function CorrectivePage() {
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
+  const { segment } = useSegment();
   const [month, setMonth] = useState(defaultMonth);
   const [weekClosed, setWeekClosed] = useState(1);
   const [runResult, setRunResult] = useState<CorrectiveReplanResult | null>(null);
@@ -682,7 +720,7 @@ export default function CorrectivePage() {
 
   function handleReplan() {
     replan.mutate(
-      { data: { month, weekClosed } },
+      { data: { month, weekClosed, segment } },
       {
         onSuccess: (data) => {
           const result = data as unknown as CorrectiveReplanResult;
@@ -712,7 +750,7 @@ export default function CorrectivePage() {
     <AppLayout>
       <div className="max-w-6xl mx-auto space-y-6">
         <div>
-          <h2 className="text-xl font-semibold">Weekly Corrective Re-Plan</h2>
+          <h2 className="text-xl font-semibold">{segment} — Weekly Corrective Re-Plan</h2>
           <p className="text-sm text-gray-500 mt-1">
             Re-plans the remaining weeks using live production, orders, and stock — then capacity-levels
             the revised release so no week is scheduled above its capacity.
@@ -763,8 +801,10 @@ export default function CorrectivePage() {
               </Button>
             </div>
             <p className="text-xs text-gray-400 mt-2">
-              Uses live production (PTMT ANUJ), live pending orders, and the latest uploaded stock/pending files.
-              Capacity is applied <strong>per category</strong> from the global table on the{" "}
+              {segment === "Plumbing"
+                ? "Uses uploaded stock/pending files and live pending orders. CPVC/UPVC: buffer-driven formula; SWR/AGRI: demand-driven formula."
+                : "Uses live production (PTMT ANUJ), live pending orders, and the latest uploaded stock/pending files."}
+              {" "}Capacity is applied <strong>per category</strong> from the global table on the{" "}
               <a href="/data" className="underline text-indigo-600 hover:text-indigo-800">Data page</a>.
             </p>
           </CardContent>
@@ -775,7 +815,7 @@ export default function CorrectivePage() {
           <div className="space-y-5 min-w-0">
             {replan.isPending && (
               <div className="rounded-md bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-700 animate-pulse">
-                ⚙ Running corrective re-plan — reading live Google Sheets data, computing revised requirements, capacity-levelling across W{weekClosed + 1}–W4…
+                ⚙ Running {segment} corrective re-plan — computing revised requirements, capacity-levelling across W{weekClosed + 1}–W4…
               </div>
             )}
 
@@ -852,7 +892,7 @@ export default function CorrectivePage() {
                   </CardHeader>
                   <CardContent>
                     {activeTab === "table" && (
-                      <RevisedReleaseTable items={displayResult.items} weekClosed={displayResult.weekClosed} />
+                      <RevisedReleaseTable items={displayResult.items} weekClosed={displayResult.weekClosed} segment={displayResult.segment ?? segment} />
                     )}
                     {activeTab === "chart" && (
                       <div className="space-y-6">
@@ -925,7 +965,9 @@ export default function CorrectivePage() {
                 <p className="text-base font-medium mb-1">No corrective plan yet</p>
                 <p className="text-sm">Configure the parameters above and click <strong>Re-plan now</strong> to run the engine.</p>
                 <p className="text-xs mt-2 text-gray-400">
-                  This reads live PTMT ANUJ production data and live pending orders — expect 5–15 seconds.
+                  {segment === "Plumbing"
+                    ? "This uses uploaded stock/pending files and live orders — expect 5–15 seconds."
+                    : "This reads live PTMT ANUJ production data and live pending orders — expect 5–15 seconds."}
                 </p>
               </div>
             )}
@@ -939,6 +981,7 @@ export default function CorrectivePage() {
               </h3>
               <RunHistory
                 month={month}
+                segment={segment}
                 selectedRunId={selectedRunId}
                 onSelect={id => { setSelectedRunId(id); setRunResult(null); }}
               />

@@ -91,6 +91,8 @@ export * from './dashboardSnapshot';
 export * from './dashboardSnapshotLastSyncedAt';
 export * from './dashboardSnapshotLatestMonth';
 export * from './deleteApiKey200';
+export * from './exportLatestCorrectiveExcelParams';
+export * from './exportLatestCorrectivePdfParams';
 export * from './exportMonitoringExcelParams';
 export * from './exportMonitoringPdfParams';
 export * from './exportPlanExcelParams';

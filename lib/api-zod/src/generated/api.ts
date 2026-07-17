@@ -172,6 +172,7 @@ export const getSyncStatusResponse = zod.array(getSyncStatusResponseItem)
 export const runCorrectiveReplanBody = zod.object({
   "month": zod.string().describe('YYYY-MM'),
   "weekClosed": zod.number().describe('Week just closed (0=none, 1=W1 done, 2=W2 done, 3=W3 done)'),
+  "segment": zod.string().optional().describe('PTMT or Plumbing (default PTMT)'),
   "dailyCapacity": zod.number().optional().describe('Pieces per day (default 21335)'),
   "workingDaysPerWeek": zod.number().optional().describe('Working days per week (default 6)')
 })
@@ -179,6 +180,7 @@ export const runCorrectiveReplanBody = zod.object({
 export const runCorrectiveReplanResponse = zod.object({
   "runId": zod.number(),
   "month": zod.string(),
+  "segment": zod.string(),
   "weekClosed": zod.number(),
   "dailyCapacity": zod.number(),
   "workingDaysPerWeek": zod.number(),
@@ -240,11 +242,13 @@ export const runCorrectiveReplanResponse = zod.object({
 
 
 export const listCorrectiveRunsQueryParams = zod.object({
-  "month": zod.string().optional()
+  "month": zod.string().optional(),
+  "segment": zod.string().optional()
 })
 
 export const listCorrectiveRunsResponseItem = zod.object({
   "id": zod.number(),
+  "segment": zod.string(),
   "month": zod.string(),
   "weekClosed": zod.number(),
   "dailyCapacity": zod.number(),
@@ -274,6 +278,7 @@ export const getCorrectiveRunParams = zod.object({
 export const getCorrectiveRunResponse = zod.object({
   "runId": zod.number(),
   "month": zod.string(),
+  "segment": zod.string(),
   "weekClosed": zod.number(),
   "dailyCapacity": zod.number(),
   "workingDaysPerWeek": zod.number(),
@@ -336,6 +341,27 @@ export const getCorrectiveRunResponse = zod.object({
 
 export const exportCorrectiveExcelParams = zod.object({
   "id": zod.number()
+})
+
+
+export const exportCorrectivePdfParams = zod.object({
+  "id": zod.number()
+})
+
+
+export const exportLatestCorrectiveExcelQuerySegmentDefault = "PTMT";
+
+export const exportLatestCorrectiveExcelQueryParams = zod.object({
+  "month": zod.string(),
+  "segment": zod.string().default(exportLatestCorrectiveExcelQuerySegmentDefault)
+})
+
+
+export const exportLatestCorrectivePdfQuerySegmentDefault = "PTMT";
+
+export const exportLatestCorrectivePdfQueryParams = zod.object({
+  "month": zod.string(),
+  "segment": zod.string().default(exportLatestCorrectivePdfQuerySegmentDefault)
 })
 
 

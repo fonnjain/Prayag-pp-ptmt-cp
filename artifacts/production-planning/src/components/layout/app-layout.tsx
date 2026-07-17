@@ -31,6 +31,7 @@ const PTMT_ACTION_LINKS: NavItem[] = [
 
 const PLUMBING_ACTION_LINKS: NavItem[] = [
   { href: "/runs", label: "Plan Runs", icon: <History size={15} /> },
+  { href: "/corrective", label: "Corrective Plan", icon: <RefreshCw size={15} /> },
   { href: "/export", label: "Export", icon: <Download size={15} /> },
 ];
 

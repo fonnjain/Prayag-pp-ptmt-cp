@@ -38,6 +38,8 @@ import type {
   CreateUploadBody,
   DashboardSnapshot,
   DeleteApiKey200,
+  ExportLatestCorrectiveExcelParams,
+  ExportLatestCorrectivePdfParams,
   ExportMonitoringExcelParams,
   ExportMonitoringPdfParams,
   ExportPlanExcelParams,
@@ -1155,6 +1157,290 @@ export function useExportCorrectiveExcel<TData = Awaited<ReturnType<typeof expor
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getExportCorrectiveExcelQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type exportCorrectivePdfResponse200 = {
+  data: Blob
+  status: 200
+}
+
+export type exportCorrectivePdfResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type exportCorrectivePdfResponseSuccess = (exportCorrectivePdfResponse200) & {
+  headers: Headers;
+};
+export type exportCorrectivePdfResponseError = (exportCorrectivePdfResponse404) & {
+  headers: Headers;
+};
+
+export type exportCorrectivePdfResponse = (exportCorrectivePdfResponseSuccess | exportCorrectivePdfResponseError)
+
+export const getExportCorrectivePdfUrl = (id: number,) => {
+
+
+  
+
+  return `/api/corrective/runs/${id}/export/pdf`
+}
+
+export const exportCorrectivePdf = async (id: number, options?: RequestInit): Promise<exportCorrectivePdfResponse> => {
+  
+  return customFetch<exportCorrectivePdfResponse>(getExportCorrectivePdfUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getExportCorrectivePdfQueryKey = (id?: number,) => {
+    return [
+    `/api/corrective/runs/${id}/export/pdf`
+    ] as const;
+    }
+
+    
+export const getExportCorrectivePdfQueryOptions = <TData = Awaited<ReturnType<typeof exportCorrectivePdf>>, TError = void>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportCorrectivePdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportCorrectivePdfQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportCorrectivePdf>>> = ({ signal }) => exportCorrectivePdf(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportCorrectivePdf>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportCorrectivePdfQueryResult = NonNullable<Awaited<ReturnType<typeof exportCorrectivePdf>>>
+export type ExportCorrectivePdfQueryError = void
+
+
+
+export function useExportCorrectivePdf<TData = Awaited<ReturnType<typeof exportCorrectivePdf>>, TError = void>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportCorrectivePdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportCorrectivePdfQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type exportLatestCorrectiveExcelResponse200 = {
+  data: Blob
+  status: 200
+}
+
+export type exportLatestCorrectiveExcelResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type exportLatestCorrectiveExcelResponseSuccess = (exportLatestCorrectiveExcelResponse200) & {
+  headers: Headers;
+};
+export type exportLatestCorrectiveExcelResponseError = (exportLatestCorrectiveExcelResponse404) & {
+  headers: Headers;
+};
+
+export type exportLatestCorrectiveExcelResponse = (exportLatestCorrectiveExcelResponseSuccess | exportLatestCorrectiveExcelResponseError)
+
+export const getExportLatestCorrectiveExcelUrl = (params: ExportLatestCorrectiveExcelParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/corrective/export/excel?${stringifiedParams}` : `/api/corrective/export/excel`
+}
+
+export const exportLatestCorrectiveExcel = async (params: ExportLatestCorrectiveExcelParams, options?: RequestInit): Promise<exportLatestCorrectiveExcelResponse> => {
+  
+  return customFetch<exportLatestCorrectiveExcelResponse>(getExportLatestCorrectiveExcelUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getExportLatestCorrectiveExcelQueryKey = (params?: ExportLatestCorrectiveExcelParams,) => {
+    return [
+    `/api/corrective/export/excel`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getExportLatestCorrectiveExcelQueryOptions = <TData = Awaited<ReturnType<typeof exportLatestCorrectiveExcel>>, TError = void>(params: ExportLatestCorrectiveExcelParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportLatestCorrectiveExcel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportLatestCorrectiveExcelQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportLatestCorrectiveExcel>>> = ({ signal }) => exportLatestCorrectiveExcel(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportLatestCorrectiveExcel>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportLatestCorrectiveExcelQueryResult = NonNullable<Awaited<ReturnType<typeof exportLatestCorrectiveExcel>>>
+export type ExportLatestCorrectiveExcelQueryError = void
+
+
+
+export function useExportLatestCorrectiveExcel<TData = Awaited<ReturnType<typeof exportLatestCorrectiveExcel>>, TError = void>(
+ params: ExportLatestCorrectiveExcelParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportLatestCorrectiveExcel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportLatestCorrectiveExcelQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type exportLatestCorrectivePdfResponse200 = {
+  data: Blob
+  status: 200
+}
+
+export type exportLatestCorrectivePdfResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type exportLatestCorrectivePdfResponseSuccess = (exportLatestCorrectivePdfResponse200) & {
+  headers: Headers;
+};
+export type exportLatestCorrectivePdfResponseError = (exportLatestCorrectivePdfResponse404) & {
+  headers: Headers;
+};
+
+export type exportLatestCorrectivePdfResponse = (exportLatestCorrectivePdfResponseSuccess | exportLatestCorrectivePdfResponseError)
+
+export const getExportLatestCorrectivePdfUrl = (params: ExportLatestCorrectivePdfParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/corrective/export/pdf?${stringifiedParams}` : `/api/corrective/export/pdf`
+}
+
+export const exportLatestCorrectivePdf = async (params: ExportLatestCorrectivePdfParams, options?: RequestInit): Promise<exportLatestCorrectivePdfResponse> => {
+  
+  return customFetch<exportLatestCorrectivePdfResponse>(getExportLatestCorrectivePdfUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getExportLatestCorrectivePdfQueryKey = (params?: ExportLatestCorrectivePdfParams,) => {
+    return [
+    `/api/corrective/export/pdf`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getExportLatestCorrectivePdfQueryOptions = <TData = Awaited<ReturnType<typeof exportLatestCorrectivePdf>>, TError = void>(params: ExportLatestCorrectivePdfParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportLatestCorrectivePdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportLatestCorrectivePdfQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportLatestCorrectivePdf>>> = ({ signal }) => exportLatestCorrectivePdf(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportLatestCorrectivePdf>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportLatestCorrectivePdfQueryResult = NonNullable<Awaited<ReturnType<typeof exportLatestCorrectivePdf>>>
+export type ExportLatestCorrectivePdfQueryError = void
+
+
+
+export function useExportLatestCorrectivePdf<TData = Awaited<ReturnType<typeof exportLatestCorrectivePdf>>, TError = void>(
+ params: ExportLatestCorrectivePdfParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportLatestCorrectivePdf>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportLatestCorrectivePdfQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

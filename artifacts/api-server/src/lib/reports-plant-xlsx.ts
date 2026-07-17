@@ -145,7 +145,7 @@ export async function generatePlantXlsx(bundle: FullBundle): Promise<Buffer> {
   ];
   const itemHdr = wsItems.addRow(["Item Code", "Colour", "Category", "Plan (Max)", "Produced", "Gap (pcs)", "Att %", "0-Day Streak"]);
   setHeaderRow(itemHdr);
-  itemHdr.eachCell((c) => { c.alignment = { horizontal: "left" }; });
+  itemHdr.eachCell((c: import("exceljs").Cell) => { c.alignment = { horizontal: "left" }; });
 
   const sortedItems = [...items as ItemKPIs[]].sort((a, b) => Math.max(b.gapPcs, 0) - Math.max(a.gapPcs, 0));
   for (const item of sortedItems) {
@@ -156,7 +156,7 @@ export async function generatePlantXlsx(bundle: FullBundle): Promise<Buffer> {
       item.daysWithNoProduction,
     ]);
     r.font = { size: 9 };
-    r.eachCell((c) => { c.alignment = { horizontal: "left" }; });
+    r.eachCell((c: import("exceljs").Cell) => { c.alignment = { horizontal: "left" }; });
     if (item.gapPcs > 0) r.getCell(6).fill = RED;
     r.getCell(6).font = { bold: true, size: 9, color: { argb: item.gapPcs > 0 ? "FF991B1B" : "FF065F46" } };
     r.getCell(7).numFmt = "0.0%";

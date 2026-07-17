@@ -10,6 +10,8 @@ export interface CorrectiveReplanInput {
   month: string;
   /** Week just closed (0=none, 1=W1 done, 2=W2 done, 3=W3 done) */
   weekClosed: number;
+  /** PTMT or Plumbing (default PTMT) */
+  segment?: string;
   /** Pieces per day (default 21335) */
   dailyCapacity?: number;
   /** Working days per week (default 6) */

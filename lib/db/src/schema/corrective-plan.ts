@@ -24,6 +24,7 @@ export interface CorrectiveWarning {
 
 export const correctivePlanRunsTable = pgTable("corrective_plan_runs", {
   id: serial("id").primaryKey(),
+  segment: text("segment").notNull().default("PTMT"),
   month: text("month").notNull(),
   weekClosed: integer("week_closed").notNull().default(0),
   dailyCapacity: real("daily_capacity").notNull().default(21335),

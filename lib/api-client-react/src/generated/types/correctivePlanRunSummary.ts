@@ -8,6 +8,7 @@ import type { CorrectiveWarning } from './correctiveWarning';
 
 export interface CorrectivePlanRunSummary {
   id: number;
+  segment: string;
   month: string;
   weekClosed: number;
   dailyCapacity: number;
