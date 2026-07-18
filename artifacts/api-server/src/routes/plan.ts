@@ -74,23 +74,52 @@ export type PlanItemWithBom = ReturnType<typeof computeItemPlan> & {
 };
 
 /**
- * Plumbing plan: reads ALL inputs from the daily-production workbook by header name.
- * Stock, pending, pending-LM, avg3Mo — all come from per-item rows in the workbook.
- * No item_master queries or upload files are used for Plumbing.
+ * Plumbing plan — correct two-source architecture:
+ *
+ *   Stock, Pending-Last-Month  → plumbing_fg_stock UPLOAD (required)
+ *     Net Stock col: POSITIVE = opening stock on 1st of month
+ *                    NEGATIVE = |value| = pending order last month
+ *
+ *   Avg-3-Mo Sale, Pending Order, item TYPE → daily-production workbook
+ *     All columns located by header name (never by position).
+ *
+ *   Live open orders  → Order Sheet 26-27
+ *   BOM weight (KGs)  → BOM sheet
+ *
+ *   Buffer Req (per item) = Avg3Mo × multiplier (CPVC 1.5, UPVC 1.5, AGRI 1.5, SWR 1.0)
+ *   Production Required   = max( (Buffer − Stock) + PendingLM + Pending , 0 )
+ *   Category total        = sum of per-item values
  *
  * AGRI correction: the master's AGRI tab has Stock and Buffer columns SWAPPED.
  * By reading columns by header name the app gets the correct values and produces
- * the right plan (≈20,299 AGRI Pipe; ≈54,590 AGRI Fitting — not the master's
- * wrong 9,688 / 14,814 which result from the swapped positional formula).
+ * the right plan (≈20,299 AGRI Pipe; ≈54,590 AGRI Fitting).
+ * The workbook's Stock/PendingLM columns are NOT used — FG Stock upload is authoritative.
  */
 async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanItemWithBom[]> {
-  const [workbookRows, bufferRows, bandRows, liveOrderTotals, bomWeights] = await Promise.all([
+  const [workbookRows, fgStockRows, bufferRows, bandRows, liveOrderTotals, bomWeights] = await Promise.all([
     fetchPlumbingPlanData(month),
+    loadLatestUploadRowsByKind("plumbing_fg_stock"),
     db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
     db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
     fetchLiveOrderTotals(month, "PLUMBING"),
     fetchPlumbingBomWeights(),
   ]);
+
+  // Parse FG Stock upload: Net Stock positive → stock; negative → pendingOrderLastMonth (absolute value).
+  // Multiple rows with the same item code are summed (shouldn't occur, but safe).
+  const stockMap = new Map<string, number>();
+  const pendingLmMap = new Map<string, number>();
+  for (const row of fgStockRows) {
+    const code = normalizeCode(String(row["Item Code"] ?? "").trim());
+    if (!code) continue;
+    const rawNet = row["Net Stock"];
+    const netStock = typeof rawNet === "number" ? rawNet : Number(String(rawNet ?? "").replace(/,/g, "")) || 0;
+    if (netStock > 0) {
+      stockMap.set(code, (stockMap.get(code) ?? 0) + netStock);
+    } else if (netStock < 0) {
+      pendingLmMap.set(code, (pendingLmMap.get(code) ?? 0) + Math.abs(netStock));
+    }
+  }
 
   const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
   const bandsByCategory = new Map<string, WeeklyBandConfig>(
@@ -98,6 +127,7 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
   );
 
   const items: PlanItemWithBom[] = workbookRows.map((row) => {
+    const code = normalizeCode(row.itemCode);
     const source: ItemSourceRow = {
       itemCode: row.itemCode,
       colour: "",
@@ -105,19 +135,20 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
       // The workbook column "LAST 3 MONTH AVG SALE" is already the monthly average,
       // so multiply by 3 here so that /3 in calc.ts recovers the correct figure.
       avg3MoSaleTotal3Mo:    row.avg3MoSale * 3,
-      stock:                 row.stock,
-      stockNeedsReview:      false, // workbook is the authoritative source
-      pendingOrderLastMonth: row.pendingOrderLastMonth,
+      // Stock and pendingLM come from the FG Stock UPLOAD — NOT from the workbook.
+      stock:                 stockMap.get(code) ?? 0,
+      stockNeedsReview:      false,
+      pendingOrderLastMonth: pendingLmMap.get(code) ?? 0,
+      // Pending order (current month) from workbook; live open order from Order Sheet.
       pendingOrder:          row.pendingOrder,
-      // Live open-order qty from Order Sheet — by code only (Plumbing has no colour variants)
-      order: liveOrderTotals.byCode.get(normalizeCode(row.itemCode)) ?? 0,
+      order:                 liveOrderTotals.byCode.get(code) ?? 0,
     };
     const multiplier = bufferByCategory.get(row.category) ?? 1;
-    // One formula for all 12 Plumbing categories: max(BufferReq − Stock + PendingLM + Pending, 0)
+    // One formula for all 12 Plumbing categories: max((Buffer − Stock) + PendingLM + Pending, 0)
     const computed = computeItemPlan(source, row.category, multiplier);
 
     // BOM weight — ~3% of items may have no BOM entry; flag them, never drop or guess.
-    const weightPcs = bomWeights.get(normalizeCode(row.itemCode));
+    const weightPcs = bomWeights.get(code);
     const noBomWeight = weightPcs === undefined;
     const weightKg = noBomWeight ? 0 : Math.round(computed.maxProduction * weightPcs! * 100) / 100;
     return { ...computed, weightKg, noBomWeight };
@@ -401,13 +432,14 @@ router.put("/plan/weekly-bands/:category", async (req, res): Promise<void> => {
  * Plumbing checks (12) — exact integer match vs Daily Production PLUMBING master (AGRI intentionally corrected).
  * 12 lines = 4 materials (CPVC, UPVC, SWR, AGRI) × 3 types (Pipe, Fitting, Solvent).
  * Grand total = 1,922,309 pcs (matches Pipe Summary management tab).
- * ONE formula for all 12 categories: max(BufferReq − Stock + PendingLM + Pending, 0).
+ * ONE formula for all 12 categories: max((Buffer − Stock) + PendingLM + Pending, 0).
  * AGRI correction: master has Stock/Buffer swapped → corrected values ≈20,299 Pipe / ≈54,590 Fitting.
  *
- * Data sources (Plumbing) — ALL from the daily-production workbook by header-name mapping:
- *   Stock, PendingLM, Avg3Mo, Pending → fetchPlumbingPlanData(month) (lib/sheets.ts)
- *   Live orders                        → Order Sheet 26-27
- *   KGs                                → BOM sheet (1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA)
+ * Data sources (Plumbing):
+ *   Stock + PendingLM   → plumbing_fg_stock UPLOAD (Net Stock col: +ve=stock, -ve=pendingLM)
+ *   Avg3Mo + Pending    → daily-production workbook by header-name mapping (lib/sheets.ts)
+ *   Live orders         → Order Sheet 26-27
+ *   KGs                 → BOM sheet (1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA)
  */
 router.get("/plan/validate", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");

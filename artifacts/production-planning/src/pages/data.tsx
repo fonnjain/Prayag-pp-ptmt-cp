@@ -59,7 +59,7 @@ const PLUMBING_LOCAL_UPLOAD_KINDS: UploadKindDef[] = [
     kind: UploadKind.plumbing_fg_stock,
     label: "FG Stock file (stock + pending last month)",
     hint: 'e.g. "FG Stock and Pending Production month of June.xlsx" → worksheet "FG Stock". Col R = Net Stock: POSITIVE → opening stock (1st of month). NEGATIVE → absolute value = pending order last month. Category col maps to one of 12 planning lines (CPVC/UPVC/SWR/AGRI × Pipe/Fitting/Solvent).',
-    required: false,
+    required: true,
   },
 ];
 
