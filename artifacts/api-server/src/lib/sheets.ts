@@ -42,7 +42,8 @@ export const PTMT_DAILY_WORKBOOK_IDS: Record<string, string> = {
 
 /**
  * Plumbing monthly daily-production workbook file IDs.
- * Tab name: "Daily Production PLUMBING <Month> 2026"
+ * These are fallback IDs used when Drive-based discovery fails.
+ * Primary source: Google Drive search (findPlumbingWorkbookId).
  */
 export const PLUMBING_DAILY_WORKBOOK_IDS: Record<string, string> = {
   "2026-07": "1wlB4Y4lnP7Y2SLZX6atFN-nrKA--ByYF8m2TVHuBxD0",
@@ -65,7 +66,84 @@ async function proxyJson(path: string): Promise<any> {
   }
 }
 
-// Cache tab lists for 10 minutes — sheet structure changes are rare intra-session
+// ── Google Drive helpers ──────────────────────────────────────────────────────
+
+async function driveProxyJson(path: string): Promise<any> {
+  const res = await getConnectors().proxy("google-drive", path, { method: "GET" });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Drive API error ${res.status}: ${body.slice(0, 300)}`);
+  }
+  return res.json();
+}
+
+const _MONTH_ABBREVS: Record<string, string[]> = {
+  "01": ["Jan", "January"],
+  "02": ["Feb", "February"],
+  "03": ["Mar", "March"],
+  "04": ["Apr", "April"],
+  "05": ["May"],
+  "06": ["Jun", "June"],
+  "07": ["Jul", "July"],
+  "08": ["Aug", "August"],
+  "09": ["Sep", "September"],
+  "10": ["Oct", "October"],
+  "11": ["Nov", "November"],
+  "12": ["Dec", "December"],
+};
+
+// Cache Drive workbook lookups for 30 minutes
+const _driveWorkbookCache = new Map<string, { fileId: string | null; expires: number }>();
+
+/**
+ * Searches Google Drive for the Plumbing daily-production workbook for a given
+ * planning month (YYYY-MM).  Returns the file ID of the best match, or null if
+ * none found or Drive is not connected.  Falls back to PLUMBING_DAILY_WORKBOOK_IDS.
+ */
+async function findPlumbingWorkbookId(month: string): Promise<string | null> {
+  const now = Date.now();
+  const cached = _driveWorkbookCache.get(month);
+  if (cached && cached.expires > now) return cached.fileId;
+
+  try {
+    const [year, mo] = month.split("-");
+    const abbrevs = _MONTH_ABBREVS[mo] ?? [];
+    const yearShort = year.slice(2); // e.g. "26"
+
+    const q = encodeURIComponent(
+      "name contains 'PLUMBING' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+    );
+    const data = await driveProxyJson(
+      `/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime%20desc&pageSize=30`,
+    );
+
+    const files: Array<{ id: string; name: string; modifiedTime: string }> = data.files ?? [];
+    const match = files.find((f) => {
+      const upper = f.name.toUpperCase();
+      return (
+        abbrevs.some((a) => upper.includes(a.toUpperCase())) &&
+        (upper.includes(year) || upper.includes(yearShort))
+      );
+    });
+
+    const fileId = match?.id ?? null;
+    _driveWorkbookCache.set(month, { fileId, expires: now + 30 * 60 * 1000 });
+    if (fileId) {
+      logger.info({ month, fileName: match!.name, fileId }, "fetchPlumbingPlanData: workbook found via Drive");
+    } else {
+      logger.warn(
+        { month, candidates: files.slice(0, 5).map((f) => f.name) },
+        "fetchPlumbingPlanData: no matching Plumbing workbook in Drive",
+      );
+    }
+    return fileId;
+  } catch (err) {
+    logger.warn({ month, err: String(err) }, "fetchPlumbingPlanData: Drive lookup failed — using hardcoded ID");
+    return null;
+  }
+}
+
+// ── Cache tab lists for 10 minutes — sheet structure changes are rare intra-session
 const _tabsCache = new Map<string, { tabs: string[]; expires: number }>();
 
 export async function listTabs(sheetId: string): Promise<string[]> {
@@ -555,9 +633,11 @@ const PLUMBING_MATERIALS = ["CPVC", "UPVC", "SWR", "AGRI"] as const;
  * This is intentional — do not "fix" back to match the master's figures.
  */
 export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlanRow[]> {
-  const fileId = PLUMBING_DAILY_WORKBOOK_IDS[month];
+  // Drive-based discovery is primary; hardcoded map is fallback.
+  const driveId = await findPlumbingWorkbookId(month);
+  const fileId = driveId ?? PLUMBING_DAILY_WORKBOOK_IDS[month] ?? null;
   if (!fileId) {
-    logger.warn({ month }, "fetchPlumbingPlanData: no Plumbing workbook registered for this month");
+    logger.warn({ month }, "fetchPlumbingPlanData: no Plumbing workbook found (Drive + hardcoded both empty)");
     return [];
   }
 
@@ -622,22 +702,46 @@ export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlan
       "fetchPlumbingPlanData: columns mapped",
     );
 
-    if (codeCol < 0 || typeCol < 0 || avg3moCol < 0 || stockCol < 0 || pendingCol < 0 || pendingLmCol < 0) {
+    // Only codeCol, avg3moCol, and pendingCol are truly required from the workbook.
+    // stockCol and pendingLmCol are NOT required — they come from the FG Stock upload.
+    // typeCol is NOT required — we fall back to section-header detection when absent.
+    if (codeCol < 0 || avg3moCol < 0 || pendingCol < 0) {
       logger.warn(
-        { material, tab, codeCol, typeCol, avg3moCol, stockCol, pendingCol, pendingLmCol },
-        "fetchPlumbingPlanData: one or more required columns not found — skipping tab",
+        { material, tab, codeCol, avg3moCol, pendingCol },
+        "fetchPlumbingPlanData: required columns (code/avg3mo/pending) not found — skipping tab",
       );
       continue;
     }
+
+    // When no explicit TYPE column exists, derive type from section-header rows.
+    // Section headers are rows with no item code whose first 8 cells contain a type keyword.
+    let currentSectionType: "Pipe" | "Fitting" | "Solvent" | null = null;
 
     let rowCount = 0;
     for (let i = headerRowIdx + 1; i < values.length; i++) {
       const row = values[i];
       if (!row) continue;
       const rawCode = String(row[codeCol] ?? "").trim();
-      if (!rawCode) continue;
-      const itemType = normItemType(String(row[typeCol] ?? ""));
-      if (!itemType) continue; // skip totals / merged-header / blank rows
+
+      if (!rawCode) {
+        // Potential section-header row — look for a type keyword
+        if (typeCol < 0) {
+          const joined = row.slice(0, 8).map((c) => String(c ?? "").trim().toUpperCase()).join(" ");
+          if (/\bPIPE\b|\bPIPING\b|\bPIPES\b/.test(joined)) currentSectionType = "Pipe";
+          else if (/\bFITTING\b|\bFITTINGS\b/.test(joined)) currentSectionType = "Fitting";
+          else if (/\bSOLVENT\b/.test(joined)) currentSectionType = "Solvent";
+        }
+        continue;
+      }
+
+      // Determine item type: explicit column first, then section-header fallback
+      let itemType: "Pipe" | "Fitting" | "Solvent" | null;
+      if (typeCol >= 0) {
+        itemType = normItemType(String(row[typeCol] ?? ""));
+      } else {
+        itemType = currentSectionType;
+      }
+      if (!itemType) continue; // type unknown — skip totals / blanks
 
       result.push({
         material,
@@ -645,13 +749,15 @@ export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlan
         category: `${material} ${itemType}`,
         itemCode: rawCode,
         avg3MoSale:            toNumber(row[avg3moCol]),
-        stock:                 toNumber(row[stockCol]),
+        // stockCol / pendingLmCol may be -1 (come from FG upload, not workbook).
+        // plan.ts overwrites these from the FG stock upload map.
+        stock:                 stockCol >= 0 ? toNumber(row[stockCol]) : 0,
         pendingOrder:          toNumber(row[pendingCol]),
-        pendingOrderLastMonth: toNumber(row[pendingLmCol]),
+        pendingOrderLastMonth: pendingLmCol >= 0 ? toNumber(row[pendingLmCol]) : 0,
       });
       rowCount++;
     }
-    logger.info({ material, tab, rowCount }, "fetchPlumbingPlanData: rows parsed");
+    logger.info({ material, tab, typeColSource: typeCol >= 0 ? "column" : "section-headers", rowCount }, "fetchPlumbingPlanData: rows parsed");
   }
 
   return result;
