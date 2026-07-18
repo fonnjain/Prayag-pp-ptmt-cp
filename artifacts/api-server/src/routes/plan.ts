@@ -6,6 +6,7 @@ import {
   fetchAvg3MoSaleTotals,
   fetchLiveOrderTotals,
   fetchPlumbingBomWeights,
+  fetchPlumbingPlanData,
   itemKey,
   normalizeCode,
   type DualTotals,
@@ -73,72 +74,90 @@ export type PlanItemWithBom = ReturnType<typeof computeItemPlan> & {
 };
 
 /**
+ * Plumbing plan: reads ALL inputs from the daily-production workbook by header name.
+ * Stock, pending, pending-LM, avg3Mo — all come from per-item rows in the workbook.
+ * No item_master queries or upload files are used for Plumbing.
+ *
+ * AGRI correction: the master's AGRI tab has Stock and Buffer columns SWAPPED.
+ * By reading columns by header name the app gets the correct values and produces
+ * the right plan (≈20,299 AGRI Pipe; ≈54,590 AGRI Fitting — not the master's
+ * wrong 9,688 / 14,814 which result from the swapped positional formula).
+ */
+async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanItemWithBom[]> {
+  const [workbookRows, bufferRows, bandRows, liveOrderTotals, bomWeights] = await Promise.all([
+    fetchPlumbingPlanData(month),
+    db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
+    db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
+    fetchLiveOrderTotals(month, "PLUMBING"),
+    fetchPlumbingBomWeights(),
+  ]);
+
+  const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
+  const bandsByCategory = new Map<string, WeeklyBandConfig>(
+    bandRows.map((b) => [b.categoryName, { w1Upper: b.w1Upper, w2Upper: b.w2Upper, w3Upper: b.w3Upper, w4Upper: b.w4Upper }]),
+  );
+
+  const items: PlanItemWithBom[] = workbookRows.map((row) => {
+    const source: ItemSourceRow = {
+      itemCode: row.itemCode,
+      colour: "",
+      // calc.ts computes avg3MoSale = avg3MoSaleTotal3Mo / 3.
+      // The workbook column "LAST 3 MONTH AVG SALE" is already the monthly average,
+      // so multiply by 3 here so that /3 in calc.ts recovers the correct figure.
+      avg3MoSaleTotal3Mo:    row.avg3MoSale * 3,
+      stock:                 row.stock,
+      stockNeedsReview:      false, // workbook is the authoritative source
+      pendingOrderLastMonth: row.pendingOrderLastMonth,
+      pendingOrder:          row.pendingOrder,
+      // Live open-order qty from Order Sheet — by code only (Plumbing has no colour variants)
+      order: liveOrderTotals.byCode.get(normalizeCode(row.itemCode)) ?? 0,
+    };
+    const multiplier = bufferByCategory.get(row.category) ?? 1;
+    // One formula for all 12 Plumbing categories: max(BufferReq − Stock + PendingLM + Pending, 0)
+    const computed = computeItemPlan(source, row.category, multiplier);
+
+    // BOM weight — ~3% of items may have no BOM entry; flag them, never drop or guess.
+    const weightPcs = bomWeights.get(normalizeCode(row.itemCode));
+    const noBomWeight = weightPcs === undefined;
+    const weightKg = noBomWeight ? 0 : Math.round(computed.maxProduction * weightPcs! * 100) / 100;
+    return { ...computed, weightKg, noBomWeight };
+  });
+
+  annotateWeeklyRelease(items, bandsByCategory);
+  return items;
+}
+
+/**
  * Build plan items for a given month and segment.
- * segment defaults to "PTMT" — passing "Plumbing" scopes every DB read and
- * upload-kind lookup to the Plumbing category set without touching PTMT data.
+ * For Plumbing, delegates to buildPlumbingPlanItemsFromWorkbook which reads all inputs
+ * (avg sale, stock, pending, pending-LM) from the workbook by header-name mapping.
+ * segment defaults to "PTMT".
  */
 export async function buildPlanItems(month: string, segment: string = "PTMT"): Promise<PlanItemWithBom[]> {
-  const isPlumbing = segment === "Plumbing";
-  const orderGroup = isPlumbing ? "PLUMBING" : "PTMT";
+  // Plumbing: all inputs come from the daily-production workbook — no item_master or uploads.
+  if (segment === "Plumbing") {
+    return buildPlumbingPlanItemsFromWorkbook(month);
+  }
 
-  // ── Shared data (loads in parallel for both segments) ───────────────────────
-  const [itemRows, bufferRows, bandRows, rawPendingOrderRows, avg3MoTotals, liveOrderTotals, bomWeights] =
+  // ── PTMT data loads (all parallel) ──────────────────────────────────────────
+  const [itemRows, bufferRows, bandRows, rawPendingOrderRows, avg3MoTotals, liveOrderTotals, currentStockRows, pendingLastMoRows] =
     await Promise.all([
       db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, segment)),
       db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
       db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
-      // DATA.xlsx (pending_orders) — global upload serving both PTMT + Plumbing.
-      // Rows for all segments are stored; we filter to this segment below.
+      // DATA.xlsx (pending_orders) — global upload; rows for all segments stored, filtered below.
       loadLatestUploadRowsByKind("pending_orders"),
       fetchAvg3MoSaleTotals(month),
-      fetchLiveOrderTotals(month, orderGroup),
-      isPlumbing ? fetchPlumbingBomWeights() : Promise.resolve(new Map<string, number>()),
-    ]);
-
-  // Filter DATA.xlsx rows to this segment (file stores rows for all segments)
-  const pendingOrderRows = rawPendingOrderRows.filter((row) => {
-    const seg = String(row["Segment"] ?? "").trim().toUpperCase();
-    // "PLUMBING" and "P" are the primary segment codes.
-    // "PL" covers SWR Selfit pipes/fittings and UPVC SCH40 items in the ERP export.
-    // "AGRI" covers AGRI pipe items that appear under their own segment code.
-    if (isPlumbing) return seg === "PLUMBING" || seg === "P" || seg === "PL" || seg === "AGRI";
-    return seg === "PTMT" || seg === "PT";
-  });
-
-  // ── Segment-specific stock + last-month-pending data ────────────────────────
-  // Plumbing: single "plumbing_fg_stock" upload provides both inputs via Col R sign.
-  //   Positive Net Stock → opening stock as on 1st of planning month (→ Stock input)
-  //   Negative Net Stock → |value| = pending order last month (→ Pending-LM input)
-  // PTMT: two separate uploads unchanged (current_stock, last_month_pending).
-  let currentStockRows: Record<string, unknown>[] = [];
-  let pendingLastMoRows: Record<string, unknown>[] = [];
-
-  if (isPlumbing) {
-    const fgStockRows = await loadLatestUploadRowsByKind("plumbing_fg_stock");
-    for (const row of fgStockRows) {
-      // "Net Stock" is the canonical column name; also try hyphenated and lower-case variants
-      // that some ERP exports produce.
-      const rawNs = row["Net Stock"] ?? row["Net-Stock"] ?? row["Net stock"] ?? row["NetStock"];
-      const ns =
-        typeof rawNs === "number"
-          ? rawNs
-          : Number(String(rawNs ?? 0).replace(/,/g, ""));
-      if (ns > 0) {
-        currentStockRows.push({ ...row, Qty: ns });
-      } else if (ns < 0) {
-        // Negative Net Stock: stock = 0, pending-LM = |ns|.
-        // Push into pendingLastMoRows so the value is captured as Pending-LM.
-        // Do NOT push into currentStockRows — stock is intentionally zero for this item.
-        pendingLastMoRows.push({ ...row, Qty: Math.abs(ns) });
-      }
-      // ns === 0: skip (no stock and no pending-LM contribution)
-    }
-  } else {
-    [currentStockRows, pendingLastMoRows] = await Promise.all([
+      fetchLiveOrderTotals(month, "PTMT"),
       loadLatestUploadRowsByKind("current_stock"),
       loadLatestUploadRowsByKind("last_month_pending"),
     ]);
-  }
+
+  // DATA.xlsx stores rows for all segments; keep only PTMT rows.
+  const pendingOrderRows = rawPendingOrderRows.filter((row) => {
+    const seg = String(row["Segment"] ?? "").trim().toUpperCase();
+    return seg === "PTMT" || seg === "PT";
+  });
 
   const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
   const bandsByCategory = new Map<string, WeeklyBandConfig>(
@@ -164,7 +183,6 @@ export async function buildPlanItems(month: string, segment: string = "PTMT"): P
   );
 
   // Stock: F.G Sheet — try every item-code column variant the FG Stock upload may carry.
-  // The Plumbing FG Stock export uses "Old Item Code" in most sheets; CPVC sometimes uses "Item Code".
   const stockTotals = sumByKey(
     currentStockRows,
     ["Item Code", "Old Item Code", "Cat No", "Cat-No", "Item No."],
@@ -197,19 +215,8 @@ export async function buildPlanItems(month: string, segment: string = "PTMT"): P
       order: resolveTotal(liveOrderTotals, item.itemCode, item.colour, isSingleVariant),
     };
     const multiplier = bufferByCategory.get(item.category) ?? 1;
-    // One formula for all categories: max(BufferReq − Stock + PendingLM + Pending, 0).
-    // Buffer multiplier differs by material: CPVC/UPVC/AGRI = 1.5×, SWR = 1.0×.
-    // Stored in buffer_categories.multiplier — editable per category.
+    // One formula for all PTMT categories: max(BufferReq − Stock + PendingLM + Pending, 0).
     const computed = computeItemPlan(source, item.category, multiplier);
-
-    // Plumbing: attach kg computed from BOM (never from master kg column).
-    // ~3% of items may have no BOM entry — flag them, never drop or guess.
-    if (isPlumbing) {
-      const weightPcs = bomWeights.get(normalizeCode(item.itemCode));
-      const noBomWeight = weightPcs === undefined;
-      const weightKg = noBomWeight ? 0 : Math.round(computed.maxProduction * weightPcs! * 100) / 100;
-      return { ...computed, weightKg, noBomWeight };
-    }
     return computed;
   });
 
@@ -391,16 +398,16 @@ router.put("/plan/weekly-bands/:category", async (req, res): Promise<void> => {
  *   5. Grand Max total ≈ 576,037 (±5 %)
  *   6. Grand Min total ≈ 301,918 (±5 %)
  *
- * Plumbing checks (12) — exact integer match, verified cell-by-cell vs Daily Production PLUMBING master.
+ * Plumbing checks (12) — exact integer match vs Daily Production PLUMBING master (AGRI intentionally corrected).
  * 12 lines = 4 materials (CPVC, UPVC, SWR, AGRI) × 3 types (Pipe, Fitting, Solvent).
  * Grand total = 1,922,309 pcs (matches Pipe Summary management tab).
- * CPVC/UPVC use the "standard" formula; SWR/AGRI use the "swragri" formula.
+ * ONE formula for all 12 categories: max(BufferReq − Stock + PendingLM + Pending, 0).
+ * AGRI correction: master has Stock/Buffer swapped → corrected values ≈20,299 Pipe / ≈54,590 Fitting.
  *
- * Data sources (Plumbing):
- *   Stock + Pending-LM  → plumbing_fg_stock upload, Col R split by sign
- *   Avg-3-Mo sale       → live Sale 26-27 Google Sheet (NOT from DATA.xlsx — that holds one month only)
- *   Current pending     → DATA.xlsx pending_orders upload, filtered to Plumbing segment
- *   KGs                 → BOM sheet (1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA)
+ * Data sources (Plumbing) — ALL from the daily-production workbook by header-name mapping:
+ *   Stock, PendingLM, Avg3Mo, Pending → fetchPlumbingPlanData(month) (lib/sheets.ts)
+ *   Live orders                        → Order Sheet 26-27
+ *   KGs                                → BOM sheet (1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA)
  */
 router.get("/plan/validate", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");

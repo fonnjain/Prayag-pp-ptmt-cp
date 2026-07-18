@@ -24,7 +24,8 @@
 - [Segment discriminator pattern](segment-discriminator.md) — `segment TEXT NOT NULL DEFAULT 'PTMT'` on all planning tables; Plumbing upload kinds prefixed `plumbing_`; ERP GROUP filter "PLUMBING"; SegmentContext + sidebar toggle; categories sidebar is dynamic from API, not static list.
 - [Capacity segment isolation fix](capacity-segment-fix.md) — GET /capacity/categories and recompute POST must pass ?segment=; seedCategoryCapacity is idempotent per-category (seeds 7 PTMT + 12 Plumbing); Plumbing actuals not yet wired so all Plumbing capacity starts thin-data.
 - [Plumbing golden values](plumbing-golden-values.md) — 12 categories; ONE formula for all (`max(buffer-stock+lm+pending,0)`); SWR multiplier=1.0× (NOT 1.5×); grand total 1,922,309.
-- [Plumbing upload structure](plumbing-upload-structure.md) — DATA.xlsx is GLOBAL (both segments); PTMT local = FG Stock + LM Pending; Plumbing local = plumbing_fg_stock only; UI shows two separate cards.
+- [Plumbing workbook reader](plumbing-workbook-reader.md) — Plumbing plan reads ALL inputs from daily-production workbook by header-name; no item_master/uploads used; AGRI correction intentional.
+- [Plumbing upload structure](plumbing-upload-structure.md) — DATA.xlsx is GLOBAL (both segments); PTMT local = FG Stock + LM Pending; Plumbing local = NONE (plan reads from workbook directly).
 - [Plumbing monitoring tab](plumbing-monitoring-tab.md) — /monitoring/plumbing route; header tabs PTMT/Plumbing; Plumbing sidebar shows Plan Overview only; live actuals not yet wired.
 - [Plumbing FG Stock structure](plumbing-fg-stock-structure.md) — Solvent items are in *-TRADING categories (not Solvent category); detect by item name; no SWR Solvent in file; col indices: A=code B=name C=cat R=NetStock.
 - [Plumbing pending order segments](plumbing-pending-order-segments.md) — filter must include PLUMBING+P+PL+AGRI; PL=SWR Selfit+UPVC SCH40; AGRI=AGRI Pipe; PPR items under PLUMBING are safe (never in item_master).

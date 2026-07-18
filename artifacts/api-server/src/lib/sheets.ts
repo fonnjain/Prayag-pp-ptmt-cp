@@ -506,3 +506,153 @@ export async function snapshotPendingOrderRows(): Promise<{ catNo: string; colou
 
   return result;
 }
+
+// ── Plumbing daily-production workbook reader ────────────────────────────────
+
+export interface PlumbingPlanRow {
+  material: string;
+  type: "Pipe" | "Fitting" | "Solvent";
+  /** e.g. "CPVC Pipe", "SWR Solvent" */
+  category: string;
+  itemCode: string;
+  /** Monthly average — "LAST 3 MONTH AVG SALE" is already the monthly average. */
+  avg3MoSale: number;
+  stock: number;
+  pendingOrder: number;
+  pendingOrderLastMonth: number;
+}
+
+function normItemType(raw: string): "Pipe" | "Fitting" | "Solvent" | null {
+  const u = raw.trim().toUpperCase();
+  if (u === "PIPE") return "Pipe";
+  if (u === "FITTING" || u === "FITTINGS") return "Fitting";
+  if (u === "SOLVENT") return "Solvent";
+  return null;
+}
+
+const PLUMBING_MATERIALS = ["CPVC", "UPVC", "SWR", "AGRI"] as const;
+
+/**
+ * Reads each material tab (CPVC, UPVC, SWR, AGRI) of the Plumbing daily-production
+ * workbook for the given planning month.  Every input column is located by its header
+ * text in row 1, never by a fixed column letter — this makes the reader immune to the
+ * different layouts per tab (e.g. item code is col E on CPVC, col G on UPVC, col F on
+ * SWR / AGRI; Stock is col N on CPVC, P on UPVC, O on SWR, N on AGRI — and on AGRI
+ * the Stock / Buffer columns are swapped relative to SWR).
+ *
+ * Headers matched (case-insensitive, partial):
+ *   "LAST 3 MONTH AVG SALE"          → avg3MoSale (already the monthly average)
+ *   "STOCK AS ON <date>"              → stock
+ *   "BUFFER STOCK REQ FOR <month>"    → logged/verified but not used (recomputed from avg × multiplier)
+ *   "PENDING ORDER" (not LAST MONTH)  → pendingOrder
+ *   "PENDING ORDER LAST MONTH"        → pendingOrderLastMonth
+ *   Item-code column                  → itemCode
+ *   Type column (PIPE/FITTING/FITTINGS/SOLVENT values) → type
+ *
+ * ⚠ AGRI CORRECTION: the master's AGRI tab applies its formula to swapped Stock/Buffer
+ * columns, so the master's AGRI Pipe / AGRI Fitting totals are wrong.  With header-name
+ * mapping this app produces the correct values (≈20,299 AGRI Pipe; ≈54,590 AGRI Fitting).
+ * This is intentional — do not "fix" back to match the master's figures.
+ */
+export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlanRow[]> {
+  const fileId = PLUMBING_DAILY_WORKBOOK_IDS[month];
+  if (!fileId) {
+    logger.warn({ month }, "fetchPlumbingPlanData: no Plumbing workbook registered for this month");
+    return [];
+  }
+
+  const tabs = await listTabs(fileId);
+  const result: PlumbingPlanRow[] = [];
+
+  for (const material of PLUMBING_MATERIALS) {
+    const tab = tabs.find((t) => t.toUpperCase().includes(material));
+    if (!tab) {
+      logger.warn({ material, tabs, fileId }, "fetchPlumbingPlanData: no tab found for material");
+      continue;
+    }
+
+    await sleep(1100); // throttle: Sheets API allows ~60 req/min
+    const values = await getTabValues(fileId, tab, "A1:Z5000");
+
+    // Scan the first 15 rows for the header row.
+    // The header row contains "LAST 3 MONTH" and/or "PENDING ORDER".
+    let headerRowIdx = -1;
+    for (let i = 0; i < Math.min(15, values.length); i++) {
+      const joined = values[i].map((c) => String(c ?? "")).join(" ").toUpperCase();
+      if (joined.includes("LAST 3 MONTH") || (joined.includes("PENDING") && joined.includes("ORDER"))) {
+        headerRowIdx = i;
+        break;
+      }
+    }
+    if (headerRowIdx < 0) {
+      logger.warn({ material, tab }, "fetchPlumbingPlanData: header row not found in first 15 rows — skipping tab");
+      continue;
+    }
+
+    const header = values[headerRowIdx].map((h) => String(h ?? "").trim());
+
+    // Map each required column to its index by matching header text.
+    const avg3moCol    = header.findIndex((h) => /last\s*3\s*month\s*avg|3.*month.*avg.*sale/i.test(h));
+    const stockCol     = header.findIndex((h) => /stock\s*as\s*on/i.test(h));
+    const bufferCol    = header.findIndex((h) => /buffer\s*stock\s*req/i.test(h)); // informational
+    const pendingLmCol = header.findIndex((h) => /pending.*last\s*month|last\s*month.*pending/i.test(h));
+    // "PENDING ORDER" — must NOT be the "LAST MONTH" column
+    const pendingCol = header.findIndex(
+      (h, i) => /pending\s*order/i.test(h) && !/last\s*month/i.test(h) && i !== pendingLmCol,
+    );
+    const codeCol = header.findIndex((h) => /item\s*code|old.*item|erp.*code/i.test(h));
+
+    // Type column: try "TYPE" header first, then detect by scanning first 20 data-row values.
+    let typeCol = header.findIndex((h) => /^type$/i.test(h));
+    if (typeCol < 0) {
+      const sampleRows = values.slice(headerRowIdx + 1, headerRowIdx + 21);
+      outer: for (let col = 0; col < header.length; col++) {
+        for (const dr of sampleRows) {
+          const v = String(dr?.[col] ?? "").trim().toUpperCase();
+          if (/^(PIPE|FITTING|FITTINGS|SOLVENT)$/.test(v)) {
+            typeCol = col;
+            break outer;
+          }
+        }
+      }
+    }
+
+    logger.info(
+      { material, tab, headerRowIdx, codeCol, typeCol, avg3moCol, stockCol, pendingCol, pendingLmCol, bufferCol },
+      "fetchPlumbingPlanData: columns mapped",
+    );
+
+    if (codeCol < 0 || typeCol < 0 || avg3moCol < 0 || stockCol < 0 || pendingCol < 0 || pendingLmCol < 0) {
+      logger.warn(
+        { material, tab, codeCol, typeCol, avg3moCol, stockCol, pendingCol, pendingLmCol },
+        "fetchPlumbingPlanData: one or more required columns not found — skipping tab",
+      );
+      continue;
+    }
+
+    let rowCount = 0;
+    for (let i = headerRowIdx + 1; i < values.length; i++) {
+      const row = values[i];
+      if (!row) continue;
+      const rawCode = String(row[codeCol] ?? "").trim();
+      if (!rawCode) continue;
+      const itemType = normItemType(String(row[typeCol] ?? ""));
+      if (!itemType) continue; // skip totals / merged-header / blank rows
+
+      result.push({
+        material,
+        type: itemType,
+        category: `${material} ${itemType}`,
+        itemCode: rawCode,
+        avg3MoSale:            toNumber(row[avg3moCol]),
+        stock:                 toNumber(row[stockCol]),
+        pendingOrder:          toNumber(row[pendingCol]),
+        pendingOrderLastMonth: toNumber(row[pendingLmCol]),
+      });
+      rowCount++;
+    }
+    logger.info({ material, tab, rowCount }, "fetchPlumbingPlanData: rows parsed");
+  }
+
+  return result;
+}
