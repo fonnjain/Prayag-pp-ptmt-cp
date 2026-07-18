@@ -835,7 +835,7 @@ function ValidationPanel({ segment }: { segment: string }) {
     <div className="space-y-4">
       <p className="text-sm text-gray-500">
         {isPlumbing
-          ? "Runs 12 golden-value spot-checks — one per planning line (4 materials × 3 types: Pipe/Fitting/Solvent), verified cell-by-cell vs July 2026 master Excel. All must pass before the Plumbing plan is trustworthy."
+          ? "Automated regression suite for Plumbing (July 2026 reference): 3 guard assertions (non-empty plan, FG Stock upload present, computed not copied) · 2 isolation checks · 12 buffer-multiplier defaults · 15 solvent-membership checks · 12 category totals ±1%. Any single failure means the plan cannot be trusted."
           : "Runs 6 golden-value spot-checks against the uploaded files and live sheet data. All checks must pass before the plan is trustworthy. Fails are shown loudly — no silent fallbacks."}
       </p>
 

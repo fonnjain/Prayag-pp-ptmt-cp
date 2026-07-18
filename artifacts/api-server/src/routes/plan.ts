@@ -14,6 +14,12 @@ import {
 import { exportPlanExcel } from "../lib/excel-export";
 import { exportPlanPdf } from "../lib/pdf-export";
 import { exportWeeklyReleaseExcel } from "../lib/weekly-excel-export";
+import {
+  PLUMBING_GOLDEN,
+  PLUMBING_GOLDEN_TOLERANCE,
+  PLUMBING_BUFFER_DEFAULTS,
+  SOLVENT_MEMBERSHIP,
+} from "../lib/plumbing-golden";
 
 const router: IRouter = Router();
 
@@ -459,56 +465,122 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
 
   // ── PLUMBING self-check ────────────────────────────────────────────────────
   if (segment === "Plumbing") {
-    // Run the full Plumbing plan (FG Stock upload + live sheets).
-    // buildPlanItems handles all data-source wiring: Col R sign split, segment filter
-    // on pending_orders, avg-3mo from live Sale 26-27, BOM weights from Sheets.
-    const items = await buildPlanItems(month, "Plumbing");
+    // Golden values live in lib/plumbing-golden.ts — update them there when the
+    // reference month rolls over.  Never inline them here.
+    const [items, fgStockRows, bufferRows] = await Promise.all([
+      buildPlanItems(month, "Plumbing"),
+      loadLatestUploadRowsByKind("plumbing_fg_stock"),
+      db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
+    ]);
 
-    // Sum maxProduction (= Production Required) by category
+    const checks: CheckResult[] = [];
+    const roundInt = (v: number) => Math.round(v);
+
+    // ── 1. Non-empty guard ─────────────────────────────────────────────────
+    // If the FG Stock upload is missing OR the workbook connection failed, every
+    // item's stock and pendingLM default to 0 → plan is all-zeros.  Catch it here
+    // before the user discovers it in an export.
+    const itemCount = items.length;
+    const grandTotal = items.reduce((s, i) => s + i.maxProduction, 0);
+    checks.push({
+      name: "GUARD · Plumbing item count > 0",
+      expected: 1,
+      actual: itemCount,
+      pass: itemCount > 0,
+      tolerance: "> 0",
+    });
+    checks.push({
+      name: "GUARD · Plumbing grand total > 0",
+      expected: 1,
+      actual: roundInt(grandTotal),
+      pass: grandTotal > 0,
+      tolerance: "> 0",
+    });
+
+    // ── 2. Required-upload guard ───────────────────────────────────────────
+    // The FG Stock upload is the ONLY source of Stock and Pending-Last-Month.
+    // Without it both inputs are 0, making Production Required = 0 for every item.
+    const fgRowCount = fgStockRows.length;
+    checks.push({
+      name: "GUARD · FG Stock upload present (required)",
+      expected: 1,
+      actual: fgRowCount,
+      pass: fgRowCount > 0,
+      tolerance: "≥ 1 row",
+    });
+
+    // ── 3. Segment isolation ───────────────────────────────────────────────
+    const plumbingCategories = new Set(items.map((i) => i.category));
+    const distinctCatCount = plumbingCategories.size;
+    checks.push({
+      name: "ISOLATION · Plumbing category count = 12",
+      expected: 12,
+      actual: distinctCatCount,
+      pass: distinctCatCount === 12,
+    });
+    const nonPlumbing = [...plumbingCategories].filter(
+      (c) => !["CPVC", "UPVC", "SWR", "AGRI"].some((m) => c.startsWith(m)),
+    );
+    checks.push({
+      name: "ISOLATION · No non-Plumbing categories in plan",
+      expected: 0,
+      actual: nonPlumbing.length,
+      pass: nonPlumbing.length === 0,
+    });
+
+    // ── 4. Buffer multiplier defaults ──────────────────────────────────────
+    // SWR is deliberately 1.0× (not 1.5×) — migration 011.
+    const bufferByName = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
+    for (const { cat, expected } of PLUMBING_BUFFER_DEFAULTS) {
+      const actual = bufferByName.get(cat) ?? -1;
+      checks.push({
+        name: `Buffer · ${cat} = ${expected}×`,
+        expected,
+        actual,
+        pass: Math.abs(actual - expected) < 0.001,
+      });
+    }
+
+    // ── 5. Solvent membership ──────────────────────────────────────────────
+    // Catches the item-type mapping bug: Solvent items mis-classified or dropped.
+    for (const { cat, mustInclude } of SOLVENT_MEMBERSHIP) {
+      const catCodes = new Set(items.filter((i) => i.category === cat).map((i) => normalizeCode(i.itemCode)));
+      for (const code of mustInclude) {
+        const found = catCodes.has(normalizeCode(code));
+        checks.push({
+          name: `Solvent · ${code} in ${cat}`,
+          expected: 1,
+          actual: found ? 1 : 0,
+          pass: found,
+        });
+      }
+    }
+
+    // ── 6. 12 category totals (±1%) ────────────────────────────────────────
+    // Golden values from lib/plumbing-golden.ts.
+    // AGRI values are an intentional correction — see plumbing-golden.ts header.
     const byCategory = new Map<string, number>();
     for (const item of items) {
       byCategory.set(item.category, (byCategory.get(item.category) ?? 0) + item.maxProduction);
     }
-    const roundInt = (v: number) => Math.round(v);
-
-    // Verified July 2026 golden values — Production Required (PCS) per category.
-    // Source: Daily Production PLUMBING master Excel per-material tabs.
-    //   CPVC tab → col O header "PRODUCTION REQUIRED FOR Jul26 (PCS)"
-    //   UPVC tab → col Q header "PRODUCTION REQUIRED FOR Jul26 (PCS)"
-    //   SWR  tab → col S header "PRODUCTION REQUIRED FOR Jul26 (PCS)"
-    //   AGRI tab → col S header "PRODUCTION REQUIRED FOR Jul26 (PCS)"
-    // Do NOT use a fixed column letter — detect by header label per tab.
-    // Grand total = 1,922,309 pcs (matches Pipe Summary management tab).
-    // All 12 categories present; AGRI Solvent = 0 this month (no items in positive territory).
-    // CPVC/UPVC → standard formula; SWR/AGRI → swragri formula.
-    const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
-      { cat: "CPVC Pipe",    expected: 130451 },
-      { cat: "CPVC Fitting", expected: 763253 },
-      { cat: "CPVC Solvent", expected: 16539  },
-      { cat: "UPVC Pipe",    expected: 51899  },
-      { cat: "UPVC Fitting", expected: 633038 },
-      { cat: "UPVC Solvent", expected: 542    },
-      { cat: "SWR Pipe",     expected: 64515  },
-      { cat: "SWR Fitting",  expected: 236315 },
-      { cat: "SWR Solvent",  expected: 1255   },
-      { cat: "AGRI Pipe",    expected: 9688   },
-      { cat: "AGRI Fitting", expected: 14814  },
-      { cat: "AGRI Solvent", expected: 0      },
-    ];
-
-    const checks: CheckResult[] = PLUMBING_GOLDEN.map(({ cat, expected }) => {
+    for (const { cat, expected } of PLUMBING_GOLDEN) {
       const actual = roundInt(byCategory.get(cat) ?? 0);
-      return { name: `${cat} Production Required`, expected, actual, pass: actual === expected };
-    });
+      const pct = expected === 0
+        ? (actual === 0 ? 0 : Infinity)
+        : Math.abs(actual - expected) / expected;
+      const pass = expected === 0 ? actual === 0 : pct <= PLUMBING_GOLDEN_TOLERANCE;
+      checks.push({
+        name: cat,
+        expected,
+        actual,
+        pass,
+        tolerance: expected === 0 ? "= 0" : `±${(PLUMBING_GOLDEN_TOLERANCE * 100).toFixed(0)}%`,
+      });
+    }
 
-    // Full category totals map for display (keyed by category name, rounded pcs)
     const categoryTotals: Record<string, number> = {};
-    for (const [cat, total] of byCategory.entries()) {
-      categoryTotals[cat] = roundInt(total);
-    }
-    for (const { cat } of PLUMBING_GOLDEN) {
-      if (!(cat in categoryTotals)) categoryTotals[cat] = 0;
-    }
+    for (const [cat, total] of byCategory.entries()) categoryTotals[cat] = roundInt(total);
+    for (const { cat } of PLUMBING_GOLDEN) if (!(cat in categoryTotals)) categoryTotals[cat] = 0;
 
     const allPass = checks.every((c) => c.pass);
     const failCount = checks.filter((c) => !c.pass).length;
