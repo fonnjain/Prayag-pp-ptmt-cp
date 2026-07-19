@@ -700,6 +700,16 @@ export interface PlumbingPlanRow {
   stock: number;
   pendingOrder: number;
   pendingOrderLastMonth: number;
+  /**
+   * Per-item buffer multiplier read from the sheet's own multiplier column.
+   * Each material tab stores the multiplier (e.g. 1.0, 1.2, 1.5, 2.0) in a
+   * column adjacent to the TYPE column; the sheet's own Buffer formula is
+   * literally: Buffer = Avg3Mo × (this cell).
+   *
+   * Undefined when the cell is blank or out of range [0.5, 3.0].  Callers
+   * should fall back to the DB category default in that case.
+   */
+  sheetMultiplier?: number;
 }
 
 function normItemType(raw: string): "Pipe" | "Fitting" | "Solvent" | null {
@@ -872,8 +882,42 @@ export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlan
       if (candidate < header.length) codeCol = candidate;
     }
 
+    // Multiplier column: each row stores its own buffer multiplier as a numeric cell.
+    // Sheet formula: Buffer = Avg3Mo × (multiplier cell).  Examples confirmed:
+    //   CPVC col C (typeCol-1): Pipe/Fitting=1.5, Solvent=2.0
+    //   UPVC col E (typeCol-1): Pipe=1.2 or 1.5 per-item, Fitting=1.5, Solvent=2.0
+    //   SWR  col D (typeCol-1): Pipe=1.0, Fitting=1.2, Solvent=1.0
+    //   AGRI col E (typeCol+1): all 1.5
+    //
+    // Detection: for AGRI check typeCol+1 first (it sits between type and code);
+    // for the others check typeCol-1 first.  Validate by requiring ≥60% of
+    // non-blank item-row cells in a 40-row sample to be numeric in [0.5, 3.0].
+    let multiplierCol = -1;
+    if (typeCol >= 0) {
+      const isAgri = material.toUpperCase() === "AGRI";
+      const candidates = isAgri
+        ? [typeCol + 1, typeCol - 1, typeCol + 2, typeCol - 2]
+        : [typeCol - 1, typeCol + 1, typeCol - 2, typeCol + 2];
+      const sampleRows = values.slice(headerRowIdx + 1, headerRowIdx + 41);
+      for (const c of candidates) {
+        if (c < 0 || c >= header.length) continue;
+        const nonBlank = sampleRows
+          .map((r) => String(r?.[c] ?? "").trim())
+          .filter(Boolean);
+        if (nonBlank.length === 0) continue;
+        const inRange = nonBlank.filter((v) => {
+          const n = parseFloat(v);
+          return !isNaN(n) && n >= 0.5 && n <= 3.0;
+        });
+        if (inRange.length >= Math.max(1, nonBlank.length * 0.6)) {
+          multiplierCol = c;
+          break;
+        }
+      }
+    }
+
     logger.info(
-      { material, tab, headerRowIdx, codeCol, typeCol, avg3moCol, stockCol, pendingCol, pendingLmCol, bufferCol,
+      { material, tab, headerRowIdx, codeCol, typeCol, multiplierCol, avg3moCol, stockCol, pendingCol, pendingLmCol, bufferCol,
         header: header.slice(0, 20) },
       "fetchPlumbingPlanData: columns mapped",
     );
@@ -907,6 +951,9 @@ export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlan
         ? normItemType(String(row[typeCol] ?? ""))
         : null;
 
+      const rawMult = multiplierCol >= 0 ? toNumber(row[multiplierCol]) : 0;
+      const sheetMultiplier = rawMult >= 0.5 && rawMult <= 3.0 ? rawMult : undefined;
+
       result.push({
         material,
         type: itemType,
@@ -917,6 +964,7 @@ export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlan
         stock:                 stockCol >= 0 ? toNumber(row[stockCol]) : 0,
         pendingOrder:          toNumber(row[pendingCol]),
         pendingOrderLastMonth: pendingLmCol >= 0 ? toNumber(row[pendingLmCol]) : 0,
+        sheetMultiplier,
       });
       rowCount++;
     }

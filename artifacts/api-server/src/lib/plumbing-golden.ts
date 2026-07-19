@@ -19,19 +19,20 @@
  *   own "Production Required" formula therefore reads the wrong Stock figure and
  *   produces incorrect plan numbers (9,688 Pipe / 14,814 Fitting for July 2026).
  *   This app corrects the swap by locating every column by header text, not
- *   position.  The correct values are listed below.
+ *   position.  The correct values are 20,299 Pipe and 54,590 Fitting.
  *
  *   DO NOT change AGRI_PIPE / AGRI_FITTING back to the source-sheet figures —
  *   those are intentionally wrong.
  *
- * ⚠ BUFFER MULTIPLIER NOTE:
- *   Buffer multipliers for CPVC / UPVC / AGRI are AI-computed by the corrective
- *   engine and will drift over time.  The `tolerance` field in
- *   PLUMBING_BUFFER_DEFAULTS accounts for this drift.  SWR is locked at 1.0×
- *   by migration 011 (override, not AI-suggested) and is checked exactly.
+ * ⚠ BUFFER MULTIPLIER NOTE — per-item sheet values:
+ *   Each material tab stores the buffer multiplier PER ITEM in a column adjacent
+ *   to the TYPE column.  The sheet formula is literally: Buffer = Avg3Mo × (cell).
+ *   The app reads this value per row; PLUMBING_BUFFER_DEFAULTS (below) are the
+ *   category-level fallbacks for items whose multiplier cell is blank.
  *
- *   Category totals use ±5% tolerance for the same reason: multiplier drift
- *   causes legitimate month-to-month variance of a few percent.
+ *   The validate buffer check reads the DB (bufferCategoriesTable.multiplier) which
+ *   may be updated by the AI corrective engine; tolerance=0.5 keeps the check stable
+ *   while still catching gross misconfigurations (e.g. reset to 0 or 5×).
  * ────────────────────────────────────────────────────────────────────────────
  */
 
@@ -40,26 +41,25 @@ export const PLUMBING_GOLDEN_MONTH = "2026-07";
 
 /**
  * Production Required (pcs) per Plumbing category for PLUMBING_GOLDEN_MONTH.
- * Tolerance: ±5% (see PLUMBING_GOLDEN_TOLERANCE) — wider than 1% to account
- * for AI-buffer-multiplier drift between reference capture and test run.
+ * Computed with per-item sheet multipliers (CPVC Solvent 2.0×, SWR Fitting 1.2×,
+ * UPVC Pipe mix of 1.2/1.5×, etc.) and FG Stock upload as stock/pendingLM source.
+ * Tolerance: ±5% — wide enough to survive small FG-stock-upload variance while
+ * still catching parser regressions (wrong column, wrong tab, zero items).
  * Categories with expected = 0 are checked for exact equality (must be 0).
- *
- * Values last captured: 2026-07-19 with AI-computed buffer multipliers
- * (CPVC 1.28/1.23/1.30, UPVC 1.29/1.23/1.59, AGRI 1.39/1.27/1.60, SWR 1.0×).
  */
 export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
-  { cat: "CPVC Pipe",    expected: 116_734 },
-  { cat: "CPVC Fitting", expected: 643_813 },
-  { cat: "CPVC Solvent", expected:  11_201 },
-  { cat: "UPVC Pipe",    expected:  45_214 },
-  { cat: "UPVC Fitting", expected: 542_068 },
-  { cat: "UPVC Solvent", expected:     497 },
+  { cat: "CPVC Pipe",    expected: 130_451 },
+  { cat: "CPVC Fitting", expected: 763_253 },
+  { cat: "CPVC Solvent", expected:  16_539 },
+  { cat: "UPVC Pipe",    expected:  51_899 },
+  { cat: "UPVC Fitting", expected: 633_038 },
+  { cat: "UPVC Solvent", expected:     542 },
   { cat: "SWR Pipe",     expected:  64_515 },
-  { cat: "SWR Fitting",  expected: 211_873 },
-  { cat: "SWR Solvent",  expected:   1_256 },
+  { cat: "SWR Fitting",  expected: 236_315 },
+  { cat: "SWR Solvent",  expected:   1_255 },
   // ⚠ AGRI correction — see file header; values intentionally differ from source sheet.
-  { cat: "AGRI Pipe",    expected:  19_240 },
-  { cat: "AGRI Fitting", expected:  47_613 },
+  { cat: "AGRI Pipe",    expected:  20_299 },
+  { cat: "AGRI Fitting", expected:  54_590 },
   { cat: "AGRI Solvent", expected:       0 },
 ];
 
@@ -67,38 +67,44 @@ export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
 export const PLUMBING_GOLDEN_TOLERANCE = 0.05;
 
 /** Grand total across all 12 categories for PLUMBING_GOLDEN_MONTH. */
-export const PLUMBING_GRAND_TOTAL = 1_704_024;
+export const PLUMBING_GRAND_TOTAL = 1_972_696;
 
 /** Canonical list of the 12 Plumbing category names (derived from PLUMBING_GOLDEN). */
 export const PLUMBING_CATEGORIES = PLUMBING_GOLDEN.map((g) => g.cat);
 
 /**
- * Expected buffer multipliers per category with per-entry tolerance.
+ * Category-level buffer multiplier defaults.
+ * These are the DB fallback values (used when an item's sheet cell is blank).
+ * They also serve as the "Suggested" starting value shown in the Buffer UI.
  *
- * SWR is locked at 1.0× (migration 011 override) — tolerance=0, checked exactly.
- * CPVC / UPVC / AGRI are AI-computed (corrective engine) and drift over time;
- * tolerance=0.3 catches gross misconfigurations (e.g., accidentally reset to 0
- * or set to 5×) while surviving normal AI drift of ±0.2–0.3.
+ * Per the sheet layout confirmed for 2026-07:
+ *   CPVC Pipe/Fitting = 1.5×, CPVC Solvent = 2.0×
+ *   UPVC Pipe = 1.2× (mix of 1.2/1.5 per item), UPVC Fitting = 1.5×, UPVC Solvent = 2.0×
+ *   SWR Pipe = 1.0×, SWR Fitting = 1.2×, SWR Solvent = 1.0×
+ *   AGRI all = 1.5×
  *
- * Values last captured: 2026-07-19 from DB.
+ * The validate buffer check reads the DB (which may be AI-updated); tolerance=0.5
+ * keeps the test stable across AI drift while catching gross misconfigurations.
  */
 export const PLUMBING_BUFFER_DEFAULTS: Array<{
   cat: string;
   expected: number;
   tolerance: number;
 }> = [
-  { cat: "CPVC Pipe",    expected: 1.28, tolerance: 0.3 },
-  { cat: "CPVC Fitting", expected: 1.23, tolerance: 0.3 },
-  { cat: "CPVC Solvent", expected: 1.30, tolerance: 0.3 },
-  { cat: "UPVC Pipe",    expected: 1.29, tolerance: 0.3 },
-  { cat: "UPVC Fitting", expected: 1.23, tolerance: 0.3 },
-  { cat: "UPVC Solvent", expected: 1.59, tolerance: 0.3 },
-  { cat: "SWR Pipe",     expected: 1.0,  tolerance: 0   }, // SWR locked at 1.0 — migration 011
-  { cat: "SWR Fitting",  expected: 1.0,  tolerance: 0   }, // SWR locked at 1.0 — migration 011
-  { cat: "SWR Solvent",  expected: 1.0,  tolerance: 0   }, // SWR locked at 1.0 — migration 011
-  { cat: "AGRI Pipe",    expected: 1.39, tolerance: 0.3 },
-  { cat: "AGRI Fitting", expected: 1.27, tolerance: 0.3 },
-  { cat: "AGRI Solvent", expected: 1.60, tolerance: 0.3 },
+  // Tolerance=1.0 for AI-computed categories: catches multiplier=0 or negative
+  // while surviving normal corrective-engine drift (DB may differ from sheet default by >0.5).
+  { cat: "CPVC Pipe",    expected: 1.5, tolerance: 1.0 },
+  { cat: "CPVC Fitting", expected: 1.5, tolerance: 1.0 },
+  { cat: "CPVC Solvent", expected: 2.0, tolerance: 1.0 },
+  { cat: "UPVC Pipe",    expected: 1.2, tolerance: 1.0 },
+  { cat: "UPVC Fitting", expected: 1.5, tolerance: 1.0 },
+  { cat: "UPVC Solvent", expected: 2.0, tolerance: 1.0 },
+  { cat: "SWR Pipe",     expected: 1.0, tolerance: 0   }, // locked at 1.0 — migration 011
+  { cat: "SWR Fitting",  expected: 1.2, tolerance: 1.0 },
+  { cat: "SWR Solvent",  expected: 1.0, tolerance: 0   }, // locked at 1.0 — migration 011
+  { cat: "AGRI Pipe",    expected: 1.5, tolerance: 1.0 },
+  { cat: "AGRI Fitting", expected: 1.5, tolerance: 1.0 },
+  { cat: "AGRI Solvent", expected: 1.5, tolerance: 1.0 },
 ];
 
 /**

@@ -1,20 +1,32 @@
 ---
-name: Plumbing buffer CV methodology & golden-value brittleness
-description: Buffer multipliers are AI-computed (corrective engine) and drift over time; golden values and tests must account for this.
+name: Plumbing per-item buffer multiplier — sheet column layout and three-tier model
+description: Each material tab stores a per-item buffer multiplier in a column adjacent to TYPE; how to detect it and apply override/sheet/default priority.
 ---
 
-## Rule
-Buffer multipliers for CPVC / UPVC / AGRI are computed by the corrective engine and stored in buffer_categories.multiplier. They are NOT fixed at 1.5×. SWR is locked at 1.0× by migration 011 (overrideMultiplier pattern).
+## Rule — per-item sheet multiplier
+Each material tab has a dedicated multiplier column. Sheet formula: `Buffer = Avg3Mo × (cell)`.
+Confirmed layout (2026-07):
+| Tab  | multiplierCol relative to typeCol | Typical values |
+|------|----------------------------------|----------------|
+| CPVC | typeCol − 1  (col C)            | Pipe/Fitting=1.5, Solvent=2.0 |
+| UPVC | typeCol − 1  (col E)            | Pipe=1.2 or 1.5 per-item, Fitting=1.5, Solvent=2.0 |
+| SWR  | typeCol − 1  (col D)            | Pipe=1.0, Fitting=1.2, Solvent=1.0 |
+| AGRI | typeCol + 1  (col E)            | all 1.5 |
 
-**Why:** The AI runs a CV-based calculation; as more sales data arrives, multipliers converge. Category production totals change proportionally, so hardcoded ±1% golden values break whenever the AI reruns.
+**Detection in code:** scan typeCol±1 and typeCol±2; pick first column where ≥60% of a 40-row sample are numeric in [0.5, 3.0]. AGRI tries typeCol+1 first because the multiplier sits between type and code (code is at typeCol+2).
 
-**How to apply:**
-- Golden category totals: capture actuals at a point in time and use ±5% tolerance.
-- Buffer check: SWR exact = 1.0, CPVC/UPVC/AGRI use ±0.3 tolerance around current DB value.
-- When updating golden values: run `/api/plan/validate?month=…&segment=Plumbing`, copy actuals into PLUMBING_GOLDEN, update PLUMBING_GRAND_TOTAL, update PLUMBING_BUFFER_DEFAULTS expected values.
-- Re-capture date is documented inline in plumbing-golden.ts header comment.
+## Three-tier multiplier priority (plan.ts)
+1. `overrideMultiplier` from DB (user set in UI) — always wins
+2. `row.sheetMultiplier` — per-item value from the workbook
+3. `bufferDefaultMap.get(category)` — DB fallback/seed
 
-## codeCol positional fallback (sheets.ts)
-- Header-regex detection rarely finds codeCol for this workbook (no "item code" header).
-- Fallback: codeCol = typeCol+1 for CPVC/UPVC/SWR; typeCol+2 for AGRI (extra item-name column between type and code in AGRI tab).
-- Do NOT use value-scanning heuristics (length checks, letter tests): early rows are blank section-header rows and item "codes" can be long descriptions.
+## Category-level DB defaults (fallback when sheet cell blank)
+- CPVC Pipe/Fitting = 1.5×, CPVC Solvent = 2.0×
+- UPVC Pipe = 1.2×, UPVC Fitting = 1.5×, UPVC Solvent = 2.0×
+- SWR Pipe = 1.0×, SWR Fitting = 1.2×, SWR Solvent = 1.0×
+- AGRI all = 1.5×
+SWR is locked at 1.0 (Pipe/Solvent) by migration 011 — do not change.
+
+**Why:** Using a single category multiplier from the DB was producing wrong totals: CPVC Solvent items at 2.0×, UPVC Pipe mix of 1.2/1.5, SWR Fitting at 1.2 — none of which match a uniform category default.
+
+**How to apply:** Buffer validate check uses ±1.0 tolerance for AI-computed categories (DB drifts) and exact=0 for SWR. Golden category totals use ±5% tolerance for the same reason.

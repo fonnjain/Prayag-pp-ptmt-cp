@@ -132,7 +132,16 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
     }
   }
 
-  const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
+  // Two maps for the three-tier multiplier priority:
+  //   1. overrideMultiplier (user-set in UI)  — always wins
+  //   2. row.sheetMultiplier (per-item cell)  — default source
+  //   3. bufferRow.multiplier (DB default)    — fallback when sheet cell is blank
+  const bufferOverrideMap = new Map<string, number | null>(
+    bufferRows.map((b) => [b.name, b.overrideMultiplier]),
+  );
+  const bufferDefaultMap = new Map<string, number>(
+    bufferRows.map((b) => [b.name, b.multiplier]),
+  );
   const bandsByCategory = new Map<string, WeeklyBandConfig>(
     bandRows.map((b) => [b.categoryName, { w1Upper: b.w1Upper, w2Upper: b.w2Upper, w3Upper: b.w3Upper, w4Upper: b.w4Upper }]),
   );
@@ -163,7 +172,16 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
         pendingOrder:          row.pendingOrder,
         order:                 liveOrderTotals.byCode.get(code) ?? 0,
       };
-      const multiplier = bufferByCategory.get(resolvedCategory) ?? 1;
+
+      // Three-tier multiplier priority:
+      //   1. User override (set in UI) — always wins, ignores sheet
+      //   2. Per-item sheet value — the sheet's own multiplier cell per row
+      //   3. DB default (AI-suggested or seed) — fallback for blank sheet cells
+      const override = bufferOverrideMap.get(resolvedCategory) ?? null;
+      const multiplier = override !== null
+        ? override
+        : (row.sheetMultiplier ?? bufferDefaultMap.get(resolvedCategory) ?? 1);
+
       // One formula for all 12 Plumbing categories: max((Buffer − Stock) + PendingLM + Pending, 0)
       const computed = computeItemPlan(source, resolvedCategory, multiplier);
 
