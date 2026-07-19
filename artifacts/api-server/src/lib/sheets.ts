@@ -634,14 +634,42 @@ const PLUMBING_MATERIALS = ["CPVC", "UPVC", "SWR", "AGRI"] as const;
  */
 export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlanRow[]> {
   // Drive-based discovery is primary; hardcoded map is fallback.
+  // After finding any file via Drive, validate it has at least one material tab.
+  // The Drive search can match wrong files (e.g. purchase workbooks) that share
+  // "PLUMBING" + month + year in their name but have no CPVC/UPVC/SWR/AGRI tabs.
   const driveId = await findPlumbingWorkbookId(month);
-  const fileId = driveId ?? PLUMBING_DAILY_WORKBOOK_IDS[month] ?? null;
+  const hardcodedId = PLUMBING_DAILY_WORKBOOK_IDS[month] ?? null;
+
+  // Try Drive ID first, then hardcoded — use the first that has material tabs.
+  let fileId: string | null = null;
+  let tabs: string[] = [];
+  for (const candidateId of [...new Set([driveId, hardcodedId].filter(Boolean) as string[])]) {
+    const candidateTabs = await listTabs(candidateId);
+    const hasMaterialTab = PLUMBING_MATERIALS.some((m) =>
+      candidateTabs.some((t) => t.toUpperCase().includes(m)),
+    );
+    if (hasMaterialTab) {
+      fileId = candidateId;
+      tabs = candidateTabs;
+      logger.info(
+        { month, fileId, source: candidateId === driveId ? "drive" : "hardcoded" },
+        "fetchPlumbingPlanData: workbook validated — has material tabs",
+      );
+      break;
+    }
+    // Wrong file — invalidate Drive cache so next call re-searches
+    if (candidateId === driveId) _driveWorkbookCache.delete(month);
+    logger.warn(
+      { month, candidateId, tabs: candidateTabs },
+      "fetchPlumbingPlanData: workbook has no material tabs — skipping",
+    );
+  }
+
   if (!fileId) {
-    logger.warn({ month }, "fetchPlumbingPlanData: no Plumbing workbook found (Drive + hardcoded both empty)");
+    logger.warn({ month }, "fetchPlumbingPlanData: no valid Plumbing workbook found");
     return [];
   }
 
-  const tabs = await listTabs(fileId);
   const result: PlumbingPlanRow[] = [];
 
   for (const material of PLUMBING_MATERIALS) {
