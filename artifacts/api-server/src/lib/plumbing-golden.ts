@@ -135,9 +135,29 @@ export const SOLVENT_MEMBERSHIP: Array<{ cat: string; mustInclude: string[] }> =
   },
 ];
 
-/** PTMT grand-total benchmarks.  Tolerance ±5% (expected monthly variance). */
+/** PTMT grand-total benchmarks.  Tolerance ±0.1% — tight enough to catch a single dropped item. */
 export const PTMT_GOLDEN_MONTH   = "2026-07";
 export const PTMT_GRAND_MAX      = 576_037;
 export const PTMT_GRAND_MIN      = 301_918;
-export const PTMT_TOLERANCE      = 0.05;
+export const PTMT_TOLERANCE      = 0.001;
 export const PTMT_CATEGORY_COUNT = 7;
+
+/**
+ * Per-category PTMT benchmarks (Max and Min production required) for PTMT_GOLDEN_MONTH.
+ *
+ * Values locked to the 2026-07 run with the correct business-specified buffer multipliers:
+ *   Cocks Standard 1.5×, Cocks Premium 1.2×, Faucets 1.5×, Accessorise 1.5×,
+ *   Cistern & Seat Cover 1.2×, Cabinet 1.2×, Ball Cock 1.5×
+ *
+ * Tolerance: ±0.1% — detects a single mis-classified item or multiplier drift
+ * while surviving sub-unit floating-point rounding.
+ */
+export const PTMT_CATEGORY_GOLDEN: Array<{ cat: string; maxExpected: number; minExpected: number }> = [
+  { cat: "Accessorise",                  maxExpected:  30_715, minExpected:  16_429 },
+  { cat: "Ball Cock",                    maxExpected:  49_062, minExpected:  27_028 },
+  { cat: "Cabinet",                      maxExpected:   1_009, minExpected:     685 },
+  { cat: "Cistern & Seat Cover",         maxExpected:  26_177, minExpected:  15_228 },
+  { cat: "Cocks Premium",                maxExpected:  13_979, minExpected:   7_392 },
+  { cat: "Cocks Standard",               maxExpected: 392_141, minExpected: 204_205 },
+  { cat: "Faucets & Jetsprays & Shower", maxExpected:  63_282, minExpected:  30_950 },
+];

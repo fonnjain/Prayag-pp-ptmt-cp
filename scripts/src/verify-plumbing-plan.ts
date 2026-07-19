@@ -132,7 +132,10 @@ async function main(): Promise<void> {
     ptmtResult = { month: PTMT_MONTH, allPass: false, passCount: 0, failCount: 1, checks: [] };
   }
 
-  printSection(`PTMT — regression guards (${PTMT_MONTH})`, ptmtResult.checks);
+  const ptmtGuards    = ptmtResult.checks.filter((c) => !c.name.startsWith("PTMT ·"));
+  const ptmtCats      = ptmtResult.checks.filter((c) => c.name.startsWith("PTMT ·"));
+  printSection(`PTMT — regression guards (${PTMT_MONTH})`, ptmtGuards);
+  printSection(`PTMT — per-category Max / Min (${PTMT_MONTH}, ±0.1%)`, ptmtCats);
 
   if (!ptmtResult.allPass) {
     anyFail = true;

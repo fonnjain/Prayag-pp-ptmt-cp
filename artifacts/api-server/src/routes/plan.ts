@@ -19,6 +19,10 @@ import {
   PLUMBING_GOLDEN_TOLERANCE,
   PLUMBING_BUFFER_DEFAULTS,
   SOLVENT_MEMBERSHIP,
+  PTMT_GRAND_MAX,
+  PTMT_GRAND_MIN,
+  PTMT_TOLERANCE,
+  PTMT_CATEGORY_GOLDEN,
 } from "../lib/plumbing-golden";
 
 const router: IRouter = Router();
@@ -759,22 +763,51 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     );
   });
   const summary = summarizePlan(planItems);
-  const maxPct = Math.abs(summary.grandMaxTotal - 576037) / 576037;
-  const minPct = Math.abs(summary.grandMinTotal - 301918) / 301918;
+  const maxPct = Math.abs(summary.grandMaxTotal - PTMT_GRAND_MAX) / PTMT_GRAND_MAX;
+  const minPct = Math.abs(summary.grandMinTotal - PTMT_GRAND_MIN) / PTMT_GRAND_MIN;
+  const tolLabel = `±${(PTMT_TOLERANCE * 100).toFixed(1)}%`;
   checks.push({
-    name: "Grand Max total ≈ 576,037",
-    expected: 576037,
+    name: `Grand Max total ≈ ${PTMT_GRAND_MAX.toLocaleString("en-IN")}`,
+    expected: PTMT_GRAND_MAX,
     actual: summary.grandMaxTotal,
-    pass: maxPct <= 0.05,
-    tolerance: "±5%",
+    pass: maxPct <= PTMT_TOLERANCE,
+    tolerance: tolLabel,
   });
   checks.push({
-    name: "Grand Min total ≈ 301,918",
-    expected: 301918,
+    name: `Grand Min total ≈ ${PTMT_GRAND_MIN.toLocaleString("en-IN")}`,
+    expected: PTMT_GRAND_MIN,
     actual: summary.grandMinTotal,
-    pass: minPct <= 0.05,
-    tolerance: "±5%",
+    pass: minPct <= PTMT_TOLERANCE,
+    tolerance: tolLabel,
   });
+
+  // ── Per-category Max / Min (±0.1%) ─────────────────────────────────────────
+  const catMap = new Map(summary.categories.map((c) => [c.category, c]));
+  for (const g of PTMT_CATEGORY_GOLDEN) {
+    const cat = catMap.get(g.cat);
+    const actualMax = cat?.maxTotal ?? 0;
+    const actualMin = cat?.minTotal ?? 0;
+    const catMaxPct = g.maxExpected > 0
+      ? Math.abs(actualMax - g.maxExpected) / g.maxExpected
+      : actualMax === 0 ? 0 : 1;
+    const catMinPct = g.minExpected > 0
+      ? Math.abs(actualMin - g.minExpected) / g.minExpected
+      : actualMin === 0 ? 0 : 1;
+    checks.push({
+      name: `PTMT · ${g.cat} · Max`,
+      expected: g.maxExpected,
+      actual: Math.round(actualMax),
+      pass: catMaxPct <= PTMT_TOLERANCE,
+      tolerance: tolLabel,
+    });
+    checks.push({
+      name: `PTMT · ${g.cat} · Min`,
+      expected: g.minExpected,
+      actual: Math.round(actualMin),
+      pass: catMinPct <= PTMT_TOLERANCE,
+      tolerance: tolLabel,
+    });
+  }
 
   const allPass = checks.every((c) => c.pass);
   const failCount = checks.filter((c) => !c.pass).length;
