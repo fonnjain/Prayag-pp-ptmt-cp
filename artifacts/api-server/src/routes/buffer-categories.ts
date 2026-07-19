@@ -105,11 +105,13 @@ router.post("/buffer-categories/recompute", async (req, res): Promise<void> => {
           const reliabilityFlag = computeReliabilityFlag(cat);
 
           const [row] = await db
-            .select({ overrideMultiplier: bufferCategoriesTable.overrideMultiplier })
+            .select({ overrideMultiplier: bufferCategoriesTable.overrideMultiplier, multiplier: bufferCategoriesTable.multiplier })
             .from(bufferCategoriesTable)
             .where(and(eq(bufferCategoriesTable.name, cat.category), eq(bufferCategoriesTable.segment, "Plumbing")));
 
-          const appliedMultiplier = (row?.overrideMultiplier) ?? cat.suggestedMultiplier ?? 1.5;
+          // Applied = Override when set; otherwise keep the existing DB multiplier (sheet-derived default).
+          // suggestedMultiplier is ADVISORY ONLY — never auto-applied.
+          const appliedMultiplier = row?.overrideMultiplier ?? row?.multiplier ?? 1.5;
 
           await db
             .update(bufferCategoriesTable)
@@ -165,7 +167,9 @@ router.post("/buffer-categories/recompute", async (req, res): Promise<void> => {
             .select({ overrideMultiplier: bufferCategoriesTable.overrideMultiplier, multiplier: bufferCategoriesTable.multiplier })
             .from(bufferCategoriesTable)
             .where(eq(bufferCategoriesTable.name, cat.category));
-          const appliedMultiplier = row?.overrideMultiplier ?? cat.suggestedMultiplier ?? row?.multiplier ?? 1;
+          // Applied = Override when set; otherwise keep the existing business multiplier.
+          // suggestedMultiplier is ADVISORY ONLY — it must never silently replace the plan value.
+          const appliedMultiplier = row?.overrideMultiplier ?? row?.multiplier ?? 1;
 
           await db
             .update(bufferCategoriesTable)

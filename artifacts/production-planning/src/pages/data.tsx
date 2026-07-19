@@ -420,7 +420,9 @@ function SeasonalityTable({ segment }: { segment: string }) {
   const hasEngineData = categories.some((c) => c.lastComputedAt != null);
 
   function getApplied(cat: BufferCategory): number {
-    return cat.overrideMultiplier ?? cat.suggestedMultiplier ?? cat.multiplier;
+    // Applied = Override when set; otherwise the DB multiplier (business default).
+    // suggestedMultiplier is ADVISORY ONLY — it never enters the plan automatically.
+    return cat.overrideMultiplier ?? cat.multiplier;
   }
 
   function parseIndices(raw: string | null | undefined): number[] | null {
@@ -442,7 +444,7 @@ function SeasonalityTable({ segment }: { segment: string }) {
           onSuccess: () => {
             setOverrideDrafts((d) => { const next = { ...d }; delete next[cat.id]; return next; });
             refetch();
-            toast({ title: "Override cleared", description: `${cat.name} → Suggested ×` });
+            toast({ title: "Override cleared", description: `${cat.name} → business default ×` });
           },
           onError: () => toast({ title: "Update failed", variant: "destructive" }),
         },
@@ -516,6 +518,13 @@ function SeasonalityTable({ segment }: { segment: string }) {
         >
           {recompute.isPending ? "Computing… (reads 24 tabs)" : hasEngineData ? "Recompute" : "Compute engine"}
         </Button>
+      </div>
+
+      {/* Advisory note */}
+      <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+        ⚠ <strong>Suggested values are advisory</strong> — click to accept before they affect the plan.
+        The plan always uses <strong>Applied ×</strong> (Override if set, otherwise the business default).
+        Suggested is shown for review only and never auto-applied.
       </div>
 
       {/* Data window label */}

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { eq } from "drizzle-orm";
 import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable, weeklyReleaseBandsTable } from "@workspace/db";
 import { logger } from "./logger";
 import { SHEET_LABELS } from "./sheets";
@@ -137,6 +138,35 @@ async function seedWeeklyReleaseBands(): Promise<void> {
   logger.info({ count: DEFAULT_WEEKLY_RELEASE_BANDS.length }, "Seeded weekly release bands");
 }
 
+/**
+ * Idempotent upsert of overrideMultiplier for all 7 PTMT categories.
+ * Runs every boot so the business-specified values are always locked in,
+ * even after a DB reset or fresh deployment.
+ *
+ * IMPORTANT: these are the ONLY multipliers that may enter the plan.
+ * suggestedMultiplier (from the seasonality engine) is advisory only
+ * and must never auto-apply — it is displayed for human review and acceptance.
+ */
+const PTMT_BUSINESS_OVERRIDES: { name: string; multiplier: number }[] = [
+  { name: "Cocks Standard",               multiplier: 1.5 },
+  { name: "Cocks Premium",                multiplier: 1.2 },
+  { name: "Faucets & Jetsprays & Shower", multiplier: 1.5 },
+  { name: "Accessorise",                  multiplier: 1.5 },
+  { name: "Cistern & Seat Cover",         multiplier: 1.2 },
+  { name: "Cabinet",                      multiplier: 1.2 },
+  { name: "Ball Cock",                    multiplier: 1.5 },
+];
+
+async function seedPtmtOverrides(): Promise<void> {
+  for (const { name, multiplier } of PTMT_BUSINESS_OVERRIDES) {
+    await db
+      .update(bufferCategoriesTable)
+      .set({ overrideMultiplier: multiplier, multiplier })
+      .where(eq(bufferCategoriesTable.name, name));
+  }
+  logger.info({ count: PTMT_BUSINESS_OVERRIDES.length }, "Seeded PTMT business overrides");
+}
+
 export async function ensureSeedData(): Promise<void> {
   await seedBufferCategories();
   await seedItemMaster();
@@ -144,6 +174,7 @@ export async function ensureSeedData(): Promise<void> {
   await seedPlantSourceConfigs();
   await seedPlantConfigs();
   await seedWeeklyReleaseBands();
+  await seedPtmtOverrides();
   const { seedCategoryCapacity } = await import("./capacity-engine");
   await seedCategoryCapacity();
 }

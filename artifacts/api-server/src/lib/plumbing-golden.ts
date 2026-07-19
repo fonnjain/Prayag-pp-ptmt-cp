@@ -136,6 +136,21 @@ export const SOLVENT_MEMBERSHIP: Array<{ cat: string; mustInclude: string[] }> =
   },
 ];
 
+/**
+ * Per-category PTMT business multipliers.
+ * These are the LOCKED business values — exactly what overrideMultiplier must equal in the DB.
+ * If a recompute ever lets Suggested leak into Applied, the validate endpoint will fail immediately.
+ */
+export const PTMT_MULTIPLIER_GOLDEN: Array<{ cat: string; multiplier: number }> = [
+  { cat: "Cocks Standard",               multiplier: 1.5 },
+  { cat: "Cocks Premium",                multiplier: 1.2 },
+  { cat: "Faucets & Jetsprays & Shower", multiplier: 1.5 },
+  { cat: "Accessorise",                  multiplier: 1.5 },
+  { cat: "Cistern & Seat Cover",         multiplier: 1.2 },
+  { cat: "Cabinet",                      multiplier: 1.2 },
+  { cat: "Ball Cock",                    multiplier: 1.5 },
+];
+
 /** PTMT grand-total benchmarks.  Tolerance ±0.1% — tight enough to catch a single dropped item. */
 export const PTMT_GOLDEN_MONTH   = "2026-07";
 export const PTMT_GRAND_MAX      = 576_037;

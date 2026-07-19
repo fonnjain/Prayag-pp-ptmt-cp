@@ -23,6 +23,7 @@ import {
   PTMT_GRAND_MIN,
   PTMT_TOLERANCE,
   PTMT_CATEGORY_GOLDEN,
+  PTMT_MULTIPLIER_GOLDEN,
 } from "../lib/plumbing-golden";
 
 const router: IRouter = Router();
@@ -811,6 +812,35 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
       actual: Math.round(actualMin),
       pass: catMinPct <= PTMT_TOLERANCE,
       tolerance: tolLabel,
+    });
+  }
+
+  // ── Applied multiplier lock (exact match) ───────────────────────────────────
+  // Catches any recompute that lets Suggested silently replace the business multiplier.
+  // Applied = multiplier column in the DB (set to override when present; seed ensures
+  // all 7 categories have the override locked at startup).
+  const bufferByName = new Map<string, { multiplier: number; overrideMultiplier: number | null }>(
+    bufferRows.map((b) => [b.name, { multiplier: b.multiplier, overrideMultiplier: b.overrideMultiplier ?? null }]),
+  );
+  for (const { cat, multiplier: expectedMult } of PTMT_MULTIPLIER_GOLDEN) {
+    const row = bufferByName.get(cat);
+    const actualOverride = row?.overrideMultiplier ?? -1;
+    const overridePass = actualOverride === expectedMult;
+    checks.push({
+      name: `PTMT · ${cat} · Override locked ×${expectedMult}`,
+      expected: expectedMult,
+      actual: actualOverride,
+      pass: overridePass,
+      tolerance: "exact",
+    });
+    const actualApplied = row?.multiplier ?? -1;
+    const appliedPass = Math.abs(actualApplied - expectedMult) < 0.001;
+    checks.push({
+      name: `PTMT · ${cat} · Applied ×${expectedMult}`,
+      expected: expectedMult,
+      actual: actualApplied,
+      pass: appliedPass,
+      tolerance: "exact",
     });
   }
 
