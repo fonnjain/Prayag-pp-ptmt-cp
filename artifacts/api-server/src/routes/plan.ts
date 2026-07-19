@@ -844,10 +844,11 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
   if (segment === "Plumbing") {
     // Golden values live in lib/plumbing-golden.ts — update them there when the
     // reference month rolls over.  Never inline them here.
-    const [items, fgStockRows, bufferRows] = await Promise.all([
+    const [items, fgStockRows, bufferRows, sheet3Rows] = await Promise.all([
       buildPlanItems(month, "Plumbing"),
       loadLatestUploadRowsByKind("plumbing_fg_stock"),
       db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
+      fetchPlumbingSheet3Production(month),
     ]);
 
     const checks: CheckResult[] = [];
@@ -1111,6 +1112,45 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     const categoryTotals: Record<string, number> = {};
     for (const [cat, total] of byCategory.entries()) categoryTotals[cat] = roundInt(total);
     for (const { cat } of PLUMBING_GOLDEN) if (!(cat in categoryTotals)) categoryTotals[cat] = 0;
+
+    // ── 8. Monitoring actuals vs frozen golden values (28 checks) ────────────
+    // Folded so /plan/validate?segment=Plumbing covers all 163 checks in one call.
+    // W1 = Jul 1–7, W2 = Jul 8–14 (both elapsed, actuals are stable).
+    {
+      const normMap = new Map<string, string>();
+      for (const item of items) {
+        const norm = normalizeCodeStrict(item.itemCode);
+        if (!normMap.has(norm)) normMap.set(norm, item.category);
+      }
+      const catAct = new Map<string, number[]>();
+      const unmWk = [0, 0, 0, 0];
+      for (const row of sheet3Rows) {
+        const d = parseInt(row.dateStr.slice(8), 10);
+        const wi = d <= 7 ? 0 : d <= 14 ? 1 : d <= 21 ? 2 : 3;
+        const cat = normMap.get(row.normCode);
+        if (!cat) { unmWk[wi]! += row.qty; continue; }
+        const arr = catAct.get(cat) ?? [0, 0, 0, 0];
+        arr[wi]! += row.qty;
+        catAct.set(cat, arr);
+      }
+      const plantM = [0, 0, 0, 0];
+      for (const [, arr] of catAct) for (let i = 0; i < 4; i++) plantM[i]! += arr[i]!;
+
+      const MON_TOL = PLUMBING_MON_TOLERANCE;
+      const monChk = (name: string, expected: number, actual: number): CheckResult => {
+        const pass = expected === 0 ? actual === 0 : Math.abs(actual - expected) / expected <= MON_TOL;
+        return { name, expected: Math.round(expected), actual: Math.round(actual), pass,
+          tolerance: expected === 0 ? "exact" : `±${(MON_TOL * 100).toFixed(0)}%` };
+      };
+      checks.push(monChk("Mon · Plant W1 mapped",   PLUMBING_MON_W1_MAPPED,   plantM[0]!));
+      checks.push(monChk("Mon · Plant W2 mapped",   PLUMBING_MON_W2_MAPPED,   plantM[1]!));
+      checks.push(monChk("Mon · W1 unmapped",       PLUMBING_MON_W1_UNMAPPED, unmWk[0]!));
+      checks.push(monChk("Mon · W2 unmapped",       PLUMBING_MON_W2_UNMAPPED, unmWk[1]!));
+      for (const [cat, exp] of Object.entries(PLUMBING_MON_CAT_W1))
+        checks.push(monChk(`Mon · ${cat} W1`, exp, (catAct.get(cat) ?? [0, 0, 0, 0])[0]!));
+      for (const [cat, exp] of Object.entries(PLUMBING_MON_CAT_W2))
+        checks.push(monChk(`Mon · ${cat} W2`, exp, (catAct.get(cat) ?? [0, 0, 0, 0])[1]!));
+    }
 
     const allPass = checks.every((c) => c.pass);
     const failCount = checks.filter((c) => !c.pass).length;
@@ -1517,6 +1557,43 @@ router.get("/plan/validate-plumbing-monitoring", async (req, res) => {
   } catch (err) {
     req.log.error({ err, month }, "plan/validate-plumbing-monitoring failed");
     res.status(500).json({ error: "Failed to validate Plumbing monitoring" });
+  }
+});
+
+// ── GET /plan/summary ─────────────────────────────────────────────────────────
+// Lightweight plan KPI summary for the ops-dashboard segment filter.
+// Returns: totalPcs (maxProduction sum), totalKg (Plumbing BOM weight sum),
+//          totalMin (PTMT minProduction sum), and per-category breakdown.
+router.get("/plan/summary", async (req, res): Promise<void> => {
+  const month = String(req.query.month ?? "");
+  const segment = String(req.query.segment ?? "PTMT");
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    res.status(400).json({ error: "month query param required (YYYY-MM)" });
+    return;
+  }
+  try {
+    const items = await buildPlanItems(month, segment);
+    const byCat = new Map<string, { pcs: number; kg: number }>();
+    let totalPcs = 0, totalKg = 0, totalMin = 0;
+    for (const item of items) {
+      const pcs = Math.round(item.maxProduction ?? 0);
+      const kg  = Math.round((item as any).kgRequired ?? 0);
+      const min = Math.round((item as any).minProduction ?? 0);
+      totalPcs += pcs;
+      totalKg  += kg;
+      totalMin += min;
+      const cat = byCat.get(item.category) ?? { pcs: 0, kg: 0 };
+      cat.pcs += pcs;
+      cat.kg  += kg;
+      byCat.set(item.category, cat);
+    }
+    const categories = [...byCat.entries()]
+      .sort((a, b) => b[1].pcs - a[1].pcs)
+      .map(([name, { pcs, kg }]) => ({ name, pcs, kg }));
+    res.json({ month, segment, totalPcs, totalKg, totalMin, categories });
+  } catch (err) {
+    req.log.error({ err, month, segment }, "plan/summary failed");
+    res.status(500).json({ error: "Failed to compute plan summary" });
   }
 });
 

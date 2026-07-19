@@ -194,24 +194,52 @@ function CrossAppNav() {
   );
 }
 
-function Sidebar({ fy, setFy }: { fy: string; setFy: (v: string) => void }) {
+const SEG_OPTIONS: Array<"PTMT" | "Plumbing" | "Combined"> = ["PTMT", "Plumbing", "Combined"];
+
+function Sidebar({ fy, setFy, seg, setSeg }: {
+  fy: string; setFy: (v: string) => void;
+  seg: "PTMT" | "Plumbing" | "Combined"; setSeg: (v: "PTMT" | "Plumbing" | "Combined") => void;
+}) {
   return (
     <aside className="fixed top-9 left-0 bottom-0 z-20 flex w-56 flex-col border-r border-sidebar-border bg-sidebar">
       <div className="px-5 pt-5 pb-4 border-b border-sidebar-border">
         <div className="text-[22px] font-bold tracking-tight leading-none" style={{ color: AMBER }}>prayag</div>
         <div className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground">India Operations</div>
       </div>
-      <div className="px-3 pt-3 pb-1">
-        <label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70 select-none block mb-1 px-1">
-          Fiscal Year
-        </label>
-        <select
-          value={fy}
-          onChange={(e) => setFy(e.target.value)}
-          className="w-full text-sm bg-background border border-border rounded-md px-2 py-1.5 text-foreground cursor-pointer"
-        >
-          {FY_OPTIONS.map((f) => <option key={f} value={f}>FY {f}</option>)}
-        </select>
+      <div className="px-3 pt-3 pb-1 space-y-3">
+        <div>
+          <label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70 select-none block mb-1 px-1">
+            Fiscal Year
+          </label>
+          <select
+            value={fy}
+            onChange={(e) => setFy(e.target.value)}
+            className="w-full text-sm bg-background border border-border rounded-md px-2 py-1.5 text-foreground cursor-pointer"
+          >
+            {FY_OPTIONS.map((f) => <option key={f} value={f}>FY {f}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70 select-none block mb-1 px-1">
+            Segment
+          </label>
+          <div className="flex flex-col gap-1">
+            {SEG_OPTIONS.map((s) => (
+              <button
+                key={s}
+                onClick={() => setSeg(s)}
+                className={cn(
+                  "w-full text-left px-2 py-1.5 rounded-md text-sm font-medium transition-colors",
+                  seg === s
+                    ? "bg-amber-500/15 text-amber-700 font-semibold"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent"
+                )}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
         {NAV_ITEMS.map((item) => <SidebarLink key={item.href} {...item} />)}
@@ -234,7 +262,7 @@ const CAT_SHORT: Record<string, string> = {
   "Ball Cock": "Ball Ck",
 };
 
-function OverviewPage({ fy }: { fy: string }) {
+function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Combined" }) {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["ops-overview", fy],
     queryFn: async () => {
@@ -252,7 +280,7 @@ function OverviewPage({ fy }: { fy: string }) {
     },
   });
 
-  // Current month for management summary
+  // Current month for management summary + plan summary
   const currentMonth = useMemo(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -266,6 +294,28 @@ function OverviewPage({ fy }: { fy: string }) {
       return res.json();
     },
     staleTime: 10 * 60 * 1000,
+  });
+
+  const { data: planPtmt } = useQuery({
+    queryKey: ["plan-summary-ptmt", currentMonth],
+    queryFn: async () => {
+      const res = await fetch(`/api/plan/summary?month=${currentMonth}&segment=PTMT`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: seg === "PTMT" || seg === "Combined",
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: planPlumbing } = useQuery({
+    queryKey: ["plan-summary-plumbing", currentMonth],
+    queryFn: async () => {
+      const res = await fetch(`/api/plan/summary?month=${currentMonth}&segment=Plumbing`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: seg === "Plumbing" || seg === "Combined",
+    staleTime: 5 * 60 * 1000,
   });
 
   // Human-readable current month name e.g. "Jul"
@@ -337,6 +387,58 @@ function OverviewPage({ fy }: { fy: string }) {
           Refresh
         </button>
       </div>
+
+      {/* Production Plan Summary — segment-scoped */}
+      {(seg === "PTMT" || seg === "Plumbing") && (
+        <div className="mb-8">
+          <h2 className="text-sm font-semibold text-foreground mb-3 uppercase tracking-wide">
+            {seg} Production Plan · {currentMonth}
+          </h2>
+          {seg === "PTMT" && planPtmt && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <KpiCard label="Max Plan" value={fmtQty(planPtmt.totalPcs)} sub="pieces" color={BLUE} />
+              <KpiCard label="Min Required" value={fmtQty(planPtmt.totalMin)} sub="buffer floor" />
+              <KpiCard label="Categories" value={String(planPtmt.categories.length)} />
+              <KpiCard label="Min/Max Ratio" value={planPtmt.totalPcs > 0 ? `${Math.round(planPtmt.totalMin / planPtmt.totalPcs * 100)}%` : "—"} />
+            </div>
+          )}
+          {seg === "Plumbing" && planPlumbing && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <KpiCard label="Production Required" value={fmtQty(planPlumbing.totalPcs)} sub="pieces" color={BLUE} />
+              <KpiCard label="Weight Required" value={fmtQty(planPlumbing.totalKg)} sub="kg" />
+              <KpiCard label="Categories" value={String(planPlumbing.categories.length)} />
+              <KpiCard label="Top Category" value={planPlumbing.categories[0]?.name ?? "—"} sub={fmtQty(planPlumbing.categories[0]?.pcs ?? 0) + " pcs"} />
+            </div>
+          )}
+        </div>
+      )}
+      {seg === "Combined" && (planPtmt || planPlumbing) && (
+        <div className="mb-8">
+          <h2 className="text-sm font-semibold text-foreground mb-3 uppercase tracking-wide">
+            Production Plan · {currentMonth} · Both Segments
+          </h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {planPtmt && (
+              <div className="bg-card border border-card-border rounded-lg p-4">
+                <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">PTMT</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <KpiCard label="Max Plan" value={fmtQty(planPtmt.totalPcs)} sub="pcs" color={BLUE} />
+                  <KpiCard label="Min Required" value={fmtQty(planPtmt.totalMin)} sub="pcs" />
+                </div>
+              </div>
+            )}
+            {planPlumbing && (
+              <div className="bg-card border border-card-border rounded-lg p-4">
+                <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Plumbing</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <KpiCard label="Production Req." value={fmtQty(planPlumbing.totalPcs)} sub="pcs" color={GREEN} />
+                  <KpiCard label="Weight Req." value={fmtQty(planPlumbing.totalKg)} sub="kg" />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* KPIs — live data gated, seed KPIs always show */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -858,7 +960,7 @@ function ManagementReportsPage() {
 }
 
 // ─── Orders Page ──────────────────────────────────────────────────────────────
-function OrdersPage({ fy }: { fy: string }) {
+function OrdersPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Combined" }) {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["ops-orders", fy],
     queryFn: async () => {
@@ -916,6 +1018,13 @@ function OrdersPage({ fy }: { fy: string }) {
           Refresh
         </button>
       </div>
+
+      {(seg === "Plumbing" || seg === "Combined") && (
+        <div className="mb-5 flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2.5">
+          <AlertCircle size={13} className="mt-0.5 shrink-0" />
+          <span>Orders data comes from the PTMT Order Sheet (Google Sheets). Plumbing orders are tracked separately and not yet in this view.</span>
+        </div>
+      )}
 
       {isLoading && <LoadingState />}
       {error && <ErrorState message="Could not load order data. The sheet may require Google Sheets access." />}
@@ -1037,7 +1146,7 @@ function OrdersPage({ fy }: { fy: string }) {
 }
 
 // ─── Production Page ──────────────────────────────────────────────────────────
-function ProductionPage() {
+function ProductionPage({ seg }: { seg: "PTMT" | "Plumbing" | "Combined" }) {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["ops-production"],
     queryFn: async () => {
@@ -1045,6 +1154,22 @@ function ProductionPage() {
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
+  });
+
+  const currentMonth = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }, []);
+
+  const { data: plumbingPlan } = useQuery({
+    queryKey: ["plan-summary-plumbing-prod", currentMonth],
+    queryFn: async () => {
+      const res = await fetch(`/api/plan/summary?month=${currentMonth}&segment=Plumbing`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: seg === "Plumbing" || seg === "Combined",
+    staleTime: 5 * 60 * 1000,
   });
 
   const CATEGORIES = [
@@ -1090,7 +1215,9 @@ function ProductionPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Production Planning</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">PTMT · Annual plan trend + live monthly breakdown</p>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {seg === "Plumbing" ? "Plumbing" : seg === "Combined" ? "PTMT + Plumbing" : "PTMT"} · Annual plan trend + live monthly breakdown
+          </p>
         </div>
         <button onClick={() => refetch()} disabled={isFetching}
           className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-border rounded-md text-muted-foreground hover:bg-muted transition-colors">
@@ -1098,6 +1225,44 @@ function ProductionPage() {
           Refresh
         </button>
       </div>
+
+      {/* Plumbing plan summary — shown when Plumbing or Combined */}
+      {(seg === "Plumbing" || seg === "Combined") && plumbingPlan && (
+        <div className="bg-card border border-card-border rounded-lg p-5 mb-6">
+          <h3 className="text-sm font-semibold text-foreground mb-1">
+            Plumbing Production Plan · {currentMonth}
+          </h3>
+          <p className="text-xs text-muted-foreground mb-4">
+            {plumbingPlan.categories.length} categories · {fmtQty(plumbingPlan.totalPcs)} pcs · {fmtQty(plumbingPlan.totalKg)} kg
+          </p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+            <KpiCard label="Total Required" value={fmtQty(plumbingPlan.totalPcs)} sub="pieces" color={GREEN} />
+            <KpiCard label="Total Weight" value={fmtQty(plumbingPlan.totalKg)} sub="kg" />
+            <KpiCard label="Categories" value={String(plumbingPlan.categories.length)} />
+            <KpiCard label="Top Category" value={plumbingPlan.categories[0]?.name ?? "—"} sub={fmtQty(plumbingPlan.categories[0]?.pcs ?? 0) + " pcs"} />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-border bg-muted/40">
+                  {["Category", "Pieces", "Kg"].map((h) => (
+                    <th key={h} className={`text-left px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground ${h !== "Category" ? "text-right" : ""}`}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {plumbingPlan.categories.map((c: any) => (
+                  <tr key={c.name} className="border-b border-border/50 hover:bg-muted/20">
+                    <td className="px-3 py-1.5 font-medium text-foreground">{c.name}</td>
+                    <td className="px-3 py-1.5 text-right font-mono text-foreground">{c.pcs.toLocaleString("en-IN")}</td>
+                    <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">{c.kg > 0 ? c.kg.toLocaleString("en-IN") : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* FY-level KPIs from seed */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -1260,8 +1425,10 @@ function LiveBufferHeatmap({ indices, applied }: { indices: Record<string, numbe
   );
 }
 
-function StockBufferPage() {
-  const [segment, setSegment] = useState<"PTMT" | "Plumbing">("PTMT");
+function StockBufferPage({ seg: globalSeg }: { seg?: "PTMT" | "Plumbing" | "Combined" }) {
+  const [segment, setSegment] = useState<"PTMT" | "Plumbing">(
+    globalSeg === "Plumbing" ? "Plumbing" : "PTMT"
+  );
   const [z, setZ] = useState(1.65);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [overrideDrafts, setOverrideDrafts] = useState<Record<number, string>>({});
@@ -1622,7 +1789,7 @@ function StockBufferPage() {
 }
 
 // ─── Sales Page ───────────────────────────────────────────────────────────────
-function SalesPage({ fy }: { fy: string }) {
+function SalesPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Combined" }) {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ["ops-sales", fy],
     queryFn: async () => {
@@ -1661,6 +1828,13 @@ function SalesPage({ fy }: { fy: string }) {
           Refresh
         </button>
       </div>
+
+      {(seg === "Plumbing" || seg === "Combined") && (
+        <div className="mb-5 flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2.5">
+          <AlertCircle size={13} className="mt-0.5 shrink-0" />
+          <span>Sales data comes from the PTMT 3-Year Sale Master. Plumbing sales history is tracked in a separate workbook and not yet integrated here.</span>
+        </div>
+      )}
 
       {/* PTMT sales trend from seed — always visible */}
       <div className="bg-card border border-card-border rounded-lg p-5 mb-5">
@@ -2034,12 +2208,16 @@ function ApiKeysPage() {
 }
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
-function AppLayout({ children, fy, setFy }: { children: React.ReactNode; fy: string; setFy: (v: string) => void }) {
+function AppLayout({ children, fy, setFy, seg, setSeg }: {
+  children: React.ReactNode;
+  fy: string; setFy: (v: string) => void;
+  seg: "PTMT" | "Plumbing" | "Combined"; setSeg: (v: "PTMT" | "Plumbing" | "Combined") => void;
+}) {
   return (
     <>
       <CrossAppNav />
       <div className="flex min-h-screen bg-background pt-9">
-        <Sidebar fy={fy} setFy={setFy} />
+        <Sidebar fy={fy} setFy={setFy} seg={seg} setSeg={setSeg} />
         <main className="ml-56 flex-1 min-h-screen">
           <div className="max-w-[1200px] mx-auto px-6 py-6">{children}</div>
         </main>
@@ -2051,15 +2229,16 @@ function AppLayout({ children, fy, setFy }: { children: React.ReactNode; fy: str
 // ─── Router ───────────────────────────────────────────────────────────────────
 function AppRouter() {
   const [fy, setFy] = useState("2026-27");
+  const [seg, setSeg] = useState<"PTMT" | "Plumbing" | "Combined">("PTMT");
   return (
-    <AppLayout fy={fy} setFy={setFy}>
+    <AppLayout fy={fy} setFy={setFy} seg={seg} setSeg={setSeg}>
       <Switch>
-        <Route path="/"             component={() => <OverviewPage fy={fy} />} />
+        <Route path="/"             component={() => <OverviewPage fy={fy} seg={seg} />} />
         <Route path="/management"   component={() => <ManagementReportsPage />} />
-        <Route path="/orders"       component={() => <OrdersPage fy={fy} />} />
-        <Route path="/production"   component={() => <ProductionPage />} />
-        <Route path="/stock-buffer" component={() => <StockBufferPage />} />
-        <Route path="/sales"        component={() => <SalesPage fy={fy} />} />
+        <Route path="/orders"       component={() => <OrdersPage fy={fy} seg={seg} />} />
+        <Route path="/production"   component={() => <ProductionPage seg={seg} />} />
+        <Route path="/stock-buffer" component={() => <StockBufferPage seg={seg} />} />
+        <Route path="/sales"        component={() => <SalesPage fy={fy} seg={seg} />} />
         <Route path="/sources"      component={() => <SourcesPage />} />
         <Route path="/api-keys"     component={() => <ApiKeysPage />} />
         <Route component={() => (
