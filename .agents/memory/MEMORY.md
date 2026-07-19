@@ -31,3 +31,5 @@
 - [Plumbing pending order segments](plumbing-pending-order-segments.md) — filter must include PLUMBING+P+PL+AGRI; PL=SWR Selfit+UPVC SCH40; AGRI=AGRI Pipe; PPR items under PLUMBING are safe (never in item_master).
 - [Sheet tab name normalisation](tab-normalisation.md) — order sheets use "July" not "Jul"; buildTabMap()+normTab() in seasonality-engine.ts maps full names→FiscalMonth; fixes missing Jul data (10→12 months per FY).
 - [Plumbing buffer CV methodology](plumbing-buffer-cv.md) — our engine uses category-aggregate monthly CV; golden values use item-level weighted-average CV (per-SKU); category CV is always lower; SWR Pipe gap ~-1.0.
+- [Plumbing workbook tab structure](plumbing-workbook-tab-structure.md) — CPVC/SWR/UPVC/AGRI TOP ITEM tabs have NO type column and NO section headers; all items listed sequentially; type resolved via FG stock Category col or MATERIAL_TYPE_DEFAULT fallback.
+- [Workbook ID config](workbook-id-config.md) — workbook_config DB table (migration 012) stores IDs per division+month; getWorkbookIdForMonth() checks DB first then hardcoded maps; WorkbookConfigPanel on Data page allows UI edits.

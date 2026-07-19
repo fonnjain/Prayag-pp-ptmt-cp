@@ -1,4 +1,6 @@
 import { ReplitConnectors } from "@replit/connectors-sdk";
+import { db, workbookConfigTable } from "@workspace/db";
+import { and, eq } from "drizzle-orm";
 import { logger } from "./logger";
 
 let _connectors: ReplitConnectors | null = null;
@@ -48,6 +50,50 @@ export const PTMT_DAILY_WORKBOOK_IDS: Record<string, string> = {
 export const PLUMBING_DAILY_WORKBOOK_IDS: Record<string, string> = {
   "2026-07": "1wlB4Y4lnP7Y2SLZX6atFN-nrKA--ByYF8m2TVHuBxD0",
 };
+
+// Cache DB workbook lookups for 5 minutes
+const _dbWorkbookCache = new Map<string, { id: string | null; expires: number }>();
+
+async function loadWorkbookIdFromDb(division: string, month: string): Promise<string | null> {
+  const key = `${division}_${month}`;
+  const now = Date.now();
+  const cached = _dbWorkbookCache.get(key);
+  if (cached && cached.expires > now) return cached.id;
+
+  try {
+    const rows = await db
+      .select({ workbookId: workbookConfigTable.workbookId })
+      .from(workbookConfigTable)
+      .where(and(eq(workbookConfigTable.division, division), eq(workbookConfigTable.month, month)))
+      .limit(1);
+    const id = rows[0]?.workbookId ?? null;
+    _dbWorkbookCache.set(key, { id, expires: now + 5 * 60 * 1000 });
+    return id;
+  } catch (err) {
+    logger.warn({ division, month, err: String(err) }, "loadWorkbookIdFromDb: DB lookup failed — using hardcoded");
+    return null;
+  }
+}
+
+/**
+ * Resolves the workbook file ID for a given division and month.
+ * Priority: DB config → hardcoded map.
+ * Call this from monitoring and plan routes.
+ */
+export async function getWorkbookIdForMonth(
+  division: "PTMT" | "Plumbing",
+  month: string,
+): Promise<string | null> {
+  const dbId = await loadWorkbookIdFromDb(division, month);
+  if (dbId) return dbId;
+  if (division === "PTMT") return PTMT_DAILY_WORKBOOK_IDS[month] ?? null;
+  return PLUMBING_DAILY_WORKBOOK_IDS[month] ?? null;
+}
+
+/** Invalidate the DB workbook cache for a specific division+month (call after saves). */
+export function invalidateWorkbookCache(division: string, month: string): void {
+  _dbWorkbookCache.delete(`${division}_${month}`);
+}
 
 async function proxyJson(path: string): Promise<any> {
   const MAX_RETRIES = 4;
@@ -589,8 +635,12 @@ export async function snapshotPendingOrderRows(): Promise<{ catNo: string; colou
 
 export interface PlumbingPlanRow {
   material: string;
-  type: "Pipe" | "Fitting" | "Solvent";
-  /** e.g. "CPVC Pipe", "SWR Solvent" */
+  /**
+   * Null when the workbook tab has no TYPE column and no section-header rows.
+   * In this case the caller (plan.ts) resolves type from the FG stock Category field.
+   */
+  type: "Pipe" | "Fitting" | "Solvent" | null;
+  /** e.g. "CPVC Pipe", "SWR Solvent". May be just the material name when type is null. */
   category: string;
   itemCode: string;
   /** Monthly average — "LAST 3 MONTH AVG SALE" is already the monthly average. */
@@ -633,17 +683,18 @@ const PLUMBING_MATERIALS = ["CPVC", "UPVC", "SWR", "AGRI"] as const;
  * This is intentional — do not "fix" back to match the master's figures.
  */
 export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlanRow[]> {
-  // Drive-based discovery is primary; hardcoded map is fallback.
-  // After finding any file via Drive, validate it has at least one material tab.
+  // Priority: DB-configured ID → Drive discovery → hardcoded map.
+  // After finding any file, validate it has at least one material tab.
   // The Drive search can match wrong files (e.g. purchase workbooks) that share
   // "PLUMBING" + month + year in their name but have no CPVC/UPVC/SWR/AGRI tabs.
-  const driveId = await findPlumbingWorkbookId(month);
+  const dbId = await loadWorkbookIdFromDb("Plumbing", month);
+  const driveId = dbId ? null : await findPlumbingWorkbookId(month); // skip Drive if DB has an ID
   const hardcodedId = PLUMBING_DAILY_WORKBOOK_IDS[month] ?? null;
 
-  // Try Drive ID first, then hardcoded — use the first that has material tabs.
+  // Try DB ID first, then Drive, then hardcoded — use first that has material tabs.
   let fileId: string | null = null;
   let tabs: string[] = [];
-  for (const candidateId of [...new Set([driveId, hardcodedId].filter(Boolean) as string[])]) {
+  for (const candidateId of [...new Set([dbId, driveId, hardcodedId].filter(Boolean) as string[])]) {
     const candidateTabs = await listTabs(candidateId);
     const hasMaterialTab = PLUMBING_MATERIALS.some((m) =>
       candidateTabs.some((t) => t.toUpperCase().includes(m)),
@@ -762,19 +813,22 @@ export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlan
         continue;
       }
 
-      // Determine item type: explicit column first, then section-header fallback
+      // Determine item type: explicit column first, then section-header fallback.
+      // When neither is available (typeCol=-1 and no section headers in this tab),
+      // we push the item with type=null so the caller can resolve it from FG stock Category.
       let itemType: "Pipe" | "Fitting" | "Solvent" | null;
       if (typeCol >= 0) {
         itemType = normItemType(String(row[typeCol] ?? ""));
       } else {
         itemType = currentSectionType;
       }
-      if (!itemType) continue; // type unknown — skip totals / blanks
+      // Do NOT skip items with unknown type — push with type=null.
+      // buildPlumbingPlanItemsFromWorkbook will resolve type from FG stock Category.
 
       result.push({
         material,
         type: itemType,
-        category: `${material} ${itemType}`,
+        category: itemType ? `${material} ${itemType}` : material,
         itemCode: rawCode,
         avg3MoSale:            toNumber(row[avg3moCol]),
         // stockCol / pendingLmCol may be -1 (come from FG upload, not workbook).

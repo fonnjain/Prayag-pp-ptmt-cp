@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import {
   useListBufferCategories,
   useUpdateBufferCategory,
@@ -715,6 +715,233 @@ function SeasonalityTable({ segment }: { segment: string }) {
   );
 }
 
+// ── Hardcoded fallback IDs shown as placeholders ──────────────────────────────
+const PTMT_FALLBACK: Record<string, string> = {
+  "2026-04": "16zsh5x4MdY8DX3H5_hw5iaOdkGixlUsPzesDVnwgfYo",
+  "2026-05": "1T1M5MT47P3D4wCwi7tX7KcL_sHVtx43NSuXFDP9Oq78",
+  "2026-06": "1nEDFjrVu6pnNkzZ9tJhvGvBDMUHjLStcc0RP2uHig4g",
+  "2026-07": "1AjMLfcBkI0rGY8JdYP3MO8Ocn8lO-HIpol1tHgvK9O8",
+};
+const PLUMBING_FALLBACK: Record<string, string> = {
+  "2026-07": "1wlB4Y4lnP7Y2SLZX6atFN-nrKA--ByYF8m2TVHuBxD0",
+};
+
+type WorkbookRow = {
+  id: string;
+  division: string;
+  month: string;
+  workbookId: string;
+  label: string;
+  updatedAt: string;
+};
+
+function WorkbookConfigPanel() {
+  const { toast } = useToast();
+  const [rows, setRows] = useState<WorkbookRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [editIds, setEditIds] = useState<Record<string, string>>({});
+  const [newRow, setNewRow] = useState<{ division: string; month: string; workbookId: string } | null>(null);
+
+  const nowMonth = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  })();
+
+  const fetchRows = useCallback(async () => {
+    try {
+      const res = await fetch("/api/workbook-config");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setRows(await res.json());
+    } catch {
+      toast({ title: "Failed to load workbook config", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => { fetchRows(); }, [fetchRows]);
+
+  const save = async (row: WorkbookRow, overrideId?: string) => {
+    const workbookId = overrideId ?? editIds[row.id] ?? row.workbookId;
+    setSaving(row.id);
+    try {
+      const res = await fetch(`/api/workbook-config/${row.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ division: row.division, month: row.month, workbookId, label: row.label }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast({ title: "Saved", description: `${row.division} ${row.month} workbook ID updated.` });
+      fetchRows();
+    } catch {
+      toast({ title: "Save failed", variant: "destructive" });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const remove = async (id: string) => {
+    try {
+      await fetch(`/api/workbook-config/${id}`, { method: "DELETE" });
+      toast({ title: "Removed" });
+      fetchRows();
+    } catch {
+      toast({ title: "Delete failed", variant: "destructive" });
+    }
+  };
+
+  const addNew = async () => {
+    if (!newRow || !newRow.month || !newRow.workbookId) return;
+    const id = `${newRow.division.toLowerCase()}_${newRow.month}`;
+    setSaving(id);
+    try {
+      const label = `${newRow.division} daily workbook ${newRow.month}`;
+      const res = await fetch(`/api/workbook-config/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ division: newRow.division, month: newRow.month, workbookId: newRow.workbookId, label }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      toast({ title: "Added", description: `${newRow.division} ${newRow.month} configured.` });
+      setNewRow(null);
+      fetchRows();
+    } catch {
+      toast({ title: "Add failed", variant: "destructive" });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const renderDivision = (division: "PTMT" | "Plumbing") => {
+    const divRows = rows.filter((r) => r.division === division);
+    const fallback = division === "PTMT" ? PTMT_FALLBACK : PLUMBING_FALLBACK;
+    const configured = new Set(divRows.map((r) => r.month));
+
+    return (
+      <div className="space-y-2">
+        <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{division}</p>
+
+        {/* Hardcoded fallback rows (read-only if not overridden in DB) */}
+        {Object.entries(fallback).map(([month, fbId]) => {
+          const dbRow = divRows.find((r) => r.month === month);
+          if (dbRow) return null; // shown below in DB rows section
+          return (
+            <div key={month} className="flex items-center gap-2 text-sm">
+              <span className="w-24 text-gray-500 shrink-0">{month}</span>
+              <Input
+                className="flex-1 font-mono text-xs h-8 bg-gray-50"
+                placeholder={fbId}
+                defaultValue=""
+                id={`fallback_${division}_${month}`}
+                onBlur={(e) => {
+                  if (e.target.value.trim()) {
+                    const id = `${division.toLowerCase()}_${month}`;
+                    const row: WorkbookRow = { id, division, month, workbookId: e.target.value.trim(), label: `${division} daily workbook ${month}`, updatedAt: "" };
+                    save(row, e.target.value.trim());
+                  }
+                }}
+              />
+              <span className="text-xs text-gray-400 shrink-0">fallback</span>
+            </div>
+          );
+        })}
+
+        {/* DB-configured rows */}
+        {divRows.map((row) => (
+          <div key={row.id} className="flex items-center gap-2 text-sm">
+            <span className="w-24 shrink-0 font-medium">{row.month}</span>
+            <Input
+              className="flex-1 font-mono text-xs h-8"
+              value={editIds[row.id] ?? row.workbookId}
+              onChange={(e) => setEditIds((prev) => ({ ...prev, [row.id]: e.target.value }))}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 px-2 text-xs"
+              disabled={saving === row.id || (editIds[row.id] ?? row.workbookId) === row.workbookId}
+              onClick={() => save(row)}
+            >
+              {saving === row.id ? "…" : "Save"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 px-2 text-xs text-red-500 hover:text-red-700"
+              onClick={() => remove(row.id)}
+            >
+              ✕
+            </Button>
+          </div>
+        ))}
+
+        {/* Add for months not yet configured */}
+        {!Object.keys(fallback).includes(nowMonth) && !configured.has(nowMonth) && (
+          <p className="text-xs text-amber-600">
+            No workbook configured for {nowMonth} — enter an ID above or use the add button.
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-5">
+      <p className="text-xs text-gray-500">
+        Each division's daily-production workbook is identified by its Google Spreadsheet ID.
+        DB-configured IDs take priority over the built-in fallbacks. Leave blank to keep using the fallback.
+      </p>
+
+      {loading && <p className="text-sm text-gray-400">Loading…</p>}
+
+      {!loading && (
+        <>
+          {renderDivision("PTMT")}
+          <div className="border-t pt-4" />
+          {renderDivision("Plumbing")}
+
+          {/* Add new entry */}
+          <div className="border-t pt-3">
+            {!newRow ? (
+              <Button size="sm" variant="outline" onClick={() => setNewRow({ division: "PTMT", month: nowMonth, workbookId: "" })}>
+                + Add entry
+              </Button>
+            ) : (
+              <div className="flex items-center gap-2 text-sm flex-wrap">
+                <select
+                  className="border rounded px-2 h-8 text-sm"
+                  value={newRow.division}
+                  onChange={(e) => setNewRow((p) => p && { ...p, division: e.target.value })}
+                >
+                  <option value="PTMT">PTMT</option>
+                  <option value="Plumbing">Plumbing</option>
+                </select>
+                <Input
+                  className="w-28 h-8 text-sm"
+                  placeholder="YYYY-MM"
+                  value={newRow.month}
+                  onChange={(e) => setNewRow((p) => p && { ...p, month: e.target.value })}
+                />
+                <Input
+                  className="flex-1 font-mono text-xs h-8"
+                  placeholder="Google Spreadsheet ID"
+                  value={newRow.workbookId}
+                  onChange={(e) => setNewRow((p) => p && { ...p, workbookId: e.target.value })}
+                />
+                <Button size="sm" onClick={addNew} disabled={!newRow.month || !newRow.workbookId || saving !== null}>
+                  {saving ? "…" : "Add"}
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setNewRow(null)}>Cancel</Button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function GoogleSheetsStatus() {
   const { data, isLoading, refetch } = useGetSyncStatus();
   const syncSheets = useSyncSheets();
@@ -970,6 +1197,20 @@ export default function DataPage() {
                 </p>
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Workbook ID Configuration</CardTitle>
+            <p className="text-xs text-gray-500 mt-1">
+              Configure the Google Spreadsheet IDs for PTMT and Plumbing daily-production workbooks.
+              DB entries take priority over built-in fallbacks. Paste the spreadsheet ID from the URL
+              (the long string after <code>/d/</code>).
+            </p>
+          </CardHeader>
+          <CardContent>
+            <WorkbookConfigPanel />
           </CardContent>
         </Card>
 

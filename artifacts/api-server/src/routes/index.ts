@@ -14,6 +14,7 @@ import correctiveRouter from "./corrective";
 import capacityRouter from "./capacity";
 import apiKeysRouter from "./api-keys";
 import plantLiveRouter from "./plant-live";
+import sheetConfigRouter from "./sheet-config";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use(correctiveRouter);
 router.use(capacityRouter);
 router.use(apiKeysRouter);
 router.use(plantLiveRouter);
+router.use(sheetConfigRouter);
 
 export default router;

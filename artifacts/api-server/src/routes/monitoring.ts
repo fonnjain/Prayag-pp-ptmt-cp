@@ -9,7 +9,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import { buildPlanItems } from "./plan";
 import { parseReport5 } from "../lib/report5";
-import { PTMT_DAILY_WORKBOOK_IDS } from "../lib/sheets";
+import { getWorkbookIdForMonth } from "../lib/sheets";
 import {
   buildCalendarModel,
   countWorkingDaysElapsed,
@@ -88,7 +88,7 @@ export interface MonitoringBundle {
 }
 
 export async function buildMonitoringBundle(month: string): Promise<MonitoringBundle> {
-  const sheetId = PTMT_DAILY_WORKBOOK_IDS[month];
+  const sheetId = await getWorkbookIdForMonth("PTMT", month);
   const [planItems, weightMap, config, thresholds, overrides] = await Promise.all([
     buildPlanItems(month),
     loadWeightMap(),

@@ -111,19 +111,36 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
     fetchPlumbingBomWeights(),
   ]);
 
-  // Parse FG Stock upload: Net Stock positive → stock; negative → pendingOrderLastMonth (absolute value).
-  // Multiple rows with the same item code are summed (shouldn't occur, but safe).
+  // Parse FG Stock upload:
+  //   - Net Stock positive  → stock
+  //   - Net Stock negative  → pendingOrderLastMonth (absolute value)
+  //   - Category column     → type map (FG stock Category = "CPVC-PIPE", "SWR-FITTING", etc.)
+  //     Used to resolve item type when the workbook tab has no TYPE column / section headers.
   const stockMap = new Map<string, number>();
   const pendingLmMap = new Map<string, number>();
+  const fgTypeMap = new Map<string, "Pipe" | "Fitting" | "Solvent">();
+
   for (const row of fgStockRows) {
     const code = normalizeCode(String(row["Item Code"] ?? "").trim());
     if (!code) continue;
+
     const rawNet = row["Net Stock"];
     const netStock = typeof rawNet === "number" ? rawNet : Number(String(rawNet ?? "").replace(/,/g, "")) || 0;
     if (netStock > 0) {
       stockMap.set(code, (stockMap.get(code) ?? 0) + netStock);
     } else if (netStock < 0) {
       pendingLmMap.set(code, (pendingLmMap.get(code) ?? 0) + Math.abs(netStock));
+    }
+
+    // Resolve type from FG stock Category:
+    //   "CPVC-PIPE"    → Pipe     "UPVC-FITTING"  → Fitting
+    //   "CPVC-TRADING" → Solvent  "CPVC-FG"       → Fitting (finished goods ≈ fittings)
+    if (!fgTypeMap.has(code)) {
+      const cat = String(row["Category"] ?? "").trim().toUpperCase();
+      if (cat.includes("FITTING")) fgTypeMap.set(code, "Fitting");
+      else if (cat.includes("TRADING") || cat.includes("SOLVENT")) fgTypeMap.set(code, "Solvent");
+      else if (cat.includes("PIPE")) fgTypeMap.set(code, "Pipe");
+      else if (cat.includes("FG")) fgTypeMap.set(code, "Fitting"); // "-FG" finished goods → fittings
     }
   }
 
@@ -132,33 +149,55 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
     bandRows.map((b) => [b.categoryName, { w1Upper: b.w1Upper, w2Upper: b.w2Upper, w3Upper: b.w3Upper, w4Upper: b.w4Upper }]),
   );
 
-  const items: PlanItemWithBom[] = workbookRows.map((row) => {
-    const code = normalizeCode(row.itemCode);
-    const source: ItemSourceRow = {
-      itemCode: row.itemCode,
-      colour: "",
-      // calc.ts computes avg3MoSale = avg3MoSaleTotal3Mo / 3.
-      // The workbook column "LAST 3 MONTH AVG SALE" is already the monthly average,
-      // so multiply by 3 here so that /3 in calc.ts recovers the correct figure.
-      avg3MoSaleTotal3Mo:    row.avg3MoSale * 3,
-      // Stock and pendingLM come from the FG Stock UPLOAD — NOT from the workbook.
-      stock:                 stockMap.get(code) ?? 0,
-      stockNeedsReview:      false,
-      pendingOrderLastMonth: pendingLmMap.get(code) ?? 0,
-      // Pending order (current month) from workbook; live open order from Order Sheet.
-      pendingOrder:          row.pendingOrder,
-      order:                 liveOrderTotals.byCode.get(code) ?? 0,
-    };
-    const multiplier = bufferByCategory.get(row.category) ?? 1;
-    // One formula for all 12 Plumbing categories: max((Buffer − Stock) + PendingLM + Pending, 0)
-    const computed = computeItemPlan(source, row.category, multiplier);
+  // Material-level default type when FG stock has no match for an item code.
+  // CPVC/SWR finished-goods are predominantly fittings; UPVC/AGRI are predominantly pipes.
+  const MATERIAL_TYPE_DEFAULT: Record<string, "Pipe" | "Fitting"> = {
+    CPVC: "Fitting",
+    SWR:  "Fitting",
+    UPVC: "Pipe",
+    AGRI: "Pipe",
+  };
 
-    // BOM weight — ~3% of items may have no BOM entry; flag them, never drop or guess.
-    const weightPcs = bomWeights.get(code);
-    const noBomWeight = weightPcs === undefined;
-    const weightKg = noBomWeight ? 0 : Math.round(computed.maxProduction * weightPcs! * 100) / 100;
-    return { ...computed, weightKg, noBomWeight };
-  });
+  let fgTypeMissCount = 0;
+  const items: PlanItemWithBom[] = workbookRows
+    .map((row): PlanItemWithBom | null => {
+      const code = normalizeCode(row.itemCode);
+
+      // Resolve type: workbook column → FG stock Category → material default.
+      const resolvedType: "Pipe" | "Fitting" | "Solvent" | null =
+        row.type ?? fgTypeMap.get(code) ?? MATERIAL_TYPE_DEFAULT[row.material] ?? null;
+      if (!resolvedType) {
+        fgTypeMissCount++;
+        return null; // unknown material — skip
+      }
+      const resolvedCategory = `${row.material} ${resolvedType}`;
+
+      const source: ItemSourceRow = {
+        itemCode: row.itemCode,
+        colour: "",
+        // calc.ts computes avg3MoSale = avg3MoSaleTotal3Mo / 3.
+        // The workbook column "LAST 3 MONTH AVG SALE" is already the monthly average,
+        // so multiply by 3 here so that /3 in calc.ts recovers the correct figure.
+        avg3MoSaleTotal3Mo:    row.avg3MoSale * 3,
+        // Stock and pendingLM come from the FG Stock UPLOAD — NOT from the workbook.
+        stock:                 stockMap.get(code) ?? 0,
+        stockNeedsReview:      false,
+        pendingOrderLastMonth: pendingLmMap.get(code) ?? 0,
+        // Pending order (current month) from workbook; live open order from Order Sheet.
+        pendingOrder:          row.pendingOrder,
+        order:                 liveOrderTotals.byCode.get(code) ?? 0,
+      };
+      const multiplier = bufferByCategory.get(resolvedCategory) ?? 1;
+      // One formula for all 12 Plumbing categories: max((Buffer − Stock) + PendingLM + Pending, 0)
+      const computed = computeItemPlan(source, resolvedCategory, multiplier);
+
+      // BOM weight — ~3% of items may have no BOM entry; flag them, never drop or guess.
+      const weightPcs = bomWeights.get(code);
+      const noBomWeight = weightPcs === undefined;
+      const weightKg = noBomWeight ? 0 : Math.round(computed.maxProduction * weightPcs! * 100) / 100;
+      return { ...computed, weightKg, noBomWeight };
+    })
+    .filter((item): item is PlanItemWithBom => item !== null);
 
   annotateWeeklyRelease(items, bandsByCategory);
   return items;

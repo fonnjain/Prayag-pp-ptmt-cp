@@ -16,3 +16,4 @@ export * from "./weekly-release-bands";
 export * from "./corrective-plan";
 export * from "./category-capacity";
 export * from "./api-keys";
+export * from "./workbook-config";
