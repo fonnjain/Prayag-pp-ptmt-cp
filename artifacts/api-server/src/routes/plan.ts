@@ -1549,9 +1549,11 @@ router.get("/plan/validate-plumbing-monitoring", async (req, res) => {
 });
 
 // ── GET /plan/summary ─────────────────────────────────────────────────────────
-// Lightweight plan KPI summary for the ops-dashboard segment filter.
-// Returns: totalPcs (maxProduction sum), totalKg (Plumbing BOM weight sum),
-//          totalMin (PTMT minProduction sum), and per-category breakdown.
+// Unified plan summary consumed by both:
+//   • production-planning /summary page  → grandMinTotal, grandMaxTotal,
+//       categories[].{category, minTotal, maxTotal}
+//   • ops-dashboard segment filter       → totalPcs, totalKg, totalMin,
+//       categories[].{name, pcs, kg}
 router.get("/plan/summary", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");
   const segment = String(req.query.segment ?? "PTMT");
@@ -1561,24 +1563,36 @@ router.get("/plan/summary", async (req, res): Promise<void> => {
   }
   try {
     const items = await buildPlanItems(month, segment);
-    const byCat = new Map<string, { pcs: number; kg: number }>();
-    let totalPcs = 0, totalKg = 0, totalMin = 0;
+    // Full summarizePlan result (used by summary page)
+    const planSummary = summarizePlan(items);
+    // Per-category kg accumulator (Plumbing BOM weight)
+    const catKg = new Map<string, number>();
+    let totalKg = 0;
     for (const item of items) {
-      const pcs = Math.round(item.maxProduction ?? 0);
-      const kg  = Math.round((item as any).weightKg ?? 0);
-      const min = Math.round((item as any).minProduction ?? 0);
-      totalPcs += pcs;
-      totalKg  += kg;
-      totalMin += min;
-      const cat = byCat.get(item.category) ?? { pcs: 0, kg: 0 };
-      cat.pcs += pcs;
-      cat.kg  += kg;
-      byCat.set(item.category, cat);
+      const kg = Math.round((item as any).weightKg ?? 0);
+      totalKg += kg;
+      catKg.set(item.category, (catKg.get(item.category) ?? 0) + kg);
     }
-    const categories = [...byCat.entries()]
-      .sort((a, b) => b[1].pcs - a[1].pcs)
-      .map(([name, { pcs, kg }]) => ({ name, pcs, kg }));
-    res.json({ month, segment, totalPcs, totalKg, totalMin, categories });
+    // Merged categories: both old shape (category/minTotal/maxTotal)
+    // and new shape (name/pcs/kg) so both consumers work
+    const categories = planSummary.categories.map((c) => ({
+      ...c,                          // category, minTotal, maxTotal (summary page)
+      name: c.category,             // ops-dashboard
+      pcs:  Math.round(c.maxTotal), // ops-dashboard
+      kg:   catKg.get(c.category) ?? 0, // ops-dashboard
+    }));
+    res.json({
+      month,
+      segment,
+      // production-planning summary page fields
+      grandMinTotal: planSummary.grandMinTotal,
+      grandMaxTotal: planSummary.grandMaxTotal,
+      // ops-dashboard fields
+      totalPcs: planSummary.grandMaxTotal,
+      totalKg:  Math.round(totalKg),
+      totalMin: planSummary.grandMinTotal,
+      categories,
+    });
   } catch (err) {
     req.log.error({ err, month, segment }, "plan/summary failed");
     res.status(500).json({ error: "Failed to compute plan summary" });
