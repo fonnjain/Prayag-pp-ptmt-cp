@@ -246,3 +246,72 @@ export const PLUMBING_WEEKLY_GOLDEN: Array<{
   { cat: "AGRI Fitting", w1:  49_637, w2: 2_458, w3:   1_836, w4:    659 },
   { cat: "AGRI Solvent", w1:       0, w2:     0, w3:       0, w4:      0 },
 ];
+
+// ── Plumbing corrective re-plan golden values (14-Jul-2026 snapshot) ─────────
+
+/**
+ * Working days remaining in July 2026 as of the golden snapshot date (14-Jul-2026).
+ * Pass as workingDaysRemaining= to /api/plan/corrective-replan and /api/plan/validate-replan.
+ */
+export const PLUMBING_REPLAN_WORKING_DAYS_REMAINING = 15;
+
+/**
+ * Per-category corrective re-plan golden values.
+ * Snapshot: 19-Jul-2026 (workingDaysRemaining=15 passed to endpoint).
+ * Production source: Sheet3 of the Plumbing master workbook
+ *   (Date / Code / Prod.Qty, fed automatically by Report-11 Pipe + Report-12 Fittings).
+ *
+ * capPerDay = p90 of that category's demonstrated daily output in Sheet3
+ *             (only days with recorded production; formula: arr[floor(n × 0.9)]).
+ * feasible  = capPerDay × 15
+ * shortfall = max(remaining − feasible, 0)
+ *
+ * CRITICAL: AGRI Fitting produced requires normalizeCodeStrict (strip hyphens/
+ *   spaces/dots). Production logs "A465"; plan master stores "A-465". Without strict
+ *   normalization, AGRI Fitting showed 0 produced.
+ *
+ * Unplanned production (codes absent from plan master) now at ~197,439 pcs.
+ *   (was 146,155 on 14-Jul — increased as more days recorded).
+ *
+ * NOTE: These values are point-in-time and will drift as production continues.
+ *   Update this table when rolling over to a new month or after major plan revisions.
+ *   The structural-invariant checks (ReplanInv ·) are always valid regardless of date.
+ */
+export const PLUMBING_REPLAN_GOLDEN: Array<{
+  cat: string;
+  plan: number;
+  produced: number;
+  remaining: number;
+  capPerDay: number;
+  feasible: number;
+  shortfall: number;
+}> = [
+  { cat: "CPVC Pipe",    plan: 130_451, produced:  26_980, remaining: 103_473, capPerDay:  4_960, feasible:  74_400, shortfall:  29_073 },
+  { cat: "CPVC Fitting", plan: 763_253, produced: 377_354, remaining: 428_652, capPerDay: 34_338, feasible: 515_070, shortfall:       0 },
+  { cat: "CPVC Solvent", plan:  16_539, produced:       0, remaining:  16_538, capPerDay:      0, feasible:       0, shortfall:  16_538 },
+  { cat: "UPVC Pipe",    plan:  51_899, produced:  21_490, remaining:  38_184, capPerDay:  9_875, feasible: 148_125, shortfall:       0 },
+  { cat: "UPVC Fitting", plan: 633_038, produced: 217_128, remaining: 428_055, capPerDay: 20_126, feasible: 301_890, shortfall: 126_165 },
+  { cat: "UPVC Solvent", plan:     542, produced:       0, remaining:     541, capPerDay:      0, feasible:       0, shortfall:     541 },
+  { cat: "SWR Pipe",     plan:  64_515, produced:  11_456, remaining:  53_816, capPerDay:  2_405, feasible:  36_075, shortfall:  17_741 },
+  { cat: "SWR Fitting",  plan: 236_315, produced: 121_986, remaining: 129_045, capPerDay: 11_510, feasible: 172_650, shortfall:       0 },
+  { cat: "SWR Solvent",  plan:   1_255, produced:     465, remaining:     791, capPerDay:    300, feasible:   4_500, shortfall:       0 },
+  { cat: "AGRI Pipe",    plan:  20_299, produced:   2_925, remaining:  18_099, capPerDay:    790, feasible:  11_850, shortfall:   6_249 },
+  { cat: "AGRI Fitting", plan:  54_590, produced:  30_455, remaining:  25_327, capPerDay:  5_950, feasible:  89_250, shortfall:       0 },
+  { cat: "AGRI Solvent", plan:       0, produced:       0, remaining:       0, capPerDay:      0, feasible:       0, shortfall:       0 },
+];
+
+/** ±1% tolerance for produced / remaining / shortfall assertions. */
+export const PLUMBING_REPLAN_TOLERANCE     = 0.01;
+/** ±5% tolerance for capPerDay / feasible (p90 is more volatile day-to-day). */
+export const PLUMBING_REPLAN_CAP_TOLERANCE = 0.05;
+
+/** Grand total produced across all 12 categories (19-Jul-2026 snapshot). */
+export const PLUMBING_REPLAN_TOTAL_PRODUCED  =   810_239;
+/** Grand total remaining to produce across all 12 categories. */
+export const PLUMBING_REPLAN_TOTAL_REMAINING = 1_242_521;
+/** Grand total feasible (sum of capPerDay × 15 per category). */
+export const PLUMBING_REPLAN_TOTAL_FEASIBLE  = 1_353_810;
+/** Grand total shortfall (sum of max(remaining − feasible, 0) per category). */
+export const PLUMBING_REPLAN_TOTAL_SHORTFALL =   196_307;
+/** Total production on codes not found in the plan master (unplanned). */
+export const PLUMBING_REPLAN_UNPLANNED_TOTAL =   197_439;

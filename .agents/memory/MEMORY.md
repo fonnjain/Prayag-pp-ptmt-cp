@@ -35,3 +35,4 @@
 - [PTMT buffer multiplier locks](ptmt-multiplier-locks.md) — AI engine drifts PTMT multipliers; lock with overrideMultiplier via PATCH; PTMT_TOLERANCE=0.001; 76/76 regression suite includes per-category Max/Min.
 - [Plumbing workbook tab structure](plumbing-workbook-tab-structure.md) — CPVC/SWR/UPVC/AGRI TOP ITEM tabs have NO type column and NO section headers; all items listed sequentially; type resolved via FG stock Category col or MATERIAL_TYPE_DEFAULT fallback.
 - [Workbook ID config](workbook-id-config.md) — workbook_config DB table (migration 012) stores IDs per division+month; getWorkbookIdForMonth() checks DB first then hardcoded maps; WorkbookConfigPanel on Data page allows UI edits.
+- [Replan invariant rounding](replan-invariant-rounding.md) — round planTotal before storing in c.plan; derive remaining = planTotal − producedCapped (never round independently); update point-in-time goldens each time Sheet3 advances significantly.

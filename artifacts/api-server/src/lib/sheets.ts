@@ -321,6 +321,17 @@ export function normalizeCode(itemCode: unknown): string {
 }
 
 /**
+ * Production-to-plan code normalisation: strip hyphens, spaces and dots before
+ * uppercasing.  Production sheets log "A465" while the plan master uses "A-465";
+ * this transform makes them compare equal.  Use ONLY for matching Sheet3
+ * production codes to plan item codes — never for plan-to-plan deduplication
+ * (which must preserve hyphens to match BOM / item-master keys).
+ */
+export function normalizeCodeStrict(code: unknown): string {
+  return String(code ?? "").trim().toUpperCase().replace(/[-\s.]/g, "");
+}
+
+/**
  * Dual totals map: `exact` keys on itemKey(code,colour) for items that have real
  * colour variants; `byCode` sums every row for a code regardless of colour, for
  * items whose item_master colour field is a non-discriminating placeholder
@@ -608,6 +619,84 @@ export async function fetchPlumbingBomWeights(): Promise<Map<string, number>> {
   _bomWeightsCache = { weights, expires: now + 15 * 60 * 1000 };
   logger.info({ combinedCount, newCount, total: weights.size }, "Plumbing BOM weights merged");
   return weights;
+}
+
+// ── Plumbing Sheet3 production reader ─────────────────────────────────────────
+
+/** A single production row from Sheet3 of the Plumbing master workbook. */
+export interface PlumbingSheet3Row {
+  /** ISO date string "YYYY-MM-DD" — used to group into working days. */
+  dateStr: string;
+  /** Code exactly as it appears in Sheet3 (may include hyphens/spaces). */
+  rawCode: string;
+  /** normalizeCodeStrict(rawCode) — matches plan item codes after strict normalization. */
+  normCode: string;
+  qty: number;
+}
+
+const _sheet3Cache = new Map<string, { rows: PlumbingSheet3Row[]; expires: number }>();
+
+/**
+ * Reads production-to-date for the given planning month from "Sheet3" of the
+ * Plumbing master workbook.
+ *
+ * Sheet3 is populated automatically from:
+ *   Report-11 (Pipe daily production) and Report-12 (Fittings daily production).
+ *
+ * Expected column layout (no header required; rows with missing date/code/qty skipped):
+ *   Col A = Date  (any format supported by parseSheetDate)
+ *   Col B = Item Code
+ *   Col C = Prod. Qty
+ *
+ * Codes are normalised with normalizeCodeStrict (strips hyphens/spaces/dots).
+ * This is the critical fix that allows "A465" (Sheet3) to match "A-465" (plan master),
+ * enabling correct AGRI Fitting produced quantities (was 0 without this).
+ *
+ * Cached 15 min in-process.
+ */
+export async function fetchPlumbingSheet3Production(month: string): Promise<PlumbingSheet3Row[]> {
+  const now = Date.now();
+  const cached = _sheet3Cache.get(month);
+  if (cached && cached.expires > now) return cached.rows;
+
+  const workbookId = await getWorkbookIdForMonth("Plumbing", month);
+  if (!workbookId) {
+    logger.warn({ month }, "fetchPlumbingSheet3Production: no workbook ID found — returning empty");
+    return [];
+  }
+
+  const [year, mon] = month.split("-").map(Number);
+
+  await sleep(1100); // throttle: Sheets API ~60 req/min
+  let values: string[][];
+  try {
+    values = await getTabValues(workbookId, "Sheet3", "A1:C500000");
+  } catch (err) {
+    logger.warn({ month, workbookId, err: String(err) }, "fetchPlumbingSheet3Production: failed to read Sheet3");
+    return [];
+  }
+
+  const rows: PlumbingSheet3Row[] = [];
+  for (const row of values) {
+    const dateRaw = row[0];
+    const codeRaw = String(row[1] ?? "").trim();
+    const qty     = toNumber(row[2]);
+    if (!dateRaw || !codeRaw || qty <= 0) continue;
+    const d = parseSheetDate(dateRaw);
+    if (!d) continue;
+    if (d.getFullYear() !== year || d.getMonth() + 1 !== mon) continue;
+    const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    rows.push({ dateStr, rawCode: codeRaw, normCode: normalizeCodeStrict(codeRaw), qty });
+  }
+
+  _sheet3Cache.set(month, { rows, expires: now + 15 * 60 * 1000 });
+  logger.info({ month, workbookId, rowCount: rows.length }, "fetchPlumbingSheet3Production: loaded");
+  return rows;
+}
+
+/** Invalidate the Sheet3 in-process cache for a given month (e.g. after workbook config update). */
+export function invalidatePlumbingSheet3Cache(month: string): void {
+  _sheet3Cache.delete(month);
 }
 
 /**

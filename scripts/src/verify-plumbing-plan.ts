@@ -31,10 +31,7 @@ type ValidateResponse = {
   checks: CheckResult[];
 };
 
-async function runValidate(segment: string, month: string): Promise<ValidateResponse> {
-  const url = `${API_BASE}/api/plan/validate?segment=${encodeURIComponent(segment)}&month=${encodeURIComponent(month)}`;
-  // Retry up to 4 times on 429 / 500 (Sheets API quota exhausted).
-  // Delays: 15s → 30s → 60s → give up.
+async function callEndpoint(url: string): Promise<ValidateResponse> {
   const delays = [15_000, 30_000, 60_000];
   let lastErr: Error | undefined;
   for (let attempt = 0; attempt <= delays.length; attempt++) {
@@ -51,6 +48,16 @@ async function runValidate(segment: string, month: string): Promise<ValidateResp
     break;
   }
   throw lastErr;
+}
+
+async function runValidate(segment: string, month: string): Promise<ValidateResponse> {
+  const url = `${API_BASE}/api/plan/validate?segment=${encodeURIComponent(segment)}&month=${encodeURIComponent(month)}`;
+  return callEndpoint(url);
+}
+
+async function runValidateReplan(month: string, workingDaysRemaining: number): Promise<ValidateResponse> {
+  const url = `${API_BASE}/api/plan/validate-replan?month=${encodeURIComponent(month)}&workingDaysRemaining=${workingDaysRemaining}`;
+  return callEndpoint(url);
 }
 
 function fmt(n: number): string {
@@ -132,7 +139,37 @@ async function main(): Promise<void> {
     console.log(`\n✅  Plumbing: all ${plumbingResult.passCount} checks PASSED`);
   }
 
-  // ── 2. PTMT validate ─────────────────────────────────────────────────────
+  // ── 2. Corrective re-plan validate ───────────────────────────────────────
+  console.log("\n⏳  Running Plumbing corrective re-plan validation (reads Sheet3, ~5s) …");
+  let replanResult: ValidateResponse;
+  try {
+    replanResult = await runValidateReplan(PLUMBING_MONTH, 15);
+  } catch (err) {
+    console.error(`\n❌  Could not reach validate-replan endpoint: ${err instanceof Error ? err.message : String(err)}`);
+    anyFail = true;
+    replanResult = { month: PLUMBING_MONTH, allPass: false, passCount: 0, failCount: 1, checks: [] };
+  }
+
+  const replanGuards  = replanResult.checks.filter((c) => c.name.startsWith("ReplanGuard"));
+  const replanInvs    = replanResult.checks.filter((c) => c.name.startsWith("ReplanInv"));
+  const replanGoldens = replanResult.checks.filter(
+    (c) => c.name.startsWith("Replan ·") && !c.name.startsWith("Replan · Total"),
+  );
+  const replanTotals  = replanResult.checks.filter((c) => c.name.startsWith("Replan · Total") || c.name.startsWith("Replan · Unplanned"));
+
+  printSection(`Replan — guards`, replanGuards);
+  printSection(`Replan — structural invariants (always exact, ${PLUMBING_MONTH})`, replanInvs);
+  printSection(`Replan — per-category golden values (14-Jul-2026 snapshot, ±1%/±5%)`, replanGoldens);
+  printSection(`Replan — totals (14-Jul-2026 snapshot, ±1%)`, replanTotals);
+
+  if (!replanResult.allPass) {
+    anyFail = true;
+    console.error(`\n❌  Replan: ${replanResult.failCount} check(s) FAILED`);
+  } else {
+    console.log(`\n✅  Replan: all ${replanResult.passCount} checks PASSED`);
+  }
+
+  // ── 3. PTMT validate ─────────────────────────────────────────────────────
   console.log("\n⏳  Running PTMT validation …");
   let ptmtResult: ValidateResponse;
   try {
@@ -156,8 +193,8 @@ async function main(): Promise<void> {
   }
 
   // ── Summary ───────────────────────────────────────────────────────────────
-  const totalChecks = plumbingResult.checks.length + ptmtResult.checks.length;
-  const totalFail   = plumbingResult.failCount + ptmtResult.failCount;
+  const totalChecks = plumbingResult.checks.length + replanResult.checks.length + ptmtResult.checks.length;
+  const totalFail   = plumbingResult.failCount + replanResult.failCount + ptmtResult.failCount;
   const totalPass   = totalChecks - totalFail;
 
   console.log("\n" + "=".repeat(60));
