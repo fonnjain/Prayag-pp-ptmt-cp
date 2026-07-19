@@ -88,7 +88,7 @@ export function AppLayout({
 }: AppLayoutProps) {
   const [location] = useLocation();
   const isPlantPage = PLANT_PATHS.has(location);
-  const isPlumbingPage = location === "/plumbing";
+  const isPlumbingPage = location === "/plumbing" || location === "/plumbing/machines";
 
   const { data: bundleRaw } = useGetPlantBundle(
     { month },
@@ -158,14 +158,14 @@ export function AppLayout({
         <div className="flex-1 overflow-y-auto py-4 space-y-4">
           {isPlumbingPage ? (
             <div className="px-3">
-              {sectionLabel("Plumbing", Factory)}
+              {sectionLabel("Plant Level", Factory)}
               <nav className="space-y-1">
                 {navLink({ href: "/plumbing", label: "Plan Overview", icon: LayoutDashboard })}
               </nav>
-              <p className="mt-4 px-3 text-xs text-muted-foreground leading-relaxed">
-                Live machine feed not yet connected. Plumbing plan targets are computed from uploaded FG Stock
-                and live Google Sheets data.
-              </p>
+              {sectionLabel("Machine Level", Cpu)}
+              <nav className="space-y-1">
+                {navLink({ href: "/plumbing/machines", label: "Machine Dashboard", icon: LayoutDashboard })}
+              </nav>
             </div>
           ) : (
             <>

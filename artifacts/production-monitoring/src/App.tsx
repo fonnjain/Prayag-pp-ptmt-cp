@@ -114,6 +114,9 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
         <Route path="/plumbing">
           <PlumbingMonitoring month={month} />
         </Route>
+        <Route path="/plumbing/machines">
+          <Dashboard month={month} plant="PIPE" />
+        </Route>
         <Route component={NotFound} />
       </Switch>
     </AppLayout>

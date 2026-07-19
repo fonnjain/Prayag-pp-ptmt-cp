@@ -45,14 +45,14 @@ function UtilBar({ pct }: { pct: number | null | undefined }) {
   );
 }
 
-export default function MachineDashboard({ month }: { month: string }) {
+export default function MachineDashboard({ month, plant = "PTMT" }: { month: string; plant?: string }) {
   const [sortKey, setSortKey] = useState<SortKey>("utilisation");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [search, setSearch] = useState("");
 
   const { data: raw, isLoading, isRefetching, refetch } = useGetPlantLiveSummary(
-    { period: month, plant: "PTMT" },
-    { query: { queryKey: getGetPlantLiveSummaryQueryKey({ period: month, plant: "PTMT" }), staleTime: 5 * 60 * 1000 } as any }
+    { period: month, plant },
+    { query: { queryKey: getGetPlantLiveSummaryQueryKey({ period: month, plant }), staleTime: 5 * 60 * 1000 } as any }
   );
   const d = raw as any;
   const overall: PlantLiveMachineMetrics | undefined = d?.overall;
@@ -107,7 +107,7 @@ export default function MachineDashboard({ month }: { month: string }) {
             <Cpu className="h-7 w-7 text-primary" /> Machine Dashboard
           </h1>
           <p className="text-muted-foreground text-sm">
-            PTMT machine-level performance &nbsp;·&nbsp;
+            {plant} machine-level performance &nbsp;·&nbsp;
             {period ? `${period.label} (${period.from} → ${period.to})` : month}
           </p>
         </div>
@@ -321,7 +321,7 @@ export default function MachineDashboard({ month }: { month: string }) {
       </Card>
 
       <p className="text-xs text-muted-foreground text-right">
-        Live data from prayag-plant.com · cached 5 min · {machines.length} machines tracked
+        Live data from prayag-plant.com · {plant} plant · cached 5 min · {machines.length} machines tracked
       </p>
     </div>
   );
