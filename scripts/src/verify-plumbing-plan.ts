@@ -101,10 +101,17 @@ async function main(): Promise<void> {
   const buffers     = plumbingResult.checks.filter((c) => c.name.startsWith("Buffer"));
   const solvents    = plumbingResult.checks.filter((c) => c.name.startsWith("Solvent"));
   const itemCounts  = plumbingResult.checks.filter((c) => c.name.startsWith("Items ·"));
+  const kgChecks    = plumbingResult.checks.filter((c) => c.name.startsWith("KG ·"));
+  const weeklyPlant = plumbingResult.checks.filter((c) => c.name.startsWith("Weekly · Plant"));
+  const weeklySum   = plumbingResult.checks.filter((c) => c.name.endsWith("· sum = prod req"));
+  const weeklyCat   = plumbingResult.checks.filter(
+    (c) => c.name.startsWith("Weekly ·") && !c.name.startsWith("Weekly · Plant") && !c.name.endsWith("· sum = prod req"),
+  );
   const categories  = plumbingResult.checks.filter(
     (c) => !c.name.startsWith("GUARD") && !c.name.startsWith("ISOLATION") &&
             !c.name.startsWith("Buffer") && !c.name.startsWith("Solvent") &&
-            !c.name.startsWith("Items ·"),
+            !c.name.startsWith("Items ·") && !c.name.startsWith("KG ·") &&
+            !c.name.startsWith("Weekly ·"),
   );
 
   printSection("Plumbing — Guard assertions", guards);
@@ -112,7 +119,11 @@ async function main(): Promise<void> {
   printSection("Plumbing — Buffer multipliers", buffers);
   printSection("Plumbing — Solvent membership", solvents);
   printSection("Plumbing — Item counts per category (exact)", itemCounts);
-  printSection(`Plumbing — 12 category totals (${PLUMBING_MONTH}, ±1%)`, categories);
+  printSection(`Plumbing — 12 category totals (${PLUMBING_MONTH}, ±0.1%)`, categories);
+  printSection(`Plumbing — KG from BOM (${PLUMBING_MONTH}, ±1%)`, kgChecks);
+  printSection(`Plumbing — Weekly release: plant totals (${PLUMBING_MONTH}, ±1%)`, weeklyPlant);
+  printSection(`Plumbing — Weekly release: per-category W1–W4 (${PLUMBING_MONTH}, ±1%)`, weeklyCat);
+  printSection(`Plumbing — Weekly release: W1+W2+W3+W4 = prod req (exact)`, weeklySum);
 
   if (!plumbingResult.allPass) {
     anyFail = true;

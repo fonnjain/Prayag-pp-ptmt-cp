@@ -19,6 +19,12 @@ import {
   PLUMBING_GOLDEN_TOLERANCE,
   PLUMBING_BUFFER_DEFAULTS,
   SOLVENT_MEMBERSHIP,
+  PLUMBING_KG_GOLDEN,
+  PLUMBING_KG_TOLERANCE,
+  PLUMBING_KG_GRAND_TOTAL,
+  PLUMBING_WEEKLY_GOLDEN,
+  PLUMBING_WEEKLY_TOLERANCE,
+  PLUMBING_WEEKLY_PLANT,
   PTMT_GRAND_MAX,
   PTMT_GRAND_MIN,
   PTMT_TOLERANCE,
@@ -623,7 +629,7 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
         expected,
         actual,
         pass,
-        tolerance: expected === 0 ? "= 0" : `±${(PLUMBING_GOLDEN_TOLERANCE * 100).toFixed(0)}%`,
+        tolerance: expected === 0 ? "= 0" : `±${(PLUMBING_GOLDEN_TOLERANCE * 100).toFixed(1)}%`,
       });
     }
 
@@ -656,6 +662,121 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
         expected,
         actual,
         pass: actual === expected,
+      });
+    }
+
+    // ── 8. KG from BOM (pieces × weight-per-piece) ─────────────────────────
+    // Guard: if CPVC Pipe kg < 1,000 it was probably read from the broken
+    // sheet kg column (~113 for 130,451 pipes — a ~1000× error).
+    // Items with no BOM entry contribute 0 kg and are counted separately.
+    const kgByCategory = new Map<string, number>();
+    let totalNoBomPcs = 0;
+    let totalScheduledPcs = 0;
+    for (const item of items) {
+      const bom = item as PlanItemWithBom;
+      const kg = bom.weightKg ?? 0;
+      kgByCategory.set(item.category, (kgByCategory.get(item.category) ?? 0) + kg);
+      if (bom.noBomWeight) totalNoBomPcs += item.maxProduction;
+      totalScheduledPcs += item.maxProduction;
+    }
+
+    const cpvcPipeKg = kgByCategory.get("CPVC Pipe") ?? 0;
+    checks.push({
+      name: "GUARD · KG source: CPVC Pipe kg > 1,000 (BOM-computed, not sheet column)",
+      expected: 1_000,
+      actual: Math.round(cpvcPipeKg),
+      pass: cpvcPipeKg > 1_000,
+      tolerance: "> 1,000",
+    });
+
+    for (const { cat, expectedKg } of PLUMBING_KG_GOLDEN) {
+      const actualKg = Math.round(kgByCategory.get(cat) ?? 0);
+      const pass = expectedKg === 0
+        ? actualKg === 0
+        : Math.abs(actualKg - expectedKg) / expectedKg <= PLUMBING_KG_TOLERANCE;
+      checks.push({
+        name: `KG · ${cat}`,
+        expected: expectedKg,
+        actual: actualKg,
+        pass,
+        tolerance: expectedKg === 0 ? "= 0" : "±1%",
+      });
+    }
+
+    const totalKg = Math.round([...kgByCategory.values()].reduce((s, v) => s + v, 0));
+    checks.push({
+      name: "KG · Grand total",
+      expected: PLUMBING_KG_GRAND_TOTAL,
+      actual: totalKg,
+      pass: Math.abs(totalKg - PLUMBING_KG_GRAND_TOTAL) / PLUMBING_KG_GRAND_TOTAL <= PLUMBING_KG_TOLERANCE,
+      tolerance: "±1%",
+    });
+
+    // No-BOM guard: items with no BOM weight contribute 0 kg but must be reported.
+    // Expected: ~117,135 pieces (<10% of plan) have no BOM entry.
+    const noBomPct = totalScheduledPcs > 0 ? (totalNoBomPcs / totalScheduledPcs) * 100 : 0;
+    checks.push({
+      name: "GUARD · No-BOM pieces < 10% of plan",
+      expected: 10,
+      actual: Math.round(noBomPct * 10) / 10,
+      pass: noBomPct < 10,
+      tolerance: "< 10%",
+    });
+
+    // ── 9. Weekly release (cover = Stock / Avg3MoSale; bands 0.3/0.5/0.8) ──
+    // Plumbing weekly release bands must be seeded in weekly_release_bands
+    // (segment='Plumbing', w1Upper=0.3, w2Upper=0.5, w3Upper=0.8, w4Upper=99).
+    // annotateWeeklyRelease() is called inside buildPlumbingPlanItemsFromWorkbook.
+    const w1Raw = new Map<string, number>();
+    const w2Raw = new Map<string, number>();
+    const w3Raw = new Map<string, number>();
+    const w4Raw = new Map<string, number>();
+    for (const item of items) {
+      w1Raw.set(item.category, (w1Raw.get(item.category) ?? 0) + item.w1);
+      w2Raw.set(item.category, (w2Raw.get(item.category) ?? 0) + item.w2);
+      w3Raw.set(item.category, (w3Raw.get(item.category) ?? 0) + item.w3);
+      w4Raw.set(item.category, (w4Raw.get(item.category) ?? 0) + item.w4);
+    }
+
+    const plantW1 = Math.round(items.reduce((s, i) => s + i.w1, 0));
+    const plantW2 = Math.round(items.reduce((s, i) => s + i.w2, 0));
+    const plantW3 = Math.round(items.reduce((s, i) => s + i.w3, 0));
+    const plantW4 = Math.round(items.reduce((s, i) => s + i.w4, 0));
+
+    const weekPass = (actual: number, expected: number): boolean =>
+      expected === 0 ? actual === 0 : Math.abs(actual - expected) / expected <= PLUMBING_WEEKLY_TOLERANCE;
+    const weekTol = (expected: number): string => (expected === 0 ? "= 0" : "±1%");
+
+    checks.push({ name: "Weekly · Plant W1", expected: PLUMBING_WEEKLY_PLANT.w1, actual: plantW1, pass: weekPass(plantW1, PLUMBING_WEEKLY_PLANT.w1), tolerance: "±1%" });
+    checks.push({ name: "Weekly · Plant W2", expected: PLUMBING_WEEKLY_PLANT.w2, actual: plantW2, pass: weekPass(plantW2, PLUMBING_WEEKLY_PLANT.w2), tolerance: "±1%" });
+    checks.push({ name: "Weekly · Plant W3", expected: PLUMBING_WEEKLY_PLANT.w3, actual: plantW3, pass: weekPass(plantW3, PLUMBING_WEEKLY_PLANT.w3), tolerance: "±1%" });
+    checks.push({ name: "Weekly · Plant W4", expected: PLUMBING_WEEKLY_PLANT.w4, actual: plantW4, pass: weekPass(plantW4, PLUMBING_WEEKLY_PLANT.w4), tolerance: "±1%" });
+
+    for (const g of PLUMBING_WEEKLY_GOLDEN) {
+      const rw1 = w1Raw.get(g.cat) ?? 0;
+      const rw2 = w2Raw.get(g.cat) ?? 0;
+      const rw3 = w3Raw.get(g.cat) ?? 0;
+      const rw4 = w4Raw.get(g.cat) ?? 0;
+      const aw1 = Math.round(rw1);
+      const aw2 = Math.round(rw2);
+      const aw3 = Math.round(rw3);
+      const aw4 = Math.round(rw4);
+
+      checks.push({ name: `Weekly · ${g.cat} · W1`, expected: g.w1, actual: aw1, pass: weekPass(aw1, g.w1), tolerance: weekTol(g.w1) });
+      checks.push({ name: `Weekly · ${g.cat} · W2`, expected: g.w2, actual: aw2, pass: weekPass(aw2, g.w2), tolerance: weekTol(g.w2) });
+      checks.push({ name: `Weekly · ${g.cat} · W3`, expected: g.w3, actual: aw3, pass: weekPass(aw3, g.w3), tolerance: weekTol(g.w3) });
+      checks.push({ name: `Weekly · ${g.cat} · W4`, expected: g.w4, actual: aw4, pass: weekPass(aw4, g.w4), tolerance: weekTol(g.w4) });
+
+      // Sum check: all weekly totals must equal the category's production required.
+      // Items with cover = "OS" (avg3MoSale = 0) and maxProduction > 0 are unscheduled
+      // and will cause this check to fail — that is intentional (a data-quality signal).
+      const weeklySum = Math.round(rw1 + rw2 + rw3 + rw4);
+      const prodReq   = roundInt(byCategory.get(g.cat) ?? 0);
+      checks.push({
+        name: `Weekly · ${g.cat} · sum = prod req`,
+        expected: prodReq,
+        actual: weeklySum,
+        pass: weeklySum === prodReq,
       });
     }
 

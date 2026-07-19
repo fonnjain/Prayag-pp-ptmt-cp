@@ -54,7 +54,7 @@ export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
   { cat: "CPVC Solvent", expected:  16_539 },
   { cat: "UPVC Pipe",    expected:  51_899 },
   { cat: "UPVC Fitting", expected: 633_038 },
-  { cat: "UPVC Solvent", expected:     542 },
+  { cat: "UPVC Solvent", expected:     541 },
   { cat: "SWR Pipe",     expected:  64_515 },
   { cat: "SWR Fitting",  expected: 236_315 },
   { cat: "SWR Solvent",  expected:   1_255 },
@@ -64,8 +64,8 @@ export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
   { cat: "AGRI Solvent", expected:       0 },
 ];
 
-/** Fractional tolerance applied to all non-zero category totals (5 % = 0.05). */
-export const PLUMBING_GOLDEN_TOLERANCE = 0.05;
+/** Fractional tolerance applied to all non-zero category totals (0.1 % = 0.001). */
+export const PLUMBING_GOLDEN_TOLERANCE = 0.001;
 
 /** Grand total across all 12 categories for PLUMBING_GOLDEN_MONTH. */
 export const PLUMBING_GRAND_TOTAL = 1_972_694;
@@ -176,4 +176,73 @@ export const PTMT_CATEGORY_GOLDEN: Array<{ cat: string; maxExpected: number; min
   { cat: "Cocks Premium",                maxExpected:  13_979, minExpected:   7_392 },
   { cat: "Cocks Standard",               maxExpected: 392_141, minExpected: 204_205 },
   { cat: "Faucets & Jetsprays & Shower", maxExpected:  63_282, minExpected:  30_950 },
+];
+
+// ── Plumbing KG golden values ───────────────────────────────────────────────
+
+/** Fractional tolerance for KG assertions (±1%). */
+export const PLUMBING_KG_TOLERANCE = 0.01;
+
+/**
+ * KG per Plumbing category for PLUMBING_GOLDEN_MONTH.
+ * Computed as pieces × BOM weight-per-piece (BOM sheet 1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA).
+ * The daily-production workbook's own kg column is broken (~113 kg for 130,451 CPVC pipes — a
+ * ~1000× error); the BOM sheet is the only authoritative weight source.
+ * Categories with expected = 0: all items in those categories currently have no BOM weight entry.
+ */
+export const PLUMBING_KG_GOLDEN: Array<{ cat: string; expectedKg: number }> = [
+  { cat: "CPVC Pipe",    expectedKg: 109_062 },
+  { cat: "CPVC Fitting", expectedKg:  27_027 },
+  { cat: "CPVC Solvent", expectedKg:       0 },
+  { cat: "UPVC Pipe",    expectedKg: 103_792 },
+  { cat: "UPVC Fitting", expectedKg:  41_919 },
+  { cat: "UPVC Solvent", expectedKg:      28 },
+  { cat: "SWR Pipe",     expectedKg:  18_842 },
+  { cat: "SWR Fitting",  expectedKg:  59_204 },
+  { cat: "SWR Solvent",  expectedKg:     291 },
+  { cat: "AGRI Pipe",    expectedKg:  87_031 },
+  { cat: "AGRI Fitting", expectedKg:   4_233 },
+  { cat: "AGRI Solvent", expectedKg:       0 },
+];
+
+/** KG grand total across all 12 Plumbing categories for PLUMBING_GOLDEN_MONTH. */
+export const PLUMBING_KG_GRAND_TOTAL = 451_429;
+
+// ── Plumbing weekly release golden values ──────────────────────────────────
+
+/** Fractional tolerance for weekly release assertions (±1%). */
+export const PLUMBING_WEEKLY_TOLERANCE = 0.01;
+
+/**
+ * Plant-level weekly release totals for PLUMBING_GOLDEN_MONTH (sum across all 12 categories).
+ * cover = Stock / Avg-3-Month-Sale; bands: W1 < 0.3 ≤ W2 < 0.5 ≤ W3 < 0.8 ≤ W4 < 99.
+ * W1 ≈ 94% of total — this reflects a priority ranking, not a feasible schedule.
+ * Most Plumbing items are at or near zero cover; capacity levelling is required.
+ */
+export const PLUMBING_WEEKLY_PLANT = { w1: 1_859_131, w2: 12_034, w3: 82_874, w4: 18_656 };
+
+/**
+ * Per-category weekly release totals (W1 / W2 / W3 / W4 pieces).
+ * Each item's full maxProduction lands in exactly one week.
+ * W1 + W2 + W3 + W4 must equal that category's Production Required total.
+ */
+export const PLUMBING_WEEKLY_GOLDEN: Array<{
+  cat: string;
+  w1: number;
+  w2: number;
+  w3: number;
+  w4: number;
+}> = [
+  { cat: "CPVC Pipe",    w1: 129_479, w2:     0, w3:     286, w4:    686 },
+  { cat: "CPVC Fitting", w1: 696_247, w2: 2_308, w3:  58_339, w4:  6_358 },
+  { cat: "CPVC Solvent", w1:  16_539, w2:     0, w3:       0, w4:      0 },
+  { cat: "UPVC Pipe",    w1:  48_302, w2: 1_058, w3:     210, w4:  2_329 },
+  { cat: "UPVC Fitting", w1: 600_192, w2: 3_207, w3:  21_530, w4:  8_109 },
+  { cat: "UPVC Solvent", w1:     542, w2:     0, w3:       0, w4:      0 },
+  { cat: "SWR Pipe",     w1:  64_217, w2:    46, w3:     252, w4:      0 },
+  { cat: "SWR Fitting",  w1: 233_219, w2: 2_191, w3:     421, w4:    485 },
+  { cat: "SWR Solvent",  w1:   1_255, w2:     0, w3:       0, w4:      0 },
+  { cat: "AGRI Pipe",    w1:  19_502, w2:   766, w3:       0, w4:     30 },
+  { cat: "AGRI Fitting", w1:  49_637, w2: 2_458, w3:   1_836, w4:    659 },
+  { cat: "AGRI Solvent", w1:       0, w2:     0, w3:       0, w4:      0 },
 ];

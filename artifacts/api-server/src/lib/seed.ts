@@ -113,6 +113,7 @@ async function seedPlantConfigs(): Promise<void> {
 }
 
 const DEFAULT_WEEKLY_RELEASE_BANDS: {
+  segment?: string;
   categoryName: string;
   w1Upper: number;
   w2Upper: number;
@@ -128,6 +129,30 @@ const DEFAULT_WEEKLY_RELEASE_BANDS: {
   { categoryName: "Ball Cock",                 w1Upper: 0.1, w2Upper: 0.3, w3Upper: 0.8, w4Upper: 5.9 },
 ];
 
+// Plumbing weekly release bands: W1 < 0.3 ≤ W2 < 0.5 ≤ W3 < 0.8 ≤ W4 < 99.
+// All 12 Plumbing categories share the same thresholds (uniform priority ranking).
+// W4 upper = 99 so items with high cover (even many months of stock) are still scheduled.
+const PLUMBING_WEEKLY_RELEASE_BANDS: {
+  segment: string;
+  categoryName: string;
+  w1Upper: number;
+  w2Upper: number;
+  w3Upper: number;
+  w4Upper: number;
+}[] = [
+  "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
+  "UPVC Pipe", "UPVC Fitting", "UPVC Solvent",
+  "SWR Pipe",  "SWR Fitting",  "SWR Solvent",
+  "AGRI Pipe", "AGRI Fitting", "AGRI Solvent",
+].map((categoryName) => ({
+  segment: "Plumbing",
+  categoryName,
+  w1Upper: 0.3,
+  w2Upper: 0.5,
+  w3Upper: 0.8,
+  w4Upper: 99.0,
+}));
+
 async function seedWeeklyReleaseBands(): Promise<void> {
   for (const band of DEFAULT_WEEKLY_RELEASE_BANDS) {
     await db
@@ -135,7 +160,16 @@ async function seedWeeklyReleaseBands(): Promise<void> {
       .values(band)
       .onConflictDoNothing();
   }
-  logger.info({ count: DEFAULT_WEEKLY_RELEASE_BANDS.length }, "Seeded weekly release bands");
+  for (const band of PLUMBING_WEEKLY_RELEASE_BANDS) {
+    await db
+      .insert(weeklyReleaseBandsTable)
+      .values(band)
+      .onConflictDoNothing();
+  }
+  logger.info(
+    { ptmt: DEFAULT_WEEKLY_RELEASE_BANDS.length, plumbing: PLUMBING_WEEKLY_RELEASE_BANDS.length },
+    "Seeded weekly release bands",
+  );
 }
 
 /**
