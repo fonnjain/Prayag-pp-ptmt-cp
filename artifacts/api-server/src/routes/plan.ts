@@ -97,12 +97,15 @@ export type PlanItemWithBom = ReturnType<typeof computeItemPlan> & {
  *   BOM weight (KGs)  → BOM sheet
  *
  *   Buffer Req (per item) = Avg3Mo × multiplier (CPVC 1.5, UPVC 1.5, AGRI 1.5, SWR 1.0)
- *   Production Required   = max( (Buffer − Stock) + PendingLM + Pending , 0 )
- *   Category total        = sum of per-item values
  *
- * AGRI correction: the master's AGRI tab has Stock and Buffer columns SWAPPED.
- * By reading columns by header name the app gets the correct values and produces
- * the right plan (≈20,299 AGRI Pipe; ≈54,590 AGRI Fitting).
+ *   ONE formula for ALL 12 Plumbing categories (CPVC / UPVC / SWR / AGRI):
+ *     Production Required = max( (Buffer − Stock) + PendingLM + Pending , 0 )
+ *   Category total = sum of per-item values.
+ *
+ *   AGRI note: Stock ("STOCK AS ON <date>") and Buffer ("BUFFER STOCK REQ FOR <month>")
+ *   are located by their header names, not by column position.  The AGRI tab's own cell
+ *   formula transposes these two columns, so our header-name mapping intentionally produces
+ *   different (correct) planning values vs the source sheet figures.
  * The workbook's Stock/PendingLM columns are NOT used — FG Stock upload is authoritative.
  */
 async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanItemWithBom[]> {
@@ -186,7 +189,9 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
         ? override
         : (row.sheetMultiplier ?? bufferDefaultMap.get(resolvedCategory) ?? 1);
 
-      // One formula for all 12 Plumbing categories: max((Buffer − Stock) + PendingLM + Pending, 0)
+      // One formula for all 12 Plumbing categories: max((Buffer − Stock) + PendingLM + Pending, 0).
+      // AGRI: columns located by header name — the AGRI tab's own cell formula transposes Stock
+      // and Buffer, so our header-name mapping intentionally differs from the source sheet figures.
       const computed = computeItemPlan(source, resolvedCategory, multiplier);
 
       // BOM weight — ~3% of items may have no BOM entry; flag them, never drop or guess.

@@ -23,11 +23,9 @@ function addCategorySheet(workbook: ExcelJS.Workbook, category: string, items: C
   sheet.columns = ITEM_COLUMNS;
   sheet.getRow(1).font = { bold: true };
 
-  // AGRI: the source workbook has Stock and Buffer columns swapped; by mapping
-  // columns by header name the app produces the correct plan.  The master's
-  // positional formula for AGRI is wrong — this note documents the correction.
+  // AGRI: header note explaining the intentional divergence from the source sheet.
   if (category.startsWith("AGRI")) {
-    const noteRow = sheet.addRow(["Corrected: source sheet applies its formula to swapped Stock/Buffer columns."]);
+    const noteRow = sheet.addRow(["AGRI is computed from the STOCK and BUFFER columns by header name; the source sheet's AGRI formula transposes these two, so AGRI figures intentionally differ from the source sheet."]);
     noteRow.font = { italic: true, color: { argb: "FF7F7F7F" } };
     noteRow.getCell(1).alignment = { wrapText: true };
   }

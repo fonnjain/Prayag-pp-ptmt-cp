@@ -13,16 +13,17 @@
  *   3. Update PTMT_GOLDEN_MONTH and the PTMT targets in the same pass.
  *   4. Commit with a message like "Update golden values to YYYY-MM".
  *
- * ⚠ AGRI NOTE — intentional correction of source-sheet error:
- *   The master Excel's AGRI tab has its "STOCK AS ON" and "BUFFER STOCK REQ"
- *   columns SWAPPED relative to every other material tab.  The source sheet's
- *   own "Production Required" formula therefore reads the wrong Stock figure and
- *   produces incorrect plan numbers (9,688 Pipe / 14,814 Fitting for July 2026).
- *   This app corrects the swap by locating every column by header text, not
- *   position.  The correct values are 20,299 Pipe and 54,590 Fitting.
+ * ⚠ AGRI NOTE — intentional divergence from the source sheet:
+ *   The AGRI tab's own cell formula transposes the "STOCK AS ON" and "BUFFER STOCK REQ"
+ *   columns relative to every other material tab, so the source sheet's AGRI Pipe /
+ *   AGRI Fitting figures (≈9,688 / ≈14,814) are wrong from a planning standpoint.
+ *   This app locates every column by its header text ("STOCK AS ON <date>",
+ *   "BUFFER STOCK REQ FOR <month>") and applies the ONE standard formula to all materials:
+ *     Production Required = max( (Buffer − Stock) + PendingLM + Pending , 0 )
+ *   The correct planning values are 20,299 Pipe and 54,590 Fitting.
  *
- *   DO NOT change AGRI_PIPE / AGRI_FITTING back to the source-sheet figures —
- *   those are intentionally wrong.
+ *   DO NOT change these back to the source-sheet figures (9,688 / 14,814) —
+ *   those result from reading swapped columns and are incorrect for planning purposes.
  *
  * ⚠ BUFFER MULTIPLIER NOTE — per-item sheet values:
  *   Each material tab stores the buffer multiplier PER ITEM in a column adjacent
@@ -57,7 +58,7 @@ export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
   { cat: "SWR Pipe",     expected:  64_515 },
   { cat: "SWR Fitting",  expected: 236_315 },
   { cat: "SWR Solvent",  expected:   1_255 },
-  // ⚠ AGRI correction — see file header; values intentionally differ from source sheet.
+  // ⚠ AGRI: header-name mapping + standard formula — intentionally differs from source sheet.
   { cat: "AGRI Pipe",    expected:  20_299 },
   { cat: "AGRI Fitting", expected:  54_590 },
   { cat: "AGRI Solvent", expected:       0 },
@@ -67,7 +68,7 @@ export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
 export const PLUMBING_GOLDEN_TOLERANCE = 0.05;
 
 /** Grand total across all 12 categories for PLUMBING_GOLDEN_MONTH. */
-export const PLUMBING_GRAND_TOTAL = 1_972_696;
+export const PLUMBING_GRAND_TOTAL = 1_972_694;
 
 /** Canonical list of the 12 Plumbing category names (derived from PLUMBING_GOLDEN). */
 export const PLUMBING_CATEGORIES = PLUMBING_GOLDEN.map((g) => g.cat);

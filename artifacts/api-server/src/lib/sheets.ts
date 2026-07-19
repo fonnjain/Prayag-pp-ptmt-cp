@@ -739,10 +739,11 @@ const PLUMBING_MATERIALS = ["CPVC", "UPVC", "SWR", "AGRI"] as const;
  *   Item-code column                  → itemCode
  *   Type column (PIPE/FITTING/FITTINGS/SOLVENT values) → type
  *
- * ⚠ AGRI CORRECTION: the master's AGRI tab applies its formula to swapped Stock/Buffer
- * columns, so the master's AGRI Pipe / AGRI Fitting totals are wrong.  With header-name
- * mapping this app produces the correct values (≈20,299 AGRI Pipe; ≈54,590 AGRI Fitting).
- * This is intentional — do not "fix" back to match the master's figures.
+ * ⚠ AGRI NOTE: the master's AGRI tab's own cell formula transposes the "STOCK AS ON" and
+ * "BUFFER STOCK REQ" columns relative to every other material tab.  This reader locates both
+ * columns by header name (never by position), so the values returned are correct regardless of
+ * layout.  The standard planning formula max((Buffer − Stock) + PendingLM + Pending, 0) is then
+ * applied uniformly by plan.ts — intentionally producing values that differ from the source sheet.
  */
 export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlanRow[]> {
   // Priority: DB-configured ID → Drive discovery → hardcoded map.
