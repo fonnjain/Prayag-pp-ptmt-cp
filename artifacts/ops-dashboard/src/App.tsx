@@ -42,10 +42,11 @@ function fmtCr(value: number): string {
   if (lakh >= 1) return `₹${lakh.toFixed(1)} L`;
   return `₹${(value / 1000).toFixed(0)}K`;
 }
-function fmtQty(n: number): string {
+function fmtQty(n: number | undefined | null): string {
+  if (n == null || !isFinite(n)) return "—";
   if (n >= 1e5) return `${(n / 1e5).toFixed(1)}L`;
   if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
-  return String(n);
+  return String(Math.round(n));
 }
 function toCr(n: number): number { return parseFloat((n / 1e7).toFixed(2)); }
 

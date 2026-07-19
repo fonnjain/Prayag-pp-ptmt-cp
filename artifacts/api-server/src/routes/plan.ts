@@ -352,18 +352,6 @@ router.get("/plan", async (req, res): Promise<void> => {
   res.json(filtered);
 });
 
-router.get("/plan/summary", async (req, res): Promise<void> => {
-  const month = String(req.query.month ?? "");
-  if (!month) {
-    res.status(400).json({ error: "month is required" });
-    return;
-  }
-  const segment = String(req.query.segment ?? "PTMT");
-  const items = await buildPlanItems(month, segment);
-  const summary = summarizePlan(items);
-  res.json({ month, ...summary });
-});
-
 // All 12 Plumbing category tabs that must always appear in the export,
 // even when an individual category has zero items (e.g. AGRI Solvent = 0, SWR Solvent tab).
 const PLUMBING_CATEGORIES = [
@@ -1034,7 +1022,7 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
 
     const totalKg = Math.round([...kgByCategory.values()].reduce((s, v) => s + v, 0));
     checks.push({
-      name: "KG · Grand total",
+      name: "GUARD · Plumbing kg grand total",
       expected: PLUMBING_KG_GRAND_TOTAL,
       actual: totalKg,
       pass: Math.abs(totalKg - PLUMBING_KG_GRAND_TOTAL) / PLUMBING_KG_GRAND_TOTAL <= PLUMBING_KG_TOLERANCE,
@@ -1577,7 +1565,7 @@ router.get("/plan/summary", async (req, res): Promise<void> => {
     let totalPcs = 0, totalKg = 0, totalMin = 0;
     for (const item of items) {
       const pcs = Math.round(item.maxProduction ?? 0);
-      const kg  = Math.round((item as any).kgRequired ?? 0);
+      const kg  = Math.round((item as any).weightKg ?? 0);
       const min = Math.round((item as any).minProduction ?? 0);
       totalPcs += pcs;
       totalKg  += kg;
