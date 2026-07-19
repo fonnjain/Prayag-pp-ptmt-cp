@@ -1,4 +1,5 @@
 - [wouter catch-all](wouter-catchall.md) — a pathless `<Route component={...}/>` is the catch-all; `path="/:rest*"` silently fails to match `/`.
+- [Plumbing BOM dual-tab merge](plumbing-bom-dual-tab.md) — read NEW tab first (fixed cols A/B + J/K), then Combined (header-detected); Combined overwrites; 1,567 merged codes; never pick just one tab.
 - [Ingestion source selection](ingestion-source-selection.md) — load ALL applicable sales workbooks (full history); scope per-source checks by sourceFileId; xmax=0 added/updated; no-change keeps hash.
 - [Sanity full-history semantics](sanity-full-history.md) — engine date-filters all; judge completeness on IN-WINDOW stats not whole-file; multi-workbook/optional-empty/out-of-window are not blockers.
 - [orval query options](orval-query-options.md) — generated react-query hooks require `queryKey` in the options type; pass `enabled` via an `any`-cast helper.

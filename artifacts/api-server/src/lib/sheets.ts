@@ -541,47 +541,72 @@ export async function fetchPlumbingBomWeights(): Promise<Map<string, number>> {
   if (_bomWeightsCache && _bomWeightsCache.expires > now) return _bomWeightsCache.weights;
 
   const tabs = await listTabs(PLUMBING_BOM_SHEET_ID);
-  const tab =
-    tabs.find((t) => /^combined$/i.test(t.trim())) ??
-    tabs.find((t) => /^new$/i.test(t.trim())) ??
-    tabs.find((t) => /combined|new/i.test(t)) ??
-    tabs[0];
+  const combinedTab = tabs.find((t) => /^combined$/i.test(t.trim()));
+  const newTab      = tabs.find((t) => /^new$/i.test(t.trim()));
 
-  if (!tab) {
-    logger.warn({ sheetId: PLUMBING_BOM_SHEET_ID }, "Plumbing BOM sheet has no tabs — weights will be empty");
+  if (!combinedTab && !newTab) {
+    logger.warn({ sheetId: PLUMBING_BOM_SHEET_ID, tabs }, "Plumbing BOM sheet has neither 'Combined' nor 'NEW' tab — weights will be empty");
     return new Map();
   }
 
-  const values = await getTabValues(PLUMBING_BOM_SHEET_ID, tab, "A1:Z100000");
+  // Final map: Combined wins on any code collision; NEW fills in the rest.
   const weights = new Map<string, number>();
 
-  // Find header row with ITEM CODE and Weight/pcs columns
-  let headerIdx = -1;
-  let codeColIdx = -1;
-  let weightColIdx = -1;
-  for (let i = 0; i < Math.min(15, values.length); i++) {
-    const row = values[i];
-    const c = row.findIndex((h) => /^item\s*code$/i.test(String(h ?? "").trim()));
-    const w = row.findIndex((h) => /weight[^a-z]*pcs|wt[^a-z]*pcs/i.test(String(h ?? "").trim()));
-    if (c >= 0 && w >= 0) { headerIdx = i; codeColIdx = c; weightColIdx = w; break; }
+  // ── 1. "NEW" tab — read first so Combined can overwrite on collision ───────
+  // Layout (fixed columns, no reliable header row):
+  //   Pair 1: col A (index 0) = item code, col B (index 1) = weight/pcs
+  //   Pair 2: col J (index 9) = item code, col K (index 10) = weight/pcs
+  // 1,446 entries; 702 of these are absent from Combined.
+  let newCount = 0;
+  if (newTab) {
+    const newValues = await getTabValues(PLUMBING_BOM_SHEET_ID, newTab, "A1:K100000");
+    for (const row of newValues) {
+      // Pair 1: A → B
+      const code1 = String(row[0] ?? "").trim().toUpperCase();
+      const w1    = toNumber(row[1]);
+      if (code1 && w1 > 0 && !weights.has(code1)) { weights.set(code1, w1); newCount++; }
+
+      // Pair 2: J → K
+      const code2 = String(row[9] ?? "").trim().toUpperCase();
+      const w2    = toNumber(row[10]);
+      if (code2 && w2 > 0 && !weights.has(code2)) { weights.set(code2, w2); newCount++; }
+    }
+    logger.info({ tab: newTab, inserted: newCount }, "Plumbing BOM: NEW tab loaded");
   }
 
-  if (headerIdx < 0) {
-    logger.warn({ tab, sheetId: PLUMBING_BOM_SHEET_ID }, "Plumbing BOM: cannot find ITEM CODE + Weight/pcs columns in first 15 rows");
-    return new Map();
-  }
+  // ── 2. "Combined" tab — header-detected; overwrites any NEW collision ──────
+  // Layout: ITEM CODE header → col A; Weight/pcs header → col E (found by search).
+  // 866 entries; these values take precedence.
+  let combinedCount = 0;
+  if (combinedTab) {
+    const combValues = await getTabValues(PLUMBING_BOM_SHEET_ID, combinedTab, "A1:Z100000");
 
-  for (let i = headerIdx + 1; i < values.length; i++) {
-    const row = values[i];
-    const code = String(row[codeColIdx] ?? "").trim().toUpperCase();
-    if (!code) continue;
-    const weight = toNumber(row[weightColIdx]);
-    // Only store positive weights — zero/blank means no BOM entry for this item
-    if (weight > 0) weights.set(code, weight);
+    let headerIdx = -1;
+    let codeColIdx = -1;
+    let weightColIdx = -1;
+    for (let i = 0; i < Math.min(15, combValues.length); i++) {
+      const row = combValues[i];
+      const c = row.findIndex((h) => /^item\s*code$/i.test(String(h ?? "").trim()));
+      const w = row.findIndex((h) => /weight[^a-z]*pcs|wt[^a-z]*pcs/i.test(String(h ?? "").trim()));
+      if (c >= 0 && w >= 0) { headerIdx = i; codeColIdx = c; weightColIdx = w; break; }
+    }
+
+    if (headerIdx < 0) {
+      logger.warn({ tab: combinedTab }, "Plumbing BOM: Combined tab — cannot find ITEM CODE + Weight/pcs header");
+    } else {
+      for (let i = headerIdx + 1; i < combValues.length; i++) {
+        const row = combValues[i];
+        const code = String(row[codeColIdx] ?? "").trim().toUpperCase();
+        if (!code) continue;
+        const weight = toNumber(row[weightColIdx]);
+        if (weight > 0) { weights.set(code, weight); combinedCount++; } // overwrites NEW entry if same code
+      }
+      logger.info({ tab: combinedTab, inserted: combinedCount }, "Plumbing BOM: Combined tab loaded");
+    }
   }
 
   _bomWeightsCache = { weights, expires: now + 15 * 60 * 1000 };
-  logger.info({ tab, count: weights.size }, "Plumbing BOM weights loaded");
+  logger.info({ combinedCount, newCount, total: weights.size }, "Plumbing BOM weights merged");
   return weights;
 }
 
