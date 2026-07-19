@@ -189,6 +189,58 @@ async function findPlumbingWorkbookId(month: string): Promise<string | null> {
   }
 }
 
+/**
+ * Searches Google Drive for spreadsheets matching a given division and planning month.
+ * Returns up to 6 candidate files sorted by relevance (month+year match) then recency.
+ * Falls back to an empty array when Drive is not connected or the search fails.
+ *
+ * @param customQuery  When provided, replaces the default keyword ("PTMT" / "PLUMBING") in
+ *                     the Drive name-contains search — used for manual user-supplied queries.
+ */
+export async function searchWorkbookCandidates(
+  division: "PTMT" | "Plumbing",
+  month: string,
+  customQuery?: string,
+): Promise<Array<{ fileId: string; fileName: string; modifiedTime: string }>> {
+  try {
+    const [year, mo] = month.split("-");
+    const abbrevs = _MONTH_ABBREVS[mo] ?? [];
+    const yearShort = year.slice(2); // e.g. "26"
+
+    const keyword = division === "PTMT" ? "PTMT" : "PLUMBING";
+    const nameQ = customQuery ?? keyword;
+    const q = encodeURIComponent(
+      `name contains '${nameQ}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`,
+    );
+    const data = await driveProxyJson(
+      `/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime%20desc&pageSize=20`,
+    );
+
+    const files: Array<{ id: string; name: string; modifiedTime: string }> = data.files ?? [];
+    // Score each file by how well it matches the target month+year.
+    const scored = files.map((f) => {
+      const upper = f.name.toUpperCase();
+      const monthMatch = abbrevs.some((a) => upper.includes(a.toUpperCase()));
+      const yearMatch  = upper.includes(year) || upper.includes(yearShort);
+      return { ...f, score: (monthMatch ? 2 : 0) + (yearMatch ? 1 : 0) };
+    });
+    scored.sort((a, b) => b.score - a.score || (b.modifiedTime > a.modifiedTime ? 1 : -1));
+
+    logger.info(
+      { division, month, customQuery, total: files.length, returned: Math.min(scored.length, 6) },
+      "searchWorkbookCandidates: Drive search complete",
+    );
+    return scored.slice(0, 6).map(({ id, name, modifiedTime }) => ({
+      fileId: id,
+      fileName: name,
+      modifiedTime,
+    }));
+  } catch (err) {
+    logger.warn({ division, month, customQuery, err: String(err) }, "searchWorkbookCandidates: Drive search failed");
+    return [];
+  }
+}
+
 // ── Cache tab lists for 10 minutes — sheet structure changes are rare intra-session
 const _tabsCache = new Map<string, { tabs: string[]; expires: number }>();
 

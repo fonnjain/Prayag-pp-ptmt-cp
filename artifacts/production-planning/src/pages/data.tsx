@@ -735,24 +735,57 @@ type WorkbookRow = {
   updatedAt: string;
 };
 
+type DriveCandidate = { fileId: string; fileName: string; modifiedTime: string };
+
+type DivisionSuggestState = {
+  searching: boolean;
+  candidates: DriveCandidate[];
+  searchError: string | null;
+  showManual: boolean;
+  manualQuery: string;
+  manualId: string;
+  saving: boolean;
+};
+
+function initDivState(): DivisionSuggestState {
+  return { searching: false, candidates: [], searchError: null, showManual: false, manualQuery: "", manualId: "", saving: false };
+}
+
+function abbreviateId(id: string) {
+  return id.length > 16 ? `${id.slice(0, 10)}…${id.slice(-4)}` : id;
+}
+
+function fmtDriveDate(iso: string) {
+  const d = new Date(iso);
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+}
+
 function WorkbookConfigPanel() {
   const { toast } = useToast();
-  const [rows, setRows] = useState<WorkbookRow[]>([]);
+  const [dbRows, setDbRows]   = useState<WorkbookRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState<string | null>(null);
-  const [editIds, setEditIds] = useState<Record<string, string>>({});
-  const [newRow, setNewRow] = useState<{ division: string; month: string; workbookId: string } | null>(null);
+  const [divState, setDivState] = useState<Record<string, DivisionSuggestState>>({
+    PTMT: initDivState(),
+    Plumbing: initDivState(),
+  });
 
-  const nowMonth = (() => {
+  const currentMonth = (() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  })();
+
+  const nextMonth = (() => {
+    const d = new Date();
+    const nd = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    return `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, "0")}`;
   })();
 
   const fetchRows = useCallback(async () => {
     try {
       const res = await fetch("/api/workbook-config");
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setRows(await res.json());
+      setDbRows(await res.json());
     } catch {
       toast({ title: "Failed to load workbook config", variant: "destructive" });
     } finally {
@@ -762,125 +795,231 @@ function WorkbookConfigPanel() {
 
   useEffect(() => { fetchRows(); }, [fetchRows]);
 
-  const save = async (row: WorkbookRow, overrideId?: string) => {
-    const workbookId = overrideId ?? editIds[row.id] ?? row.workbookId;
-    setSaving(row.id);
+  const patchDiv = (division: string, patch: Partial<DivisionSuggestState>) =>
+    setDivState(prev => ({ ...prev, [division]: { ...prev[division], ...patch } }));
+
+  const getActive = (division: string, month: string): { id: string; source: "DB" | "built-in" } | null => {
+    const db = dbRows.find(r => r.division === division && r.month === month);
+    if (db) return { id: db.workbookId, source: "DB" };
+    const fb = (division === "PTMT" ? PTMT_FALLBACK : PLUMBING_FALLBACK)[month];
+    if (fb) return { id: fb, source: "built-in" };
+    return null;
+  };
+
+  const searchDrive = async (division: string, customQuery?: string) => {
+    patchDiv(division, { searching: true, searchError: null, candidates: [] });
     try {
-      const res = await fetch(`/api/workbook-config/${row.id}`, {
+      const params = new URLSearchParams({ division, month: nextMonth });
+      if (customQuery) params.set("query", customQuery);
+      const res = await fetch(`/api/workbook-config/suggest?${params}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      const candidates: DriveCandidate[] = data.candidates ?? [];
+      patchDiv(division, {
+        searching: false,
+        candidates,
+        searchError: candidates.length === 0 ? "No matching files found in Drive." : null,
+        showManual: candidates.length === 0,
+      });
+    } catch {
+      patchDiv(division, { searching: false, searchError: "Drive search failed — check connection.", showManual: true });
+    }
+  };
+
+  const saveForNextMonth = async (division: string, workbookId: string) => {
+    const id = workbookId.trim();
+    if (!id) return;
+    patchDiv(division, { saving: true });
+    const rowId = `${division.toLowerCase()}_${nextMonth}`;
+    try {
+      const res = await fetch(`/api/workbook-config/${rowId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ division: row.division, month: row.month, workbookId, label: row.label }),
+        body: JSON.stringify({ division, month: nextMonth, workbookId: id, label: `${division} daily workbook ${nextMonth}` }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      toast({ title: "Saved", description: `${row.division} ${row.month} workbook ID updated.` });
+      toast({ title: "Saved", description: `${division} workbook configured for ${nextMonth}.` });
+      patchDiv(division, { saving: false, candidates: [], showManual: false, manualId: "", manualQuery: "" });
       fetchRows();
     } catch {
       toast({ title: "Save failed", variant: "destructive" });
-    } finally {
-      setSaving(null);
+      patchDiv(division, { saving: false });
     }
   };
 
-  const remove = async (id: string) => {
+  const removeNextMonth = async (division: string) => {
+    const rowId = `${division.toLowerCase()}_${nextMonth}`;
     try {
-      await fetch(`/api/workbook-config/${id}`, { method: "DELETE" });
+      await fetch(`/api/workbook-config/${rowId}`, { method: "DELETE" });
       toast({ title: "Removed" });
       fetchRows();
     } catch {
-      toast({ title: "Delete failed", variant: "destructive" });
-    }
-  };
-
-  const addNew = async () => {
-    if (!newRow || !newRow.month || !newRow.workbookId) return;
-    const id = `${newRow.division.toLowerCase()}_${newRow.month}`;
-    setSaving(id);
-    try {
-      const label = `${newRow.division} daily workbook ${newRow.month}`;
-      const res = await fetch(`/api/workbook-config/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ division: newRow.division, month: newRow.month, workbookId: newRow.workbookId, label }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      toast({ title: "Added", description: `${newRow.division} ${newRow.month} configured.` });
-      setNewRow(null);
-      fetchRows();
-    } catch {
-      toast({ title: "Add failed", variant: "destructive" });
-    } finally {
-      setSaving(null);
+      toast({ title: "Remove failed", variant: "destructive" });
     }
   };
 
   const renderDivision = (division: "PTMT" | "Plumbing") => {
-    const divRows = rows.filter((r) => r.division === division);
-    const fallback = division === "PTMT" ? PTMT_FALLBACK : PLUMBING_FALLBACK;
-    const configured = new Set(divRows.map((r) => r.month));
+    const ds = divState[division];
+    const current  = getActive(division, currentMonth);
+    const nextDbRow = dbRows.find(r => r.division === division && r.month === nextMonth);
+    const keyword  = division === "PTMT" ? "'PTMT'" : "'PLUMBING'";
 
     return (
-      <div className="space-y-2">
-        <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{division}</p>
+      <div className="space-y-3">
+        <p className="text-xs font-bold text-gray-700 uppercase tracking-widest">{division}</p>
 
-        {/* Hardcoded fallback rows (read-only if not overridden in DB) */}
-        {Object.entries(fallback).map(([month, fbId]) => {
-          const dbRow = divRows.find((r) => r.month === month);
-          if (dbRow) return null; // shown below in DB rows section
-          return (
-            <div key={month} className="flex items-center gap-2 text-sm">
-              <span className="w-24 text-gray-500 shrink-0">{month}</span>
-              <Input
-                className="flex-1 font-mono text-xs h-8 bg-gray-50"
-                placeholder={fbId}
-                defaultValue=""
-                id={`fallback_${division}_${month}`}
-                onBlur={(e) => {
-                  if (e.target.value.trim()) {
-                    const id = `${division.toLowerCase()}_${month}`;
-                    const row: WorkbookRow = { id, division, month, workbookId: e.target.value.trim(), label: `${division} daily workbook ${month}`, updatedAt: "" };
-                    save(row, e.target.value.trim());
-                  }
-                }}
-              />
-              <span className="text-xs text-gray-400 shrink-0">fallback</span>
-            </div>
-          );
-        })}
-
-        {/* DB-configured rows */}
-        {divRows.map((row) => (
-          <div key={row.id} className="flex items-center gap-2 text-sm">
-            <span className="w-24 shrink-0 font-medium">{row.month}</span>
-            <Input
-              className="flex-1 font-mono text-xs h-8"
-              value={editIds[row.id] ?? row.workbookId}
-              onChange={(e) => setEditIds((prev) => ({ ...prev, [row.id]: e.target.value }))}
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-8 px-2 text-xs"
-              disabled={saving === row.id || (editIds[row.id] ?? row.workbookId) === row.workbookId}
-              onClick={() => save(row)}
-            >
-              {saving === row.id ? "…" : "Save"}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-8 px-2 text-xs text-red-500 hover:text-red-700"
-              onClick={() => remove(row.id)}
-            >
-              ✕
-            </Button>
+        {/* ── Current month — read-only, in flight ── */}
+        <div className="rounded-md border bg-gray-50 px-3 py-2.5 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-gray-600">Current month</span>
+            <span className="text-xs text-gray-400">({currentMonth})</span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700">● Active</span>
           </div>
-        ))}
+          {current ? (
+            <div className="flex items-center gap-2">
+              <code className="rounded bg-white border px-1.5 py-0.5 text-xs font-mono">{abbreviateId(current.id)}</code>
+              <a
+                href={`https://docs.google.com/spreadsheets/d/${current.id}`}
+                target="_blank" rel="noreferrer"
+                className="text-xs text-blue-600 hover:underline"
+              >↗ Open</a>
+              <span className="text-xs text-gray-400">source: {current.source}</span>
+            </div>
+          ) : (
+            <p className="text-xs text-amber-600">No workbook configured for this month.</p>
+          )}
+        </div>
 
-        {/* Add for months not yet configured */}
-        {!Object.keys(fallback).includes(nowMonth) && !configured.has(nowMonth) && (
-          <p className="text-xs text-amber-600">
-            No workbook configured for {nowMonth} — enter an ID above or use the add button.
-          </p>
+        {/* ── Next month — configurable ── */}
+        <div className="rounded-md border px-3 py-2.5 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-gray-600">Next month</span>
+              <span className="text-xs text-gray-400">({nextMonth})</span>
+              <span className="text-xs text-blue-600 font-medium">→ takes effect at month-end</span>
+            </div>
+            {nextDbRow && (
+              <button className="text-xs text-red-500 hover:text-red-700" onClick={() => removeNextMonth(division)}>
+                Remove
+              </button>
+            )}
+          </div>
+
+          {nextDbRow ? (
+            <div className="flex items-center gap-2">
+              <code className="rounded bg-white border px-1.5 py-0.5 text-xs font-mono">{abbreviateId(nextDbRow.workbookId)}</code>
+              <a
+                href={`https://docs.google.com/spreadsheets/d/${nextDbRow.workbookId}`}
+                target="_blank" rel="noreferrer"
+                className="text-xs text-blue-600 hover:underline"
+              >↗ Open</a>
+              <span className="text-xs text-gray-400">saved {fmtDriveDate(nextDbRow.updatedAt)}</span>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 italic">Not configured — will auto-detect from Drive at month-end.</p>
+          )}
+
+          <Button
+            size="sm" variant="outline"
+            className="h-7 text-xs gap-1"
+            disabled={ds.searching}
+            onClick={() => searchDrive(division)}
+          >
+            {ds.searching ? "Searching Drive…" : "🔍 Search Drive for suggestions"}
+          </Button>
+        </div>
+
+        {/* ── Drive candidates ── */}
+        {(ds.candidates.length > 0 || ds.searchError) && (
+          <div className="rounded-md border border-blue-100 bg-blue-50 px-3 py-2.5 space-y-2">
+            {ds.searchError && <p className="text-xs text-amber-700">{ds.searchError}</p>}
+
+            {ds.candidates.length > 0 && (
+              <>
+                <p className="text-xs font-semibold text-gray-600">
+                  Drive suggestions for {nextMonth}:
+                </p>
+                <div className="space-y-1.5">
+                  {ds.candidates.map((c, idx) => (
+                    <div key={c.fileId} className="flex items-center gap-2">
+                      <span className="w-3 shrink-0 text-yellow-500 text-xs">{idx === 0 ? "★" : ""}</span>
+                      <span className="flex-1 text-xs truncate min-w-0" title={c.fileName}>{c.fileName}</span>
+                      <span className="text-xs text-gray-400 shrink-0 whitespace-nowrap">{fmtDriveDate(c.modifiedTime)}</span>
+                      <Button
+                        size="sm"
+                        className="h-6 text-xs px-2 shrink-0"
+                        disabled={ds.saving}
+                        onClick={() => saveForNextMonth(division, c.fileId)}
+                      >
+                        {ds.saving ? "…" : "Use this"}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {!ds.showManual && (
+              <button
+                className="text-xs text-blue-600 hover:underline"
+                onClick={() => patchDiv(division, { showManual: true })}
+              >
+                Not the right file? Enter manually ↓
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* ── Manual fallback ── */}
+        {ds.showManual && (
+          <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2.5 space-y-2.5">
+            <p className="text-xs font-semibold text-gray-700">Enter manually</p>
+            <p className="text-xs text-gray-500">
+              Look in your Google Drive for a file with {keyword} in the name for{" "}
+              {nextMonth}. You can search below or paste the Spreadsheet ID directly.
+            </p>
+
+            <div className="space-y-1">
+              <p className="text-xs text-gray-500 font-medium">Search by file name:</p>
+              <div className="flex gap-1.5">
+                <Input
+                  className="flex-1 h-7 text-xs"
+                  placeholder={`e.g. ${division} DAILY ${nextMonth}`}
+                  value={ds.manualQuery}
+                  onChange={e => patchDiv(division, { manualQuery: e.target.value })}
+                  onKeyDown={e => { if (e.key === "Enter" && ds.manualQuery.trim()) searchDrive(division, ds.manualQuery); }}
+                />
+                <Button
+                  size="sm" variant="outline"
+                  className="h-7 text-xs shrink-0"
+                  disabled={ds.searching || !ds.manualQuery.trim()}
+                  onClick={() => searchDrive(division, ds.manualQuery)}
+                >
+                  {ds.searching ? "…" : "Search"}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs text-gray-500 font-medium">Or paste Spreadsheet ID:</p>
+              <div className="flex gap-1.5">
+                <Input
+                  className="flex-1 h-7 text-xs font-mono"
+                  placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"
+                  value={ds.manualId}
+                  onChange={e => patchDiv(division, { manualId: e.target.value })}
+                />
+                <Button
+                  size="sm"
+                  className="h-7 text-xs shrink-0"
+                  disabled={ds.saving || !ds.manualId.trim()}
+                  onClick={() => saveForNextMonth(division, ds.manualId)}
+                >
+                  {ds.saving ? "…" : "Save"}
+                </Button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     );
@@ -889,54 +1028,21 @@ function WorkbookConfigPanel() {
   return (
     <div className="space-y-5">
       <p className="text-xs text-gray-500">
-        Each division's daily-production workbook is identified by its Google Spreadsheet ID.
-        DB-configured IDs take priority over the built-in fallbacks. Leave blank to keep using the fallback.
+        Each division's daily-production workbook is a Google Spreadsheet. Use{" "}
+        <strong>Search Drive</strong> to auto-suggest next month's file — the app will rank candidates
+        by name match and recency. Accept a suggestion, or fall back to a manual search / paste.
+        Changes to next month's workbook <strong>take effect at month-end</strong>.
+        DB-configured IDs always override built-in fallbacks.
       </p>
 
       {loading && <p className="text-sm text-gray-400">Loading…</p>}
 
       {!loading && (
-        <>
+        <div className="space-y-6">
           {renderDivision("PTMT")}
-          <div className="border-t pt-4" />
+          <div className="border-t" />
           {renderDivision("Plumbing")}
-
-          {/* Add new entry */}
-          <div className="border-t pt-3">
-            {!newRow ? (
-              <Button size="sm" variant="outline" onClick={() => setNewRow({ division: "PTMT", month: nowMonth, workbookId: "" })}>
-                + Add entry
-              </Button>
-            ) : (
-              <div className="flex items-center gap-2 text-sm flex-wrap">
-                <select
-                  className="border rounded px-2 h-8 text-sm"
-                  value={newRow.division}
-                  onChange={(e) => setNewRow((p) => p && { ...p, division: e.target.value })}
-                >
-                  <option value="PTMT">PTMT</option>
-                  <option value="Plumbing">Plumbing</option>
-                </select>
-                <Input
-                  className="w-28 h-8 text-sm"
-                  placeholder="YYYY-MM"
-                  value={newRow.month}
-                  onChange={(e) => setNewRow((p) => p && { ...p, month: e.target.value })}
-                />
-                <Input
-                  className="flex-1 font-mono text-xs h-8"
-                  placeholder="Google Spreadsheet ID"
-                  value={newRow.workbookId}
-                  onChange={(e) => setNewRow((p) => p && { ...p, workbookId: e.target.value })}
-                />
-                <Button size="sm" onClick={addNew} disabled={!newRow.month || !newRow.workbookId || saving !== null}>
-                  {saving ? "…" : "Add"}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setNewRow(null)}>Cancel</Button>
-              </div>
-            )}
-          </div>
-        </>
+        </div>
       )}
     </div>
   );

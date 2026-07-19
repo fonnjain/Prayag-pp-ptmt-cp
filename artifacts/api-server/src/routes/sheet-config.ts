@@ -2,9 +2,32 @@ import { Router, type IRouter } from "express";
 import { db, workbookConfigTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
-import { invalidateWorkbookCache } from "../lib/sheets";
+import { invalidateWorkbookCache, searchWorkbookCandidates } from "../lib/sheets";
 
 const router: IRouter = Router();
+
+router.get("/workbook-config/suggest", async (req, res) => {
+  const division = String(req.query.division ?? "");
+  const month    = String(req.query.month    ?? "");
+  const query    = req.query.query ? String(req.query.query) : undefined;
+
+  if (!division || !month) {
+    res.status(400).json({ error: "division and month are required" });
+    return;
+  }
+  if (division !== "PTMT" && division !== "Plumbing") {
+    res.status(400).json({ error: "division must be PTMT or Plumbing" });
+    return;
+  }
+
+  try {
+    const candidates = await searchWorkbookCandidates(division as "PTMT" | "Plumbing", month, query);
+    res.json({ candidates });
+  } catch (err) {
+    logger.error({ err, division, month }, "GET /workbook-config/suggest failed");
+    res.status(500).json({ error: "Drive search failed" });
+  }
+});
 
 router.get("/workbook-config", async (req, res) => {
   try {
