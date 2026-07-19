@@ -88,7 +88,7 @@ export function AppLayout({
 }: AppLayoutProps) {
   const [location] = useLocation();
   const isPlantPage = PLANT_PATHS.has(location);
-  const isPlumbingPage = location === "/plumbing" || location === "/plumbing/machines";
+  const isPlumbingPage = location.startsWith("/plumbing");
 
   const { data: bundleRaw } = useGetPlantBundle(
     { month },
@@ -164,7 +164,10 @@ export function AppLayout({
               </nav>
               {sectionLabel("Machine Level", Cpu)}
               <nav className="space-y-1">
-                {navLink({ href: "/plumbing/machines", label: "Machine Dashboard", icon: LayoutDashboard })}
+                {navLink({ href: "/plumbing/machines",  label: "Dashboard",  icon: LayoutDashboard })}
+                {navLink({ href: "/plumbing/velocity",  label: "Velocity",   icon: Activity        })}
+                {navLink({ href: "/plumbing/warnings",  label: "Warnings",   icon: AlertTriangle   })}
+                {navLink({ href: "/plumbing/quality",   label: "Quality",    icon: ActivitySquare  })}
               </nav>
             </div>
           ) : (
