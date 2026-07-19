@@ -1,24 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, ExternalLink } from "lucide-react";
-
-interface CategoryRow {
-  name: string;
-  expected: number;
-  actual: number;
-  pass: boolean;
-}
-
-interface PlumbingValidateResponse {
-  month: string;
-  allPass: boolean;
-  passCount: number;
-  failCount: number;
-  checks: CategoryRow[];
-  categoryTotals?: Record<string, number>;
-}
+import { Button } from "@/components/ui/button";
+import { AlertTriangle, RefreshCw, TrendingUp, Package, Unlink } from "lucide-react";
 
 const CATEGORY_ORDER = [
   "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
@@ -27,25 +11,76 @@ const CATEGORY_ORDER = [
   "AGRI Pipe", "AGRI Fitting", "AGRI Solvent",
 ];
 
-function fmtN(n: number) {
-  return n.toLocaleString("en-IN");
+function fmtN(n: number | null | undefined) {
+  if (n == null) return "–";
+  return Math.round(n).toLocaleString("en-IN");
+}
+function fmtPct(n: number | null | undefined) {
+  if (n == null) return "–";
+  return `${n.toFixed(1)}%`;
+}
+
+interface WeekRow {
+  week: number;
+  label: string;
+  startDate: string;
+  endDate: string;
+  release: number;
+  mapped: number;
+  unmapped: number;
+  actual: number;
+  wkAttPct: number | null;
+  cumRelease: number;
+  cumMapped: number;
+  cumTotal: number;
+  cumAttPct: number | null;
+}
+
+interface CategoryRow {
+  category: string;
+  w1Release: number; w1Actual: number;
+  w2Release: number; w2Actual: number;
+  w3Release: number; w3Actual: number;
+  w4Release: number; w4Actual: number;
+  totalRelease: number; totalActual: number;
+  notStarted: boolean;
+}
+
+interface MonitoringData {
+  month: string;
+  lastDataDate: string | null;
+  workingDaysElapsed: number;
+  weeks: WeekRow[];
+  categories: CategoryRow[];
+  unmapped: { byWeek: number[]; total: number; topCodes: { code: string; qty: number }[] };
+  totalProduced: number;
+  totalMapped: number;
+  totalUnmapped: number;
+  runRatePerDay: number;
+}
+
+function ragClass(pct: number | null): string {
+  if (pct == null) return "text-muted-foreground";
+  if (pct >= 95) return "text-emerald-600 font-semibold";
+  if (pct >= 85) return "text-amber-600 font-semibold";
+  return "text-red-500 font-semibold";
 }
 
 export default function PlumbingMonitoring({ month }: { month: string }) {
-  const [result, setResult] = useState<PlumbingValidateResponse | null>(null);
+  const [data, setData]       = useState<MonitoringData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError]     = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/plan/validate?month=${encodeURIComponent(month)}&segment=Plumbing`);
+      const res = await fetch(`/api/plan/plumbing-monitoring?month=${encodeURIComponent(month)}`);
       if (!res.ok) {
         const b = await res.json().catch(() => ({})) as { error?: string };
         throw new Error(b.error ?? `HTTP ${res.status}`);
       }
-      setResult(await res.json() as PlumbingValidateResponse);
+      setData(await res.json() as MonitoringData);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -53,129 +88,321 @@ export default function PlumbingMonitoring({ month }: { month: string }) {
     }
   };
 
-  const totals = result?.categoryTotals ?? {};
-  const grandTotal = CATEGORY_ORDER.reduce((s, c) => s + (totals[c] ?? 0), 0);
+  useEffect(() => { load(); }, [month]);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const elapsedWeeks = data?.weeks.filter((w) => today > w.endDate) ?? [];
+  const lastElapsed  = elapsedWeeks[elapsedWeeks.length - 1];
+  const cumPlanCompletion = lastElapsed?.cumAttPct ?? data?.weeks.find((w) => w.cumAttPct != null)?.cumAttPct ?? null;
+
+  const w1Release = data?.weeks[0]?.release ?? 0;
+  const demonstratedWeeklyCapacity = data ? Math.round(data.runRatePerDay * 7) : 0;
+
+  const orderedCategories = data
+    ? CATEGORY_ORDER.map((name) => data.categories.find((c) => c.category === name)).filter(Boolean) as CategoryRow[]
+    : [];
+
+  const notStarted = orderedCategories.filter((c) => c.notStarted);
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto pb-10">
 
-      {/* Missing live feed banner */}
-      <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+      <header className="flex items-start justify-between">
         <div>
-          <strong>Live machine actuals not yet connected</strong> — this view shows <em>plan targets only</em> (Production
-          Required per category for {month}). Wire the Daily Production PLUMBING live feed to enable
-          plan-vs-actual tracking, velocity, and attainment for Plumbing.
-        </div>
-      </div>
-
-      {/* Plan targets */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between pb-2">
-          <CardTitle className="text-base">Plumbing plan targets — {month}</CardTitle>
-          <div className="flex items-center gap-2">
-            {result && (
-              <Badge variant={result.allPass ? "default" : "destructive"} className="text-xs">
-                {result.allPass ? `✓ ${result.passCount}/12 checks pass` : `✗ ${result.failCount} check(s) fail`}
-              </Badge>
-            )}
-            <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-              {loading ? "Loading…" : result ? "Refresh" : "Load plan data"}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {error && (
-            <div className="text-sm text-red-600 mb-3 px-3 py-2 rounded-md bg-red-50 border border-red-200">
-              {error}
-            </div>
-          )}
-
-          {!result && !loading && (
-            <p className="text-sm text-muted-foreground">
-              Click "Load plan data" to compute Production Required from the uploaded Plumbing FG Stock file
-              and live Google Sheets data.
-            </p>
-          )}
-
-          {result && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b text-xs text-muted-foreground">
-                    <th className="text-left py-2 font-medium">Category</th>
-                    <th className="text-right py-2 font-medium">Target (pcs)</th>
-                    <th className="text-right py-2 font-medium">Formula</th>
-                    <th className="text-center py-2 font-medium">Check</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {CATEGORY_ORDER.map((cat) => {
-                    const actual = totals[cat] ?? 0;
-                    const check = result.checks.find((c) => c.name.startsWith(cat));
-                    const pass = check?.pass ?? true;
-                    const isSWRAgri = cat.startsWith("SWR") || cat.startsWith("AGRI");
-                    return (
-                      <tr key={cat} className={cat.includes("Solvent") ? "bg-muted/30" : ""}>
-                        <td className="py-2 font-medium">{cat}</td>
-                        <td className={`py-2 text-right font-mono tabular-nums ${!pass ? "text-red-600" : ""}`}>
-                          {fmtN(actual)}
-                        </td>
-                        <td className="py-2 text-right text-xs text-muted-foreground">
-                          {isSWRAgri ? "Stock+Pend−Buf+PendLM" : "(Buf−Stock)+PendLM+Pend"}
-                        </td>
-                        <td className="py-2 text-center text-xs">
-                          {pass ? <span className="text-green-600">✓</span> : <span className="text-red-600">✗</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-                <tfoot>
-                  <tr className="border-t font-semibold">
-                    <td className="py-2">Grand Total</td>
-                    <td className="py-2 text-right font-mono tabular-nums">{fmtN(grandTotal)}</td>
-                    <td />
-                    <td className="py-2 text-center text-xs text-muted-foreground">≈1,922,309</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Formula reference card */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Formula reference</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm space-y-2 text-muted-foreground">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-md border p-3">
-              <p className="font-semibold text-foreground mb-1">CPVC / UPVC (standard)</p>
-              <p className="font-mono text-xs">max((Buffer − Stock) + PendLM + Pending, 0)</p>
-              <p className="text-xs mt-1">Produces more when stock is below the buffer target.</p>
-            </div>
-            <div className="rounded-md border p-3">
-              <p className="font-semibold text-foreground mb-1">SWR / AGRI (swragri)</p>
-              <p className="font-mono text-xs">max((Stock + Pending) − Buffer + PendLM, 0)</p>
-              <p className="text-xs mt-1">Only positive-valued items contribute to the category sum.</p>
-            </div>
-          </div>
-          <p className="text-xs">
-            KG = pieces × weight/pcs from BOM sheet (id 1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA).
-            July 2026 target ≈ 391,404 kg. ~3% of items may have no BOM weight — flagged in the plan export.
+          <h1 className="text-2xl font-bold tracking-tight">Plumbing Production Monitoring</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">
+            Sheet3 actuals vs weekly release plan · {month}
+            {data?.lastDataDate ? ` · data through ${data.lastDataDate}` : ""}
+            {data ? ` · ${data.workingDaysElapsed} working days` : ""}
           </p>
-        </CardContent>
-      </Card>
+        </div>
+        <Button size="sm" variant="outline" onClick={load} disabled={loading}>
+          <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+          {loading ? "Loading…" : data ? "Refresh" : "Load"}
+        </Button>
+      </header>
 
-      {/* Link to planning app */}
-      <div className="text-sm text-muted-foreground flex items-center gap-2">
-        <ExternalLink className="h-3.5 w-3.5" />
-        <span>Full Plumbing plan (item-level, weekly release, export) is in the</span>
-        <a href="/" className="text-primary underline underline-offset-2">Production Planning app</a>.
-      </div>
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {loading && !data && (
+        <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
+          Loading Sheet3 actuals…
+        </div>
+      )}
+
+      {data && (
+        <>
+          {/* Feasibility banner — W1 release is a priority ranking, not an achievable weekly target */}
+          {w1Release > 200_000 && demonstratedWeeklyCapacity > 0 && (
+            <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+              <div>
+                <strong>W1 release ({fmtN(w1Release)} pcs) is a priority ranking — not a 7-day achievable target.</strong>
+                {" "}Demonstrated capacity is ≈{fmtN(data.runRatePerDay)} pcs/day
+                ({fmtN(demonstratedWeeklyCapacity)} pcs/week). Per-week attainment % against a
+                {" "}front-loaded release like this is misleading. Use the cumulative column below and the{" "}
+                <a href="/" className="underline underline-offset-2 font-medium">Corrective Re-plan</a> for a runnable schedule.
+              </div>
+            </div>
+          )}
+
+          {/* NOT STARTED warning */}
+          {notStarted.length > 0 && (
+            <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-red-600" />
+              <div>
+                <strong>NOT STARTED:</strong>{" "}
+                {notStarted.map((c) => c.category).join(", ")} — zero production recorded as of{" "}
+                {data.lastDataDate ?? "today"}. Plan requires{" "}
+                {fmtN(notStarted.reduce((s, c) => s + c.totalRelease, 0))} pcs.
+              </div>
+            </div>
+          )}
+
+          {/* KPI cards */}
+          <div className="grid grid-cols-3 gap-4">
+            <Card>
+              <CardContent className="pt-5">
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+                    Cum. Attainment
+                  </span>
+                </div>
+                <div className={`text-3xl font-bold tabular-nums ${ragClass(cumPlanCompletion)}`}>
+                  {fmtPct(cumPlanCompletion)}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {fmtN(lastElapsed?.cumMapped)} of {fmtN(lastElapsed?.cumRelease)} pcs released
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-5">
+                <div className="flex items-center gap-2 mb-1">
+                  <Package className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+                    Run Rate
+                  </span>
+                </div>
+                <div className="text-3xl font-bold tabular-nums">
+                  {fmtN(data.runRatePerDay)}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  pcs / working day · {fmtN(data.totalProduced)} total
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-5">
+                <div className="flex items-center gap-2 mb-1">
+                  <Unlink className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+                    Unmapped Codes
+                  </span>
+                </div>
+                <div className={`text-3xl font-bold tabular-nums ${data.totalUnmapped > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                  {fmtN(data.totalUnmapped)}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  pcs not in plan master · {data.unmapped.topCodes.length > 0 ? `top: ${data.unmapped.topCodes[0]!.code}` : "none"}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Weekly release table */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Weekly Release Plan vs Actual</CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Cum % = mapped production ÷ cumulative release. Per-week % suppressed when release is a priority
+                ranking (front-loaded W1), shown only for W2–W4 where release reflects true weekly capacity.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-right text-xs text-muted-foreground">
+                      <th className="text-left py-2 font-medium w-36">Week</th>
+                      <th className="py-2 pr-3 font-medium">Release</th>
+                      <th className="py-2 pr-3 font-medium">Produced</th>
+                      <th className="py-2 pr-3 font-medium">Unmapped</th>
+                      <th className="py-2 pr-3 font-medium border-l border-border/30">Cum Release</th>
+                      <th className="py-2 pr-3 font-medium">Cum Mapped</th>
+                      <th className="py-2 font-medium">Cum Att %</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/20">
+                    {data.weeks.map((wk) => {
+                      const isPast    = today > wk.endDate;
+                      const isCurrent = today >= wk.startDate && today <= wk.endDate;
+                      const isFuture  = today < wk.startDate;
+                      const showWkPct = !isFuture && wk.release > 0 && wk.release < 500_000 && wk.wkAttPct != null;
+                      return (
+                        <tr key={wk.week} className={`text-right ${isCurrent ? "bg-primary/5" : ""} ${isFuture ? "opacity-40" : ""}`}>
+                          <td className="py-2 text-left font-medium text-xs">
+                            {wk.label}
+                            {isCurrent && <span className="ml-1.5 text-[10px] text-primary font-normal">▶ now</span>}
+                            {isPast    && <span className="ml-1.5 text-[10px] text-muted-foreground font-normal">done</span>}
+                          </td>
+                          <td className="py-2 pr-3 font-mono text-xs">{fmtN(wk.release)}</td>
+                          <td className="py-2 pr-3 font-mono text-xs">
+                            {isFuture ? <span className="text-muted-foreground/30">–</span> : fmtN(wk.actual)}
+                          </td>
+                          <td className={`py-2 pr-3 font-mono text-xs ${wk.unmapped > 0 ? "text-amber-600" : "text-muted-foreground"}`}>
+                            {isFuture ? <span className="text-muted-foreground/30">–</span> : wk.unmapped > 0 ? fmtN(wk.unmapped) : "–"}
+                          </td>
+                          <td className="py-2 pr-3 font-mono text-xs border-l border-border/20">{fmtN(wk.cumRelease)}</td>
+                          <td className="py-2 pr-3 font-mono text-xs">
+                            {isFuture ? <span className="text-muted-foreground/30">–</span> : fmtN(wk.cumMapped)}
+                          </td>
+                          <td className={`py-2 font-mono text-xs ${ragClass(wk.cumAttPct)}`}>
+                            {isFuture
+                              ? <span className="text-muted-foreground/30">–</span>
+                              : wk.cumAttPct != null
+                                ? <>
+                                    {fmtPct(wk.cumAttPct)}
+                                    {showWkPct && <span className="ml-1.5 text-muted-foreground font-normal">(wk: {fmtPct(wk.wkAttPct)})</span>}
+                                  </>
+                                : "–"
+                            }
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Per-category table */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Category Actuals — W1 and W2 (Frozen)</CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                W1 (1–7 Jul) and W2 (8–14 Jul) are elapsed. These figures will not change.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-right text-xs text-muted-foreground">
+                      <th className="text-left py-2 pr-4 font-medium w-36">Category</th>
+                      <th className="py-2 pr-3 font-medium">W1 Release</th>
+                      <th className="py-2 pr-3 font-medium">W1 Actual</th>
+                      <th className="py-2 pr-3 font-medium border-l border-border/20">W2 Release</th>
+                      <th className="py-2 pr-3 font-medium">W2 Actual</th>
+                      <th className="py-2 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/20">
+                    {orderedCategories.map((cat) => {
+                      const isSolvent = cat.category.includes("Solvent");
+                      return (
+                        <tr
+                          key={cat.category}
+                          className={`text-right ${cat.notStarted ? "bg-red-50/60" : ""} ${isSolvent ? "opacity-60" : ""}`}
+                        >
+                          <td className="py-2 pr-4 text-left font-medium">{cat.category}</td>
+                          <td className="py-2 pr-3 font-mono text-xs text-muted-foreground">{fmtN(cat.w1Release)}</td>
+                          <td className={`py-2 pr-3 font-mono text-xs ${cat.w1Actual > 0 ? "" : "text-muted-foreground/50"}`}>
+                            {cat.w1Actual > 0 ? fmtN(cat.w1Actual) : "0"}
+                          </td>
+                          <td className="py-2 pr-3 font-mono text-xs text-muted-foreground border-l border-border/20">{fmtN(cat.w2Release)}</td>
+                          <td className={`py-2 pr-3 font-mono text-xs ${cat.w2Actual > 0 ? "" : "text-muted-foreground/50"}`}>
+                            {cat.w2Actual > 0 ? fmtN(cat.w2Actual) : "0"}
+                          </td>
+                          <td className="py-2 text-xs">
+                            {cat.notStarted ? (
+                              <Badge variant="destructive" className="text-[10px] px-1.5">NOT STARTED</Badge>
+                            ) : (
+                              <span className="text-emerald-600 font-medium">In progress</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-border font-semibold text-right">
+                      <td className="py-2 pr-4 text-left">Plant Total</td>
+                      <td className="py-2 pr-3 font-mono text-xs text-muted-foreground">
+                        {fmtN(data.weeks[0]?.release)}
+                      </td>
+                      <td className="py-2 pr-3 font-mono text-xs">{fmtN(data.weeks[0]?.mapped)}</td>
+                      <td className="py-2 pr-3 font-mono text-xs text-muted-foreground border-l border-border/20">
+                        {fmtN(data.weeks[1]?.release)}
+                      </td>
+                      <td className="py-2 pr-3 font-mono text-xs">{fmtN(data.weeks[1]?.mapped)}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Unmapped production */}
+          {data.unmapped.total > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center gap-2">
+                  <Unlink className="h-4 w-4 text-amber-600" />
+                  <CardTitle className="text-base">
+                    Unmapped Production — {fmtN(data.unmapped.total)} pcs
+                  </CardTitle>
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Produced on codes not found in the Plumbing plan master. These pieces are counted in "Total Produced"
+                  but excluded from plan attainment %. Identify and map these codes to categories to close the gap.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-6 text-sm mb-4">
+                  {data.unmapped.byWeek.map((qty, i) => qty > 0 && (
+                    <div key={i} className="text-center">
+                      <div className="font-bold text-lg tabular-nums">{fmtN(qty)}</div>
+                      <div className="text-xs text-muted-foreground">W{i + 1}</div>
+                    </div>
+                  ))}
+                </div>
+                {data.unmapped.topCodes.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b text-muted-foreground">
+                          <th className="text-left py-1.5 pr-4 font-medium">#</th>
+                          <th className="text-left py-1.5 pr-4 font-medium">Raw Code</th>
+                          <th className="text-right py-1.5 font-medium">Qty (pcs)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/10">
+                        {data.unmapped.topCodes.slice(0, 15).map((row, idx) => (
+                          <tr key={row.code} className="text-right">
+                            <td className="py-1.5 pr-4 text-left text-muted-foreground">{idx + 1}</td>
+                            <td className="py-1.5 pr-4 text-left font-mono font-medium">{row.code}</td>
+                            <td className="py-1.5 font-mono">{fmtN(row.qty)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
     </div>
   );
 }

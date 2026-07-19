@@ -7,6 +7,7 @@ import {
   listTabs,
   fetchLiveDailyProductionTotals,
   fetchLiveOrderByMonthTab,
+  fetchPlumbingSheet3Production,
 } from "../lib/sheets";
 
 const router: IRouter = Router();
@@ -139,7 +140,16 @@ export function startSyncScheduler(): void {
   // Startup sync — 8 s delay so DB migrations finish first
   setTimeout(() => {
     logger.info("Auto-sync: startup run");
-    runFullSync().catch((err) => logger.error({ err }, "Startup sync failed"));
+    runFullSync()
+      .then(() => {
+        // Warm Sheet3 cache so /plan/plumbing-monitoring responds instantly on first browser hit.
+        // Fire-and-forget — a failure here is non-fatal.
+        const warmMonth = currentPlanningMonth();
+        fetchPlumbingSheet3Production(warmMonth).catch((err) =>
+          logger.warn({ err, month: warmMonth }, "Sheet3 warm-up after sync failed"),
+        );
+      })
+      .catch((err) => logger.error({ err }, "Startup sync failed"));
   }, 8000);
 
   // Hourly tick during IST work hours (08:00–20:00)

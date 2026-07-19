@@ -315,3 +315,67 @@ export const PLUMBING_REPLAN_TOTAL_FEASIBLE  = 1_353_810;
 export const PLUMBING_REPLAN_TOTAL_SHORTFALL =   196_307;
 /** Total production on codes not found in the plan master (unplanned). */
 export const PLUMBING_REPLAN_UNPLANNED_TOTAL =   197_439;
+
+// ── Plumbing Monitoring golden values (Sheet3 actuals) ────────────────────────
+//
+// W1 (Jul 1–7) and W2 (Jul 8–14) are both fully elapsed as of 19-Jul-2026.
+// These totals are FROZEN — they won't change unless the workbook is edited.
+// W3/W4 data is live and excluded from these assertions.
+//
+// Accounting identity:
+//   Plant W1 total = W1 mapped (361,231) + W1 unmapped (59,805) = 421,036
+//   Plant W2 total = W2 mapped (312,393) + W2 unmapped (75,573) = 387,966
+//   W1+W2 grand total = 809,002 pcs over 12 working days
+//
+// Per-category W1 sums to exactly 361,231 (the W1 mapped plant total).
+// Per-category W2 sums to exactly 312,393 (the W2 mapped plant total).
+
+/** W1 plant mapped actual — sum of per-category W1 (Sheet3, 14-Jul-2026 frozen). */
+export const PLUMBING_MON_W1_MAPPED   = 361_231;
+/** W2 plant mapped actual — sum of per-category W2 (Sheet3, 14-Jul-2026 frozen). */
+export const PLUMBING_MON_W2_MAPPED   = 312_393;
+/** W1 production on codes absent from the plan master. */
+export const PLUMBING_MON_W1_UNMAPPED =  59_805;
+/** W2 production on codes absent from the plan master. */
+export const PLUMBING_MON_W2_UNMAPPED =  75_573;
+
+/**
+ * Per-category W1 actuals from Sheet3 (mapped only; frozen as of 14-Jul-2026).
+ * Sum = 361,231 = PLUMBING_MON_W1_MAPPED.
+ */
+export const PLUMBING_MON_CAT_W1: Record<string, number> = {
+  "CPVC Pipe":      23_140,
+  "CPVC Fitting":  184_503,
+  "CPVC Solvent":        0,
+  "UPVC Pipe":      11_615,
+  "UPVC Fitting":   84_240,
+  "UPVC Solvent":        0,
+  "SWR Pipe":        9_370,
+  "SWR Fitting":    40_606,
+  "SWR Solvent":         0,
+  "AGRI Pipe":       2_570,
+  "AGRI Fitting":    5_187,
+  "AGRI Solvent":        0,
+};
+
+/**
+ * Per-category W2 actuals from Sheet3 (mapped only; frozen as of 14-Jul-2026).
+ * Sum = 312,393 = PLUMBING_MON_W2_MAPPED.
+ */
+export const PLUMBING_MON_CAT_W2: Record<string, number> = {
+  "CPVC Pipe":       3_840,
+  "CPVC Fitting":  130_036,
+  "CPVC Solvent":        0,
+  "UPVC Pipe":       9_875,
+  "UPVC Fitting":   91_944,
+  "UPVC Solvent":        0,
+  "SWR Pipe":        2_086,
+  "SWR Fitting":    59_357,
+  "SWR Solvent":       300,
+  "AGRI Pipe":         355,
+  "AGRI Fitting":   14_600,
+  "AGRI Solvent":        0,
+};
+
+/** ±1% tolerance for monitoring W1/W2 mapped actuals. */
+export const PLUMBING_MON_TOLERANCE = 0.01;

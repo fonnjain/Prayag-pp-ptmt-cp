@@ -192,9 +192,37 @@ async function main(): Promise<void> {
     console.log(`\n✅  PTMT: all ${ptmtResult.passCount} checks PASSED`);
   }
 
+  // ── 4. Plumbing monitoring validate ──────────────────────────────────────
+  console.log("\n⏳  Running Plumbing monitoring validation (reads Sheet3, ~5s) …");
+  let monResult: ValidateResponse;
+  try {
+    monResult = await callEndpoint(
+      `${API_BASE}/api/plan/validate-plumbing-monitoring?month=${encodeURIComponent(PLUMBING_MONTH)}`,
+    );
+  } catch (err) {
+    console.error(`\n❌  Could not reach validate-plumbing-monitoring endpoint: ${err instanceof Error ? err.message : String(err)}`);
+    anyFail = true;
+    monResult = { month: PLUMBING_MONTH, allPass: false, passCount: 0, failCount: 1, checks: [] };
+  }
+
+  const monPlant = monResult.checks.filter((c) => c.name.startsWith("Mon · Plant") || c.name.startsWith("Mon · W"));
+  const monCatW1 = monResult.checks.filter((c) => c.name.match(/Mon · .+ W1$/) && !c.name.startsWith("Mon · Plant") && !c.name.startsWith("Mon · W"));
+  const monCatW2 = monResult.checks.filter((c) => c.name.match(/Mon · .+ W2$/) && !c.name.startsWith("Mon · Plant") && !c.name.startsWith("Mon · W"));
+
+  printSection(`Monitoring — plant W1/W2 totals + unmapped (${PLUMBING_MONTH}, frozen)`, monPlant);
+  printSection(`Monitoring — per-category W1 actuals (${PLUMBING_MONTH}, ±1%)`, monCatW1);
+  printSection(`Monitoring — per-category W2 actuals (${PLUMBING_MONTH}, ±1%)`, monCatW2);
+
+  if (!monResult.allPass) {
+    anyFail = true;
+    console.error(`\n❌  Monitoring: ${monResult.failCount} check(s) FAILED`);
+  } else {
+    console.log(`\n✅  Monitoring: all ${monResult.passCount} checks PASSED`);
+  }
+
   // ── Summary ───────────────────────────────────────────────────────────────
-  const totalChecks = plumbingResult.checks.length + replanResult.checks.length + ptmtResult.checks.length;
-  const totalFail   = plumbingResult.failCount + replanResult.failCount + ptmtResult.failCount;
+  const totalChecks = plumbingResult.checks.length + replanResult.checks.length + ptmtResult.checks.length + monResult.checks.length;
+  const totalFail   = plumbingResult.failCount + replanResult.failCount + ptmtResult.failCount + monResult.failCount;
   const totalPass   = totalChecks - totalFail;
 
   console.log("\n" + "=".repeat(60));

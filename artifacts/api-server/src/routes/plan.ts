@@ -42,6 +42,13 @@ import {
   PTMT_TOLERANCE,
   PTMT_CATEGORY_GOLDEN,
   PTMT_MULTIPLIER_GOLDEN,
+  PLUMBING_MON_W1_MAPPED,
+  PLUMBING_MON_W2_MAPPED,
+  PLUMBING_MON_W1_UNMAPPED,
+  PLUMBING_MON_W2_UNMAPPED,
+  PLUMBING_MON_CAT_W1,
+  PLUMBING_MON_CAT_W2,
+  PLUMBING_MON_TOLERANCE,
 } from "../lib/plumbing-golden";
 
 const router: IRouter = Router();
@@ -1290,6 +1297,227 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
   const failCount = checks.filter((c) => !c.pass).length;
 
   res.json({ month, segment, allPass, passCount: checks.length - failCount, failCount, checks });
+});
+
+// ── GET /plan/plumbing-monitoring ─────────────────────────────────────────────
+// Returns per-week and per-category Sheet3 actuals vs plan release targets.
+// Methodology:
+//   - MAPPED actual  = Sheet3 codes that match a plan item via normalizeCodeStrict
+//   - UNMAPPED       = Sheet3 codes with no plan-master match (surfaced, not dropped)
+//   - Cumulative attainment = cumMapped / cumRelease (suppressed if week not started)
+// 5-min response cache so the first cold call (9s) doesn't block subsequent browser hits.
+const _plumbingMonCache = new Map<string, { payload: unknown; expires: number }>();
+router.get("/plan/plumbing-monitoring", async (req, res) => {
+  const month = String(req.query.month ?? "");
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    res.status(400).json({ error: "month query param required (YYYY-MM)" });
+    return;
+  }
+  const cached = _plumbingMonCache.get(month);
+  if (cached && Date.now() < cached.expires) {
+    res.json(cached.payload);
+    return;
+  }
+  try {
+    const [planItems, sheet3Rows] = await Promise.all([
+      buildPlanItems(month, "Plumbing"),
+      fetchPlumbingSheet3Production(month),
+    ]);
+
+    // Code → category map (strict normalization: "A465" matches "A-465")
+    const codeToCategory = new Map<string, string>();
+    const catRelease = new Map<string, [number, number, number, number]>();
+    for (const item of planItems) {
+      const norm = normalizeCodeStrict(item.itemCode);
+      if (!codeToCategory.has(norm)) codeToCategory.set(norm, item.category);
+      const arr = catRelease.get(item.category) ?? [0, 0, 0, 0];
+      arr[0] += (item as unknown as Record<string, number>)["w1"] ?? 0;
+      arr[1] += (item as unknown as Record<string, number>)["w2"] ?? 0;
+      arr[2] += (item as unknown as Record<string, number>)["w3"] ?? 0;
+      arr[3] += (item as unknown as Record<string, number>)["w4"] ?? 0;
+      catRelease.set(item.category, arr);
+    }
+
+    function wkIdx(day: number): number { return day <= 7 ? 0 : day <= 14 ? 1 : day <= 21 ? 2 : 3; }
+
+    const catActual = new Map<string, [number, number, number, number]>();
+    const unmappedByWeek: [number, number, number, number] = [0, 0, 0, 0];
+    const unmappedCodeQty = new Map<string, number>();
+
+    for (const row of sheet3Rows) {
+      const cat = codeToCategory.get(row.normCode);
+      const wi = wkIdx(parseInt(row.dateStr.slice(8), 10));
+      if (!cat) {
+        unmappedByWeek[wi] += row.qty;
+        unmappedCodeQty.set(row.rawCode, (unmappedCodeQty.get(row.rawCode) ?? 0) + row.qty);
+        continue;
+      }
+      const arr = catActual.get(cat) ?? [0, 0, 0, 0];
+      arr[wi] += row.qty;
+      catActual.set(cat, arr);
+    }
+
+    // Week calendar
+    const [yr, mo] = month.split("-").map(Number);
+    const lastDayOfMonth = new Date(yr, mo, 0).getDate();
+    function p2(n: number) { return String(n).padStart(2, "0"); }
+    const calendar = [
+      { week: 1, label: `W1 (${mo}/1–7)`,           startDay: 1,  endDay: 7,            startDate: `${yr}-${p2(mo)}-01`, endDate: `${yr}-${p2(mo)}-07` },
+      { week: 2, label: `W2 (${mo}/8–14)`,           startDay: 8,  endDay: 14,           startDate: `${yr}-${p2(mo)}-08`, endDate: `${yr}-${p2(mo)}-14` },
+      { week: 3, label: `W3 (${mo}/15–21)`,          startDay: 15, endDay: 21,           startDate: `${yr}-${p2(mo)}-15`, endDate: `${yr}-${p2(mo)}-21` },
+      { week: 4, label: `W4 (${mo}/22–${lastDayOfMonth})`, startDay: 22, endDay: lastDayOfMonth, startDate: `${yr}-${p2(mo)}-22`, endDate: `${yr}-${p2(mo)}-${p2(lastDayOfMonth)}` },
+    ];
+
+    // Plant totals per week (round release — plan items have fractional w1-w4 due to band multiplication)
+    const plantRelease: [number, number, number, number] = [0, 0, 0, 0];
+    const plantMapped:  [number, number, number, number] = [0, 0, 0, 0];
+    for (const [, arr] of catRelease) for (let i = 0; i < 4; i++) plantRelease[i] += arr[i];
+    for (const [, arr] of catActual)  for (let i = 0; i < 4; i++) plantMapped[i]  += arr[i];
+    for (let i = 0; i < 4; i++) plantRelease[i] = Math.round(plantRelease[i]);
+
+    // Working days elapsed (non-Sunday days from 1st through last data date)
+    const lastDataDate = sheet3Rows.length > 0 ? [...sheet3Rows].map((r) => r.dateStr).sort().pop()! : null;
+    let workingDaysElapsed = 0;
+    if (lastDataDate) {
+      const throughDay = parseInt(lastDataDate.slice(8), 10);
+      for (let d = 1; d <= throughDay; d++) {
+        if (new Date(`${month}-${p2(d)}T00:00:00Z`).getUTCDay() !== 0) workingDaysElapsed++;
+      }
+    }
+
+    // Build per-week response (cumulative columns)
+    const today = new Date().toISOString().slice(0, 10);
+    let cumRelease = 0, cumMapped = 0, cumTotal = 0;
+    const weeks = calendar.map((wk, i) => {
+      const release = plantRelease[i]!;
+      const mapped   = plantMapped[i]!;
+      const unmapped = unmappedByWeek[i]!;
+      const actual   = mapped + unmapped;
+      cumRelease += release;
+      cumMapped  += mapped;
+      cumTotal   += actual;
+      const wkStarted = today.slice(0, 7) === month && today >= wk.startDate;
+      const cumAttPct  = cumRelease > 0 && wkStarted ? Math.round((cumMapped  / cumRelease) * 1000) / 10 : null;
+      const wkAttPct   = release   > 0 && wkStarted ? Math.round((mapped     / release)    * 1000) / 10 : null;
+      return { week: wk.week, label: wk.label, startDate: wk.startDate, endDate: wk.endDate,
+        release, mapped, unmapped, actual, wkAttPct,
+        cumRelease, cumMapped, cumTotal, cumAttPct };
+    });
+
+    // Per-category rows
+    const allCats = new Set([...catRelease.keys(), ...catActual.keys()]);
+    const categories = [...allCats].map((cat) => {
+      const rel = catRelease.get(cat) ?? [0, 0, 0, 0];
+      const act = catActual.get(cat) ?? [0, 0, 0, 0];
+      const totalRelease = rel.reduce((s, v) => s + v, 0);
+      const totalActual  = act.reduce((s, v) => s + v, 0);
+      return {
+        category: cat,
+        w1Release: Math.round(rel[0]), w1Actual: act[0],
+        w2Release: Math.round(rel[1]), w2Actual: act[1],
+        w3Release: Math.round(rel[2]), w3Actual: act[2],
+        w4Release: Math.round(rel[3]), w4Actual: act[3],
+        totalRelease: Math.round(totalRelease), totalActual,
+        notStarted: totalActual === 0 && totalRelease > 0,
+      };
+    }).sort((a, b) => b.totalRelease - a.totalRelease);
+
+    // Unmapped top codes
+    const topCodes = [...unmappedCodeQty.entries()]
+      .sort((a, b) => b[1] - a[1]).slice(0, 20).map(([code, qty]) => ({ code, qty }));
+
+    const totalUnmapped = unmappedByWeek.reduce((s, v) => s + v, 0);
+    const totalMapped   = plantMapped.reduce((s, v) => s + v, 0);
+    const totalProduced = totalMapped + totalUnmapped;
+    const runRatePerDay = workingDaysElapsed > 0 ? Math.round(totalProduced / workingDaysElapsed) : 0;
+
+    const payload = { month, lastDataDate, workingDaysElapsed,
+      weeks, categories,
+      unmapped: { byWeek: [...unmappedByWeek], total: totalUnmapped, topCodes },
+      totalProduced, totalMapped, totalUnmapped, runRatePerDay };
+
+    _plumbingMonCache.set(month, { payload, expires: Date.now() + 5 * 60 * 1000 });
+    res.json(payload);
+  } catch (err) {
+    req.log.error({ err, month }, "plan/plumbing-monitoring failed");
+    res.status(500).json({ error: "Failed to compute Plumbing monitoring" });
+  }
+});
+
+// ── GET /plan/validate-plumbing-monitoring ─────────────────────────────────────
+// Regression endpoint: compares Sheet3 W1/W2 actuals against frozen golden values.
+// W1 (Jul 1-7) and W2 (Jul 8-14) are both elapsed and their actuals are stable.
+router.get("/plan/validate-plumbing-monitoring", async (req, res) => {
+  const month = String(req.query.month ?? "");
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    res.status(400).json({ error: "month query param required (YYYY-MM)" });
+    return;
+  }
+  try {
+    const [planItems, sheet3Rows] = await Promise.all([
+      buildPlanItems(month, "Plumbing"),
+      fetchPlumbingSheet3Production(month),
+    ]);
+
+    const codeToCategory2 = new Map<string, string>();
+    for (const item of planItems) {
+      const norm = normalizeCodeStrict(item.itemCode);
+      if (!codeToCategory2.has(norm)) codeToCategory2.set(norm, item.category);
+    }
+
+    function wkIdx2(day: number): number { return day <= 7 ? 0 : day <= 14 ? 1 : day <= 21 ? 2 : 3; }
+
+    const catActual2 = new Map<string, [number, number, number, number]>();
+    const unmappedByWeek2: [number, number, number, number] = [0, 0, 0, 0];
+
+    for (const row of sheet3Rows) {
+      const cat = codeToCategory2.get(row.normCode);
+      const wi  = wkIdx2(parseInt(row.dateStr.slice(8), 10));
+      if (!cat) { unmappedByWeek2[wi] += row.qty; continue; }
+      const arr = catActual2.get(cat) ?? [0, 0, 0, 0];
+      arr[wi] += row.qty;
+      catActual2.set(cat, arr);
+    }
+
+    const plantMapped2: [number, number, number, number] = [0, 0, 0, 0];
+    for (const [, arr] of catActual2) for (let i = 0; i < 4; i++) plantMapped2[i] += arr[i];
+
+    type MonCheckResult = { name: string; expected: number; actual: number; pass: boolean; tolerance?: string };
+
+    function chk(name: string, expected: number, actual: number, tol: number): MonCheckResult {
+      const pass = expected === 0 ? actual === 0 : Math.abs(actual - expected) / expected <= tol;
+      return { name, expected: Math.round(expected), actual: Math.round(actual), pass,
+        tolerance: expected === 0 ? "exact" : `±${(tol * 100).toFixed(0)}%` };
+    }
+
+    const checks: MonCheckResult[] = [];
+    const TOL = PLUMBING_MON_TOLERANCE;
+
+    // Plant-level W1 and W2 mapped totals
+    checks.push(chk("Mon · Plant W1 mapped",   PLUMBING_MON_W1_MAPPED,   plantMapped2[0]!, TOL));
+    checks.push(chk("Mon · Plant W2 mapped",   PLUMBING_MON_W2_MAPPED,   plantMapped2[1]!, TOL));
+    checks.push(chk("Mon · W1 unmapped",       PLUMBING_MON_W1_UNMAPPED, unmappedByWeek2[0]!, TOL));
+    checks.push(chk("Mon · W2 unmapped",       PLUMBING_MON_W2_UNMAPPED, unmappedByWeek2[1]!, TOL));
+
+    // Per-category W1 actuals
+    for (const [cat, expected] of Object.entries(PLUMBING_MON_CAT_W1)) {
+      const actual = (catActual2.get(cat) ?? [0, 0, 0, 0])[0]!;
+      checks.push(chk(`Mon · ${cat} W1`, expected, actual, TOL));
+    }
+
+    // Per-category W2 actuals
+    for (const [cat, expected] of Object.entries(PLUMBING_MON_CAT_W2)) {
+      const actual = (catActual2.get(cat) ?? [0, 0, 0, 0])[1]!;
+      checks.push(chk(`Mon · ${cat} W2`, expected, actual, TOL));
+    }
+
+    const allPass   = checks.every((c) => c.pass);
+    const failCount = checks.filter((c) => !c.pass).length;
+    res.json({ month, allPass, passCount: checks.length - failCount, failCount, checks });
+  } catch (err) {
+    req.log.error({ err, month }, "plan/validate-plumbing-monitoring failed");
+    res.status(500).json({ error: "Failed to validate Plumbing monitoring" });
+  }
 });
 
 export default router;
