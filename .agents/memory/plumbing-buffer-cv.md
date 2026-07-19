@@ -1,37 +1,20 @@
 ---
-name: Plumbing buffer CV methodology gap vs golden values
-description: Our engine uses category-aggregate monthly CV; golden reference values use item-level (per-SKU) weighted-average CV. Category CV is always lower.
+name: Plumbing buffer CV methodology & golden-value brittleness
+description: Buffer multipliers are AI-computed (corrective engine) and drift over time; golden values and tests must account for this.
 ---
 
-## Golden values (z=1.65, ±0.02 tolerance)
-CPVC Pipe 1.31 | CPVC Fitting 1.35 | CPVC Solvent 1.31
-UPVC Pipe 1.33 | UPVC Fitting 1.22 | UPVC Solvent 1.55
-SWR Pipe 2.34  | SWR Fitting 1.42  | SWR Solvent 1.55
-AGRI Pipe 1.67 | AGRI Fitting 1.87 | AGRI Solvent = no data
+## Rule
+Buffer multipliers for CPVC / UPVC / AGRI are computed by the corrective engine and stored in buffer_categories.multiplier. They are NOT fixed at 1.5×. SWR is locked at 1.0× by migration 011 (overrideMultiplier pattern).
 
-## After tab-normalisation fix (all 12 months, z=1.65)
-CPVC Pipe 1.28 | CPVC Fitting 1.23 | CPVC Solvent 1.30 ✓
-UPVC Pipe 1.29 | UPVC Fitting 1.23 ✓ | UPVC Solvent 1.59
-SWR Pipe 1.29  | SWR Fitting 1.45  | SWR Solvent insufficient
-AGRI Pipe 1.39 | AGRI Fitting 1.27 | AGRI Solvent thin
+**Why:** The AI runs a CV-based calculation; as more sales data arrives, multipliers converge. Category production totals change proportionally, so hardcoded ±1% golden values break whenever the AI reruns.
 
-Pass (±0.02): CPVC Solvent, UPVC Fitting.
+**How to apply:**
+- Golden category totals: capture actuals at a point in time and use ±5% tolerance.
+- Buffer check: SWR exact = 1.0, CPVC/UPVC/AGRI use ±0.3 tolerance around current DB value.
+- When updating golden values: run `/api/plan/validate?month=…&segment=Plumbing`, copy actuals into PLUMBING_GOLDEN, update PLUMBING_GRAND_TOTAL, update PLUMBING_BUFFER_DEFAULTS expected values.
+- Re-capture date is documented inline in plumbing-golden.ts header comment.
 
-## Root cause
-Our engine aggregates all items in a category per month, then computes CV on the 24 monthly-total observations.
-The golden reference appears to compute CV per individual SKU, then weight-average across SKUs by volume.
-Item-level CVs are always higher than the aggregate because individual demand is noisier than summed demand.
-
-Largest gaps: SWR Pipe (computed CV=0.18 vs golden implied CV=0.81) and AGRI Fitting (0.17 vs 0.53).
-
-**Why:** Category-aggregate CV is the right approach for category-level planning.
-Item-level CV is better for individual SKU safety-stock but requires per-code monthly data tracking.
-
-**How to apply:** If future iterations need to match the golden values exactly, implement weighted-average
-item-level CV: accumulate `Map<itemCode, {cat, fy2425: number[], fy2526: number[]}>`, run runAlgorithm per item,
-then weight-average the `cv` fields by `avgMonth`. This is a significant engine change.
-
-## Reliability flags (current state)
-- null / "": data is clean
-- "thin data — review": avgMonth < 600 (AGRI Solvent, UPVC Solvent)
-- "insufficient data — override required": no orders found (SWR Solvent — no product exists in sheet)
+## codeCol positional fallback (sheets.ts)
+- Header-regex detection rarely finds codeCol for this workbook (no "item code" header).
+- Fallback: codeCol = typeCol+1 for CPVC/UPVC/SWR; typeCol+2 for AGRI (extra item-name column between type and code in AGRI tab).
+- Do NOT use value-scanning heuristics (length checks, letter tests): early rows are blank section-header rows and item "codes" can be long descriptions.

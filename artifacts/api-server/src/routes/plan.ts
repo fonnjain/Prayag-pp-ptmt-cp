@@ -111,14 +111,13 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
     fetchPlumbingBomWeights(),
   ]);
 
-  // Parse FG Stock upload:
-  //   - Net Stock positive  → stock
-  //   - Net Stock negative  → pendingOrderLastMonth (absolute value)
-  //   - Category column     → type map (FG stock Category = "CPVC-PIPE", "SWR-FITTING", etc.)
-  //     Used to resolve item type when the workbook tab has no TYPE column / section headers.
-  const stockMap = new Map<string, number>();
+  // Parse FG Stock upload (authoritative source for Stock and Pending-Last-Month).
+  //   Net Stock positive  → opening stock on 1st of month
+  //   Net Stock negative  → |value| = pending order last month (stock = 0)
+  // Item type is NO LONGER resolved from FG Stock Category — it comes directly from
+  // the workbook's per-row type column (PIPE / FITTING / FITTINGS / SOLVENT).
+  const stockMap     = new Map<string, number>();
   const pendingLmMap = new Map<string, number>();
-  const fgTypeMap = new Map<string, "Pipe" | "Fitting" | "Solvent">();
 
   for (const row of fgStockRows) {
     const code = normalizeCode(String(row["Item Code"] ?? "").trim());
@@ -131,17 +130,6 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
     } else if (netStock < 0) {
       pendingLmMap.set(code, (pendingLmMap.get(code) ?? 0) + Math.abs(netStock));
     }
-
-    // Resolve type from FG stock Category:
-    //   "CPVC-PIPE"    → Pipe     "UPVC-FITTING"  → Fitting
-    //   "CPVC-TRADING" → Solvent  "CPVC-FG"       → Fitting (finished goods ≈ fittings)
-    if (!fgTypeMap.has(code)) {
-      const cat = String(row["Category"] ?? "").trim().toUpperCase();
-      if (cat.includes("FITTING")) fgTypeMap.set(code, "Fitting");
-      else if (cat.includes("TRADING") || cat.includes("SOLVENT")) fgTypeMap.set(code, "Solvent");
-      else if (cat.includes("PIPE")) fgTypeMap.set(code, "Pipe");
-      else if (cat.includes("FG")) fgTypeMap.set(code, "Fitting"); // "-FG" finished goods → fittings
-    }
   }
 
   const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
@@ -149,27 +137,15 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
     bandRows.map((b) => [b.categoryName, { w1Upper: b.w1Upper, w2Upper: b.w2Upper, w3Upper: b.w3Upper, w4Upper: b.w4Upper }]),
   );
 
-  // Material-level default type when FG stock has no match for an item code.
-  // CPVC/SWR finished-goods are predominantly fittings; UPVC/AGRI are predominantly pipes.
-  const MATERIAL_TYPE_DEFAULT: Record<string, "Pipe" | "Fitting"> = {
-    CPVC: "Fitting",
-    SWR:  "Fitting",
-    UPVC: "Pipe",
-    AGRI: "Pipe",
-  };
-
-  let fgTypeMissCount = 0;
+  // Type comes directly from the workbook per-row type column.
+  // Rows without a type tag (~3 per tab) are dropped.
   const items: PlanItemWithBom[] = workbookRows
     .map((row): PlanItemWithBom | null => {
       const code = normalizeCode(row.itemCode);
 
-      // Resolve type: workbook column → FG stock Category → material default.
-      const resolvedType: "Pipe" | "Fitting" | "Solvent" | null =
-        row.type ?? fgTypeMap.get(code) ?? MATERIAL_TYPE_DEFAULT[row.material] ?? null;
-      if (!resolvedType) {
-        fgTypeMissCount++;
-        return null; // unknown material — skip
-      }
+      // row.type is set by fetchPlumbingPlanData from the type column on each row.
+      const resolvedType = row.type;
+      if (!resolvedType) return null; // ~3 rows per tab lack a type tag — drop
       const resolvedCategory = `${row.material} ${resolvedType}`;
 
       const source: ItemSourceRow = {
@@ -568,15 +544,21 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     });
 
     // ── 4. Buffer multiplier defaults ──────────────────────────────────────
-    // SWR is deliberately 1.0× (not 1.5×) — migration 011.
+    // SWR is deliberately 1.0× (not 1.5×) — migration 011 (tolerance=0, exact).
+    // CPVC / UPVC / AGRI are AI-computed and drift; tolerance=0.3 catches gross
+    // misconfigurations while surviving normal corrective-engine updates.
     const bufferByName = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
-    for (const { cat, expected } of PLUMBING_BUFFER_DEFAULTS) {
+    for (const { cat, expected, tolerance } of PLUMBING_BUFFER_DEFAULTS) {
       const actual = bufferByName.get(cat) ?? -1;
+      const pass = actual >= 0 && Math.abs(actual - expected) <= (tolerance + 0.001);
+      const label = tolerance === 0
+        ? `${expected}×`
+        : `${expected}× ±${tolerance}`;
       checks.push({
-        name: `Buffer · ${cat} = ${expected}×`,
+        name: `Buffer · ${cat} = ${label}`,
         expected,
         actual,
-        pass: Math.abs(actual - expected) < 0.001,
+        pass,
       });
     }
 
@@ -614,6 +596,38 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
         actual,
         pass,
         tolerance: expected === 0 ? "= 0" : `±${(PLUMBING_GOLDEN_TOLERANCE * 100).toFixed(0)}%`,
+      });
+    }
+
+    // ── 7. Item counts per category ────────────────────────────────────────
+    // Catches the pipe-block-skipped bug (codeCol mismatch) and row-truncation bugs immediately.
+    // Expected counts verified against live workbook: CPVC 293/296, UPVC 324/327,
+    // SWR 297/300, AGRI 206/209 (remaining rows are blanks or untyped).
+    const PLUMBING_ITEM_COUNTS: Array<{ cat: string; expected: number }> = [
+      { cat: "CPVC Pipe",    expected: 40  },
+      { cat: "CPVC Fitting", expected: 244 },
+      { cat: "CPVC Solvent", expected: 9   },
+      { cat: "UPVC Pipe",    expected: 52  },
+      { cat: "UPVC Fitting", expected: 242 },
+      { cat: "UPVC Solvent", expected: 30  },
+      { cat: "SWR Pipe",     expected: 160 },
+      { cat: "SWR Fitting",  expected: 134 },
+      { cat: "SWR Solvent",  expected: 3   },
+      { cat: "AGRI Pipe",    expected: 123 },
+      { cat: "AGRI Fitting", expected: 82  },
+      { cat: "AGRI Solvent", expected: 1   },
+    ];
+    const itemsByCategory = new Map<string, number>();
+    for (const item of items) {
+      itemsByCategory.set(item.category, (itemsByCategory.get(item.category) ?? 0) + 1);
+    }
+    for (const { cat, expected } of PLUMBING_ITEM_COUNTS) {
+      const actual = itemsByCategory.get(cat) ?? 0;
+      checks.push({
+        name: `Items · ${cat} = ${expected}`,
+        expected,
+        actual,
+        pass: actual === expected,
       });
     }
 

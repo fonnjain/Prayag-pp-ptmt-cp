@@ -33,12 +33,24 @@ type ValidateResponse = {
 
 async function runValidate(segment: string, month: string): Promise<ValidateResponse> {
   const url = `${API_BASE}/api/plan/validate?segment=${encodeURIComponent(segment)}&month=${encodeURIComponent(month)}`;
-  const res = await fetch(url);
-  if (!res.ok) {
+  // Retry up to 4 times on 429 / 500 (Sheets API quota exhausted).
+  // Delays: 15s → 30s → 60s → give up.
+  const delays = [15_000, 30_000, 60_000];
+  let lastErr: Error | undefined;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    const res = await fetch(url);
+    if (res.ok) return res.json() as Promise<ValidateResponse>;
     const body = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} from ${url}: ${body}`);
+    lastErr = new Error(`HTTP ${res.status} from ${url}: ${body}`);
+    if (attempt < delays.length && (res.status === 429 || res.status === 500)) {
+      const wait = delays[attempt]!;
+      console.log(`    ⏳  Got ${res.status} — Sheets quota; retrying in ${wait / 1000}s …`);
+      await new Promise((r) => setTimeout(r, wait));
+      continue;
+    }
+    break;
   }
-  return res.json() as Promise<ValidateResponse>;
+  throw lastErr;
 }
 
 function fmt(n: number): string {
@@ -88,15 +100,18 @@ async function main(): Promise<void> {
   const isolation   = plumbingResult.checks.filter((c) => c.name.startsWith("ISOLATION"));
   const buffers     = plumbingResult.checks.filter((c) => c.name.startsWith("Buffer"));
   const solvents    = plumbingResult.checks.filter((c) => c.name.startsWith("Solvent"));
+  const itemCounts  = plumbingResult.checks.filter((c) => c.name.startsWith("Items ·"));
   const categories  = plumbingResult.checks.filter(
     (c) => !c.name.startsWith("GUARD") && !c.name.startsWith("ISOLATION") &&
-            !c.name.startsWith("Buffer") && !c.name.startsWith("Solvent"),
+            !c.name.startsWith("Buffer") && !c.name.startsWith("Solvent") &&
+            !c.name.startsWith("Items ·"),
   );
 
   printSection("Plumbing — Guard assertions", guards);
   printSection("Plumbing — Segment isolation", isolation);
   printSection("Plumbing — Buffer multipliers", buffers);
   printSection("Plumbing — Solvent membership", solvents);
+  printSection("Plumbing — Item counts per category (exact)", itemCounts);
   printSection(`Plumbing — 12 category totals (${PLUMBING_MONTH}, ±1%)`, categories);
 
   if (!plumbingResult.allPass) {

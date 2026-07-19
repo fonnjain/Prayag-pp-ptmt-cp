@@ -776,14 +776,21 @@ export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlan
   const result: PlumbingPlanRow[] = [];
 
   for (const material of PLUMBING_MATERIALS) {
-    const tab = tabs.find((t) => t.toUpperCase().includes(material));
+    // Prefer the plain "CPVC" / "UPVC" / "SWR" / "AGRI" tab over compound variants
+    // like "CPVC TOP ITEM" that contain only the top-100 rows and no type column.
+    // Priority: (1) exact case-insensitive match, (2) contains material but NOT "TOP ITEM",
+    // (3) any tab containing the material name.
+    const tab =
+      tabs.find((t) => t.trim().toUpperCase() === material) ??
+      tabs.find((t) => t.toUpperCase().includes(material) && !t.toUpperCase().includes("TOP")) ??
+      tabs.find((t) => t.toUpperCase().includes(material));
     if (!tab) {
       logger.warn({ material, tabs, fileId }, "fetchPlumbingPlanData: no tab found for material");
       continue;
     }
 
     await sleep(1100); // throttle: Sheets API allows ~60 req/min
-    const values = await getTabValues(fileId, tab, "A1:Z5000");
+    const values = await getTabValues(fileId, tab, "A1:Z50000");
 
     // Scan the first 15 rows for the header row.
     // The header row contains "LAST 3 MONTH" and/or "PENDING ORDER".
@@ -811,31 +818,68 @@ export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlan
     const pendingCol = header.findIndex(
       (h, i) => /pending\s*order/i.test(h) && !/last\s*month/i.test(h) && i !== pendingLmCol,
     );
-    const codeCol = header.findIndex((h) => /item\s*code|old.*item|erp.*code/i.test(h));
+    // Prefer the canonical "ITEM CODE" / "ERP CODE" column over "OLD ITEM CODE".
+    // "OLD ITEM CODE" columns are often populated only for fitting/finished-goods rows
+    // and are empty for pipe items, causing entire pipe blocks to be silently skipped.
+    // Declared as `let` so the positional fallback (after typeCol is known) can assign it.
+    let codeCol = (() => {
+      // 1st priority: exact "ITEM CODE" (not "OLD ITEM CODE")
+      const exact = header.findIndex(h => /^item\s*code$/i.test(h.trim()));
+      if (exact >= 0) return exact;
+      // 2nd priority: ERP-prefixed code column
+      const erp = header.findIndex(h => /erp.*code|code.*erp/i.test(h.trim()));
+      if (erp >= 0) return erp;
+      // 3rd priority: any item-code column whose header does NOT start with "OLD"
+      const noOld = header.findIndex(h => /item\s*code/i.test(h) && !/^old/i.test(h.trim()));
+      if (noOld >= 0) return noOld;
+      // Fallback: first match of any item/code pattern
+      return header.findIndex(h => /item\s*code|old.*item|erp.*code/i.test(h));
+    })();
 
-    // Type column: try "TYPE" header first, then detect by scanning first 20 data-row values.
+    // Type column: try "TYPE" header first, then detect by counting PIPE/FITTING/SOLVENT
+    // hits per column across sample rows — picks the column with the MOST hits, not just
+    // the first column with any hit.  This prevents column B (which may have item-name
+    // fragments like "PIPE") from winning over column E (the actual type column where
+    // every row carries exactly "PIPE", "FITTING", or "SOLVENT").
     let typeCol = header.findIndex((h) => /^type$/i.test(h));
     if (typeCol < 0) {
       const sampleRows = values.slice(headerRowIdx + 1, headerRowIdx + 21);
-      outer: for (let col = 0; col < header.length; col++) {
+      let bestTypeCol = -1;
+      let bestCount = 0;
+      for (let col = 0; col < header.length; col++) {
+        let count = 0;
         for (const dr of sampleRows) {
           const v = String(dr?.[col] ?? "").trim().toUpperCase();
-          if (/^(PIPE|FITTING|FITTINGS|SOLVENT)$/.test(v)) {
-            typeCol = col;
-            break outer;
-          }
+          if (/^(PIPE|FITTING|FITTINGS|SOLVENT)$/.test(v)) count++;
         }
+        if (count > bestCount) { bestCount = count; bestTypeCol = col; }
       }
+      if (bestTypeCol >= 0) typeCol = bestTypeCol;
+    }
+
+    // Code column fallback: when the header regex finds nothing, use the layout the
+    // user confirmed per tab:
+    //   CPVC / UPVC / SWR : code is immediately to the right of type (typeCol + 1)
+    //   AGRI               : there is an item-name column between type and code
+    //                        so code is two columns to the right (typeCol + 2)
+    //
+    // We skip elaborate value-scanning heuristics because:
+    //   • the early rows of each tab are blank section-header rows (no data to sample)
+    //   • item "code" values in this workbook can be long descriptions, not short SKUs
+    if (codeCol < 0 && typeCol >= 0) {
+      const offset = material.toUpperCase() === "AGRI" ? 2 : 1;
+      const candidate = typeCol + offset;
+      if (candidate < header.length) codeCol = candidate;
     }
 
     logger.info(
-      { material, tab, headerRowIdx, codeCol, typeCol, avg3moCol, stockCol, pendingCol, pendingLmCol, bufferCol },
+      { material, tab, headerRowIdx, codeCol, typeCol, avg3moCol, stockCol, pendingCol, pendingLmCol, bufferCol,
+        header: header.slice(0, 20) },
       "fetchPlumbingPlanData: columns mapped",
     );
 
-    // Only codeCol, avg3moCol, and pendingCol are truly required from the workbook.
-    // stockCol and pendingLmCol are NOT required — they come from the FG Stock upload.
-    // typeCol is NOT required — we fall back to section-header detection when absent.
+    // codeCol, avg3moCol, and pendingCol are required from the workbook.
+    // stockCol / pendingLmCol come from the FG Stock upload; not required here.
     if (codeCol < 0 || avg3moCol < 0 || pendingCol < 0) {
       logger.warn(
         { material, tab, codeCol, avg3moCol, pendingCol },
@@ -844,38 +888,24 @@ export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlan
       continue;
     }
 
-    // When no explicit TYPE column exists, derive type from section-header rows.
-    // Section headers are rows with no item code whose first 8 cells contain a type keyword.
-    let currentSectionType: "Pipe" | "Fitting" | "Solvent" | null = null;
-
+    // ALL FOUR material tabs tag the type on EVERY item row — no section-header
+    // carry-forward is needed.  Read the type directly from each row's type column.
+    // Verified item-row coverage: CPVC 293/296, UPVC 324/327, SWR 297/300, AGRI 206/209.
     let rowCount = 0;
     for (let i = headerRowIdx + 1; i < values.length; i++) {
       const row = values[i];
       if (!row) continue;
       const rawCode = String(row[codeCol] ?? "").trim();
 
-      if (!rawCode) {
-        // Potential section-header row — look for a type keyword
-        if (typeCol < 0) {
-          const joined = row.slice(0, 8).map((c) => String(c ?? "").trim().toUpperCase()).join(" ");
-          if (/\bPIPE\b|\bPIPING\b|\bPIPES\b/.test(joined)) currentSectionType = "Pipe";
-          else if (/\bFITTING\b|\bFITTINGS\b/.test(joined)) currentSectionType = "Fitting";
-          else if (/\bSOLVENT\b/.test(joined)) currentSectionType = "Solvent";
-        }
-        continue;
-      }
+      // Skip blank rows and stray note text.
+      // Note text (e.g. AGRI correction notice) appears in the item-code cell; it can be
+      // identified because it contains a colon (":") which no item code ever contains.
+      if (!rawCode || rawCode.includes(":")) continue;
 
-      // Determine item type: explicit column first, then section-header fallback.
-      // When neither is available (typeCol=-1 and no section headers in this tab),
-      // we push the item with type=null so the caller can resolve it from FG stock Category.
-      let itemType: "Pipe" | "Fitting" | "Solvent" | null;
-      if (typeCol >= 0) {
-        itemType = normItemType(String(row[typeCol] ?? ""));
-      } else {
-        itemType = currentSectionType;
-      }
-      // Do NOT skip items with unknown type — push with type=null.
-      // buildPlumbingPlanItemsFromWorkbook will resolve type from FG stock Category.
+      // Read type directly from this row's own type column.
+      const itemType: "Pipe" | "Fitting" | "Solvent" | null = typeCol >= 0
+        ? normItemType(String(row[typeCol] ?? ""))
+        : null;
 
       result.push({
         material,
@@ -883,15 +913,14 @@ export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlan
         category: itemType ? `${material} ${itemType}` : material,
         itemCode: rawCode,
         avg3MoSale:            toNumber(row[avg3moCol]),
-        // stockCol / pendingLmCol may be -1 (come from FG upload, not workbook).
-        // plan.ts overwrites these from the FG stock upload map.
+        // stockCol / pendingLmCol come from the FG Stock upload (plan.ts), not the workbook.
         stock:                 stockCol >= 0 ? toNumber(row[stockCol]) : 0,
         pendingOrder:          toNumber(row[pendingCol]),
         pendingOrderLastMonth: pendingLmCol >= 0 ? toNumber(row[pendingLmCol]) : 0,
       });
       rowCount++;
     }
-    logger.info({ material, tab, typeColSource: typeCol >= 0 ? "column" : "section-headers", rowCount }, "fetchPlumbingPlanData: rows parsed");
+    logger.info({ material, tab, typeCol, codeCol, rowCount }, "fetchPlumbingPlanData: rows parsed");
   }
 
   return result;
