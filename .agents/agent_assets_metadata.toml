@@ -12,3 +12,21 @@ id = "gjBT2e9nBFnyMh3HSygmU"
 uri = "file://exports/PTMT_Pending_Order_Gap_Report.docx"
 type = "word_document"
 title = "Pending Order Gap Report (Word)"
+
+[[outputs]]
+id = "35hD1G_q-WpgEIHX3yqGR"
+uri = "file://exports/Architecture-and-Database.xlsx"
+type = "table"
+title = "Architecture & Database Schema (Excel)"
+
+[[outputs]]
+id = "XQBpQSutf_xMSc-2CJDKk"
+uri = "file://exports/Business-Logic.docx"
+type = "word_document"
+title = "Business Logic Reference (Word)"
+
+[[outputs]]
+id = "cUumWBPlqSP1cPnriIzKC"
+uri = "file://exports/Plant-API-Guide.docx"
+type = "word_document"
+title = "Plant API Key Guide (Word)"
