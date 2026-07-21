@@ -684,6 +684,11 @@ export const getPlanRunResponse = zod.object({
 })
 
 
+export const deletePlanRunParams = zod.object({
+  "id": zod.number()
+})
+
+
 export const finalizePlanRunParams = zod.object({
   "id": zod.number()
 })

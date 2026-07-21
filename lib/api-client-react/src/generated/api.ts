@@ -2888,6 +2888,90 @@ export function useGetPlanRun<TData = Awaited<ReturnType<typeof getPlanRun>>, TE
 
 
 
+export type deletePlanRunResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deletePlanRunResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type deletePlanRunResponseSuccess = (deletePlanRunResponse204) & {
+  headers: Headers;
+};
+export type deletePlanRunResponseError = (deletePlanRunResponse404) & {
+  headers: Headers;
+};
+
+export type deletePlanRunResponse = (deletePlanRunResponseSuccess | deletePlanRunResponseError)
+
+export const getDeletePlanRunUrl = (id: number,) => {
+
+
+  
+
+  return `/api/plan/runs/${id}`
+}
+
+export const deletePlanRun = async (id: number, options?: RequestInit): Promise<deletePlanRunResponse> => {
+  
+  return customFetch<deletePlanRunResponse>(getDeletePlanRunUrl(id),
+  {      
+    ...options,
+    method: 'DELETE'
+    
+    
+  }
+);}
+
+
+
+
+export const getDeletePlanRunMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePlanRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePlanRun>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deletePlanRun'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePlanRun>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deletePlanRun(id,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePlanRunMutationResult = NonNullable<Awaited<ReturnType<typeof deletePlanRun>>>
+    
+    export type DeletePlanRunMutationError = void
+
+    export const useDeletePlanRun = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePlanRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deletePlanRun>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+
+      const mutationOptions = getDeletePlanRunMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
 export type finalizePlanRunResponse200 = {
   data: PlanRunSummary
   status: 200

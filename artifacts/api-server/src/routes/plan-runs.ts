@@ -230,6 +230,16 @@ router.get("/plan/runs/:id", async (req, res): Promise<void> => {
   res.json({ run: makeSummary(run, results), items });
 });
 
+/** DELETE /api/plan/runs/:id — permanently delete a run and all its data */
+router.delete("/plan/runs/:id", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
+  const [run] = await db.select().from(planRunsTable).where(eq(planRunsTable.id, id));
+  if (!run) { res.status(404).json({ error: "Run not found" }); return; }
+  await db.delete(planRunsTable).where(eq(planRunsTable.id, id));
+  res.status(204).end();
+});
+
 /** POST /api/plan/runs/:id/finalize — lock a draft run */
 router.post("/plan/runs/:id/finalize", async (req, res): Promise<void> => {
   const id = Number(req.params.id);

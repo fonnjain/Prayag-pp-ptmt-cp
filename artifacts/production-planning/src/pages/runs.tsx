@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQueries } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -11,11 +12,30 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { currentMonth, formatMonthLabel } from "@/lib/month";
 import { cn, fmtDateTime } from "@/lib/utils";
-import { useListPlanRuns, useCreatePlanRun, useFinalizePlanRun, useComparePlanRuns, type PlanRunSummary } from "@workspace/api-client-react";
+import {
+  useListPlanRuns,
+  useCreatePlanRun,
+  useFinalizePlanRun,
+  useDeletePlanRun,
+  getPlanRun,
+  getGetPlanRunQueryKey,
+  type PlanRunSummary,
+} from "@workspace/api-client-react";
 import { useSegment } from "@/contexts/segment-context";
+import { Trash2, GitCompare } from "lucide-react";
 
 function statusColor(status: string) {
   return status === "finalized"
@@ -27,42 +47,159 @@ function fmt(n: number) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
-function DiffView({ run1Id, run2Id, onClose }: { run1Id: number; run2Id: number; onClose: () => void }) {
-  const { data, isLoading, isError } = useComparePlanRuns({ run1: run1Id, run2: run2Id });
-  const diff = data as unknown as { grandMinDelta: number; grandMaxDelta: number; items: { itemCode: string; colour: string; category: string; minProductionDelta: number; productionPlanDelta: number; pendingCurrentDelta: number; stockDelta: number }[] } | undefined;
+function fmtDelta(n: number) {
+  if (n === 0) return <span className="text-gray-400">–</span>;
+  return (
+    <span className={n > 0 ? "text-red-700 font-medium" : "text-green-700 font-medium"}>
+      {n > 0 ? "+" : ""}{fmt(n)}
+    </span>
+  );
+}
 
-  const changedItems = (diff?.items ?? []).filter((i) => i.minProductionDelta !== 0 || i.productionPlanDelta !== 0 || i.pendingCurrentDelta !== 0 || i.stockDelta !== 0);
-  changedItems.sort((a, b) => Math.abs(b.productionPlanDelta) - Math.abs(a.productionPlanDelta));
+type RunDetail = {
+  run: PlanRunSummary;
+  items: { itemCode: string; colour: string; category: string; minProduction: number; productionPlan: number }[];
+};
+
+function MultiRunCompare({ ids, onClose }: { ids: number[]; onClose: () => void }) {
+  const sorted = [...ids].sort((a, b) => a - b);
+
+  const queries = useQueries({
+    queries: sorted.map((id) => ({
+      queryKey: getGetPlanRunQueryKey(id),
+      queryFn: () => getPlanRun(id),
+    })),
+  });
+
+  const loading = queries.some((q) => q.isLoading);
+  const allData = queries
+    .map((q) => q.data as unknown as RunDetail | undefined)
+    .filter((d): d is RunDetail => !!d);
+
+  if (loading) return (
+    <Card>
+      <CardContent className="py-8 text-center text-sm text-gray-400">
+        Loading {sorted.length} runs…
+      </CardContent>
+    </Card>
+  );
+
+  const categorySet = new Set<string>();
+  for (const d of allData) for (const item of d.items) categorySet.add(item.category);
+  const categories = [...categorySet].sort();
+
+  const catMin = (d: RunDetail, cat: string) =>
+    d.items.filter((i) => i.category === cat).reduce((s, i) => s + Math.max(i.minProduction, 0), 0);
+  const catMax = (d: RunDetail, cat: string) =>
+    d.items.filter((i) => i.category === cat).reduce((s, i) => s + Math.max(i.productionPlan, 0), 0);
+
+  const showDelta = sorted.length === 2;
+  const [d1, d2] = allData;
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base">Comparing Run #{run1Id} → Run #{run2Id}</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2">
+            <GitCompare className="h-4 w-4" />
+            Comparing {sorted.length} Runs — #{sorted.join(", #")}
+          </CardTitle>
           <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
         </div>
       </CardHeader>
-      <CardContent>
-        {isLoading && <p className="text-sm text-gray-500">Loading diff...</p>}
-        {isError && <p className="text-sm text-red-600">Could not load diff.</p>}
-        {diff && (
-          <>
-            <div className="flex gap-4 mb-4 text-sm">
-              <span className={cn("px-3 py-1 rounded", diff.grandMinDelta >= 0 ? "bg-red-50 text-red-800" : "bg-green-50 text-green-800")}>
-                Min Required Δ: <strong>{diff.grandMinDelta > 0 ? "+" : ""}{fmt(diff.grandMinDelta)}</strong>
-              </span>
-              <span className={cn("px-3 py-1 rounded", diff.grandMaxDelta >= 0 ? "bg-red-50 text-red-800" : "bg-green-50 text-green-800")}>
-                Plan Δ: <strong>{diff.grandMaxDelta > 0 ? "+" : ""}{fmt(diff.grandMaxDelta)}</strong>
-              </span>
-              <span className="px-3 py-1 rounded bg-gray-100">
-                Items changed: <strong>{changedItems.length}</strong>
-              </span>
-            </div>
-            {changedItems.length === 0 && (
-              <p className="text-sm text-gray-500">No differences — identical plan outputs.</p>
-            )}
-            {changedItems.length > 0 && (
-              <div className="overflow-x-auto">
+      <CardContent className="space-y-4">
+        {/* Side-by-side totals + category breakdown */}
+        <div className="overflow-x-auto rounded-lg border border-border/50">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/30 border-b border-border/50">
+              <tr>
+                <th className="text-left py-2.5 px-4 font-medium text-muted-foreground w-44">Category</th>
+                {allData.map((d) => (
+                  <th key={d.run.id} colSpan={2} className="text-center py-2.5 px-3 border-l border-border/30">
+                    <div className="font-semibold">Run #{d.run.id}</div>
+                    <div className="text-xs font-normal text-muted-foreground">{fmtDateTime(d.run.asOfAt)}</div>
+                    <Badge className={cn("text-xs mt-0.5", statusColor(d.run.status))}>{d.run.status}</Badge>
+                  </th>
+                ))}
+                {showDelta && (
+                  <th className="text-center py-2.5 px-3 border-l border-border/30 text-muted-foreground text-xs">
+                    <div className="font-medium">Δ Plan</div>
+                    <div className="font-normal">#{sorted[0]}→#{sorted[1]}</div>
+                  </th>
+                )}
+              </tr>
+              <tr className="border-b border-border/30 text-xs text-muted-foreground">
+                <th className="py-1.5 px-4"></th>
+                {allData.map((d) => (
+                  <>
+                    <th key={`${d.run.id}-min-h`} className="py-1.5 px-3 text-right border-l border-border/30 font-normal">Min</th>
+                    <th key={`${d.run.id}-max-h`} className="py-1.5 px-3 text-right font-normal">Plan</th>
+                  </>
+                ))}
+                {showDelta && <th className="py-1.5 px-3 text-right border-l border-border/30 font-normal">Plan Δ</th>}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/30">
+              {categories.map((cat) => (
+                <tr key={cat} className="hover:bg-muted/20">
+                  <td className="py-2 px-4 font-medium text-xs">{cat}</td>
+                  {allData.map((d) => (
+                    <>
+                      <td key={`${d.run.id}-${cat}-min`} className="py-2 px-3 text-right font-mono text-xs border-l border-border/30">{fmt(catMin(d, cat))}</td>
+                      <td key={`${d.run.id}-${cat}-max`} className="py-2 px-3 text-right font-mono text-xs">{fmt(catMax(d, cat))}</td>
+                    </>
+                  ))}
+                  {showDelta && d1 && d2 && (
+                    <td className="py-2 px-3 text-right font-mono text-xs border-l border-border/30">
+                      {fmtDelta(catMax(d2, cat) - catMax(d1, cat))}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="border-t-2 border-border font-semibold bg-muted/30">
+              <tr>
+                <td className="py-2.5 px-4 text-xs uppercase text-muted-foreground">Grand Total</td>
+                {allData.map((d) => (
+                  <>
+                    <td key={`${d.run.id}-tot-min`} className="py-2.5 px-3 text-right font-mono border-l border-border/30">{fmt(d.run.grandMinTotal)}</td>
+                    <td key={`${d.run.id}-tot-max`} className="py-2.5 px-3 text-right font-mono">{fmt(d.run.grandMaxTotal)}</td>
+                  </>
+                ))}
+                {showDelta && d1 && d2 && (
+                  <td className="py-2.5 px-3 text-right font-mono border-l border-border/30">
+                    {fmtDelta(d2.run.grandMaxTotal - d1.run.grandMaxTotal)}
+                  </td>
+                )}
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        {/* Per-item delta (only for exactly 2 runs) */}
+        {showDelta && d1 && d2 && (() => {
+          const key1 = new Map(d1.items.map((i) => [`${i.itemCode}::${i.colour}`, i]));
+          const key2 = new Map(d2.items.map((i) => [`${i.itemCode}::${i.colour}`, i]));
+          const allKeys = new Set([...key1.keys(), ...key2.keys()]);
+          const changed = [...allKeys]
+            .map((k) => {
+              const a = key1.get(k);
+              const b = key2.get(k);
+              const delta = (b?.productionPlan ?? 0) - (a?.productionPlan ?? 0);
+              return { itemCode: (a ?? b)!.itemCode, colour: (a ?? b)!.colour, category: (a ?? b)!.category, delta };
+            })
+            .filter((r) => r.delta !== 0)
+            .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+          if (changed.length === 0) return (
+            <p className="text-sm text-gray-500 text-center py-2">No per-item differences — identical plan outputs.</p>
+          );
+          return (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">
+                Changed items ({changed.length})
+              </p>
+              <div className="overflow-x-auto rounded-lg border border-border/50 max-h-72 overflow-y-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -70,37 +207,23 @@ function DiffView({ run1Id, run2Id, onClose }: { run1Id: number; run2Id: number;
                       <TableHead>Colour</TableHead>
                       <TableHead>Category</TableHead>
                       <TableHead className="text-right">Plan Δ</TableHead>
-                      <TableHead className="text-right">Min Δ</TableHead>
-                      <TableHead className="text-right">Pending Δ</TableHead>
-                      <TableHead className="text-right">Stock Δ</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {changedItems.map((i) => (
+                    {changed.map((i) => (
                       <TableRow key={`${i.itemCode}-${i.colour}`}>
-                        <TableCell className="font-medium">{i.itemCode}</TableCell>
-                        <TableCell>{i.colour}</TableCell>
+                        <TableCell className="font-medium text-sm">{i.itemCode}</TableCell>
+                        <TableCell className="text-sm">{i.colour}</TableCell>
                         <TableCell className="text-xs text-gray-600">{i.category}</TableCell>
-                        <TableCell className={cn("text-right font-medium", i.productionPlanDelta > 0 ? "text-red-700" : i.productionPlanDelta < 0 ? "text-green-700" : "")}>
-                          {i.productionPlanDelta > 0 ? "+" : ""}{fmt(i.productionPlanDelta)}
-                        </TableCell>
-                        <TableCell className={cn("text-right", i.minProductionDelta > 0 ? "text-red-700" : i.minProductionDelta < 0 ? "text-green-700" : "")}>
-                          {i.minProductionDelta > 0 ? "+" : ""}{fmt(i.minProductionDelta)}
-                        </TableCell>
-                        <TableCell className={cn("text-right", i.pendingCurrentDelta !== 0 ? "text-blue-700" : "")}>
-                          {i.pendingCurrentDelta > 0 ? "+" : ""}{fmt(i.pendingCurrentDelta)}
-                        </TableCell>
-                        <TableCell className="text-right text-gray-600">
-                          {i.stockDelta > 0 ? "+" : ""}{fmt(i.stockDelta)}
-                        </TableCell>
+                        <TableCell className="text-right">{fmtDelta(i.delta)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
-            )}
-          </>
-        )}
+            </div>
+          );
+        })()}
       </CardContent>
     </Card>
   );
@@ -113,24 +236,18 @@ export default function RunsPage() {
   const { data, isLoading, refetch } = useListPlanRuns({ month, segment });
   const createRun = useCreatePlanRun();
   const finalizeRun = useFinalizePlanRun();
-  const [compareIds, setCompareIds] = useState<[number, number] | null>(null);
+  const deleteRun = useDeletePlanRun();
+  const [compareIds, setCompareIds] = useState<number[] | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const runs = (data as unknown as PlanRunSummary[] | undefined) ?? [];
 
   const toggleSelect = (id: number) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else if (next.size < 2) {
-        next.add(id);
-      } else {
-        // Replace oldest selection
-        const [first] = next;
-        next.delete(first);
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
@@ -163,9 +280,40 @@ export default function RunsPage() {
   };
 
   const handleCompare = () => {
-    const ids = [...selectedIds] as [number, number];
-    ids.sort((a, b) => a - b);
-    setCompareIds(ids);
+    setCompareIds([...selectedIds].sort((a, b) => a - b));
+  };
+
+  const handleDeleteSelected = () => {
+    const ids = [...selectedIds];
+    let remaining = ids.length;
+    let failed = false;
+
+    const onDone = () => {
+      remaining--;
+      if (remaining === 0) {
+        if (!failed) {
+          toast({ title: `${ids.length} run${ids.length > 1 ? "s" : ""} deleted` });
+          setSelectedIds(new Set());
+          setConfirmDelete(false);
+          setCompareIds(null);
+        }
+        refetch();
+      }
+    };
+
+    for (const id of ids) {
+      deleteRun.mutate(
+        { id },
+        {
+          onSuccess: onDone,
+          onError: () => {
+            failed = true;
+            toast({ title: `Failed to delete run #${id}`, variant: "destructive" });
+            onDone();
+          },
+        },
+      );
+    }
   };
 
   return (
@@ -179,31 +327,49 @@ export default function RunsPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            {selectedIds.size === 2 && (
-              <Button variant="outline" size="sm" onClick={handleCompare}>
-                Compare selected
+            {selectedIds.size >= 1 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmDelete(true)}
+                className="gap-1.5 text-red-600 border-red-300 hover:bg-red-50 hover:text-red-700"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete {selectedIds.size > 1 ? `${selectedIds.size} runs` : "run"}
               </Button>
             )}
-            <Button
-              onClick={handleCreate}
-              disabled={createRun.isPending}
-            >
+            {selectedIds.size >= 2 && (
+              <Button variant="outline" size="sm" onClick={handleCompare} className="gap-1.5">
+                <GitCompare className="h-3.5 w-3.5" />
+                Compare {selectedIds.size}
+              </Button>
+            )}
+            <Button onClick={handleCreate} disabled={createRun.isPending}>
               {createRun.isPending ? "Running plan…" : "Run Plan now"}
             </Button>
           </div>
         </div>
 
         {compareIds && (
-          <DiffView
-            run1Id={compareIds[0]}
-            run2Id={compareIds[1]}
+          <MultiRunCompare
+            ids={compareIds}
             onClose={() => { setCompareIds(null); setSelectedIds(new Set()); }}
           />
         )}
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Run history</CardTitle>
+            <CardTitle className="text-base flex items-center justify-between">
+              <span>Run history</span>
+              {selectedIds.size > 0 && (
+                <span className="text-xs font-normal text-muted-foreground">
+                  {selectedIds.size} selected ·{" "}
+                  <button className="underline hover:text-foreground" onClick={() => setSelectedIds(new Set())}>
+                    Clear
+                  </button>
+                </span>
+              )}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading && <p className="text-sm text-gray-500">Loading runs...</p>}
@@ -271,9 +437,37 @@ export default function RunsPage() {
         <div className="text-xs text-gray-400 space-y-1">
           <p>• <strong>Draft</strong> — snapshot saved; re-run to capture updated live data (creates a new run).</p>
           <p>• <strong>Finalized</strong> — locked; frozen inputs and outputs are permanently preserved.</p>
-          <p>• Select any two runs and click "Compare selected" to see per-item deltas.</p>
+          <p>• Select 2+ runs and click "Compare" to see side-by-side category totals (per-item delta shown for exactly 2 runs).</p>
+          <p>• Select any runs and click "Delete" to permanently remove them and all their frozen data.</p>
         </div>
       </div>
+
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedIds.size} run{selectedIds.size > 1 ? "s" : ""}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete run{selectedIds.size > 1 ? "s" : ""}{" "}
+              #{[...selectedIds].sort((a, b) => a - b).join(", #")} and all their
+              frozen inputs, results, and pending snapshots. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={handleDeleteSelected}
+              disabled={deleteRun.isPending}
+            >
+              {deleteRun.isPending
+                ? "Deleting…"
+                : `Delete ${selectedIds.size > 1 ? `${selectedIds.size} runs` : "run"}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 }
