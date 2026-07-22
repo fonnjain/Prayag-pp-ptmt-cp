@@ -7,6 +7,8 @@
 import type { PlanItemAchievementPct } from './planItemAchievementPct';
 import type { PlanItemCover } from './planItemCover';
 import type { PlanItemWeek } from './planItemWeek';
+import type { PlanItemAssignedMachineId } from './planItemAssignedMachineId';
+import type { PlanItemMachineWeek } from './planItemMachineWeek';
 
 export interface PlanItem {
   itemCode: string;
@@ -31,4 +33,18 @@ export interface PlanItem {
   weightKg?: number;
   /** True when item has no BOM weight entry — must be flagged in UI, never silently dropped. Absent for PTMT items. */
   noBomWeight?: boolean;
+  /** Machine-feasible W1 quantity (Plumbing only; may differ from w1 due to capacity re-timing). */
+  machineW1?: number;
+  /** Machine-feasible W2 quantity. */
+  machineW2?: number;
+  /** Machine-feasible W3 quantity. */
+  machineW3?: number;
+  /** Machine-feasible W4 quantity. */
+  machineW4?: number;
+  /** Machine ID the item was assigned to; null = unconstrained (solvent, no BOM weight). */
+  assignedMachineId?: PlanItemAssignedMachineId;
+  /** Week (1–4) the machine cascade assigned this item to; null if unfulfillable. */
+  machineWeek?: PlanItemMachineWeek;
+  /** True if the item could not be scheduled in any week given machine capacity. */
+  machineUnfulfillable?: boolean;
 }

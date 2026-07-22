@@ -77,7 +77,9 @@ import type {
   ListIdealHoursOverridesParams,
   ListPlanItemsParams,
   ListPlanRunsParams,
+  ListPlumbingMachinesParams,
   ListWeeklyReleaseBandsParams,
+  MachineCapacityResponse,
   MonitoringActions,
   MonitoringBacklog,
   MonitoringConfig,
@@ -100,6 +102,8 @@ import type {
   PlantLiveSummaryResponse,
   PlantSourceConfigUpsert,
   PlantWeeklySummary,
+  PlumbingMachine,
+  PlumbingMachineUpdate,
   RecomputeCategoryCapacityParams,
   RecomputeSeasonalityParams,
   SeasonalityRecomputeResult,
@@ -1722,6 +1726,189 @@ export const useRecomputeCategoryCapacity = <TError = void,
       > => {
 
       const mutationOptions = getRecomputeCategoryCapacityMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type listPlumbingMachinesResponse200 = {
+  data: MachineCapacityResponse
+  status: 200
+}
+
+export type listPlumbingMachinesResponse500 = {
+  data: void
+  status: 500
+}
+    
+export type listPlumbingMachinesResponseSuccess = (listPlumbingMachinesResponse200) & {
+  headers: Headers;
+};
+export type listPlumbingMachinesResponseError = (listPlumbingMachinesResponse500) & {
+  headers: Headers;
+};
+
+export type listPlumbingMachinesResponse = (listPlumbingMachinesResponseSuccess | listPlumbingMachinesResponseError)
+
+export const getListPlumbingMachinesUrl = (params?: ListPlumbingMachinesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/capacity/machines?${stringifiedParams}` : `/api/capacity/machines`
+}
+
+export const listPlumbingMachines = async (params?: ListPlumbingMachinesParams, options?: RequestInit): Promise<listPlumbingMachinesResponse> => {
+  
+  return customFetch<listPlumbingMachinesResponse>(getListPlumbingMachinesUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getListPlumbingMachinesQueryKey = (params?: ListPlumbingMachinesParams,) => {
+    return [
+    `/api/capacity/machines`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getListPlumbingMachinesQueryOptions = <TData = Awaited<ReturnType<typeof listPlumbingMachines>>, TError = void>(params?: ListPlumbingMachinesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPlumbingMachines>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPlumbingMachinesQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPlumbingMachines>>> = ({ signal }) => listPlumbingMachines(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPlumbingMachines>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListPlumbingMachinesQueryResult = NonNullable<Awaited<ReturnType<typeof listPlumbingMachines>>>
+export type ListPlumbingMachinesQueryError = void
+
+
+
+export function useListPlumbingMachines<TData = Awaited<ReturnType<typeof listPlumbingMachines>>, TError = void>(
+ params?: ListPlumbingMachinesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listPlumbingMachines>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListPlumbingMachinesQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type updatePlumbingMachineResponse200 = {
+  data: PlumbingMachine
+  status: 200
+}
+
+export type updatePlumbingMachineResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type updatePlumbingMachineResponseSuccess = (updatePlumbingMachineResponse200) & {
+  headers: Headers;
+};
+export type updatePlumbingMachineResponseError = (updatePlumbingMachineResponse404) & {
+  headers: Headers;
+};
+
+export type updatePlumbingMachineResponse = (updatePlumbingMachineResponseSuccess | updatePlumbingMachineResponseError)
+
+export const getUpdatePlumbingMachineUrl = (machineId: string,) => {
+
+
+  
+
+  return `/api/capacity/machines/${machineId}`
+}
+
+export const updatePlumbingMachine = async (machineId: string,
+    plumbingMachineUpdate: PlumbingMachineUpdate, options?: RequestInit): Promise<updatePlumbingMachineResponse> => {
+  
+  return customFetch<updatePlumbingMachineResponse>(getUpdatePlumbingMachineUrl(machineId),
+  {      
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      plumbingMachineUpdate,)
+  }
+);}
+
+
+
+
+export const getUpdatePlumbingMachineMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePlumbingMachine>>, TError,{machineId: string;data: PlumbingMachineUpdate}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePlumbingMachine>>, TError,{machineId: string;data: PlumbingMachineUpdate}, TContext> => {
+
+const mutationKey = ['updatePlumbingMachine'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePlumbingMachine>>, {machineId: string;data: PlumbingMachineUpdate}> = (props) => {
+          const {machineId,data} = props ?? {};
+
+          return  updatePlumbingMachine(machineId,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePlumbingMachineMutationResult = NonNullable<Awaited<ReturnType<typeof updatePlumbingMachine>>>
+    export type UpdatePlumbingMachineMutationBody = PlumbingMachineUpdate
+    export type UpdatePlumbingMachineMutationError = void
+
+    export const useUpdatePlumbingMachine = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePlumbingMachine>>, TError,{machineId: string;data: PlumbingMachineUpdate}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePlumbingMachine>>,
+        TError,
+        {machineId: string;data: PlumbingMachineUpdate},
+        TContext
+      > => {
+
+      const mutationOptions = getUpdatePlumbingMachineMutationOptions(options);
 
       return useMutation(mutationOptions);
     }

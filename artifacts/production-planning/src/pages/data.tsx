@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { cn, fmtDateTime } from "@/lib/utils";
+import { RefreshCw } from "lucide-react";
 
 type UploadKindDef = { kind: (typeof UploadKind)[keyof typeof UploadKind]; label: string; hint: string; required: boolean };
 
@@ -1244,6 +1245,187 @@ function ValidationPanel({ segment }: { segment: string }) {
   );
 }
 
+// ─── Plumbing Machine Capacity Panel ─────────────────────────────────────────
+
+interface MachineRow {
+  id: number;
+  machineId: string;
+  label: string | null;
+  pool: string;
+  shiftsPerDay: number;
+  hoursPerShift: number;
+  workingDays: number;
+  lockedOut: boolean;
+  rates: Record<string, number>;
+}
+
+function MachineCapacityPanel() {
+  const currentMonth = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  })();
+  const [machines, setMachines] = useState<MachineRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState<number | null>(null);
+  const [drafts, setDrafts] = useState<Record<number, { shifts?: string; hours?: string; locked?: boolean }>>({});
+  const { toast } = useToast();
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/capacity/machines?segment=Plumbing&month=${encodeURIComponent(currentMonth)}`,
+      );
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(b.error ?? `HTTP ${res.status}`);
+      }
+      const body = await res.json() as { machines: MachineRow[] };
+      setMachines(body.machines);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  }, [currentMonth]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const save = async (m: MachineRow) => {
+    const draft = drafts[m.id] ?? {};
+    const shifts = draft.shifts !== undefined ? parseFloat(draft.shifts) : m.shiftsPerDay;
+    const hours  = draft.hours  !== undefined ? parseFloat(draft.hours)  : m.hoursPerShift;
+    const locked = draft.locked !== undefined ? draft.locked : m.lockedOut;
+    if (Number.isNaN(shifts) || Number.isNaN(hours) || shifts <= 0 || hours <= 0) {
+      toast({ title: "Invalid value", description: "Shifts and hours must be positive numbers.", variant: "destructive" });
+      return;
+    }
+    setSaving(m.id);
+    try {
+      const res = await fetch(`/api/capacity/machines/${m.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shiftsPerDay: shifts, hoursPerShift: hours, lockedOut: locked }),
+      });
+      if (!res.ok) {
+        const b = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(b.error ?? `HTTP ${res.status}`);
+      }
+      toast({ title: "Saved", description: `${m.label ?? m.machineId} updated.` });
+      setDrafts(d => { const next = { ...d }; delete next[m.id]; return next; });
+      await load();
+    } catch (e) {
+      toast({ title: "Save failed", description: e instanceof Error ? e.message : "Unknown error", variant: "destructive" });
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  const pipeMachines  = machines.filter(m => m.pool === "PIPE");
+  const mouldMachines = machines.filter(m => m.pool === "MOULDING");
+
+  const renderPool = (pool: MachineRow[], poolLabel: string) => (
+    <div className="space-y-2">
+      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{poolLabel}</div>
+      <div className="overflow-x-auto rounded-md border text-sm">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wide">
+              <th className="px-3 py-2 text-left">Machine</th>
+              <th className="px-3 py-2 text-left">Materials / Rate</th>
+              <th className="px-3 py-2 text-center">Shifts/day</th>
+              <th className="px-3 py-2 text-center">Hrs/shift</th>
+              <th className="px-3 py-2 text-center">Locked out</th>
+              <th className="px-3 py-2 text-center">hrs/week</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {pool.map(m => {
+              const draft = drafts[m.id] ?? {};
+              const isDirty = Object.keys(draft).length > 0;
+              const shifts = draft.shifts !== undefined ? draft.shifts : String(m.shiftsPerDay);
+              const hours  = draft.hours  !== undefined ? draft.hours  : String(m.hoursPerShift);
+              const locked = draft.locked !== undefined ? draft.locked : m.lockedOut;
+              const materials = Object.entries(m.rates)
+                .map(([k, v]) => `${k} ${v} kg/hr`)
+                .join(", ");
+              const wkHrs = (parseFloat(shifts) || m.shiftsPerDay) * (parseFloat(hours) || m.hoursPerShift) * m.workingDays;
+              return (
+                <tr key={m.id} className={cn("hover:bg-gray-50", locked ? "opacity-50" : "")}>
+                  <td className="px-3 py-2 font-medium whitespace-nowrap">
+                    {m.label ?? m.machineId}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-gray-500 max-w-[180px]">{materials || "—"}</td>
+                  <td className="px-3 py-2">
+                    <Input
+                      className="w-16 h-7 text-xs text-center"
+                      value={shifts}
+                      onChange={e => setDrafts(d => ({ ...d, [m.id]: { ...d[m.id], shifts: e.target.value } }))}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <Input
+                      className="w-16 h-7 text-xs text-center"
+                      value={hours}
+                      onChange={e => setDrafts(d => ({ ...d, [m.id]: { ...d[m.id], hours: e.target.value } }))}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={locked}
+                      onChange={e => setDrafts(d => ({ ...d, [m.id]: { ...d[m.id], locked: e.target.checked } }))}
+                      className="h-4 w-4 rounded"
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-center tabular-nums text-gray-600 text-xs">
+                    {locked ? "—" : wkHrs.toFixed(0) + " h"}
+                  </td>
+                  <td className="px-3 py-2">
+                    <Button
+                      size="sm"
+                      variant={isDirty ? "default" : "outline"}
+                      className="h-7 text-xs px-2"
+                      disabled={saving === m.id}
+                      onClick={() => save(m)}
+                    >
+                      {saving === m.id ? "…" : isDirty ? "Save" : "✓"}
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-5">
+      {error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
+      )}
+      {loading && machines.length === 0 && (
+        <div className="text-sm text-muted-foreground">Loading machines…</div>
+      )}
+      {machines.length > 0 && (
+        <>
+          {renderPool(pipeMachines, `PIPE (${pipeMachines.length} machines)`)}
+          {renderPool(mouldMachines, `MOULDING (${mouldMachines.length} machines)`)}
+          <Button size="sm" variant="outline" onClick={load} disabled={loading}>
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function DataPage() {
   const { segment } = useSegment();
   const localUploadKinds = segment === "Plumbing" ? PLUMBING_LOCAL_UPLOAD_KINDS : PTMT_LOCAL_UPLOAD_KINDS;
@@ -1360,6 +1542,22 @@ export default function DataPage() {
             <CapacityTable />
           </CardContent>
         </Card>
+
+        {segment === "Plumbing" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Machine Capacity — Plumbing Pipe &amp; Moulding</CardTitle>
+              <p className="text-xs text-gray-500 mt-1">
+                9 PIPE machines + 24 MOULDING machines seeded with kg/hr rates.
+                AGRI Pipe → flex machines only (MC3/MC4/MC5). Solvent items are unconstrained.
+                Edit shifts/hours below; changes take effect on the next plan build.
+              </p>
+            </CardHeader>
+            <CardContent>
+              <MachineCapacityPanel />
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>

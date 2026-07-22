@@ -1,7 +1,9 @@
 import { Router } from "express";
-import { db, categoryCapacityTable } from "@workspace/db";
+import { db, categoryCapacityTable, plumbingMachineCapacityTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { computeCategoryCapacity } from "../lib/capacity-engine";
+import { runMachineCascade, type PlanItemForCascade } from "../lib/machine-capacity-engine";
+import { buildPlanItems } from "./plan";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -73,6 +75,67 @@ router.post("/capacity/recompute", async (req, res) => {
   } catch (err) {
     req.log.error({ err }, "capacity: recompute failed");
     return res.status(500).json({ error: "Recompute failed" });
+  }
+});
+
+router.get("/capacity/machines", async (req, res) => {
+  const segment = req.query.segment ? String(req.query.segment) : "Plumbing";
+  const month   = req.query.month   ? String(req.query.month)   : null;
+
+  try {
+    const machines = await db
+      .select()
+      .from(plumbingMachineCapacityTable)
+      .where(eq(plumbingMachineCapacityTable.segment, segment));
+
+    if (!month) {
+      return res.json({ machines, utilisation: [], unfulfillable: [] });
+    }
+
+    const planItems = await buildPlanItems(month, segment);
+
+    const cascadeItems: PlanItemForCascade[] = planItems.map(item => ({
+      ...(item as PlanItemForCascade),
+      machineW1: 0, machineW2: 0, machineW3: 0, machineW4: 0,
+      assignedMachineId: null, machineWeek: null, machineUnfulfillable: false,
+    }));
+
+    const { utilisation, unfulfillable } = runMachineCascade(cascadeItems, machines, month);
+    return res.json({ machines, utilisation, unfulfillable });
+  } catch (err) {
+    req.log.error({ err }, "capacity: machines list failed");
+    return res.status(500).json({ error: "Failed to list machine capacities" });
+  }
+});
+
+router.put("/capacity/machines/:machineId", async (req, res) => {
+  const { machineId } = req.params;
+  const { shiftsPerDay, hoursPerShift, lockedOut } = req.body as {
+    shiftsPerDay?: number;
+    hoursPerShift?: number;
+    lockedOut?: boolean;
+  };
+
+  try {
+    const update: Record<string, unknown> = {};
+    if (shiftsPerDay != null) update.shiftsPerDay = Number(shiftsPerDay);
+    if (hoursPerShift != null) update.hoursPerShift = Number(hoursPerShift);
+    if (lockedOut != null) update.lockedOut = Boolean(lockedOut);
+
+    const [updated] = await db
+      .update(plumbingMachineCapacityTable)
+      .set(update)
+      .where(eq(plumbingMachineCapacityTable.machineId, machineId))
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({ error: "Machine not found" });
+    }
+    logger.info({ machineId, update }, "capacity: machine updated");
+    return res.json(updated);
+  } catch (err) {
+    req.log.error({ err }, "capacity: machine put failed");
+    return res.status(500).json({ error: "Failed to update machine" });
   }
 });
 

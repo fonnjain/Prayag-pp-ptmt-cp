@@ -29,6 +29,7 @@ import PlumbingMonitoring from "@/pages/plumbing";
 import PlumbingVelocity from "@/pages/plumbing-velocity";
 import PlumbingWarnings from "@/pages/plumbing-warnings";
 import PlumbingQuality from "@/pages/plumbing-quality";
+import PlumbingMachineRelease from "@/pages/plumbing-machine-release";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -116,6 +117,9 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
         </Route>
         <Route path="/plumbing">
           <PlumbingMonitoring month={month} />
+        </Route>
+        <Route path="/plumbing/machine-release">
+          <PlumbingMachineRelease month={month} />
         </Route>
         <Route path="/plumbing/machines">
           <Dashboard month={month} plant="PIPE" />

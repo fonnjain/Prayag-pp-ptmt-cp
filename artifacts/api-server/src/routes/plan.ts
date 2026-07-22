@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, itemMasterTable, bufferCategoriesTable, uploadedFilesTable, weeklyReleaseBandsTable } from "@workspace/db";
+import { db, itemMasterTable, bufferCategoriesTable, uploadedFilesTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { computeItemPlan, annotateWeeklyRelease, summarizePlan, type ItemSourceRow, type WeeklyBandConfig } from "../lib/calc";
 import {
@@ -17,6 +17,7 @@ import {
 import { exportPlanExcel } from "../lib/excel-export";
 import { exportPlanPdf } from "../lib/pdf-export";
 import { exportWeeklyReleaseExcel } from "../lib/weekly-excel-export";
+import { runMachineCascade, type PlanItemForCascade } from "../lib/machine-capacity-engine";
 import {
   PLUMBING_GOLDEN,
   PLUMBING_GOLDEN_TOLERANCE,
@@ -98,15 +99,26 @@ function hasEntry(totals: DualTotals, itemCode: string, colour: string, isSingle
 }
 
 /**
- * Plan item augmented with Plumbing BOM weight fields.
- * weightKg and noBomWeight are present for Plumbing items only.
- *   weightKg = maxProduction × weight_per_pcs (from BOM sheet); 0 when no BOM entry.
+ * Plan item augmented with Plumbing BOM weight fields and machine-cascade output.
+ * weightKg/noBomWeight and machine* fields are present for Plumbing items only.
+ *   weightKg    = maxProduction × weight_per_pcs (from BOM sheet); 0 when no BOM entry.
  *   noBomWeight = true when item has no BOM weight entry (must be flagged, never silently dropped).
+ *   machineW1..W4      = machine-feasible release quantities (re-timed from cover-band desired).
+ *   assignedMachineId  = machine the item was scheduled on (null = unconstrained).
+ *   machineWeek        = week the machine cascade assigned this item to (null = unfulfillable).
+ *   machineUnfulfillable = true when item could not fit in any week's machine capacity.
  * PTMT items do not carry these fields (undefined).
  */
 export type PlanItemWithBom = ReturnType<typeof computeItemPlan> & {
   weightKg?: number;
   noBomWeight?: boolean;
+  machineW1?: number;
+  machineW2?: number;
+  machineW3?: number;
+  machineW4?: number;
+  assignedMachineId?: string | null;
+  machineWeek?: 1 | 2 | 3 | 4 | null;
+  machineUnfulfillable?: boolean;
 };
 
 /**
@@ -135,13 +147,14 @@ export type PlanItemWithBom = ReturnType<typeof computeItemPlan> & {
  * The workbook's Stock/PendingLM columns are NOT used — FG Stock upload is authoritative.
  */
 async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanItemWithBom[]> {
-  const [workbookRows, fgStockRows, bufferRows, bandRows, liveOrderTotals, bomWeights] = await Promise.all([
+  const [workbookRows, fgStockRows, bufferRows, bandRows, liveOrderTotals, bomWeights, machineRows] = await Promise.all([
     fetchPlumbingPlanData(month),
     loadLatestUploadRowsByKind("plumbing_fg_stock"),
     db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
     db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
     fetchLiveOrderTotals(month, "PLUMBING"),
     fetchPlumbingBomWeights(),
+    db.select().from(plumbingMachineCapacityTable),
   ]);
 
   // Parse FG Stock upload (authoritative source for Stock and Pending-Last-Month).
@@ -229,6 +242,11 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
     .filter((item): item is PlanItemWithBom => item !== null);
 
   annotateWeeklyRelease(items, bandsByCategory);
+
+  if (machineRows.length > 0) {
+    runMachineCascade(items as unknown as PlanItemForCascade[], machineRows, month);
+  }
+
   return items;
 }
 
@@ -1138,6 +1156,50 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
         checks.push(monChk(`Mon · ${cat} W1`, exp, (catAct.get(cat) ?? [0, 0, 0, 0])[0]!));
       for (const [cat, exp] of Object.entries(PLUMBING_MON_CAT_W2))
         checks.push(monChk(`Mon · ${cat} W2`, exp, (catAct.get(cat) ?? [0, 0, 0, 0])[1]!));
+    }
+
+    // ── 9. Machine cascade checks ───────────────────────────────────────────
+    {
+      const FLEX_MACHINES = new Set(["MC3", "MC4", "MC5"]);
+      const hasMachineData = items.some(i => (i as PlanItemWithBom).machineW1 !== undefined);
+      checks.push({
+        name: "Machine · cascade ran (machines seeded)",
+        expected: 1,
+        actual: hasMachineData ? 1 : 0,
+        pass: hasMachineData,
+        tolerance: "bool",
+      });
+
+      if (hasMachineData) {
+        let sumInconsistent = 0;
+        for (const item of items) {
+          if (item.maxProduction <= 0) continue;
+          const cat = item.category;
+          if (cat.endsWith("Solvent")) continue;
+          const bom = item as PlanItemWithBom;
+          if (bom.machineUnfulfillable) continue;
+          const mSum = (bom.machineW1 ?? 0) + (bom.machineW2 ?? 0) + (bom.machineW3 ?? 0) + (bom.machineW4 ?? 0);
+          if (Math.abs(mSum - item.maxProduction) > 1) sumInconsistent++;
+        }
+        checks.push({
+          name: "Machine · cascade sum consistency (machineW sum = maxProduction)",
+          expected: 0,
+          actual: sumInconsistent,
+          pass: sumInconsistent === 0,
+        });
+
+        const agriPipeItems = items.filter(i => i.category === "AGRI Pipe" && i.maxProduction > 0);
+        const agriOnNonFlex = agriPipeItems.filter(i => {
+          const mid = (i as PlanItemWithBom).assignedMachineId;
+          return mid !== null && mid !== undefined && !FLEX_MACHINES.has(mid);
+        });
+        checks.push({
+          name: "Machine · AGRI Pipe only on flex machines (MC3/MC4/MC5)",
+          expected: 0,
+          actual: agriOnNonFlex.length,
+          pass: agriOnNonFlex.length === 0,
+        });
+      }
     }
 
     const allPass = checks.every((c) => c.pass);

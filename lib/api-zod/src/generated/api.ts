@@ -460,6 +460,67 @@ export const recomputeCategoryCapacityResponseItem = zod.object({
 export const recomputeCategoryCapacityResponse = zod.array(recomputeCategoryCapacityResponseItem)
 
 
+export const listPlumbingMachinesQuerySegmentDefault = "Plumbing";
+
+export const listPlumbingMachinesQueryParams = zod.object({
+  "segment": zod.string().default(listPlumbingMachinesQuerySegmentDefault).describe('Segment (Plumbing)'),
+  "month": zod.string().optional().describe('YYYY-MM — if provided, includes per-machine utilisation')
+})
+
+export const listPlumbingMachinesResponse = zod.object({
+  "machines": zod.array(zod.object({
+  "id": zod.number(),
+  "segment": zod.string(),
+  "pool": zod.string().describe('PIPE or MOULDING'),
+  "machineId": zod.string(),
+  "label": zod.string().nullish(),
+  "shiftsPerDay": zod.number(),
+  "hoursPerShift": zod.number(),
+  "workingDays": zod.number(),
+  "rates": zod.record(zod.string(), zod.number()).describe('Per-material kg\/hr rates (PIPE: CPVC\/UPVC\/SWR\/AGRI; MOULDING: ALL)'),
+  "lockedOut": zod.boolean()
+})),
+  "utilisation": zod.array(zod.object({
+  "machineId": zod.string(),
+  "pool": zod.string(),
+  "label": zod.string().nullable(),
+  "week": zod.number().describe('1–4'),
+  "hoursUsed": zod.number(),
+  "hoursAvailable": zod.number(),
+  "utilisationPct": zod.number()
+})),
+  "unfulfillable": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "category": zod.string(),
+  "pieces": zod.number()
+}))
+})
+
+
+export const updatePlumbingMachineParams = zod.object({
+  "machineId": zod.string()
+})
+
+export const updatePlumbingMachineBody = zod.object({
+  "shiftsPerDay": zod.number().optional(),
+  "hoursPerShift": zod.number().optional(),
+  "lockedOut": zod.boolean().optional()
+})
+
+export const updatePlumbingMachineResponse = zod.object({
+  "id": zod.number(),
+  "segment": zod.string(),
+  "pool": zod.string().describe('PIPE or MOULDING'),
+  "machineId": zod.string(),
+  "label": zod.string().nullish(),
+  "shiftsPerDay": zod.number(),
+  "hoursPerShift": zod.number(),
+  "workingDays": zod.number(),
+  "rates": zod.record(zod.string(), zod.number()).describe('Per-material kg\/hr rates (PIPE: CPVC\/UPVC\/SWR\/AGRI; MOULDING: ALL)'),
+  "lockedOut": zod.boolean()
+})
+
+
 export const listPlanItemsQuerySegmentDefault = "PTMT";
 
 export const listPlanItemsQueryParams = zod.object({
@@ -488,7 +549,14 @@ export const listPlanItemsResponseItem = zod.object({
   "w3": zod.number(),
   "w4": zod.number(),
   "weightKg": zod.number().optional().describe('Total kg for this item (Plumbing only). Computed as maxProduction × weight_per_pcs from BOM sheet. 0 when noBomWeight is true. Absent for PTMT items.'),
-  "noBomWeight": zod.boolean().optional().describe('True when item has no BOM weight entry — must be flagged in UI, never silently dropped. Absent for PTMT items.')
+  "noBomWeight": zod.boolean().optional().describe('True when item has no BOM weight entry — must be flagged in UI, never silently dropped. Absent for PTMT items.'),
+  "machineW1": zod.number().optional().describe('Machine-feasible W1 quantity (Plumbing only; may differ from w1 due to capacity re-timing).'),
+  "machineW2": zod.number().optional().describe('Machine-feasible W2 quantity.'),
+  "machineW3": zod.number().optional().describe('Machine-feasible W3 quantity.'),
+  "machineW4": zod.number().optional().describe('Machine-feasible W4 quantity.'),
+  "assignedMachineId": zod.string().nullish().describe('Machine ID the item was assigned to; null = unconstrained (solvent, no BOM weight).'),
+  "machineWeek": zod.number().nullish().describe('Week (1–4) the machine cascade assigned this item to; null if unfulfillable.'),
+  "machineUnfulfillable": zod.boolean().optional().describe('True if the item could not be scheduled in any week given machine capacity.')
 })
 export const listPlanItemsResponse = zod.array(listPlanItemsResponseItem)
 

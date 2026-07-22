@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { eq } from "drizzle-orm";
-import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable, weeklyReleaseBandsTable } from "@workspace/db";
+import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable } from "@workspace/db";
 import { logger } from "./logger";
 import { SHEET_LABELS } from "./sheets";
 
@@ -201,6 +201,62 @@ async function seedPtmtOverrides(): Promise<void> {
   logger.info({ count: PTMT_BUSINESS_OVERRIDES.length }, "Seeded PTMT business overrides");
 }
 
+type MachineRow = {
+  pool: string;
+  machineId: string;
+  label: string;
+  shiftsPerDay: number;
+  hoursPerShift: number;
+  workingDays: number;
+  rates: Record<string, number>;
+  lockedOut: boolean;
+};
+
+const PLUMBING_PIPE_MACHINES: MachineRow[] = [
+  { pool: "PIPE", machineId: "MC1", label: "M/C-1 (CPVC dedicated)", shiftsPerDay: 2, hoursPerShift: 10, workingDays: 25, rates: { CPVC: 145.6 }, lockedOut: false },
+  { pool: "PIPE", machineId: "MC2", label: "M/C-2 (CPVC dedicated)", shiftsPerDay: 2, hoursPerShift: 10, workingDays: 25, rates: { CPVC: 145.6 }, lockedOut: false },
+  { pool: "PIPE", machineId: "MC3", label: "M/C-3 (Flex)",           shiftsPerDay: 2, hoursPerShift: 10, workingDays: 25, rates: { CPVC: 145.6, UPVC: 250, SWR: 295, AGRI: 300 }, lockedOut: false },
+  { pool: "PIPE", machineId: "MC4", label: "M/C-4 (Flex)",           shiftsPerDay: 2, hoursPerShift: 10, workingDays: 25, rates: { CPVC: 145.6, UPVC: 250, SWR: 295, AGRI: 300 }, lockedOut: false },
+  { pool: "PIPE", machineId: "MC5", label: "M/C-5 (Flex UPVC/AGRI)", shiftsPerDay: 2, hoursPerShift: 10, workingDays: 25, rates: { UPVC: 250, AGRI: 300 }, lockedOut: false },
+  { pool: "PIPE", machineId: "MC6", label: "M/C-6 (UPVC dedicated)", shiftsPerDay: 2, hoursPerShift: 10, workingDays: 25, rates: { UPVC: 250 }, lockedOut: false },
+  { pool: "PIPE", machineId: "MC7", label: "M/C-7 (Locked out)",     shiftsPerDay: 2, hoursPerShift: 10, workingDays: 25, rates: {}, lockedOut: true },
+  { pool: "PIPE", machineId: "MC8", label: "M/C-8 (Locked out)",     shiftsPerDay: 2, hoursPerShift: 10, workingDays: 25, rates: {}, lockedOut: true },
+  { pool: "PIPE", machineId: "MC9", label: "M/C-9 (SWR dedicated)",  shiftsPerDay: 2, hoursPerShift: 10, workingDays: 25, rates: { SWR: 295 }, lockedOut: false },
+];
+
+const PLUMBING_MOULDING_RATES: [string, number][] = [
+  ["D01", 22.8], ["B02", 14.5], ["D02", 14.4], ["D06", 14.2], ["C01", 14.1],
+  ["B01", 13.5], ["C07", 13.5], ["D07", 12.6], ["C05", 12.6], ["C06", 11.2],
+  ["C02", 11.0], ["C04", 10.2], ["B03",  8.1], ["B06",  7.7], ["D03",  7.7],
+  ["A02",  7.0], ["D05",  6.9], ["A03",  6.4], ["B04",  6.4], ["A05",  4.9],
+  ["B05",  4.8], ["A06",  3.9], ["A01",  1.8], ["A04",  1.7],
+];
+
+const PLUMBING_MOULDING_MACHINES: MachineRow[] = PLUMBING_MOULDING_RATES.map(([id, rate]) => ({
+  pool: "MOULDING",
+  machineId: id,
+  label: `MOULD-${id}`,
+  shiftsPerDay: 2,
+  hoursPerShift: 10,
+  workingDays: 25,
+  rates: { ALL: rate },
+  lockedOut: false,
+}));
+
+async function seedPlumbingMachines(): Promise<void> {
+  const allMachines = [...PLUMBING_PIPE_MACHINES, ...PLUMBING_MOULDING_MACHINES];
+  let seeded = 0;
+  for (const m of allMachines) {
+    const result = await db
+      .insert(plumbingMachineCapacityTable)
+      .values({ segment: "Plumbing", ...m })
+      .onConflictDoNothing()
+      .returning({ id: plumbingMachineCapacityTable.id });
+    if (result.length > 0) seeded++;
+  }
+  if (seeded > 0) logger.info({ seeded, total: allMachines.length }, "Seeded Plumbing machine capacity rows");
+}
+
 export async function ensureSeedData(): Promise<void> {
   await seedBufferCategories();
   await seedItemMaster();
@@ -211,4 +267,5 @@ export async function ensureSeedData(): Promise<void> {
   await seedPtmtOverrides();
   const { seedCategoryCapacity } = await import("./capacity-engine");
   await seedCategoryCapacity();
+  await seedPlumbingMachines();
 }

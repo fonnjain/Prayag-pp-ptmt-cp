@@ -164,6 +164,7 @@ export function AppLayout({
               </nav>
               {sectionLabel("Machine Level", Cpu)}
               <nav className="space-y-1">
+                {navLink({ href: "/plumbing/machine-release", label: "Machine Release", icon: SlidersHorizontal })}
                 {navLink({ href: "/plumbing/machines",  label: "Dashboard",  icon: LayoutDashboard })}
                 {navLink({ href: "/plumbing/velocity",  label: "Velocity",   icon: Activity        })}
                 {navLink({ href: "/plumbing/warnings",  label: "Warnings",   icon: AlertTriangle   })}

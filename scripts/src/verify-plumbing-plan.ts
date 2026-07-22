@@ -179,11 +179,12 @@ async function main(): Promise<void> {
   const weeklyCat   = plumbingResult.checks.filter(
     (c) => c.name.startsWith("Weekly ·") && !c.name.startsWith("Weekly · Plant") && !c.name.endsWith("· sum = prod req"),
   );
+  const machineChks = plumbingResult.checks.filter((c) => c.name.startsWith("Machine ·"));
   const categories  = plumbingResult.checks.filter(
     (c) => !c.name.startsWith("GUARD") && !c.name.startsWith("ISOLATION") &&
             !c.name.startsWith("Buffer") && !c.name.startsWith("Solvent") &&
             !c.name.startsWith("Items ·") && !c.name.startsWith("KG ·") &&
-            !c.name.startsWith("Weekly ·"),
+            !c.name.startsWith("Weekly ·") && !c.name.startsWith("Machine ·"),
   );
 
   printSection("Plumbing — Guard assertions", guards);
@@ -196,6 +197,7 @@ async function main(): Promise<void> {
   printSection(`Plumbing — Weekly release: plant totals (${PLUMBING_MONTH}, ±1%)`, weeklyPlant);
   printSection(`Plumbing — Weekly release: per-category W1–W4 (${PLUMBING_MONTH}, ±1%)`, weeklyCat);
   printSection(`Plumbing — Weekly release: W1+W2+W3+W4 = prod req (exact)`, weeklySum);
+  printSection(`Plumbing — Machine cascade guards (${PLUMBING_MONTH})`, machineChks);
 
   if (!plumbingResult.allPass) {
     anyFail = true;

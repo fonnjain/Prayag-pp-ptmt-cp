@@ -377,6 +377,56 @@ paths:
         "500":
           description: Engine error
 
+  /capacity/machines:
+    get:
+      operationId: listPlumbingMachines
+      tags: [capacity]
+      parameters:
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "Plumbing" }
+          description: "Segment (Plumbing)"
+        - name: month
+          in: query
+          required: false
+          schema: { type: string }
+          description: "YYYY-MM — if provided, includes per-machine utilisation"
+      responses:
+        "200":
+          description: Machine configs with optional per-week utilisation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MachineCapacityResponse"
+        "500":
+          description: Server error
+
+  /capacity/machines/{machineId}:
+    put:
+      operationId: updatePlumbingMachine
+      tags: [capacity]
+      parameters:
+        - name: machineId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlumbingMachineUpdate"
+      responses:
+        "200":
+          description: Updated machine
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlumbingMachine"
+        "404":
+          description: Not found
+
   /plan:
     get:
       operationId: listPlanItems
@@ -1554,6 +1604,13 @@ components:
         w4: { type: number }
         weightKg: { type: number, description: "Total kg for this item (Plumbing only). Computed as maxProduction × weight_per_pcs from BOM sheet. 0 when noBomWeight is true. Absent for PTMT items." }
         noBomWeight: { type: boolean, description: "True when item has no BOM weight entry — must be flagged in UI, never silently dropped. Absent for PTMT items." }
+        machineW1: { type: number, description: "Machine-feasible W1 quantity (Plumbing only; may differ from w1 due to capacity re-timing)." }
+        machineW2: { type: number, description: "Machine-feasible W2 quantity." }
+        machineW3: { type: number, description: "Machine-feasible W3 quantity." }
+        machineW4: { type: number, description: "Machine-feasible W4 quantity." }
+        assignedMachineId: { type: ["string", "null"], description: "Machine ID the item was assigned to; null = unconstrained (solvent, no BOM weight)." }
+        machineWeek: { type: ["integer", "null"], description: "Week (1–4) the machine cascade assigned this item to; null if unfulfillable." }
+        machineUnfulfillable: { type: boolean, description: "True if the item could not be scheduled in any week given machine capacity." }
 
     CategorySummary:
       type: object
@@ -2719,4 +2776,66 @@ components:
           type: object
           additionalProperties:
             $ref: "#/components/schemas/PlantLiveMachineMetrics"
+
+    PlumbingMachine:
+      type: object
+      required: [id, segment, pool, machineId, shiftsPerDay, hoursPerShift, workingDays, rates, lockedOut]
+      properties:
+        id: { type: integer }
+        segment: { type: string }
+        pool: { type: string, description: "PIPE or MOULDING" }
+        machineId: { type: string }
+        label: { type: ["string", "null"] }
+        shiftsPerDay: { type: number }
+        hoursPerShift: { type: number }
+        workingDays: { type: integer }
+        rates:
+          type: object
+          additionalProperties: { type: number }
+          description: "Per-material kg/hr rates (PIPE: CPVC/UPVC/SWR/AGRI; MOULDING: ALL)"
+        lockedOut: { type: boolean }
+
+    PlumbingMachineUpdate:
+      type: object
+      properties:
+        shiftsPerDay: { type: number }
+        hoursPerShift: { type: number }
+        lockedOut: { type: boolean }
+
+    MachineWeekUtilisation:
+      type: object
+      required: [machineId, pool, label, week, hoursUsed, hoursAvailable, utilisationPct]
+      properties:
+        machineId: { type: string }
+        pool: { type: string }
+        label: { type: ["string", "null"] }
+        week: { type: integer, description: "1–4" }
+        hoursUsed: { type: number }
+        hoursAvailable: { type: number }
+        utilisationPct: { type: number }
+
+    MachineUnfulfillableItem:
+      type: object
+      required: [itemCode, category, pieces]
+      properties:
+        itemCode: { type: string }
+        category: { type: string }
+        pieces: { type: number }
+
+    MachineCapacityResponse:
+      type: object
+      required: [machines, utilisation, unfulfillable]
+      properties:
+        machines:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlumbingMachine"
+        utilisation:
+          type: array
+          items:
+            $ref: "#/components/schemas/MachineWeekUtilisation"
+        unfulfillable:
+          type: array
+          items:
+            $ref: "#/components/schemas/MachineUnfulfillableItem"
 

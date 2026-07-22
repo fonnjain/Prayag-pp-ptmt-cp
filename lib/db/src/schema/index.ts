@@ -17,3 +17,4 @@ export * from "./corrective-plan";
 export * from "./category-capacity";
 export * from "./api-keys";
 export * from "./workbook-config";
+export * from "./plumbing-machine-capacity";
