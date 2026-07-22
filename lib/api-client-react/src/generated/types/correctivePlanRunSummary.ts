@@ -4,6 +4,8 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { CorrectivePlanRunSummaryAsOfDate } from './correctivePlanRunSummaryAsOfDate';
+import type { CorrectivePlanRunSummaryNote } from './correctivePlanRunSummaryNote';
 import type { CorrectiveWarning } from './correctiveWarning';
 
 export interface CorrectivePlanRunSummary {
@@ -11,6 +13,8 @@ export interface CorrectivePlanRunSummary {
   segment: string;
   month: string;
   weekClosed: number;
+  asOfDate?: CorrectivePlanRunSummaryAsOfDate;
+  note?: CorrectivePlanRunSummaryNote;
   dailyCapacity: number;
   producedToDate: number;
   newOrdersQty: number;

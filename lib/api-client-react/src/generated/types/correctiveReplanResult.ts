@@ -4,6 +4,10 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { CorrectiveReplanResultAsOfDate } from './correctiveReplanResultAsOfDate';
+import type { CorrectiveReplanResultWorkingDaysUsed } from './correctiveReplanResultWorkingDaysUsed';
+import type { CorrectiveReplanResultWorkingDaysRemaining } from './correctiveReplanResultWorkingDaysRemaining';
+import type { CorrectiveReplanResultNote } from './correctiveReplanResultNote';
 import type { CorrectiveWeekStat } from './correctiveWeekStat';
 import type { CorrectiveWarning } from './correctiveWarning';
 import type { CorrectiveItemResult } from './correctiveItemResult';
@@ -13,6 +17,14 @@ export interface CorrectiveReplanResult {
   month: string;
   segment: string;
   weekClosed: number;
+  /** YYYY-MM-DD — set when run was triggered in as-of-date mode */
+  asOfDate?: CorrectiveReplanResultAsOfDate;
+  /** Non-Sunday days from month start to asOfDate inclusive */
+  workingDaysUsed?: CorrectiveReplanResultWorkingDaysUsed;
+  /** Non-Sunday days from day after asOfDate to month end */
+  workingDaysRemaining?: CorrectiveReplanResultWorkingDaysRemaining;
+  /** Human-readable label e.g. 'As of 18/07/26' */
+  note?: CorrectiveReplanResultNote;
   dailyCapacity: number;
   workingDaysPerWeek: number;
   producedToDate: number;

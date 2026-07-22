@@ -1,7 +1,7 @@
 import { db, itemMasterTable, bufferCategoriesTable, weeklyReleaseBandsTable, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable } from "@workspace/db";
 import type { CorrectiveWeekStat, CorrectiveWarning } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { fetchDailyActuals } from "./plant-ingestion";
+import { fetchDailyActuals, type DailyActualRow } from "./plant-ingestion";
 import { fetchLivePendingOrderTotals, itemKey, normalizeCode } from "./sheets";
 import { buildPlanItems, loadLatestUploadRowsByKind } from "../routes/plan";
 import { logger } from "./logger";
@@ -11,6 +11,7 @@ const round = (n: number) => Math.round(n * 100) / 100;
 export interface CorrectiveReplanInput {
   month: string;
   weekClosed: number;
+  asOfDate?: string;
   segment?: string;
   dailyCapacity?: number;
   workingDaysPerWeek?: number;
@@ -51,6 +52,10 @@ export interface CorrectiveReplanResult {
   month: string;
   segment: string;
   weekClosed: number;
+  asOfDate?: string;
+  workingDaysUsed?: number;
+  workingDaysRemaining?: number;
+  note?: string;
   dailyCapacity: number;
   workingDaysPerWeek: number;
   producedToDate: number;
@@ -61,6 +66,22 @@ export interface CorrectiveReplanResult {
   weekStats: CorrectiveWeekStat[];
   warnings: CorrectiveWarning[];
   items: CorrectiveItemResult[];
+}
+
+function countWorkingDays(from: string, to: string): number {
+  let count = 0;
+  const d = new Date(from + "T00:00:00Z");
+  const end = new Date(to + "T00:00:00Z");
+  while (d <= end) {
+    if (d.getUTCDay() !== 0) count++;
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return count;
+}
+
+function monthLastDay(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
 }
 
 function resolveFromDualTotals(
@@ -113,19 +134,20 @@ function computePlanRev(opts: {
 }
 
 export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise<CorrectiveReplanResult> {
-  const { month, weekClosed } = input;
+  const { month } = input;
+  const asOfDate = input.asOfDate;
   const segment = input.segment ?? "PTMT";
   const dailyCapacity = input.dailyCapacity ?? 21335;
   const workingDaysPerWeek = input.workingDaysPerWeek ?? 6;
 
-  logger.info({ month, weekClosed, segment, dailyCapacity }, "corrective-engine: starting replan");
+  logger.info({ month, weekClosed: input.weekClosed, asOfDate, segment, dailyCapacity }, "corrective-engine: starting replan");
 
   // ── Fetch everything in parallel ────────────────────────────────────────────
   const [originalItems, dailyActuals, livePendingTotals, pendingOrderRows, pendingLastMoRows, bufferRows, bandRows, itemRows, catCapRows] =
     await Promise.all([
       buildPlanItems(month, segment),
       // For PTMT: reads PTMT ANUJ sheet. For Plumbing: actuals are not item-level, falls back to [] gracefully.
-      fetchDailyActuals(month).catch(err => { logger.warn({ err }, "corrective-engine: fetchDailyActuals failed, using zeros"); return []; }),
+      fetchDailyActuals(month).catch(err => { logger.warn({ err }, "corrective-engine: fetchDailyActuals failed, using zeros"); return [] as DailyActualRow[]; }),
       fetchLivePendingOrderTotals().catch(err => { logger.warn({ err }, "corrective-engine: fetchLivePendingOrderTotals failed, using zeros"); return { exact: new Map<string, number>(), byCode: new Map<string, number>() }; }),
       loadLatestUploadRowsByKind("pending_orders"),
       loadLatestUploadRowsByKind("last_month_pending"),
@@ -134,6 +156,32 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, segment)),
       db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment)),
     ]);
+
+  // ── Resolve weekClosed (from asOfDate or direct input) ───────────────────────
+  let weekClosed: number;
+  let workingDaysUsed: number | undefined;
+  let workingDaysRemaining: number | undefined;
+  let note: string | undefined;
+
+  if (asOfDate) {
+    const monthStart = `${month}-01`;
+    const monthEnd = monthLastDay(month);
+    workingDaysUsed = countWorkingDays(monthStart, asOfDate);
+    weekClosed = Math.min(Math.floor(workingDaysUsed / workingDaysPerWeek), 3);
+    const nextDayObj = new Date(asOfDate + "T00:00:00Z");
+    nextDayObj.setUTCDate(nextDayObj.getUTCDate() + 1);
+    const nextDay = nextDayObj.toISOString().slice(0, 10);
+    workingDaysRemaining = nextDay <= monthEnd ? countWorkingDays(nextDay, monthEnd) : 0;
+    const [yy, mm, dd] = asOfDate.split("-");
+    note = `As of ${dd}/${mm}/${String(yy).slice(2)}`;
+  } else {
+    weekClosed = input.weekClosed;
+  }
+
+  // ── Filter actuals by asOfDate if provided ───────────────────────────────────
+  const effectiveActuals = asOfDate
+    ? dailyActuals.filter(r => r.date <= asOfDate)
+    : dailyActuals;
 
   // ── Map original plan items by key ──────────────────────────────────────────
   const originalByKey = new Map(originalItems.map(i => [itemKey(i.itemCode, i.colour), i]));
@@ -149,7 +197,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
 
   // ── Aggregate produced_to_date per item ──────────────────────────────────────
   const producedMap = new Map<string, number>();
-  for (const row of dailyActuals) {
+  for (const row of effectiveActuals) {
     const k = itemKey(row.itemCode, row.colour);
     producedMap.set(k, (producedMap.get(k) ?? 0) + row.qty);
     // Also try code-only lookup for single-variant items
@@ -517,6 +565,8 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     unfulfillableQty,
     weekStatsJson: weekStats,
     warningsJson: warnings,
+    asOfDate: asOfDate ?? null,
+    note: note ?? null,
   }).returning();
 
   if (run && items.length > 0) {
@@ -565,6 +615,10 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     month,
     segment,
     weekClosed,
+    asOfDate,
+    workingDaysUsed,
+    workingDaysRemaining,
+    note,
     dailyCapacity: Math.round(totalDailyApplied),
     workingDaysPerWeek: globalWorkingDays,
     producedToDate: producedToDateTotal,

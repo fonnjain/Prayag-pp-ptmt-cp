@@ -18,9 +18,10 @@ const STATUS_COLORS: Record<string, string> = {
 
 // ─── POST /corrective/replan ─────────────────────────────────────────────────
 router.post("/corrective/replan", async (req, res): Promise<void> => {
-  const { month, weekClosed, segment, dailyCapacity, workingDaysPerWeek } = req.body as {
+  const { month, weekClosed, asOfDate, segment, dailyCapacity, workingDaysPerWeek } = req.body as {
     month?: string;
     weekClosed?: number;
+    asOfDate?: string;
     segment?: string;
     dailyCapacity?: number;
     workingDaysPerWeek?: number;
@@ -30,15 +31,24 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
     res.status(400).json({ error: "month is required (YYYY-MM)" });
     return;
   }
-  if (weekClosed === undefined || typeof weekClosed !== "number" || weekClosed < 0 || weekClosed > 3) {
-    res.status(400).json({ error: "weekClosed is required (0=none, 1=after W1, 2=after W2, 3=after W3)" });
-    return;
+
+  if (asOfDate !== undefined) {
+    if (typeof asOfDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(asOfDate)) {
+      res.status(400).json({ error: "asOfDate must be YYYY-MM-DD" });
+      return;
+    }
+  } else {
+    if (weekClosed === undefined || typeof weekClosed !== "number" || weekClosed < 0 || weekClosed > 3) {
+      res.status(400).json({ error: "weekClosed is required (0=none, 1=after W1, 2=after W2, 3=after W3) unless asOfDate is provided" });
+      return;
+    }
   }
 
   const seg = (typeof segment === "string" && segment.trim()) ? segment.trim() : "PTMT";
+  const effectiveWeekClosed = asOfDate !== undefined ? 0 : (weekClosed as number);
 
   try {
-    const result = await runCorrectiveReplan({ month, weekClosed, segment: seg, dailyCapacity, workingDaysPerWeek });
+    const result = await runCorrectiveReplan({ month, weekClosed: effectiveWeekClosed, asOfDate, segment: seg, dailyCapacity, workingDaysPerWeek });
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "corrective/replan failed");
@@ -71,6 +81,8 @@ router.get("/corrective/runs", async (req, res): Promise<void> => {
     segment: r.segment,
     month: r.month,
     weekClosed: r.weekClosed,
+    asOfDate: r.asOfDate,
+    note: r.note,
     dailyCapacity: r.dailyCapacity,
     producedToDate: r.producedToDate,
     newOrdersQty: r.newOrdersQty,
@@ -97,6 +109,8 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
     segment: run.segment,
     month: run.month,
     weekClosed: run.weekClosed,
+    asOfDate: run.asOfDate,
+    note: run.note,
     dailyCapacity: run.dailyCapacity,
     workingDaysPerWeek: run.workingDaysPerWeek,
     producedToDate: run.producedToDate,

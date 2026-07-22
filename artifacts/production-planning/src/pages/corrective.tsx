@@ -621,9 +621,21 @@ function HeaderSummary({ result }: { result: CorrectiveReplanResult }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       <div className="rounded-md border bg-white px-3 py-2.5">
-        <p className="text-xs text-gray-500">Week closed</p>
-        <p className="text-2xl font-bold">W{result.weekClosed}</p>
-        <p className="text-xs text-gray-400">{result.month}</p>
+        <p className="text-xs text-gray-500">
+          {(result as unknown as { asOfDate?: string | null }).asOfDate ? "As of" : "Week closed"}
+        </p>
+        <p className="text-2xl font-bold">
+          {(result as unknown as { asOfDate?: string | null }).asOfDate
+            ? new Date((result as unknown as { asOfDate: string }).asOfDate + "T00:00:00Z").toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+            : `W${result.weekClosed}`}
+        </p>
+        {(result as unknown as { workingDaysUsed?: number; workingDaysRemaining?: number }).workingDaysUsed !== undefined ? (
+          <p className="text-xs text-gray-400">
+            {(result as unknown as { workingDaysUsed: number }).workingDaysUsed} used · {(result as unknown as { workingDaysRemaining: number }).workingDaysRemaining} remaining
+          </p>
+        ) : (
+          <p className="text-xs text-gray-400">{result.month}</p>
+        )}
       </div>
       <div className={cn("rounded-md border px-3 py-2.5", totalLag > 0 ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200")}>
         <p className="text-xs text-gray-500">Produced vs Released</p>
@@ -676,7 +688,9 @@ function RunHistory({ month, segment, selectedRunId, onSelect }: { month: string
           )}
         >
           <div className="flex items-center justify-between mb-0.5">
-            <span className="font-semibold">W{run.weekClosed} — Run #{run.id}</span>
+            <span className="font-semibold">
+              {(run as unknown as { note?: string | null }).note ?? `W${run.weekClosed}`} — Run #{run.id}
+            </span>
             {(run.warnings as CorrectiveWarning[]).some(w => w.severity === "critical") && (
               <span className="text-red-700 font-bold">!</span>
             )}
@@ -699,7 +713,9 @@ export default function CorrectivePage() {
 
   const { segment } = useSegment();
   const [month, setMonth] = useState(defaultMonth);
+  const [mode, setMode] = useState<"weekClosed" | "asOfDate">("weekClosed");
   const [weekClosed, setWeekClosed] = useState(1);
+  const [asOfDate, setAsOfDate] = useState(() => now.toISOString().slice(0, 10));
   const [runResult, setRunResult] = useState<CorrectiveReplanResult | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<"table" | "chart" | "actions">("table");
@@ -719,8 +735,12 @@ export default function CorrectivePage() {
       : null);
 
   function handleReplan() {
+    const payload = mode === "asOfDate"
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ? { month, asOfDate, segment } as any
+      : { month, weekClosed, segment };
     replan.mutate(
-      { data: { month, weekClosed, segment } },
+      { data: payload },
       {
         onSuccess: (data) => {
           const result = data as unknown as CorrectiveReplanResult;
@@ -774,24 +794,56 @@ export default function CorrectivePage() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Week just closed</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Mode</label>
                 <div className="flex gap-1">
-                  {[0, 1, 2, 3].map(w => (
+                  {(["weekClosed", "asOfDate"] as const).map(m => (
                     <button
-                      key={w}
-                      onClick={() => setWeekClosed(w)}
+                      key={m}
+                      onClick={() => setMode(m)}
                       className={cn(
                         "px-3 py-1.5 rounded text-sm font-medium border transition-colors",
-                        weekClosed === w
+                        mode === m
                           ? "bg-indigo-600 text-white border-indigo-600"
                           : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50",
                       )}
                     >
-                      {w === 0 ? "None" : `W${w}`}
+                      {m === "weekClosed" ? "Week closed" : "As of date"}
                     </button>
                   ))}
                 </div>
               </div>
+              {mode === "weekClosed" && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Week just closed</label>
+                  <div className="flex gap-1">
+                    {[0, 1, 2, 3].map(w => (
+                      <button
+                        key={w}
+                        onClick={() => setWeekClosed(w)}
+                        className={cn(
+                          "px-3 py-1.5 rounded text-sm font-medium border transition-colors",
+                          weekClosed === w
+                            ? "bg-indigo-600 text-white border-indigo-600"
+                            : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50",
+                        )}
+                      >
+                        {w === 0 ? "None" : `W${w}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {mode === "asOfDate" && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">As of date</label>
+                  <Input
+                    type="date"
+                    value={asOfDate}
+                    onChange={e => setAsOfDate(e.target.value)}
+                    className="w-40 h-8 text-sm"
+                  />
+                </div>
+              )}
               <Button
                 onClick={handleReplan}
                 disabled={replan.isPending || !month}
@@ -815,7 +867,8 @@ export default function CorrectivePage() {
           <div className="space-y-5 min-w-0">
             {replan.isPending && (
               <div className="rounded-md bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-700 animate-pulse">
-                ⚙ Running {segment} corrective re-plan — computing revised requirements, capacity-levelling across W{weekClosed + 1}–W4…
+                ⚙ Running {segment} corrective re-plan — computing revised requirements
+                {mode === "asOfDate" ? ` as of ${asOfDate}` : `, capacity-levelling across W${weekClosed + 1}–W4`}…
               </div>
             )}
 

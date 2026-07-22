@@ -8,8 +8,10 @@
 export interface CorrectiveReplanInput {
   /** YYYY-MM */
   month: string;
-  /** Week just closed (0=none, 1=W1 done, 2=W2 done, 3=W3 done) */
-  weekClosed: number;
+  /** Week just closed (0=none, 1=W1 done, 2=W2 done, 3=W3 done). Required if asOfDate is not provided. */
+  weekClosed?: number;
+  /** YYYY-MM-DD — derive weekClosed from this date (filter actuals ≤ date). Mutually exclusive with weekClosed in the UI; weekClosed is derived internally. */
+  asOfDate?: string;
   /** PTMT or Plumbing (default PTMT) */
   segment?: string;
   /** Pieces per day (default 21335) */

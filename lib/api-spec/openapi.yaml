@@ -2429,10 +2429,11 @@ components:
 
     CorrectiveReplanInput:
       type: object
-      required: [month, weekClosed]
+      required: [month]
       properties:
         month: { type: string, description: "YYYY-MM" }
-        weekClosed: { type: integer, description: "Week just closed (0=none, 1=W1 done, 2=W2 done, 3=W3 done)" }
+        weekClosed: { type: integer, description: "Week just closed (0=none, 1=W1 done, 2=W2 done, 3=W3 done). Required if asOfDate is not provided." }
+        asOfDate: { type: string, description: "YYYY-MM-DD — derive weekClosed from this date (filter actuals ≤ date). Mutually exclusive with weekClosed in the UI; weekClosed is derived internally." }
         segment: { type: string, description: "PTMT or Plumbing (default PTMT)" }
         dailyCapacity: { type: number, description: "Pieces per day (default 21335)" }
         workingDaysPerWeek: { type: integer, description: "Working days per week (default 6)" }
@@ -2505,6 +2506,10 @@ components:
         month: { type: string }
         segment: { type: string }
         weekClosed: { type: integer }
+        asOfDate: { type: ["string", "null"], description: "YYYY-MM-DD — set when run was triggered in as-of-date mode" }
+        workingDaysUsed: { type: ["integer", "null"], description: "Non-Sunday days from month start to asOfDate inclusive" }
+        workingDaysRemaining: { type: ["integer", "null"], description: "Non-Sunday days from day after asOfDate to month end" }
+        note: { type: ["string", "null"], description: "Human-readable label e.g. 'As of 18/07/26'" }
         dailyCapacity: { type: number }
         workingDaysPerWeek: { type: integer }
         producedToDate: { type: number }
@@ -2555,6 +2560,8 @@ components:
         segment: { type: string }
         month: { type: string }
         weekClosed: { type: integer }
+        asOfDate: { type: ["string", "null"] }
+        note: { type: ["string", "null"] }
         dailyCapacity: { type: number }
         producedToDate: { type: number }
         newOrdersQty: { type: number }

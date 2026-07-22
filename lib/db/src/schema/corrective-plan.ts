@@ -42,6 +42,8 @@ export const correctivePlanRunsTable = pgTable("corrective_plan_runs", {
     .notNull()
     .$type<CorrectiveWarning[]>()
     .default([]),
+  asOfDate: text("as_of_date"),
+  note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

@@ -80,6 +80,60 @@ function printSection(title: string, checks: CheckResult[]): void {
   }
 }
 
+// ── As-of-date working-day unit tests (offline, no API needed) ────────────────
+function countWorkingDays(from: string, to: string): number {
+  let count = 0;
+  const d = new Date(from + "T00:00:00Z");
+  const end = new Date(to + "T00:00:00Z");
+  while (d <= end) {
+    if (d.getUTCDay() !== 0) count++;
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return count;
+}
+
+function deriveWeekClosed(asOfDate: string, monthStart: string, workingDaysPerWeek: number): number {
+  const used = countWorkingDays(monthStart, asOfDate);
+  return Math.min(Math.floor(used / workingDaysPerWeek), 3);
+}
+
+function runAsOfDateUnitTests(): boolean {
+  // July 2026: Jul 1 = Wednesday. Non-Sunday days 1..7: Wed Thu Fri Sat [Sun skip] Mon Tue → 6 working days → W1 end.
+  const MONTH_START_JUL26 = "2026-07-01";
+  const WPW = 6;
+
+  // July 2026: Jul-1=Wed(1), Jul-2=Thu(2), Jul-3=Fri(3), Jul-4=Sat(4), [Jul-5=Sun skip],
+  //            Jul-6=Mon(5), Jul-7=Tue(6) → 6th working day = last day of W1
+  //            Jul-8..Jul-11=days 7-10, [Jul-12=Sun], Jul-13=Mon(11), Jul-14=Tue(12) = last day of W2
+  //            Jul-15..Jul-18=days 13-16, [Jul-19=Sun], Jul-20=Mon(17), Jul-21=Tue(18) = last day of W3
+  const cases: { label: string; asOf: string; expectUsed: number; expectWeekClosed: number }[] = [
+    { label: "Jul 2026 Jul-01 = first working day, W0",        asOf: "2026-07-01", expectUsed: 1,  expectWeekClosed: 0 },
+    { label: "Jul 2026 Jul-06 = day 5 (Sun Jul-5 skipped), W0", asOf: "2026-07-06", expectUsed: 5,  expectWeekClosed: 0 },
+    { label: "Jul 2026 Jul-07 = day 6 = last day W1 → wc=1",  asOf: "2026-07-07", expectUsed: 6,  expectWeekClosed: 1 },
+    { label: "Jul 2026 Jul-13 = day 11 (still W1, not W2 yet)", asOf: "2026-07-13", expectUsed: 11, expectWeekClosed: 1 },
+    { label: "Jul 2026 Jul-14 = day 12 = last day W2 → wc=2", asOf: "2026-07-14", expectUsed: 12, expectWeekClosed: 2 },
+    { label: "Jul 2026 Jul-21 = day 18 = last day W3 → wc=3", asOf: "2026-07-21", expectUsed: 18, expectWeekClosed: 3 },
+  ];
+
+  let allPass = true;
+  for (const tc of cases) {
+    const used = countWorkingDays(MONTH_START_JUL26, tc.asOf);
+    const wc   = deriveWeekClosed(tc.asOf, MONTH_START_JUL26, WPW);
+    const passUsed = used === tc.expectUsed;
+    const passWc   = wc   === tc.expectWeekClosed;
+    const pass = passUsed && passWc;
+    if (pass) {
+      console.log(`✅  ${tc.label}  →  used=${used}, weekClosed=${wc}`);
+    } else {
+      console.error(`❌  FAIL ${tc.label}`);
+      if (!passUsed) console.error(`     workingDaysUsed: expected ${tc.expectUsed}, got ${used}`);
+      if (!passWc)   console.error(`     weekClosed:      expected ${tc.expectWeekClosed}, got ${wc}`);
+      allPass = false;
+    }
+  }
+  return allPass;
+}
+
 async function main(): Promise<void> {
   console.log("=".repeat(60));
   console.log("  PTMT Production Plan — Regression Test Suite");
@@ -89,6 +143,17 @@ async function main(): Promise<void> {
   console.log("=".repeat(60));
 
   let anyFail = false;
+
+  // ── 0. As-of-date unit tests (offline) ───────────────────────────────────
+  console.log("\n" + "─".repeat(60));
+  console.log("  As-of-date working-day derivation (unit tests)");
+  console.log("─".repeat(60));
+  if (!runAsOfDateUnitTests()) {
+    anyFail = true;
+    console.error("\n❌  As-of-date unit tests FAILED");
+  } else {
+    console.log("\n✅  As-of-date unit tests all PASSED");
+  }
 
   // ── 1. Plumbing validate ─────────────────────────────────────────────────
   console.log("\n⏳  Running Plumbing validation (this calls live Sheets API, ~20s) …");

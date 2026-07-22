@@ -1,0 +1,3 @@
+ALTER TABLE corrective_plan_runs
+  ADD COLUMN IF NOT EXISTS as_of_date TEXT,
+  ADD COLUMN IF NOT EXISTS note TEXT;
