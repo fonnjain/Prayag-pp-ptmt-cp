@@ -2800,7 +2800,12 @@ components:
       properties:
         shiftsPerDay: { type: number }
         hoursPerShift: { type: number }
+        workingDays: { type: number, description: "Monthly working days for capacity calculation" }
         lockedOut: { type: boolean }
+        rates:
+          type: object
+          additionalProperties: { type: number }
+          description: "Per-material production rates in kg/hr. Keys are material codes (e.g. CPVC, ALL)."
 
     MachineWeekUtilisation:
       type: object
@@ -2824,6 +2829,29 @@ components:
         bindingMachine:
           type: ["string", "null"]
           description: "Machine ID that was most loaded (bottleneck) when this item could not be placed."
+
+    MachineFeasibleCategorySummary:
+      type: object
+      required: [category, desiredPcs, feasiblePcs, unfulfillablePcs]
+      properties:
+        category: { type: string }
+        desiredPcs: { type: number }
+        feasiblePcs: { type: number }
+        unfulfillablePcs: { type: number }
+
+    MachineFeasibleSummary:
+      type: object
+      required: [categories, utilisation, unfulfillable]
+      properties:
+        categories:
+          type: array
+          items: { $ref: "#/components/schemas/MachineFeasibleCategorySummary" }
+        utilisation:
+          type: array
+          items: { $ref: "#/components/schemas/MachineWeekUtilisation" }
+        unfulfillable:
+          type: array
+          items: { $ref: "#/components/schemas/MachineUnfulfillableItem" }
 
     MachineCapacityResponse:
       type: object

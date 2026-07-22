@@ -1268,7 +1268,7 @@ function MachineCapacityPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<number | null>(null);
-  const [drafts, setDrafts] = useState<Record<number, { shifts?: string; hours?: string; locked?: boolean }>>({});
+  const [drafts, setDrafts] = useState<Record<number, { shifts?: string; hours?: string; locked?: boolean; workingDays?: string; rates?: string }>>({});
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -1297,17 +1297,40 @@ function MachineCapacityPanel() {
     const draft = drafts[m.id] ?? {};
     const shifts = draft.shifts !== undefined ? parseFloat(draft.shifts) : m.shiftsPerDay;
     const hours  = draft.hours  !== undefined ? parseFloat(draft.hours)  : m.hoursPerShift;
+    const wdays  = draft.workingDays !== undefined ? parseFloat(draft.workingDays) : m.workingDays;
     const locked = draft.locked !== undefined ? draft.locked : m.lockedOut;
     if (Number.isNaN(shifts) || Number.isNaN(hours) || shifts <= 0 || hours <= 0) {
       toast({ title: "Invalid value", description: "Shifts and hours must be positive numbers.", variant: "destructive" });
       return;
     }
+    if (Number.isNaN(wdays) || wdays <= 0) {
+      toast({ title: "Invalid value", description: "Working days must be a positive number.", variant: "destructive" });
+      return;
+    }
+    // Parse rates from "MATERIAL:rate,..." string if edited
+    let parsedRates: Record<string, number> | undefined;
+    if (draft.rates !== undefined) {
+      parsedRates = {};
+      for (const part of draft.rates.split(",")) {
+        const colonIdx = part.indexOf(":");
+        if (colonIdx < 0) continue;
+        const k = part.slice(0, colonIdx).trim().toUpperCase();
+        const v = parseFloat(part.slice(colonIdx + 1).trim());
+        if (k && Number.isFinite(v) && v > 0) parsedRates[k] = v;
+      }
+      if (Object.keys(parsedRates).length === 0) {
+        toast({ title: "Invalid rates", description: "Use format: MATERIAL:rate (e.g. CPVC:50,UPVC:45)", variant: "destructive" });
+        return;
+      }
+    }
     setSaving(m.id);
     try {
+      const body: Record<string, unknown> = { shiftsPerDay: shifts, hoursPerShift: hours, lockedOut: locked, workingDays: wdays };
+      if (parsedRates) body.rates = parsedRates;
       const res = await fetch(`/api/capacity/machines/${encodeURIComponent(m.machineId)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shiftsPerDay: shifts, hoursPerShift: hours, lockedOut: locked }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const b = await res.json().catch(() => ({})) as { error?: string };
@@ -1334,12 +1357,13 @@ function MachineCapacityPanel() {
           <thead>
             <tr className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wide">
               <th className="px-3 py-2 text-left">Machine</th>
-              <th className="px-3 py-2 text-left">Materials / Rate</th>
               <th className="px-3 py-2 text-center">Shifts/day</th>
               <th className="px-3 py-2 text-center">Hrs/shift</th>
+              <th className="px-3 py-2 text-center">Days/mo</th>
               <th className="px-3 py-2 text-center">Locked out</th>
               <th className="px-3 py-2 text-center">h/day</th>
               <th className="px-3 py-2 text-center">h/month ≈</th>
+              <th className="px-3 py-2 text-left text-xs">Rates (MAT:kg/hr, …)</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -1347,22 +1371,22 @@ function MachineCapacityPanel() {
             {pool.map(m => {
               const draft = drafts[m.id] ?? {};
               const isDirty = Object.keys(draft).length > 0;
-              const shifts = draft.shifts !== undefined ? draft.shifts : String(m.shiftsPerDay);
-              const hours  = draft.hours  !== undefined ? draft.hours  : String(m.hoursPerShift);
-              const locked = draft.locked !== undefined ? draft.locked : m.lockedOut;
-              const materials = Object.entries(m.rates)
-                .map(([k, v]) => `${k} ${v} kg/hr`)
-                .join(", ");
+              const shifts     = draft.shifts      !== undefined ? draft.shifts      : String(m.shiftsPerDay);
+              const hours      = draft.hours       !== undefined ? draft.hours       : String(m.hoursPerShift);
+              const wdays      = draft.workingDays !== undefined ? draft.workingDays : String(m.workingDays);
+              const locked     = draft.locked      !== undefined ? draft.locked      : m.lockedOut;
+              const ratesDefault = Object.entries(m.rates).map(([k, v]) => `${k}:${v}`).join(",");
+              const ratesStr   = draft.rates       !== undefined ? draft.rates       : ratesDefault;
               const sVal = parseFloat(shifts) || m.shiftsPerDay;
-              const hVal = parseFloat(hours) || m.hoursPerShift;
+              const hVal = parseFloat(hours)  || m.hoursPerShift;
+              const wVal = parseFloat(wdays)  || m.workingDays;
               const hDay   = sVal * hVal;
-              const hMonth = hDay * m.workingDays;
+              const hMonth = hDay * wVal;
               return (
                 <tr key={m.id} className={cn("hover:bg-gray-50", locked ? "opacity-50" : "")}>
                   <td className="px-3 py-2 font-medium whitespace-nowrap">
                     {m.label ?? m.machineId}
                   </td>
-                  <td className="px-3 py-2 text-xs text-gray-500 max-w-[180px]">{materials || "—"}</td>
                   <td className="px-3 py-2">
                     <Input
                       className="w-16 h-7 text-xs text-center"
@@ -1375,6 +1399,13 @@ function MachineCapacityPanel() {
                       className="w-16 h-7 text-xs text-center"
                       value={hours}
                       onChange={e => setDrafts(d => ({ ...d, [m.id]: { ...d[m.id], hours: e.target.value } }))}
+                    />
+                  </td>
+                  <td className="px-3 py-2">
+                    <Input
+                      className="w-16 h-7 text-xs text-center"
+                      value={wdays}
+                      onChange={e => setDrafts(d => ({ ...d, [m.id]: { ...d[m.id], workingDays: e.target.value } }))}
                     />
                   </td>
                   <td className="px-3 py-2 text-center">
@@ -1390,6 +1421,14 @@ function MachineCapacityPanel() {
                   </td>
                   <td className="px-3 py-2 text-center tabular-nums text-gray-600 text-xs">
                     {locked ? "—" : hMonth.toFixed(0) + " h"}
+                  </td>
+                  <td className="px-3 py-2">
+                    <Input
+                      className="h-7 text-xs font-mono min-w-[130px]"
+                      value={ratesStr}
+                      title='Format: MATERIAL:rate,MATERIAL2:rate2  (e.g. "CPVC:50,UPVC:45")'
+                      onChange={e => setDrafts(d => ({ ...d, [m.id]: { ...d[m.id], rates: e.target.value } }))}
+                    />
                   </td>
                   <td className="px-3 py-2">
                     <Button

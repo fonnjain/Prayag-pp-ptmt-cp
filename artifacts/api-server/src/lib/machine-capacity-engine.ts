@@ -18,11 +18,15 @@
  *
  * Items with noBomWeight=true or weightKg=0 are unconstrained (no kg to schedule).
  *
- * Algorithm:
- *   For W1→W4, collect items whose desiredWeek ≤ currentWeek plus spillover.
- *   Sort by cover ascending (lowest cover = most urgent first; "OS" treated as ∞).
- *   For each item find a machine with enough hours remaining; if none → spill.
- *   Items that cannot fit after W4 → unfulfillable (machineW1–W4 remain 0).
+ * Algorithm — PARTIAL ALLOCATION:
+ *   Track residualPcs per item.  Each week, for every item whose desiredWeek ≤ w and
+ *   residual > 0, find the best available machine and allocate as many pieces as the
+ *   machine's remaining hours allow (min(residual, machineCapacity)).  Residual carries
+ *   forward to the next week.  Items still with residual after W4 are unfulfillable.
+ *
+ * Weekly hours capacity:
+ *   machine.workingDays (monthly total, configured per machine) is distributed
+ *   proportionally across weeks using the calendar Mon–Sat day split.
  */
 
 import type { PlumbingMachineCapacity } from "@workspace/db";
@@ -55,7 +59,8 @@ export interface MachineCascadeResult {
   unfulfillable: { itemCode: string; category: string; pieces: number; bindingMachine: string | null }[];
 }
 
-function workingDaysInWeek(year: number, month: number, weekNum: 1 | 2 | 3 | 4): number {
+/** Calendar Mon–Sat count for each week partition (W1=1–7, W2=8–14, W3=15–21, W4=22–end). */
+function calendarWorkingDaysInWeek(year: number, month: number, weekNum: 1 | 2 | 3 | 4): number {
   const daysInMonth = new Date(year, month, 0).getDate();
   const startDay = weekNum === 1 ? 1 : weekNum === 2 ? 8 : weekNum === 3 ? 15 : 22;
   const endDay = weekNum === 4 ? daysInMonth : startDay + 6;
@@ -111,13 +116,14 @@ function sortPipeMachines(
  *
  * Mutates each item in-place, adding:
  *   machineW1, machineW2, machineW3, machineW4 — machine-feasible release quantities
- *   assignedMachineId — the machine ID (null = unconstrained or unfulfillable)
- *   machineWeek — the week the item was assigned (null if unfulfillable)
- *   machineUnfulfillable — true if no slot was found across all 4 weeks
+ *     (each week may be a PARTIAL fill; sum ≤ maxProduction)
+ *   assignedMachineId — the machine that handled the first week's allocation
+ *   machineWeek — the first week the item was partially or fully allocated
+ *   machineUnfulfillable — true if residual remains after W4
  *
  * @param items         Plan items (with w1/w2/w3/w4 already set by annotateWeeklyRelease)
- * @param machines      Machine rows from DB
- * @param month         "YYYY-MM" — used to compute week working-day counts
+ * @param machines      Machine rows from DB (pre-filtered by segment)
+ * @param month         "YYYY-MM" — used to compute week working-day distribution
  * @returns             Utilisation array + unfulfillable list
  */
 export function runMachineCascade(
@@ -137,13 +143,18 @@ export function runMachineCascade(
   type WeekIdx = 1 | 2 | 3 | 4;
   const WEEKS: WeekIdx[] = [1, 2, 3, 4];
 
-  const workingDays = new Map<WeekIdx, number>(
-    WEEKS.map(w => [w, workingDaysInWeek(year, mon, w)]),
+  // ── Per-week capacity: distribute machine.workingDays proportionally by calendar split ──
+  const calDays = new Map<WeekIdx, number>(
+    WEEKS.map(w => [w, calendarWorkingDaysInWeek(year, mon, w)]),
   );
+  const totalCalDays = WEEKS.reduce((s, w) => s + (calDays.get(w) ?? 0), 0) || 1;
 
-  const hoursAvailable = (machine: PlumbingMachineCapacity, week: WeekIdx): number =>
-    machine.shiftsPerDay * machine.hoursPerShift * (workingDays.get(week) ?? 0);
+  const hoursAvailable = (machine: PlumbingMachineCapacity, week: WeekIdx): number => {
+    const fraction = (calDays.get(week) ?? 0) / totalCalDays;
+    return machine.shiftsPerDay * machine.hoursPerShift * machine.workingDays * fraction;
+  };
 
+  // remaining[machineId][week] = hours still available this week
   const remaining: Map<string, Map<WeekIdx, number>> = new Map();
   for (const m of activeMachines) {
     const wkMap = new Map<WeekIdx, number>();
@@ -151,6 +162,7 @@ export function runMachineCascade(
     remaining.set(m.machineId, wkMap);
   }
 
+  // Initialise all machineW* to 0.
   for (const item of items) {
     item.machineW1 = 0;
     item.machineW2 = 0;
@@ -164,123 +176,148 @@ export function runMachineCascade(
   const desiredWeek = (item: PlanItemForCascade): WeekIdx =>
     (item.week ?? 4) as WeekIdx;
 
-  const qtyForItem = (item: PlanItemForCascade): number => item.maxProduction;
+  // ── Residual tracking per item ─────────────────────────────────────────────
+  const residualPcs = new Map<PlanItemForCascade, number>();
 
-  const pendingByWeek = new Map<WeekIdx, PlanItemForCascade[]>(
-    WEEKS.map(w => [w, []]),
-  );
   for (const item of items) {
-    if (item.maxProduction <= 0) {
+    const pool = getPoolForCategory(item.category);
+    const kg   = item.weightKg ?? 0;
+
+    if (pool === "SOLVENT" || kg === 0 || item.maxProduction <= 0) {
+      // Unconstrained: copy desired weekly split directly.
+      item.machineW1 = item.w1 ?? 0;
+      item.machineW2 = item.w2 ?? 0;
+      item.machineW3 = item.w3 ?? 0;
+      item.machineW4 = item.w4 ?? 0;
       item.machineWeek = desiredWeek(item);
-      const key = `machineW${item.machineWeek}` as "machineW1"|"machineW2"|"machineW3"|"machineW4";
-      item[key] = item.maxProduction;
       continue;
     }
-    pendingByWeek.get(desiredWeek(item))!.push(item);
+
+    residualPcs.set(item, item.maxProduction);
   }
 
-  const spillover: PlanItemForCascade[] = [];
-  const unfulfillable: { itemCode: string; category: string; pieces: number }[] = [];
-
+  // ── Week-by-week partial allocation ───────────────────────────────────────
   for (const w of WEEKS) {
-    const bucket = [...spillover, ...(pendingByWeek.get(w) ?? [])];
-    spillover.length = 0;
+    // Items eligible this week: desiredWeek ≤ w AND still have residual.
+    const eligible: PlanItemForCascade[] = [];
+    for (const [item, rem] of residualPcs) {
+      if (rem > 0 && desiredWeek(item) <= w) {
+        eligible.push(item);
+      }
+    }
 
-    bucket.sort((a, b) => coverKey(a.cover) - coverKey(b.cover));
+    // Sort by cover ascending (most urgent first).
+    eligible.sort((a, b) => coverKey(a.cover) - coverKey(b.cover));
 
-    for (const item of bucket) {
+    for (const item of eligible) {
+      const rem = residualPcs.get(item) ?? 0;
+      if (rem <= 0) continue;
+
       const pool     = getPoolForCategory(item.category);
       const material = getMaterialFromCategory(item.category);
       const kg       = item.weightKg ?? 0;
+      const kgPerPiece = kg / item.maxProduction; // > 0 (guarded above)
 
-      if (pool === "SOLVENT" || kg === 0) {
-        item.machineWeek = w;
-        const key = `machineW${w}` as "machineW1"|"machineW2"|"machineW3"|"machineW4";
-        item[key] = qtyForItem(item);
-        continue;
-      }
-
-      let assigned = false;
+      let bestMachineId: string | null = null;
+      let bestRate = 0;
+      let bestRemHrs = 0;
 
       if (pool === "PIPE") {
-        const eligible = pipeMachines.filter(m => {
-          const r = m.rates as Record<string, number>;
-          return material in r;
-        });
-        const sorted = sortPipeMachines(eligible, material);
+        const eligible2 = pipeMachines.filter(m => material in (m.rates as Record<string, number>));
+        const sorted = sortPipeMachines(eligible2, material);
 
-        for (const machine of sorted) {
-          const rate = (machine.rates as Record<string, number>)[material]!;
-          const hoursNeeded = kg / rate;
-          const rem = remaining.get(machine.machineId)!;
-          if ((rem.get(w) ?? 0) >= hoursNeeded) {
-            rem.set(w, (rem.get(w) ?? 0) - hoursNeeded);
-            item.assignedMachineId = machine.machineId;
-            item.machineWeek = w;
-            const key = `machineW${w}` as "machineW1"|"machineW2"|"machineW3"|"machineW4";
-            item[key] = qtyForItem(item);
-            assigned = true;
+        // Dedicated-first: take the first machine with any remaining hours.
+        for (const m of sorted) {
+          const remHrs = remaining.get(m.machineId)?.get(w) ?? 0;
+          if (remHrs > 0) {
+            bestMachineId = m.machineId;
+            bestRate      = (m.rates as Record<string, number>)[material]!;
+            bestRemHrs    = remHrs;
             break;
           }
         }
       } else {
-        const sorted = mouldMachines.slice().sort((a, b) => {
-          const ra = remaining.get(a.machineId)!.get(w) ?? 0;
-          const rb = remaining.get(b.machineId)!.get(w) ?? 0;
-          return rb - ra;
-        });
-
-        for (const machine of sorted) {
-          const rate = (machine.rates as Record<string, number>)["ALL"] ?? 0;
+        // MOULDING: pick machine with most kg-capacity remaining.
+        let bestKgCap = 0;
+        for (const m of mouldMachines) {
+          const rate = (m.rates as Record<string, number>)["ALL"] ?? 0;
           if (rate <= 0) continue;
-          const hoursNeeded = kg / rate;
-          const rem = remaining.get(machine.machineId)!;
-          if ((rem.get(w) ?? 0) >= hoursNeeded) {
-            rem.set(w, (rem.get(w) ?? 0) - hoursNeeded);
-            item.assignedMachineId = machine.machineId;
-            item.machineWeek = w;
-            const key = `machineW${w}` as "machineW1"|"machineW2"|"machineW3"|"machineW4";
-            item[key] = qtyForItem(item);
-            assigned = true;
-            break;
+          const remHrs = remaining.get(m.machineId)?.get(w) ?? 0;
+          const kgCap  = remHrs * rate;
+          if (kgCap > bestKgCap) {
+            bestKgCap     = kgCap;
+            bestMachineId = m.machineId;
+            bestRate      = rate;
+            bestRemHrs    = remHrs;
           }
         }
       }
 
-      if (!assigned) {
-        if (w < 4) {
-          spillover.push(item);
-        } else {
-          item.machineUnfulfillable = true;
-          // bindingMachine = the active machine for this pool/material that has the least remaining capacity
-          // (i.e. the most loaded one — the bottleneck that prevented placement).
-          const pool = getPoolForCategory(item.category);
-          const material = getMaterialFromCategory(item.category);
-          let bindingMachine: string | null = null;
-          if (pool === "PIPE") {
-            const eligible = pipeMachines.filter(m => material in (m.rates as Record<string, number>));
-            if (eligible.length > 0) {
-              bindingMachine = eligible.reduce((best, m) => {
-                const ra = remaining.get(best)?.get(w) ?? Infinity;
-                const rb = remaining.get(m.machineId)?.get(w) ?? Infinity;
-                return rb < ra ? m.machineId : best;
-              }, eligible[0]!.machineId);
-            }
-          } else if (pool === "MOULDING") {
-            if (mouldMachines.length > 0) {
-              bindingMachine = mouldMachines.reduce((best, m) => {
-                const ra = remaining.get(best)?.get(w) ?? Infinity;
-                const rb = remaining.get(m.machineId)?.get(w) ?? Infinity;
-                return rb < ra ? m.machineId : best;
-              }, mouldMachines[0]!.machineId);
-            }
-          }
-          unfulfillable.push({ itemCode: item.itemCode, category: item.category, pieces: qtyForItem(item), bindingMachine });
-        }
+      if (!bestMachineId || bestRemHrs <= 0) continue; // no capacity this week
+
+      // Partial allocation: allocate as many pieces as the machine can produce this week.
+      const maxPcsFromMachine = Math.floor(bestRemHrs * bestRate / kgPerPiece);
+      const allocatePcs = Math.min(rem, maxPcsFromMachine);
+
+      if (allocatePcs <= 0) continue;
+
+      // Record allocation in the correct week slot.
+      const key = `machineW${w}` as "machineW1" | "machineW2" | "machineW3" | "machineW4";
+      item[key] = (item[key] ?? 0) + allocatePcs;
+
+      // First allocation sets primary machine/week.
+      if (!item.assignedMachineId) {
+        item.assignedMachineId = bestMachineId;
+        item.machineWeek = w;
       }
+
+      // Deduct hours consumed.
+      const hoursConsumed = (allocatePcs * kgPerPiece) / bestRate;
+      const remMap = remaining.get(bestMachineId)!;
+      remMap.set(w, (remMap.get(w) ?? 0) - hoursConsumed);
+
+      // Update residual.
+      residualPcs.set(item, rem - allocatePcs);
     }
   }
 
+  // ── After W4: items with remaining residual are unfulfillable ─────────────
+  const unfulfillable: MachineCascadeResult["unfulfillable"] = [];
+
+  for (const [item, rem] of residualPcs) {
+    if (rem <= 0) continue;
+
+    item.machineUnfulfillable = true;
+
+    // bindingMachine = the most loaded machine for this material in W4
+    // (the bottleneck that exhausted before this item was fully placed).
+    const pool     = getPoolForCategory(item.category);
+    const material = getMaterialFromCategory(item.category);
+    let bindingMachine: string | null = null;
+
+    if (pool === "PIPE") {
+      const eligible2 = pipeMachines.filter(m => material in (m.rates as Record<string, number>));
+      if (eligible2.length > 0) {
+        bindingMachine = eligible2.reduce((best, m) => {
+          const ra = remaining.get(best)?.get(4) ?? Infinity;
+          const rb = remaining.get(m.machineId)?.get(4) ?? Infinity;
+          return rb < ra ? m.machineId : best;
+        }, eligible2[0]!.machineId);
+      }
+    } else if (pool === "MOULDING") {
+      if (mouldMachines.length > 0) {
+        bindingMachine = mouldMachines.reduce((best, m) => {
+          const ra = remaining.get(best)?.get(4) ?? Infinity;
+          const rb = remaining.get(m.machineId)?.get(4) ?? Infinity;
+          return rb < ra ? m.machineId : best;
+        }, mouldMachines[0]!.machineId);
+      }
+    }
+
+    unfulfillable.push({ itemCode: item.itemCode, category: item.category, pieces: rem, bindingMachine });
+  }
+
+  // ── Compute utilisation stats ──────────────────────────────────────────────
   const utilisation: MachineWeekUtilisation[] = [];
   const machById = new Map(activeMachines.map(m => [m.machineId, m]));
 

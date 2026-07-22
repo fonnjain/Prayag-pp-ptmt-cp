@@ -505,7 +505,9 @@ export const updatePlumbingMachineParams = zod.object({
 export const updatePlumbingMachineBody = zod.object({
   "shiftsPerDay": zod.number().optional(),
   "hoursPerShift": zod.number().optional(),
-  "lockedOut": zod.boolean().optional()
+  "workingDays": zod.number().optional().describe('Monthly working days for capacity calculation'),
+  "lockedOut": zod.boolean().optional(),
+  "rates": zod.record(zod.string(), zod.number()).optional().describe('Per-material production rates in kg\/hr. Keys are material codes (e.g. CPVC, ALL).')
 })
 
 export const updatePlumbingMachineResponse = zod.object({

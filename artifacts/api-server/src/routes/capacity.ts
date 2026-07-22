@@ -110,10 +110,12 @@ router.get("/capacity/machines", async (req, res) => {
 
 router.put("/capacity/machines/:machineId", async (req, res) => {
   const { machineId } = req.params;
-  const { shiftsPerDay, hoursPerShift, lockedOut } = req.body as {
+  const { shiftsPerDay, hoursPerShift, lockedOut, workingDays, rates } = req.body as {
     shiftsPerDay?: number;
     hoursPerShift?: number;
     lockedOut?: boolean;
+    workingDays?: number;
+    rates?: Record<string, number>;
   };
 
   try {
@@ -121,6 +123,19 @@ router.put("/capacity/machines/:machineId", async (req, res) => {
     if (shiftsPerDay != null) update.shiftsPerDay = Number(shiftsPerDay);
     if (hoursPerShift != null) update.hoursPerShift = Number(hoursPerShift);
     if (lockedOut != null) update.lockedOut = Boolean(lockedOut);
+    if (workingDays != null) update.workingDays = Math.max(1, Math.round(Number(workingDays)));
+    if (rates != null) {
+      // Validate: all values must be positive numbers
+      const cleaned: Record<string, number> = {};
+      for (const [k, v] of Object.entries(rates)) {
+        const n = Number(v);
+        if (!Number.isFinite(n) || n <= 0) {
+          return res.status(400).json({ error: `Rate for ${k} must be a positive number` });
+        }
+        cleaned[k.trim().toUpperCase()] = n;
+      }
+      update.rates = cleaned;
+    }
 
     const [updated] = await db
       .update(plumbingMachineCapacityTable)

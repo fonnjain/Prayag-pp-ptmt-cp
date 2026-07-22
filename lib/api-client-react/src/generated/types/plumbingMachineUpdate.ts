@@ -4,9 +4,14 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { PlumbingMachineUpdateRates } from './plumbingMachineUpdateRates';
 
 export interface PlumbingMachineUpdate {
   shiftsPerDay?: number;
   hoursPerShift?: number;
+  /** Monthly working days for capacity calculation */
+  workingDays?: number;
   lockedOut?: boolean;
+  /** Per-material production rates in kg/hr. Keys are material codes (e.g. CPVC, ALL). */
+  rates?: PlumbingMachineUpdateRates;
 }

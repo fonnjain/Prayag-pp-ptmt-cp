@@ -154,7 +154,7 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
     db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
     fetchLiveOrderTotals(month, "PLUMBING"),
     fetchPlumbingBomWeights(),
-    db.select().from(plumbingMachineCapacityTable),
+    db.select().from(plumbingMachineCapacityTable).where(eq(plumbingMachineCapacityTable.segment, "Plumbing")),
   ]);
 
   // Parse FG Stock upload (authoritative source for Stock and Pending-Last-Month).
@@ -1202,22 +1202,55 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
       }
     }
 
-    // ── machineFeasible summary — category-level desired vs feasible (Plumbing only) ──
-    let machineFeasible: { category: string; desiredPcs: number; feasiblePcs: number; unfulfillablePcs: number }[] | null = null;
+    // ── machineFeasible summary — full cascade result: categories + utilisation + unfulfillable ──
+    let machineFeasible: {
+      categories: { category: string; desiredPcs: number; feasiblePcs: number; unfulfillablePcs: number }[];
+      utilisation: import("../lib/machine-capacity-engine").MachineWeekUtilisation[];
+      unfulfillable: { itemCode: string; category: string; pieces: number; bindingMachine: string | null }[];
+    } | null = null;
     if (segment === "Plumbing") {
+      // Re-run cascade to obtain utilisation + unfulfillable alongside the category summary.
+      const machinesForFeasible = await db
+        .select()
+        .from(plumbingMachineCapacityTable)
+        .where(eq(plumbingMachineCapacityTable.segment, "Plumbing"));
+
+      const freshCascadeItems = items.map(i => ({
+        ...(i as PlanItemWithBom),
+        machineW1: 0 as number,
+        machineW2: 0 as number,
+        machineW3: 0 as number,
+        machineW4: 0 as number,
+        assignedMachineId: null as string | null,
+        machineWeek: null as 1 | 2 | 3 | 4 | null,
+        machineUnfulfillable: false,
+      }));
+
+      const machineResult = runMachineCascade(
+        freshCascadeItems as unknown as PlanItemForCascade[],
+        machinesForFeasible,
+        month,
+      );
+
       const allCats = [...new Set(items.map(i => i.category))].sort();
-      machineFeasible = allCats.map(cat => {
-        const catItems = items.filter(i => i.category === cat);
-        return {
-          category: cat,
-          desiredPcs: catItems.reduce((s, i) => s + i.maxProduction, 0),
-          feasiblePcs: catItems.reduce((s, i) => {
-            const b = i as PlanItemWithBom;
-            return s + (b.machineW1 ?? 0) + (b.machineW2 ?? 0) + (b.machineW3 ?? 0) + (b.machineW4 ?? 0);
-          }, 0),
-          unfulfillablePcs: catItems.filter(i => (i as PlanItemWithBom).machineUnfulfillable).reduce((s, i) => s + i.maxProduction, 0),
-        };
+      const catSummary = allCats.map(cat => {
+        const catItems  = freshCascadeItems.filter(i => i.category === cat);
+        const desiredPcs = catItems.reduce((s, i) => s + i.maxProduction, 0);
+        const feasiblePcs = catItems.reduce(
+          (s, i) => s + (i.machineW1 ?? 0) + (i.machineW2 ?? 0) + (i.machineW3 ?? 0) + (i.machineW4 ?? 0),
+          0,
+        );
+        const unfulfillablePcs = catItems
+          .filter(i => i.machineUnfulfillable)
+          .reduce((s, i) => s + i.maxProduction, 0);
+        return { category: cat, desiredPcs, feasiblePcs, unfulfillablePcs };
       });
+
+      machineFeasible = {
+        categories: catSummary,
+        utilisation: machineResult.utilisation,
+        unfulfillable: machineResult.unfulfillable,
+      };
     }
 
     const allPass = checks.every((c) => c.pass);
