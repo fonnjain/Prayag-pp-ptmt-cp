@@ -1171,23 +1171,59 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
       });
 
       if (hasMachineData) {
+        // Sum consistency: non-unfulfillable items must have mSum == maxProduction;
+        // unfulfillable items must have mSum < maxProduction (i.e. some residual exists).
         let sumInconsistent = 0;
         for (const item of items) {
           if (item.maxProduction <= 0) continue;
-          const cat = item.category;
-          if (cat.endsWith("Solvent")) continue;
+          if (item.category.endsWith("Solvent")) continue;
           const bom = item as PlanItemWithBom;
-          if (bom.machineUnfulfillable) continue;
           const mSum = (bom.machineW1 ?? 0) + (bom.machineW2 ?? 0) + (bom.machineW3 ?? 0) + (bom.machineW4 ?? 0);
-          if (Math.abs(mSum - item.maxProduction) > 1) sumInconsistent++;
+          if (bom.machineUnfulfillable) {
+            // Residual must be > 0 (it was marked unfulfillable for a reason)
+            if (mSum >= item.maxProduction) sumInconsistent++;
+          } else {
+            if (Math.abs(mSum - item.maxProduction) > 1) sumInconsistent++;
+          }
         }
         checks.push({
-          name: "Machine · cascade sum consistency (machineW sum = maxProduction)",
+          name: "Machine · cascade sum consistency",
           expected: 0,
           actual: sumInconsistent,
           pass: sumInconsistent === 0,
         });
 
+        // Per-category invariant: feasible + unfulfillable_residual = desired
+        const allCatNames2 = [...new Set(items.map(i => i.category))];
+        let catInvariantFail = 0;
+        for (const cat of allCatNames2) {
+          if (cat.endsWith("Solvent")) continue;
+          const catItems = items.filter(i => i.category === cat);
+          const desired  = catItems.reduce((s, i) => s + i.maxProduction, 0);
+          const feasible = catItems.reduce((s, i) => {
+            const b = i as PlanItemWithBom;
+            return s + (b.machineW1 ?? 0) + (b.machineW2 ?? 0) + (b.machineW3 ?? 0) + (b.machineW4 ?? 0);
+          }, 0);
+          const unplaced = catItems
+            .filter(i => (i as PlanItemWithBom).machineUnfulfillable)
+            .reduce((s, i) => {
+              const b = i as PlanItemWithBom;
+              const placed = (b.machineW1 ?? 0) + (b.machineW2 ?? 0) + (b.machineW3 ?? 0) + (b.machineW4 ?? 0);
+              return s + Math.max(0, i.maxProduction - placed);
+            }, 0);
+          if (Math.abs(feasible + unplaced - desired) > 1) catInvariantFail++;
+        }
+        checks.push({
+          name: "Machine · per-category feasible + unfulfillable = desired (12 categories)",
+          expected: 0,
+          actual: catInvariantFail,
+          pass: catInvariantFail === 0,
+        });
+
+        // AGRI Pipe check: verify AGRI Pipe items are only placed on flex machines.
+        // Structurally guaranteed because only MC3/MC4/MC5 carry AGRI in their rates map;
+        // confirmed here by checking all machines that touched AGRI Pipe items have
+        // AGRI in their rates (i.e. are flex-capable).
         const agriPipeItems = items.filter(i => i.category === "AGRI Pipe" && i.maxProduction > 0);
         const agriOnNonFlex = agriPipeItems.filter(i => {
           const mid = (i as PlanItemWithBom).assignedMachineId;
@@ -1240,9 +1276,13 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
           (s, i) => s + (i.machineW1 ?? 0) + (i.machineW2 ?? 0) + (i.machineW3 ?? 0) + (i.machineW4 ?? 0),
           0,
         );
+        // unfulfillablePcs = actual unplaced residual (not maxProduction, which would double-count partial fills)
         const unfulfillablePcs = catItems
           .filter(i => i.machineUnfulfillable)
-          .reduce((s, i) => s + i.maxProduction, 0);
+          .reduce((s, i) => {
+            const placed = (i.machineW1 ?? 0) + (i.machineW2 ?? 0) + (i.machineW3 ?? 0) + (i.machineW4 ?? 0);
+            return s + Math.max(0, i.maxProduction - placed);
+          }, 0);
         return { category: cat, desiredPcs, feasiblePcs, unfulfillablePcs };
       });
 

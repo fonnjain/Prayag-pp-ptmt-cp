@@ -210,7 +210,7 @@ export function runMachineCascade(
     eligible.sort((a, b) => coverKey(a.cover) - coverKey(b.cover));
 
     for (const item of eligible) {
-      const rem = residualPcs.get(item) ?? 0;
+      let rem = residualPcs.get(item) ?? 0;
       if (rem <= 0) continue;
 
       const pool     = getPoolForCategory(item.category);
@@ -218,66 +218,59 @@ export function runMachineCascade(
       const kg       = item.weightKg ?? 0;
       const kgPerPiece = kg / item.maxProduction; // > 0 (guarded above)
 
-      let bestMachineId: string | null = null;
-      let bestRate = 0;
-      let bestRemHrs = 0;
+      const key = `machineW${w}` as "machineW1" | "machineW2" | "machineW3" | "machineW4";
 
       if (pool === "PIPE") {
+        // Dedicated-first priority: iterate all eligible machines in order,
+        // allocating as much as each can give before moving to the next.
         const eligible2 = pipeMachines.filter(m => material in (m.rates as Record<string, number>));
         const sorted = sortPipeMachines(eligible2, material);
 
-        // Dedicated-first: take the first machine with any remaining hours.
         for (const m of sorted) {
+          if (rem <= 0) break;
           const remHrs = remaining.get(m.machineId)?.get(w) ?? 0;
-          if (remHrs > 0) {
-            bestMachineId = m.machineId;
-            bestRate      = (m.rates as Record<string, number>)[material]!;
-            bestRemHrs    = remHrs;
-            break;
-          }
+          if (remHrs <= 0) continue;
+          const rate = (m.rates as Record<string, number>)[material]!;
+          const maxPcs = Math.floor(remHrs * rate / kgPerPiece);
+          const allocatePcs = Math.min(rem, maxPcs);
+          if (allocatePcs <= 0) continue;
+
+          item[key] = (item[key] ?? 0) + allocatePcs;
+          if (!item.assignedMachineId) { item.assignedMachineId = m.machineId; item.machineWeek = w; }
+          const hoursUsed = (allocatePcs * kgPerPiece) / rate;
+          remaining.get(m.machineId)!.set(w, remHrs - hoursUsed);
+          rem -= allocatePcs;
         }
       } else {
-        // MOULDING: pick machine with most kg-capacity remaining.
-        let bestKgCap = 0;
-        for (const m of mouldMachines) {
+        // MOULDING: sort by most kg-capacity first; allocate from each until item is placed.
+        const sorted = mouldMachines.slice().sort((a, b) => {
+          const rateA = (a.rates as Record<string, number>)["ALL"] ?? 0;
+          const rateB = (b.rates as Record<string, number>)["ALL"] ?? 0;
+          const capA  = (remaining.get(a.machineId)?.get(w) ?? 0) * rateA;
+          const capB  = (remaining.get(b.machineId)?.get(w) ?? 0) * rateB;
+          return capB - capA;
+        });
+
+        for (const m of sorted) {
+          if (rem <= 0) break;
           const rate = (m.rates as Record<string, number>)["ALL"] ?? 0;
           if (rate <= 0) continue;
           const remHrs = remaining.get(m.machineId)?.get(w) ?? 0;
-          const kgCap  = remHrs * rate;
-          if (kgCap > bestKgCap) {
-            bestKgCap     = kgCap;
-            bestMachineId = m.machineId;
-            bestRate      = rate;
-            bestRemHrs    = remHrs;
-          }
+          if (remHrs <= 0) continue;
+          const maxPcs = Math.floor(remHrs * rate / kgPerPiece);
+          const allocatePcs = Math.min(rem, maxPcs);
+          if (allocatePcs <= 0) continue;
+
+          item[key] = (item[key] ?? 0) + allocatePcs;
+          if (!item.assignedMachineId) { item.assignedMachineId = m.machineId; item.machineWeek = w; }
+          const hoursUsed = (allocatePcs * kgPerPiece) / rate;
+          remaining.get(m.machineId)!.set(w, remHrs - hoursUsed);
+          rem -= allocatePcs;
         }
       }
 
-      if (!bestMachineId || bestRemHrs <= 0) continue; // no capacity this week
-
-      // Partial allocation: allocate as many pieces as the machine can produce this week.
-      const maxPcsFromMachine = Math.floor(bestRemHrs * bestRate / kgPerPiece);
-      const allocatePcs = Math.min(rem, maxPcsFromMachine);
-
-      if (allocatePcs <= 0) continue;
-
-      // Record allocation in the correct week slot.
-      const key = `machineW${w}` as "machineW1" | "machineW2" | "machineW3" | "machineW4";
-      item[key] = (item[key] ?? 0) + allocatePcs;
-
-      // First allocation sets primary machine/week.
-      if (!item.assignedMachineId) {
-        item.assignedMachineId = bestMachineId;
-        item.machineWeek = w;
-      }
-
-      // Deduct hours consumed.
-      const hoursConsumed = (allocatePcs * kgPerPiece) / bestRate;
-      const remMap = remaining.get(bestMachineId)!;
-      remMap.set(w, (remMap.get(w) ?? 0) - hoursConsumed);
-
-      // Update residual.
-      residualPcs.set(item, rem - allocatePcs);
+      // Update residual after trying all machines this week.
+      residualPcs.set(item, rem);
     }
   }
 

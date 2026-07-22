@@ -1268,7 +1268,7 @@ function MachineCapacityPanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState<number | null>(null);
-  const [drafts, setDrafts] = useState<Record<number, { shifts?: string; hours?: string; locked?: boolean; workingDays?: string; rates?: string }>>({});
+  const [drafts, setDrafts] = useState<Record<number, { shifts?: string; hours?: string; locked?: boolean; workingDays?: string; rates?: Record<string, string> }>>({});
   const { toast } = useToast();
 
   const load = useCallback(async () => {
@@ -1307,26 +1307,20 @@ function MachineCapacityPanel() {
       toast({ title: "Invalid value", description: "Working days must be a positive number.", variant: "destructive" });
       return;
     }
-    // Parse rates from "MATERIAL:rate,..." string if edited
-    let parsedRates: Record<string, number> | undefined;
-    if (draft.rates !== undefined) {
-      parsedRates = {};
-      for (const part of draft.rates.split(",")) {
-        const colonIdx = part.indexOf(":");
-        if (colonIdx < 0) continue;
-        const k = part.slice(0, colonIdx).trim().toUpperCase();
-        const v = parseFloat(part.slice(colonIdx + 1).trim());
-        if (k && Number.isFinite(v) && v > 0) parsedRates[k] = v;
-      }
-      if (Object.keys(parsedRates).length === 0) {
-        toast({ title: "Invalid rates", description: "Use format: MATERIAL:rate (e.g. CPVC:50,UPVC:45)", variant: "destructive" });
+    // Build merged rates: start from current machine rates, overlay any per-material draft edits.
+    const parsedRates: Record<string, number> = {};
+    for (const [mat, currentRate] of Object.entries(m.rates)) {
+      const draftVal = draft.rates?.[mat];
+      const val = draftVal !== undefined ? parseFloat(draftVal) : currentRate;
+      if (!Number.isFinite(val) || val <= 0) {
+        toast({ title: "Invalid rate", description: `${mat} rate must be a positive number.`, variant: "destructive" });
         return;
       }
+      parsedRates[mat] = val;
     }
     setSaving(m.id);
     try {
-      const body: Record<string, unknown> = { shiftsPerDay: shifts, hoursPerShift: hours, lockedOut: locked, workingDays: wdays };
-      if (parsedRates) body.rates = parsedRates;
+      const body: Record<string, unknown> = { shiftsPerDay: shifts, hoursPerShift: hours, lockedOut: locked, workingDays: wdays, rates: parsedRates };
       const res = await fetch(`/api/capacity/machines/${encodeURIComponent(m.machineId)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -1349,9 +1343,14 @@ function MachineCapacityPanel() {
   const pipeMachines  = machines.filter(m => m.pool === "PIPE");
   const mouldMachines = machines.filter(m => m.pool === "MOULDING");
 
-  const renderPool = (pool: MachineRow[], poolLabel: string) => (
+  const renderPool = (pool: MachineRow[], poolLabel: string, notice?: string) => (
     <div className="space-y-2">
       <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{poolLabel}</div>
+      {notice && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          ⚠️ {notice}
+        </div>
+      )}
       <div className="overflow-x-auto rounded-md border text-sm">
         <table className="w-full border-collapse">
           <thead>
@@ -1363,7 +1362,7 @@ function MachineCapacityPanel() {
               <th className="px-3 py-2 text-center">Locked out</th>
               <th className="px-3 py-2 text-center">h/day</th>
               <th className="px-3 py-2 text-center">h/month ≈</th>
-              <th className="px-3 py-2 text-left text-xs">Rates (MAT:kg/hr, …)</th>
+              <th className="px-3 py-2 text-left text-xs">Rates (kg/hr per material)</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -1375,8 +1374,6 @@ function MachineCapacityPanel() {
               const hours      = draft.hours       !== undefined ? draft.hours       : String(m.hoursPerShift);
               const wdays      = draft.workingDays !== undefined ? draft.workingDays : String(m.workingDays);
               const locked     = draft.locked      !== undefined ? draft.locked      : m.lockedOut;
-              const ratesDefault = Object.entries(m.rates).map(([k, v]) => `${k}:${v}`).join(",");
-              const ratesStr   = draft.rates       !== undefined ? draft.rates       : ratesDefault;
               const sVal = parseFloat(shifts) || m.shiftsPerDay;
               const hVal = parseFloat(hours)  || m.hoursPerShift;
               const wVal = parseFloat(wdays)  || m.workingDays;
@@ -1423,12 +1420,31 @@ function MachineCapacityPanel() {
                     {locked ? "—" : hMonth.toFixed(0) + " h"}
                   </td>
                   <td className="px-3 py-2">
-                    <Input
-                      className="h-7 text-xs font-mono min-w-[130px]"
-                      value={ratesStr}
-                      title='Format: MATERIAL:rate,MATERIAL2:rate2  (e.g. "CPVC:50,UPVC:45")'
-                      onChange={e => setDrafts(d => ({ ...d, [m.id]: { ...d[m.id], rates: e.target.value } }))}
-                    />
+                    {locked ? (
+                      <span className="text-xs text-gray-400 italic">locked out</span>
+                    ) : Object.keys(m.rates).length === 0 ? (
+                      <span className="text-xs text-orange-500">no rates — unlocking has no effect</span>
+                    ) : (
+                      <div className="space-y-1">
+                        {Object.entries(m.rates).map(([mat, currentRate]) => {
+                          const draftVal = draft.rates?.[mat] ?? String(currentRate);
+                          return (
+                            <div key={mat} className="flex items-center gap-1">
+                              <span className="text-[10px] font-mono text-gray-500 w-9 shrink-0">{mat}</span>
+                              <Input
+                                className="w-14 h-6 text-xs text-center px-1"
+                                value={draftVal}
+                                onChange={e => setDrafts(d => ({
+                                  ...d,
+                                  [m.id]: { ...d[m.id], rates: { ...(d[m.id]?.rates ?? {}), [mat]: e.target.value } },
+                                }))}
+                              />
+                              <span className="text-[10px] text-gray-400">kg/h</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <Button
@@ -1460,7 +1476,17 @@ function MachineCapacityPanel() {
       )}
       {machines.length > 0 && (
         <>
-          {renderPool(pipeMachines, `PIPE (${pipeMachines.length} machines)`)}
+          {renderPool(
+            pipeMachines,
+            `PIPE (${pipeMachines.length} machines)`,
+            (() => {
+              const locked = pipeMachines.filter(m => m.lockedOut);
+              if (locked.length === 0) return undefined;
+              const names = locked.map(m => m.label ?? m.machineId).join(" & ");
+              const totalH = locked.reduce((s, m) => s + m.shiftsPerDay * m.hoursPerShift, 0);
+              return `${names} locked out — ${totalH} h/day stranded. Add material rates then uncheck "Locked out" to activate.`;
+            })(),
+          )}
           {renderPool(mouldMachines, `MOULDING (${mouldMachines.length} machines)`)}
           <Button size="sm" variant="outline" onClick={load} disabled={loading}>
             <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
