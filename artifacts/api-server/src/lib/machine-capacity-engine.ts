@@ -52,7 +52,7 @@ export interface MachineWeekUtilisation {
 
 export interface MachineCascadeResult {
   utilisation: MachineWeekUtilisation[];
-  unfulfillable: { itemCode: string; category: string; pieces: number }[];
+  unfulfillable: { itemCode: string; category: string; pieces: number; bindingMachine: string | null }[];
 }
 
 function workingDaysInWeek(year: number, month: number, weekNum: 1 | 2 | 3 | 4): number {
@@ -252,7 +252,30 @@ export function runMachineCascade(
           spillover.push(item);
         } else {
           item.machineUnfulfillable = true;
-          unfulfillable.push({ itemCode: item.itemCode, category: item.category, pieces: qtyForItem(item) });
+          // bindingMachine = the active machine for this pool/material that has the least remaining capacity
+          // (i.e. the most loaded one — the bottleneck that prevented placement).
+          const pool = getPoolForCategory(item.category);
+          const material = getMaterialFromCategory(item.category);
+          let bindingMachine: string | null = null;
+          if (pool === "PIPE") {
+            const eligible = pipeMachines.filter(m => material in (m.rates as Record<string, number>));
+            if (eligible.length > 0) {
+              bindingMachine = eligible.reduce((best, m) => {
+                const ra = remaining.get(best)?.get(w) ?? Infinity;
+                const rb = remaining.get(m.machineId)?.get(w) ?? Infinity;
+                return rb < ra ? m.machineId : best;
+              }, eligible[0]!.machineId);
+            }
+          } else if (pool === "MOULDING") {
+            if (mouldMachines.length > 0) {
+              bindingMachine = mouldMachines.reduce((best, m) => {
+                const ra = remaining.get(best)?.get(w) ?? Infinity;
+                const rb = remaining.get(m.machineId)?.get(w) ?? Infinity;
+                return rb < ra ? m.machineId : best;
+              }, mouldMachines[0]!.machineId);
+            }
+          }
+          unfulfillable.push({ itemCode: item.itemCode, category: item.category, pieces: qtyForItem(item), bindingMachine });
         }
       }
     }

@@ -28,6 +28,7 @@ interface UnfulfillableRow {
   itemCode: string;
   category: string;
   pieces: number;
+  bindingMachine: string | null;
 }
 
 interface MachineCapData {
@@ -36,7 +37,31 @@ interface MachineCapData {
   unfulfillable: UnfulfillableRow[];
 }
 
+interface PlanItem {
+  itemCode: string;
+  category: string;
+  maxProduction: number;
+  weightKg?: number;
+  w1: number;
+  w2: number;
+  w3: number;
+  w4: number;
+  machineW1?: number;
+  machineW2?: number;
+  machineW3?: number;
+  machineW4?: number;
+}
+
+interface CategoryRow {
+  category: string;
+  desired: [number, number, number, number];
+  feasible: [number, number, number, number];
+  desiredKg: [number, number, number, number];
+  feasibleKg: [number, number, number, number];
+}
+
 function fmtN(n: number) { return Math.round(n).toLocaleString("en-IN"); }
+function fmtKg(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}t` : `${n.toFixed(0)} kg`; }
 
 function pctColor(pct: number) {
   if (pct >= 95) return "text-red-600 font-semibold";
@@ -48,7 +73,7 @@ function UtilBar({ pct }: { pct: number }) {
   const clamp = Math.min(pct, 100);
   const bg = pct >= 95 ? "bg-red-500" : pct >= 80 ? "bg-amber-500" : "bg-emerald-500";
   return (
-    <div className="flex items-center gap-1.5 min-w-[80px]">
+    <div className="flex items-center gap-1.5 min-w-[90px]">
       <div className="flex-1 bg-gray-100 rounded-full h-2 overflow-hidden">
         <div className={`h-2 rounded-full ${bg}`} style={{ width: `${clamp}%` }} />
       </div>
@@ -57,8 +82,46 @@ function UtilBar({ pct }: { pct: number }) {
   );
 }
 
+function buildCategoryRows(items: PlanItem[]): CategoryRow[] {
+  const map = new Map<string, CategoryRow>();
+  for (const item of items) {
+    if (!map.has(item.category)) {
+      map.set(item.category, {
+        category: item.category,
+        desired: [0, 0, 0, 0],
+        feasible: [0, 0, 0, 0],
+        desiredKg: [0, 0, 0, 0],
+        feasibleKg: [0, 0, 0, 0],
+      });
+    }
+    const row = map.get(item.category)!;
+    const wgt = item.weightKg ?? 0;
+    const maxProd = item.maxProduction || 1;
+    const kgPerPiece = wgt / maxProd;
+
+    const desired = [item.w1, item.w2, item.w3, item.w4];
+    const feasible = [item.machineW1 ?? 0, item.machineW2 ?? 0, item.machineW3 ?? 0, item.machineW4 ?? 0];
+
+    for (let i = 0; i < 4; i++) {
+      row.desired[i] += desired[i]!;
+      row.feasible[i] += feasible[i]!;
+      row.desiredKg[i] += desired[i]! * kgPerPiece;
+      row.feasibleKg[i] += feasible[i]! * kgPerPiece;
+    }
+  }
+  return [...map.values()].sort((a, b) => a.category.localeCompare(b.category));
+}
+
+const CATEGORY_ORDER = [
+  "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
+  "UPVC Pipe", "UPVC Fitting", "UPVC Solvent",
+  "SWR Pipe",  "SWR Fitting",  "SWR Solvent",
+  "AGRI Pipe", "AGRI Fitting", "AGRI Solvent",
+];
+
 export default function PlumbingMachineRelease({ month }: { month: string }) {
-  const [data, setData] = useState<MachineCapData | null>(null);
+  const [capData, setCapData] = useState<MachineCapData | null>(null);
+  const [planItems, setPlanItems] = useState<PlanItem[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,14 +129,18 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/capacity/machines?segment=Plumbing&month=${encodeURIComponent(month)}`,
-      );
-      if (!res.ok) {
-        const b = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(b.error ?? `HTTP ${res.status}`);
-      }
-      setData(await res.json() as MachineCapData);
+      const [capRes, planRes] = await Promise.all([
+        fetch(`/api/capacity/machines?segment=Plumbing&month=${encodeURIComponent(month)}`),
+        fetch(`/api/plan?segment=Plumbing&month=${encodeURIComponent(month)}`),
+      ]);
+      if (!capRes.ok) throw new Error(`Machines: HTTP ${capRes.status}`);
+      if (!planRes.ok) throw new Error(`Plan: HTTP ${planRes.status}`);
+      const [cap, items] = await Promise.all([
+        capRes.json() as Promise<MachineCapData>,
+        planRes.json() as Promise<PlanItem[]>,
+      ]);
+      setCapData(cap);
+      setPlanItems(items);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
@@ -83,16 +150,20 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
 
   useEffect(() => { load(); }, [month]);
 
-  const pipeMachines    = data?.machines.filter(m => m.pool === "PIPE") ?? [];
-  const mouldMachines   = data?.machines.filter(m => m.pool === "MOULDING") ?? [];
+  const catRows = planItems ? buildCategoryRows(planItems) : [];
+  const orderedCatRows = CATEGORY_ORDER.map(c => catRows.find(r => r.category === c)).filter(Boolean) as CategoryRow[];
+
+  const pipeMachines    = capData?.machines.filter(m => m.pool === "PIPE") ?? [];
+  const mouldMachines   = capData?.machines.filter(m => m.pool === "MOULDING") ?? [];
 
   const utilByMachWeek = new Map<string, UtilRow>();
-  for (const u of (data?.utilisation ?? [])) {
+  for (const u of (capData?.utilisation ?? [])) {
     utilByMachWeek.set(`${u.machineId}:${u.week}`, u);
   }
 
-  const getUtil = (machineId: string, week: number) =>
-    utilByMachWeek.get(`${machineId}:${week}`);
+  const getUtil = (machineId: string, week: number) => utilByMachWeek.get(`${machineId}:${week}`);
+
+  const unfulfillable = capData?.unfulfillable ?? [];
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-10">
@@ -105,7 +176,7 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
         </div>
         <Button size="sm" variant="outline" onClick={load} disabled={loading}>
           <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
-          {loading ? "Loading…" : data ? "Refresh" : "Load"}
+          {loading ? "Loading…" : (capData ? "Refresh" : "Load")}
         </Button>
       </header>
 
@@ -115,35 +186,119 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
         </div>
       )}
 
-      {loading && !data && (
+      {loading && !capData && (
         <div className="flex items-center justify-center h-48 text-muted-foreground text-sm">
           Running machine cascade…
         </div>
       )}
 
-      {data && (
+      {capData && planItems && (
         <>
-          {data.unfulfillable.length > 0 && (
+          {unfulfillable.length > 0 && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              <strong>⚠ {data.unfulfillable.length} item(s) unfulfillable</strong> — no machine slot
-              available across W1–W4. These items are flagged below.
-              <ul className="mt-1 list-disc ml-4 space-y-0.5">
-                {data.unfulfillable.slice(0, 10).map(u => (
-                  <li key={u.itemCode}>{u.itemCode} ({u.category}) — {fmtN(u.pieces)} pcs</li>
+              <strong>⚠ {unfulfillable.length} item(s) unfulfillable</strong> — no machine slot
+              available across W1–W4. These items are excluded from the feasible quantities below.
+              <ul className="mt-1 list-disc ml-4 space-y-0.5 text-amber-700">
+                {unfulfillable.slice(0, 8).map(u => (
+                  <li key={u.itemCode}>
+                    {u.itemCode} ({u.category}) — {fmtN(u.pieces)} pcs
+                    {u.bindingMachine ? <span className="text-amber-600"> · bottleneck: {u.bindingMachine}</span> : ""}
+                  </li>
                 ))}
-                {data.unfulfillable.length > 10 && (
-                  <li className="text-amber-700">…and {data.unfulfillable.length - 10} more</li>
+                {unfulfillable.length > 8 && (
+                  <li className="text-amber-600">…and {unfulfillable.length - 8} more</li>
                 )}
               </ul>
             </div>
           )}
+
+          {/* ── Desired vs Feasible by category ── */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Desired vs Machine-Feasible Release — by Category</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">
+                Desired = cover-band weekly assignment. Feasible = machine-cascade output.
+                Solvent items are unconstrained — Desired = Feasible. Pieces and weight (kg/tonnes).
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto rounded-md border text-sm">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                      <th className="px-3 py-2 text-left" rowSpan={2}>Category</th>
+                      {[1, 2, 3, 4].map(w => (
+                        <th key={w} className="px-2 py-1 text-center border-l" colSpan={2}>W{w}</th>
+                      ))}
+                    </tr>
+                    <tr className="bg-gray-50 text-[11px] text-gray-500 uppercase">
+                      {[1, 2, 3, 4].map(w => (
+                        <>
+                          <th key={`d${w}`} className="px-2 py-1 text-center border-l font-normal">Desired</th>
+                          <th key={`f${w}`} className="px-2 py-1 text-center font-normal">Feasible</th>
+                        </>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {orderedCatRows.map(row => {
+                      const isSolvent = row.category.endsWith("Solvent");
+                      return (
+                        <tr key={row.category} className={`hover:bg-gray-50 ${isSolvent ? "bg-gray-50/50 text-gray-500" : ""}`}>
+                          <td className="px-3 py-2 font-medium whitespace-nowrap">{row.category}</td>
+                          {[0, 1, 2, 3].map(wi => {
+                            const des = row.desired[wi]!;
+                            const feas = row.feasible[wi]!;
+                            const desKg = row.desiredKg[wi]!;
+                            const feasKg = row.feasibleKg[wi]!;
+                            const shortfall = des - feas;
+                            const hasShortfall = !isSolvent && shortfall > 0.5;
+                            return (
+                              <>
+                                <td key={`d${wi}`} className="px-2 py-2 text-center tabular-nums border-l">
+                                  <div>{fmtN(des)}</div>
+                                  {desKg > 0 && <div className="text-[10px] text-gray-400">{fmtKg(desKg)}</div>}
+                                </td>
+                                <td key={`f${wi}`} className={`px-2 py-2 text-center tabular-nums ${hasShortfall ? "text-amber-700" : "text-emerald-700"}`}>
+                                  <div>{fmtN(feas)}</div>
+                                  {feasKg > 0 && <div className="text-[10px] opacity-70">{fmtKg(feasKg)}</div>}
+                                  {hasShortfall && (
+                                    <div className="text-[10px] text-amber-500">-{fmtN(shortfall)}</div>
+                                  )}
+                                </td>
+                              </>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-50 font-semibold text-sm border-t-2">
+                      <td className="px-3 py-2">Total</td>
+                      {[0, 1, 2, 3].map(wi => {
+                        const des  = orderedCatRows.reduce((s, r) => s + r.desired[wi]!, 0);
+                        const feas = orderedCatRows.reduce((s, r) => s + r.feasible[wi]!, 0);
+                        return (
+                          <>
+                            <td key={`td${wi}`} className="px-2 py-2 text-center tabular-nums border-l">{fmtN(des)}</td>
+                            <td key={`tf${wi}`} className={`px-2 py-2 text-center tabular-nums ${feas < des - 0.5 ? "text-amber-700" : "text-emerald-700"}`}>{fmtN(feas)}</td>
+                          </>
+                        );
+                      })}
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* ── PIPE pool utilisation ── */}
           <Card>
             <CardHeader>
               <CardTitle className="text-base">PIPE Pool — Weekly Machine Utilisation</CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                2 shifts × 10 h/day. Working days per week excludes Sundays. M/C-7 & M/C-8 locked out.
+                2 shifts × 10 h/shift × calendar working days (Sundays excluded). M/C-7 &amp; M/C-8 locked out.
               </p>
             </CardHeader>
             <CardContent>
@@ -153,10 +308,10 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
                     <tr className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wide">
                       <th className="px-3 py-2 text-left">Machine</th>
                       <th className="px-3 py-2 text-left">Materials</th>
-                      <th className="px-3 py-2 text-center" colSpan={2}>W1</th>
-                      <th className="px-3 py-2 text-center" colSpan={2}>W2</th>
-                      <th className="px-3 py-2 text-center" colSpan={2}>W3</th>
-                      <th className="px-3 py-2 text-center" colSpan={2}>W4</th>
+                      <th className="px-3 py-2 text-center">W1</th>
+                      <th className="px-3 py-2 text-center">W2</th>
+                      <th className="px-3 py-2 text-center">W3</th>
+                      <th className="px-3 py-2 text-center">W4</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -172,7 +327,7 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
                           {[1, 2, 3, 4].map(w => {
                             const u = m.lockedOut ? null : getUtil(m.machineId, w);
                             return (
-                              <td key={w} className="px-2 py-2" colSpan={2}>
+                              <td key={w} className="px-2 py-2">
                                 {u ? (
                                   <div className="space-y-0.5">
                                     <UtilBar pct={u.utilisationPct} />
@@ -196,9 +351,9 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
           {/* ── MOULDING pool utilisation ── */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">MOULDING Pool — Weekly Machine Utilisation ({mouldMachines.length} machines)</CardTitle>
+              <CardTitle className="text-base">MOULDING Pool — Weekly Utilisation ({mouldMachines.length} machines)</CardTitle>
               <p className="text-xs text-muted-foreground mt-1">
-                All machines process any Fitting regardless of material. Rate = kg/hr per machine.
+                All moulding machines accept any Fitting material. Sorted by machine ID.
               </p>
             </CardHeader>
             <CardContent>
@@ -208,10 +363,10 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
                     <tr className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wide">
                       <th className="px-3 py-2 text-left">Machine</th>
                       <th className="px-3 py-2 text-right">Rate (kg/hr)</th>
-                      <th className="px-3 py-2">W1</th>
-                      <th className="px-3 py-2">W2</th>
-                      <th className="px-3 py-2">W3</th>
-                      <th className="px-3 py-2">W4</th>
+                      <th className="px-3 py-2 text-center">W1</th>
+                      <th className="px-3 py-2 text-center">W2</th>
+                      <th className="px-3 py-2 text-center">W3</th>
+                      <th className="px-3 py-2 text-center">W4</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -234,24 +389,6 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
                     })}
                   </tbody>
                 </table>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* ── Machine config summary ── */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Machine Configuration</CardTitle>
-              <p className="text-xs text-muted-foreground mt-1">
-                {data.machines.filter(m => !m.lockedOut).length} active machines
-                ({pipeMachines.filter(m => !m.lockedOut).length} PIPE + {mouldMachines.length} MOULDING).
-                Edit shifts via the Data page → Machine Capacity panel.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-muted-foreground">
-                Shifts/day: <strong>2</strong> · Hours/shift: <strong>10 h</strong> ·
-                Working days: calendar-based per week (Sundays excluded).
               </div>
             </CardContent>
           </Card>

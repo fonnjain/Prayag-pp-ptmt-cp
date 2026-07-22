@@ -151,6 +151,7 @@ export * from './machineQualityRejectionKg';
 export * from './machineQualityRejectionPct';
 export * from './machineQualityUtilisationPct';
 export * from './machineUnfulfillableItem';
+export * from './machineUnfulfillableItemBindingMachine';
 export * from './machineWeekUtilisation';
 export * from './machineWeekUtilisationLabel';
 export * from './monitoringActions';

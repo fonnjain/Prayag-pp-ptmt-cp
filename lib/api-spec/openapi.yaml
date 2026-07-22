@@ -2816,11 +2816,14 @@ components:
 
     MachineUnfulfillableItem:
       type: object
-      required: [itemCode, category, pieces]
+      required: [itemCode, category, pieces, bindingMachine]
       properties:
         itemCode: { type: string }
         category: { type: string }
         pieces: { type: number }
+        bindingMachine:
+          type: ["string", "null"]
+          description: "Machine ID that was most loaded (bottleneck) when this item could not be placed."
 
     MachineCapacityResponse:
       type: object

@@ -1202,9 +1202,27 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
       }
     }
 
+    // ── machineFeasible summary — category-level desired vs feasible (Plumbing only) ──
+    let machineFeasible: { category: string; desiredPcs: number; feasiblePcs: number; unfulfillablePcs: number }[] | null = null;
+    if (segment === "Plumbing") {
+      const allCats = [...new Set(items.map(i => i.category))].sort();
+      machineFeasible = allCats.map(cat => {
+        const catItems = items.filter(i => i.category === cat);
+        return {
+          category: cat,
+          desiredPcs: catItems.reduce((s, i) => s + i.maxProduction, 0),
+          feasiblePcs: catItems.reduce((s, i) => {
+            const b = i as PlanItemWithBom;
+            return s + (b.machineW1 ?? 0) + (b.machineW2 ?? 0) + (b.machineW3 ?? 0) + (b.machineW4 ?? 0);
+          }, 0),
+          unfulfillablePcs: catItems.filter(i => (i as PlanItemWithBom).machineUnfulfillable).reduce((s, i) => s + i.maxProduction, 0),
+        };
+      });
+    }
+
     const allPass = checks.every((c) => c.pass);
     const failCount = checks.filter((c) => !c.pass).length;
-    res.json({ month, segment, allPass, passCount: checks.length - failCount, failCount, checks, categoryTotals });
+    res.json({ month, segment, allPass, passCount: checks.length - failCount, failCount, checks, categoryTotals, machineFeasible });
     return;
   }
 

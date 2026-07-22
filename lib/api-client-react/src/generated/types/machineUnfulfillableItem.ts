@@ -4,9 +4,12 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { MachineUnfulfillableItemBindingMachine } from './machineUnfulfillableItemBindingMachine';
 
 export interface MachineUnfulfillableItem {
   itemCode: string;
   category: string;
   pieces: number;
+  /** Machine ID that was most loaded (bottleneck) when this item could not be placed. */
+  bindingMachine: MachineUnfulfillableItemBindingMachine;
 }

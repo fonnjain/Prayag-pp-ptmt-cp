@@ -492,7 +492,8 @@ export const listPlumbingMachinesResponse = zod.object({
   "unfulfillable": zod.array(zod.object({
   "itemCode": zod.string(),
   "category": zod.string(),
-  "pieces": zod.number()
+  "pieces": zod.number(),
+  "bindingMachine": zod.string().nullable().describe('Machine ID that was most loaded (bottleneck) when this item could not be placed.')
 }))
 })
 

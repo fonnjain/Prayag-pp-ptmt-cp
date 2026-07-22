@@ -1304,7 +1304,7 @@ function MachineCapacityPanel() {
     }
     setSaving(m.id);
     try {
-      const res = await fetch(`/api/capacity/machines/${m.id}`, {
+      const res = await fetch(`/api/capacity/machines/${encodeURIComponent(m.machineId)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ shiftsPerDay: shifts, hoursPerShift: hours, lockedOut: locked }),
@@ -1338,7 +1338,8 @@ function MachineCapacityPanel() {
               <th className="px-3 py-2 text-center">Shifts/day</th>
               <th className="px-3 py-2 text-center">Hrs/shift</th>
               <th className="px-3 py-2 text-center">Locked out</th>
-              <th className="px-3 py-2 text-center">hrs/week</th>
+              <th className="px-3 py-2 text-center">h/day</th>
+              <th className="px-3 py-2 text-center">h/month ≈</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -1352,7 +1353,10 @@ function MachineCapacityPanel() {
               const materials = Object.entries(m.rates)
                 .map(([k, v]) => `${k} ${v} kg/hr`)
                 .join(", ");
-              const wkHrs = (parseFloat(shifts) || m.shiftsPerDay) * (parseFloat(hours) || m.hoursPerShift) * m.workingDays;
+              const sVal = parseFloat(shifts) || m.shiftsPerDay;
+              const hVal = parseFloat(hours) || m.hoursPerShift;
+              const hDay   = sVal * hVal;
+              const hMonth = hDay * m.workingDays;
               return (
                 <tr key={m.id} className={cn("hover:bg-gray-50", locked ? "opacity-50" : "")}>
                   <td className="px-3 py-2 font-medium whitespace-nowrap">
@@ -1382,7 +1386,10 @@ function MachineCapacityPanel() {
                     />
                   </td>
                   <td className="px-3 py-2 text-center tabular-nums text-gray-600 text-xs">
-                    {locked ? "—" : wkHrs.toFixed(0) + " h"}
+                    {locked ? "—" : hDay.toFixed(0) + " h"}
+                  </td>
+                  <td className="px-3 py-2 text-center tabular-nums text-gray-600 text-xs">
+                    {locked ? "—" : hMonth.toFixed(0) + " h"}
                   </td>
                   <td className="px-3 py-2">
                     <Button

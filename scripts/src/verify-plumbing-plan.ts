@@ -206,6 +206,44 @@ async function main(): Promise<void> {
     console.log(`\n✅  Plumbing: all ${plumbingResult.passCount} checks PASSED`);
   }
 
+  // ── 1b. Machine capacity hours-cap check ─────────────────────────────────
+  console.log("\n⏳  Running machine hours-cap check (no machine > 100% utilisation) …");
+  try {
+    const machRes = await fetch(`${API_BASE}/api/capacity/machines?segment=Plumbing&month=${encodeURIComponent(PLUMBING_MONTH)}`);
+    if (!machRes.ok) throw new Error(`HTTP ${machRes.status}`);
+    const machData = await machRes.json() as {
+      utilisation: { machineId: string; pool: string; week: number; hoursUsed: number; hoursAvailable: number; utilisationPct: number }[];
+    };
+    const overCap = machData.utilisation.filter(u => u.utilisationPct > 100.05);
+    const capChecks: CheckResult[] = [
+      {
+        name: "Machine · no machine×week over 100% utilisation",
+        expected: 0,
+        actual: overCap.length,
+        pass: overCap.length === 0,
+        tolerance: "exact",
+      },
+    ];
+    if (overCap.length > 0) {
+      for (const u of overCap)
+        capChecks.push({
+          name: `  ⚠ Over-cap: ${u.machineId} W${u.week} @ ${u.utilisationPct.toFixed(1)}%`,
+          expected: 0,
+          actual: 1,
+          pass: false,
+        });
+    }
+    printSection("Plumbing — Machine hours-cap", capChecks);
+    if (overCap.length > 0) {
+      anyFail = true;
+      console.error(`\n❌  Machine hours-cap: ${overCap.length} machine×week(s) over 100%`);
+    } else {
+      console.log(`\n✅  Machine hours-cap: all machines within capacity`);
+    }
+  } catch (err) {
+    console.error(`\n⚠  Machine hours-cap check skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
   // ── 2. Corrective re-plan validate ───────────────────────────────────────
   console.log("\n⏳  Running Plumbing corrective re-plan validation (reads Sheet3, ~5s) …");
   let replanResult: ValidateResponse;
