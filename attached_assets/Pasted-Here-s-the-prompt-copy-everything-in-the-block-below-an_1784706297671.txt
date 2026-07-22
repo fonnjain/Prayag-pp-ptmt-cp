@@ -1,0 +1,49 @@
+Here's the prompt — copy everything in the block below and paste it into Replit:
+
+Build a MACHINE-CAPACITY-CONSTRAINED WEEKLY RELEASE for PLUMBING only. PTMT keeps its current behaviour (no machine capacity defined). Build it generically so PTMT could use the same logic later if machine capacity is entered, but do not change PTMT now.
+
+1) STORE PLUMBING MACHINE CAPACITY — an editable table on the Plumbing Data page, seeded with:
+
+PIPE EXTRUSION pool (rate = kg/hr by material; 2 shifts × 10 h = 20 h/day; 25 working days = 500 h/month):
+
+M/C-1 — CPVC 145.6
+M/C-2 — CPVC 145.6
+M/C-3 — flex: CPVC 145.6, UPVC 250, SWR 295, AGRI 300
+M/C-4 — flex: CPVC 145.6, UPVC 250, SWR 295, AGRI 300
+M/C-5 — flex: UPVC 250, AGRI 300
+M/C-6 — UPVC 250
+M/C-7 — LOCKED OUT (0 h/day, no routing defined)
+M/C-8 — LOCKED OUT (0 h/day)
+M/C-9 — SWR 295
+
+MOULDING pool (Fittings) (measured kg/hr per machine; 20 h/day; 25 days):
+D01 22.8, B02 14.5, D02 14.4, D06 14.2, C01 14.1, B01 13.5, C07 13.5, D07 12.6, C05 12.6, C06 11.2, C02 11.0, C04 10.2, B03 8.1, B06 7.7, D03 7.7, A02 7.0, D05 6.9, A03 6.4, B04 6.4, A05 4.9, B05 4.8, A06 3.9, A01 1.8, A04 1.7
+
+Each machine row editable: shifts/day, hours/day, working-days/month, and per-material kg/hr rate(s). Defaults 2 / 20 / 25 (= 500 h/month); show derived h/day and h/month. Pipe pool runs PIPE categories only; Moulding pool runs FITTING categories only. SOLVENT has no machine capacity yet — leave it unconstrained (whole plan in its scheduled week), same as PTMT's undefined-capacity behaviour.
+
+2) CONVERT PLAN TO MACHINE-HOURS PER ITEM (per item at its OWN rate — never a blended average):
+hours_needed = item_kg / (kg/hr rate for that item's material on the machine it runs), using the per-item kg already computed (pieces × BOM weight). Pipe items use the pipe pool; fitting items use the moulding pool. (This mirrors the source sheet's "machine output plan in hours" = material_req ÷ per-hour-rate.)
+
+3) CAPACITY-CONSTRAINED WEEKLY CASCADE (Plumbing only; Pipe pool and Moulding pool handled INDEPENDENTLY):
+
+Start from the existing cover-based weekly release (bands 0.3/0.5/0.8) as the DESIRED week for each item — this sets priority order (lowest cover = most urgent = scheduled earliest).
+Weekly machine-hours available = 500 h/month split across the month's weeks by ACTUAL WORKING DAYS in each week (20 h/day × working days in that week; Sundays excluded), not a flat ÷4.
+Fill week by week, most-urgent items first. Assign each item to a machine in its pool that can run its material and still has hours left that week. FLEX PIPE MACHINES (M/C-3, M/C-4, M/C-5) may be borrowed: if a material's dedicated machines are full, move the work onto any free flex machine that can run that material, within the SAME week, before spilling. AGRI Pipe has NO dedicated machine, so it can only ever run on flex machines.
+If, after using dedicated + free flex machines, an item still cannot fit in its desired week, SPILL the unfitted quantity to the next week and add it to that week's load. If the next week is also full, cascade forward W→W+1→… Anything that cannot fit through the last week of the month = UNFULFILLABLE_THIS_MONTH, flagged with quantity and the binding machine(s).
+Track each machine's remaining capacity in HOURS (shared across whatever materials it runs) and consume hours per item at that item's own rate — so effective per-machine throughput is the natural weighted average of its actual assignment. Do not pre-blend rates.
+
+4) OUTPUT (Plumbing weekly release view + corrective re-plan):
+
+Per week: planned kg/pieces vs machine-feasible kg/pieces, per machine and per pool, with utilisation %.
+The spill: how much moved from each week to the next and why (which machine/pool was the binding constraint).
+UNFULFILLABLE_THIS_MONTH totals per category with the binding machine.
+Keep the existing cover-based release visible as "desired" and the new one as "machine-feasible" side by side.
+
+5) SCOPE / GUARDS:
+
+Apply ONLY to Plumbing. PTMT unchanged. If PTMT machine capacity is entered later, the same cascade applies — build it generically, keyed off whether a segment has machine capacity defined.
+M/C-7 and M/C-8 contribute 0 hours until someone edits them; surface their stranded 40 h/day as a note ("2 pipe machines locked out — no routing defined").
+Do NOT change plan quantities — this only re-times WHEN each item is released across weeks. Total plan per category is unchanged; only the weekly split changes.
+Add regression assertions: (a) sum of machine-feasible weekly quantities per category = the category plan minus any UNFULFILLABLE amount; (b) no machine is scheduled above its weekly hours in any week; (c) AGRI Pipe only ever runs on flex machines.
+
+Report: confirm the machine-capacity table is editable on the Plumbing Data page, the capacity-constrained weekly release runs for Pipe and Fittings independently, AGRI Pipe routes only to flex machines, and give the per-week utilisation and any UNFULFILLABLE totals.

@@ -1,0 +1,22 @@
+Add an "as of current date" option to the Weekly Corrective Re-Plan, implemented for both segments — PTMT and Plumbing (all categories: Pipe, Fitting, Solvent). Today the re-plan only anchors to a closed week (None / W1 / W2 / W3). Add the ability to re-plan as of an arbitrary date, defaulting to today.
+
+UI (on both the PTMT and Plumbing Corrective Re-Plan pages):
+
+In the "Re-plan parameters" panel, next to the existing "Week just closed" selector, add an "As of date" mode: an "As of today" button plus a date picker that defaults to the current date, so the user can pick any as-of date, not only today.
+Make the two modes mutually exclusive: choosing an as-of date visually deselects the None/W1/W2/W3 week buttons, and choosing a week clears the as-of date. Show which mode is active.
+Next to the "Re-plan now" button, show the resolved as-of date and the derived "working days used / working days remaining in the month" so the user sees what the engine will use before running.
+
+Engine (reuse the existing corrective engine — do NOT fork the math):
+
+When run "as of date D": production-to-date = everything produced from the 1st of the month through D inclusive (PTMT from PTMT ANUJ; Plumbing from Sheet3), using the same normalised code matching already in place (uppercase, strip hyphens/spaces/dots).
+remaining_to_produce (per item) = max(plan − produced_through_D, 0), summed per category — never net one item's overproduction against another's shortfall.
+working_days_remaining = working days from the day after D to month end (exclude Sundays, consistent with the existing 27-working-day July basis). feasible = capacity_per_day × working_days_remaining; shortfall = max(remaining − feasible, 0) → flag UNFULFILLABLE_THIS_MONTH.
+Capacity levelling stays per category from the global capacity table (per-category p90), never a shared pool — same as week-closed mode.
+Re-assign the remaining plan across the remaining weeks from the as-of date using the existing cover bands; carryover re-prioritised, never dropped.
+The "week just closed" mode is simply the special case where D = the last day of that week; keep it working unchanged.
+
+Consistency guard (add as a regression assertion for both segments): running "as of date = last day of W1" must produce the same result as selecting "Week just closed = W1". This prevents the two modes from diverging.
+
+Run history: label entries with the mode used, e.g. "As of 18/07/26" vs "W1 — Run #2", so past runs are distinguishable.
+
+Report back: confirm the as-of-date re-plan works for PTMT and for Plumbing (Pipe, Fitting, Solvent), that "as of = end of W1" equals the "W1 closed" result, and the total regression check count.
