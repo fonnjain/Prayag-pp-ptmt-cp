@@ -325,9 +325,39 @@ async function main(): Promise<void> {
     console.log(`\n✅  Monitoring: all ${monResult.passCount} checks PASSED`);
   }
 
+  // ── 5. Schema-parity check ────────────────────────────────────────────────
+  console.log("\n⏳  Running corrective schema-parity check (standard format = main plan schema) …");
+  let schemaParityResult: ValidateResponse;
+  try {
+    schemaParityResult = await callEndpoint(
+      `${API_BASE}/api/corrective/validate/schema-parity?month=${encodeURIComponent(PLUMBING_MONTH)}&segment=Plumbing`,
+    );
+  } catch (err) {
+    console.error(`\n❌  Could not reach schema-parity endpoint: ${err instanceof Error ? err.message : String(err)}`);
+    anyFail = true;
+    schemaParityResult = { month: PLUMBING_MONTH, allPass: false, passCount: 0, failCount: 1, checks: [] };
+  }
+
+  const schemaSheets   = schemaParityResult.checks.filter((c) => c.name.startsWith("SchemaParity · Sheet"));
+  const schemaHeaders  = schemaParityResult.checks.filter((c) => c.name.includes("header row"));
+  const schemaInvs     = schemaParityResult.checks.filter(
+    (c) => c.name.includes("planRev = producedCapped") || c.name.includes("planRev total"),
+  );
+
+  printSection(`Schema-parity — sheet structure (standard corrective = main plan)`, schemaSheets);
+  printSection(`Schema-parity — per-category header rows (cell-by-cell, ${PLUMBING_MONTH})`, schemaHeaders);
+  printSection(`Schema-parity — planRev reconciliation invariants (${PLUMBING_MONTH})`, schemaInvs);
+
+  if (!schemaParityResult.allPass) {
+    anyFail = true;
+    console.error(`\n❌  Schema-parity: ${schemaParityResult.failCount} check(s) FAILED`);
+  } else {
+    console.log(`\n✅  Schema-parity: all ${schemaParityResult.passCount} checks PASSED`);
+  }
+
   // ── Summary ───────────────────────────────────────────────────────────────
-  const totalChecks = plumbingResult.checks.length + replanResult.checks.length + ptmtResult.checks.length + monResult.checks.length;
-  const totalFail   = plumbingResult.failCount + replanResult.failCount + ptmtResult.failCount + monResult.failCount;
+  const totalChecks = plumbingResult.checks.length + replanResult.checks.length + ptmtResult.checks.length + monResult.checks.length + schemaParityResult.checks.length;
+  const totalFail   = plumbingResult.failCount + replanResult.failCount + ptmtResult.failCount + monResult.failCount + schemaParityResult.failCount;
   const totalPass   = totalChecks - totalFail;
 
   console.log("\n" + "=".repeat(60));

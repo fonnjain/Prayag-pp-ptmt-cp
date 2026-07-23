@@ -1,0 +1,19 @@
+Add a second Excel download for the Corrective / Recompute Plan, so there are two Excel buttons for the corrective export (both segments, PTMT and Plumbing):
+
+1) "Corrective Plan — Standard format" (for downstream systems)
+This file must be structurally identical to the main Production Plan export — byte-compatible in schema so an external app that already consumes the Production Plan file can read this one without any change.
+
+Exactly the same sheets (Summary, one per category — 12 for Plumbing, 7 for PTMT, then Legend), same sheet names and order.
+Exactly the same columns, in the same order, with the same headers as the Production Plan export. No extra columns, no missing columns, no reordering.
+Same styling, column widths, number formats, freeze panes and auto-filter.
+The difference is only in the values: the Production Plan column carries the revised (post-recompute) plan quantity instead of the original. Everything else follows the same schema.
+Same dual-unit treatment (pieces and kg) as the main export.
+
+2) "Corrective Plan — Full detail" (for planners)
+Same base format and styling, but with the corrective-specific columns appended to the right: Produced To Date · Remaining To Produce · Capacity/Day · Feasible · Shortfall · Revised Week · Spill From Week · Status/Flags (UNFULFILLABLE_THIS_MONTH, NO_DEMONSTRATED_CAPACITY, etc.). The Summary sheet additionally shows, per category, Plan · Produced · Remaining · Feasible · Shortfall with a totals row, plus the as-of date and working days remaining used for the run.
+
+UI: on the Export page, the Corrective Plan card shows two Excel buttons plus the PDF, clearly labelled — e.g. "Excel (standard format)", "Excel (full detail)", "PDF". Keep the side-by-side layout. Card text must state the correct sheet count per segment (12 for Plumbing, 7 for PTMT). The PDF should follow the full-detail version.
+
+Critical guard — add a regression assertion: the standard-format corrective file must have an identical sheet list and identical header row to the main Production Plan export for the same segment. If a column is ever added, removed, or renamed in the main plan export, this assertion must fail — otherwise the downstream app breaks silently. Assert it compares headers cell-by-cell, not just column count.
+
+Also verify per category that plan = produced + remaining reconciles in both files, and that the standard-format file's revised totals match the full-detail file's revised totals.

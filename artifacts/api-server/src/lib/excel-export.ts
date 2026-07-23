@@ -1,11 +1,11 @@
 import type ExcelJS from "exceljs";
 import type { CalcPlanItem, PlanSummaryResult } from "./calc";
 
-const RED_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF4CCCC" } };
-const GREEN_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9EAD3" } };
-const BLUE_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFCFE2F3" } };
+export const RED_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF4CCCC" } };
+export const GREEN_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFD9EAD3" } };
+export const BLUE_FILL: ExcelJS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFCFE2F3" } };
 
-const ITEM_COLUMNS: Partial<ExcelJS.Column>[] = [
+export const ITEM_COLUMNS: Partial<ExcelJS.Column>[] = [
   { header: "Item Code", key: "itemCode", width: 14 },
   { header: "Colour", key: "colour", width: 14 },
   { header: "Avg 3-Mo Sale", key: "avg3MoSale", width: 14 },
@@ -76,7 +76,7 @@ function addSummarySheet(workbook: ExcelJS.Workbook, month: string, summary: Pla
   totalRow.font = { bold: true };
 }
 
-function addLegendSheet(workbook: ExcelJS.Workbook): void {
+export function addLegendSheet(workbook: ExcelJS.Workbook): void {
   const sheet = workbook.addWorksheet("Legend");
   sheet.columns = [{ header: "", width: 4 }, { header: "Meaning", width: 50 }];
   const rows: [string, ExcelJS.Fill | undefined][] = [
@@ -98,8 +98,7 @@ export async function exportPlanExcel(
   summary: PlanSummaryResult,
   requiredCategories?: string[],
 ): Promise<Buffer> {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const ExcelJS = require("exceljs") as typeof import("exceljs").default;
+  const ExcelJS = (await import("exceljs")).default;
   const workbook = new ExcelJS.Workbook();
   addSummarySheet(workbook, month, summary);
 

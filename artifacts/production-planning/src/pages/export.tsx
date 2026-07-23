@@ -26,7 +26,7 @@ async function downloadFile(url: string, filename: string) {
   URL.revokeObjectURL(objectUrl);
 }
 
-type ExportKind = "excel" | "pdf" | "weekly-excel" | "corrective-excel" | "corrective-pdf";
+type ExportKind = "excel" | "pdf" | "weekly-excel" | "corrective-excel-standard" | "corrective-excel-detail" | "corrective-pdf";
 
 function DownloadPair({
   title,
@@ -115,9 +115,12 @@ export default function ExportPage() {
       } else if (kind === "weekly-excel") {
         path = `plan/export/weekly-excel?month=${month}&segment=${encodeURIComponent(segment)}`;
         filename = `${prefix}_Weekly_Release_Plan_${month}.xlsx`;
-      } else if (kind === "corrective-excel") {
-        path = `corrective/export/excel?month=${month}&segment=${encodeURIComponent(segment)}`;
-        filename = `${prefix}_Corrective_Plan_${month}.xlsx`;
+      } else if (kind === "corrective-excel-standard") {
+        path = `corrective/export/excel?month=${month}&segment=${encodeURIComponent(segment)}&format=standard`;
+        filename = `${prefix}_Corrective_Plan_${month}_Standard.xlsx`;
+      } else if (kind === "corrective-excel-detail") {
+        path = `corrective/export/excel?month=${month}&segment=${encodeURIComponent(segment)}&format=detail`;
+        filename = `${prefix}_Corrective_Plan_${month}_Detail.xlsx`;
       } else {
         path = `corrective/export/pdf?month=${month}&segment=${encodeURIComponent(segment)}`;
         filename = `${prefix}_Corrective_Plan_${month}.pdf`;
@@ -203,15 +206,53 @@ export default function ExportPage() {
             Run the <strong>Corrective Plan</strong> page first if no run exists yet.
           </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <DownloadPair
-              title="Corrective Re-Plan Report"
-              description="Revised weekly release with status flags, warnings, and variance attribution. Shows which items are on-plan, carried over, or unfulfillable."
-              excelKind="corrective-excel"
-              pdfKind="corrective-pdf"
-              downloading={downloading}
-              onDownload={handleExport}
-              borderColor="orange-200"
-            />
+            <Card className="flex flex-col border-orange-200">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">Corrective Re-Plan Report</CardTitle>
+                <p className="text-xs text-gray-600 mt-1">
+                  {segment === "Plumbing"
+                    ? "14 sheets: Summary, each Plumbing category, and a Legend."
+                    : "9 sheets: Summary, the 7 category sheets, and a Legend."}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Standard format matches the Production Plan schema. Full Detail appends corrective columns
+                  (produced, remaining, capacity, feasibility, status flags).
+                </p>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2 mt-auto pt-2">
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="flex-1 gap-1.5"
+                    onClick={() => handleExport("corrective-excel-standard")}
+                    disabled={downloading === "corrective-excel-standard"}
+                  >
+                    <FileSpreadsheet size={14} />
+                    {downloading === "corrective-excel-standard" ? "Generating…" : "Excel (standard)"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1 gap-1.5 border-orange-300 text-orange-700 hover:bg-orange-50"
+                    onClick={() => handleExport("corrective-excel-detail")}
+                    disabled={downloading === "corrective-excel-detail"}
+                  >
+                    <FileSpreadsheet size={14} />
+                    {downloading === "corrective-excel-detail" ? "Generating…" : "Excel (full detail)"}
+                  </Button>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 w-full"
+                  onClick={() => handleExport("corrective-pdf")}
+                  disabled={downloading === "corrective-pdf"}
+                >
+                  <FileText size={14} />
+                  {downloading === "corrective-pdf" ? "Generating…" : "PDF"}
+                </Button>
+              </CardContent>
+            </Card>
             <div className="rounded-md border border-dashed border-gray-200 bg-gray-50 flex items-center justify-center p-6">
               <div className="text-center text-xs text-gray-400 space-y-1">
                 <p className="font-medium text-gray-500">How to use</p>
