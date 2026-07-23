@@ -9,7 +9,8 @@ import {
   type WeeklyReleaseBand,
   type BufferCategory,
 } from "@workspace/api-client-react";
-import { AppLayout, categorySlug } from "@/components/layout/app-layout";
+import { AppLayout } from "@/components/layout/app-layout";
+import { categorySlug } from "@/lib/category-slug";
 import { useSegment } from "@/contexts/segment-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";

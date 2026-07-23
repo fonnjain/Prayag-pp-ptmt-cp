@@ -29,4 +29,18 @@ In `computeCorrectiveReplan` (routes/plan.ts):
 
 **How:** call `GET /api/plan/validate-replan?month=YYYY-MM&workingDaysRemaining=N`, read the JSON, paste new values into the golden table. Then re-run the regression to confirm all 272 checks pass.
 
-Last refresh: 19-Jul-2026 (workingDaysRemaining=15 fixed).
+Last refresh: 23-Jul-2026 (workingDaysRemaining=15 fixed; W1+W2 only in Sheet3).
+
+## Two sources of drift in replan goldens
+
+`produced` and `remaining` have TWO independent drift causes:
+
+1. **Sheet3 filling in** — as W3/W4 days are recorded, `produced` grows and `remaining` shrinks.  
+   Pattern: `produced_new = sum(W1_mon + W2_mon + W3_mon + ...)` from monitoring golden values.
+
+2. **Live pending delta** — `planRev = maxProduction + max(deltaNewOrders_live, 0)`. Orders fulfilled between the snapshot date and today lower `deltaNewOrders`, so `planRev` (and hence `remaining`) changes.  
+   To diagnose: compute `planRev = got_produced + got_remaining` per category and compare to `maxProduction` from the plan total. The excess is the live deltaNewOrders.
+
+3. **DB-seeded cap/day** — `capPerDay` comes from `capacity_categories` table (seeded on API boot). If the DB is reset (new session), the seed may produce different values than the previous snapshot. AGRI Fitting changed from 5,950 → 2,600 between sessions.
+
+**Quickest fix:** read "got" values directly from the regression failure output and paste them into the golden table. All three sources of drift show up together in a single regression run.

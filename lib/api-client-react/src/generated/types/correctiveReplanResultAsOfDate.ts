@@ -6,6 +6,6 @@
  */
 
 /**
- * YYYY-MM-DD — set when run was triggered in as-of-date mode
+ * YYYY-MM-DD — effective as-of date (may be derived from weekClosed via P5)
  */
 export type CorrectiveReplanResultAsOfDate = string | null;

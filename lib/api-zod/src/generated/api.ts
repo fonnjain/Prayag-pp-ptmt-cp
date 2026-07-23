@@ -186,9 +186,9 @@ export const runCorrectiveReplanResponse = zod.object({
   "month": zod.string(),
   "segment": zod.string(),
   "weekClosed": zod.number(),
-  "asOfDate": zod.string().nullish().describe('YYYY-MM-DD — set when run was triggered in as-of-date mode'),
-  "workingDaysUsed": zod.number().nullish().describe('Non-Sunday days from month start to asOfDate inclusive'),
-  "workingDaysRemaining": zod.number().nullish().describe('Non-Sunday days from day after asOfDate to month end'),
+  "asOfDate": zod.string().nullish().describe('YYYY-MM-DD — effective as-of date (may be derived from weekClosed via P5)'),
+  "workingDaysUsed": zod.number().describe('Non-Sunday days from month start to asOfDate inclusive'),
+  "workingDaysRemaining": zod.number().describe('Non-Sunday days from day after asOfDate to month end; always set'),
   "note": zod.string().nullish().describe('Human-readable label e.g. \'As of 18\/07\/26\''),
   "dailyCapacity": zod.number(),
   "workingDaysPerWeek": zod.number(),
@@ -234,6 +234,8 @@ export const runCorrectiveReplanResponse = zod.object({
   "bufferReqRev": zod.number(),
   "planRev": zod.number(),
   "remainingToProduce": zod.number(),
+  "kgRev": zod.number().describe('Revised plan quantity in kg (planRev × BOM weight per piece; 0 for PTMT)'),
+  "remainingKg": zod.number().describe('Remaining to produce in kg; 0 for PTMT'),
   "deltaNewOrders": zod.number(),
   "deltaProduction": zod.number(),
   "deltaNet": zod.number(),
@@ -245,7 +247,27 @@ export const runCorrectiveReplanResponse = zod.object({
   "w4Rev": zod.number(),
   "status": zod.string(),
   "isNewItem": zod.boolean()
-}))
+})),
+  "categories": zod.array(zod.object({
+  "category": zod.string(),
+  "plan": zod.number().describe('Sum of revised plan (planRev) per item in this category'),
+  "produced": zod.number().describe('Total produced to date for plan items in this category'),
+  "producedCapped": zod.number().describe('Sum of min(produced, planRev) per item — counts toward plan'),
+  "remaining": zod.number().describe('plan − producedCapped — what still needs to be produced'),
+  "capPerDay": zod.number().describe('p90 of daily category output from actuals (Plumbing: Sheet3; PTMT: DB override or suggested)'),
+  "feasible": zod.number().describe('capPerDay × workingDaysRemaining — production possible in remaining time'),
+  "shortfall": zod.number().describe('max(remaining − feasible, 0)'),
+  "productionLag": zod.number().describe('max(sum(originalPlan) − produced, 0) — how far behind original plan'),
+  "newDemandDelta": zod.number().describe('sum(max(deltaNewOrders, 0)) — new orders added mid-month'),
+  "capacityShortfall": zod.number().describe('Alias for shortfall for variance-attribution clarity'),
+  "flags": zod.array(zod.string()).describe('UNFULFILLABLE_THIS_MONTH | NOT_STARTED | NO_DEMONSTRATED_CAPACITY'),
+  "kgRemaining": zod.number().describe('Total remaining kg for Plumbing categories; 0 for PTMT')
+})).describe('Per-category aggregates with variance attribution (P7)'),
+  "unplannedProduction": zod.array(zod.object({
+  "code": zod.string(),
+  "qty": zod.number()
+})).optional().describe('Plumbing Sheet3 codes not matched to any plan item'),
+  "unplannedTotal": zod.number().describe('Sum of unplannedProduction quantities')
 })
 
 
@@ -290,9 +312,9 @@ export const getCorrectiveRunResponse = zod.object({
   "month": zod.string(),
   "segment": zod.string(),
   "weekClosed": zod.number(),
-  "asOfDate": zod.string().nullish().describe('YYYY-MM-DD — set when run was triggered in as-of-date mode'),
-  "workingDaysUsed": zod.number().nullish().describe('Non-Sunday days from month start to asOfDate inclusive'),
-  "workingDaysRemaining": zod.number().nullish().describe('Non-Sunday days from day after asOfDate to month end'),
+  "asOfDate": zod.string().nullish().describe('YYYY-MM-DD — effective as-of date (may be derived from weekClosed via P5)'),
+  "workingDaysUsed": zod.number().describe('Non-Sunday days from month start to asOfDate inclusive'),
+  "workingDaysRemaining": zod.number().describe('Non-Sunday days from day after asOfDate to month end; always set'),
   "note": zod.string().nullish().describe('Human-readable label e.g. \'As of 18\/07\/26\''),
   "dailyCapacity": zod.number(),
   "workingDaysPerWeek": zod.number(),
@@ -338,6 +360,8 @@ export const getCorrectiveRunResponse = zod.object({
   "bufferReqRev": zod.number(),
   "planRev": zod.number(),
   "remainingToProduce": zod.number(),
+  "kgRev": zod.number().describe('Revised plan quantity in kg (planRev × BOM weight per piece; 0 for PTMT)'),
+  "remainingKg": zod.number().describe('Remaining to produce in kg; 0 for PTMT'),
   "deltaNewOrders": zod.number(),
   "deltaProduction": zod.number(),
   "deltaNet": zod.number(),
@@ -349,7 +373,27 @@ export const getCorrectiveRunResponse = zod.object({
   "w4Rev": zod.number(),
   "status": zod.string(),
   "isNewItem": zod.boolean()
-}))
+})),
+  "categories": zod.array(zod.object({
+  "category": zod.string(),
+  "plan": zod.number().describe('Sum of revised plan (planRev) per item in this category'),
+  "produced": zod.number().describe('Total produced to date for plan items in this category'),
+  "producedCapped": zod.number().describe('Sum of min(produced, planRev) per item — counts toward plan'),
+  "remaining": zod.number().describe('plan − producedCapped — what still needs to be produced'),
+  "capPerDay": zod.number().describe('p90 of daily category output from actuals (Plumbing: Sheet3; PTMT: DB override or suggested)'),
+  "feasible": zod.number().describe('capPerDay × workingDaysRemaining — production possible in remaining time'),
+  "shortfall": zod.number().describe('max(remaining − feasible, 0)'),
+  "productionLag": zod.number().describe('max(sum(originalPlan) − produced, 0) — how far behind original plan'),
+  "newDemandDelta": zod.number().describe('sum(max(deltaNewOrders, 0)) — new orders added mid-month'),
+  "capacityShortfall": zod.number().describe('Alias for shortfall for variance-attribution clarity'),
+  "flags": zod.array(zod.string()).describe('UNFULFILLABLE_THIS_MONTH | NOT_STARTED | NO_DEMONSTRATED_CAPACITY'),
+  "kgRemaining": zod.number().describe('Total remaining kg for Plumbing categories; 0 for PTMT')
+})).describe('Per-category aggregates with variance attribution (P7)'),
+  "unplannedProduction": zod.array(zod.object({
+  "code": zod.string(),
+  "qty": zod.number()
+})).optional().describe('Plumbing Sheet3 codes not matched to any plan item'),
+  "unplannedTotal": zod.number().describe('Sum of unplannedProduction quantities')
 })
 
 

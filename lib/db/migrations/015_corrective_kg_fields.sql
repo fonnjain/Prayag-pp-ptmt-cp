@@ -1,0 +1,3 @@
+ALTER TABLE corrective_plan_items
+  ADD COLUMN IF NOT EXISTS kg_rev real NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS remaining_kg real NOT NULL DEFAULT 0;

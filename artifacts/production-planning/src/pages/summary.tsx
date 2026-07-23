@@ -1,5 +1,6 @@
 import { useGetPlanSummary, useListPlanItems, type PlanSummary, type PlanItem, useGetPlantWeeklySummary, getGetPlantWeeklySummaryQueryKey, useCreatePlanRun } from "@workspace/api-client-react";
-import { AppLayout, categorySlug } from "@/components/layout/app-layout";
+import { AppLayout } from "@/components/layout/app-layout";
+import { categorySlug } from "@/lib/category-slug";
 import { useSegment } from "@/contexts/segment-context";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";

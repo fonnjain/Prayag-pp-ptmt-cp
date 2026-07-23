@@ -25,6 +25,10 @@ export interface CorrectiveItemResult {
   bufferReqRev: number;
   planRev: number;
   remainingToProduce: number;
+  /** Revised plan quantity in kg (planRev × BOM weight per piece; 0 for PTMT) */
+  kgRev: number;
+  /** Remaining to produce in kg; 0 for PTMT */
+  remainingKg: number;
   deltaNewOrders: number;
   deltaProduction: number;
   deltaNet: number;

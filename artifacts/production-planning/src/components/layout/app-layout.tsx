@@ -12,9 +12,7 @@ import {
 import { useSegment, type Segment } from "@/contexts/segment-context";
 import { useListBufferCategories, type BufferCategory } from "@workspace/api-client-react";
 
-export function categorySlug(name: string): string {
-  return encodeURIComponent(name.toLowerCase().replace(/\s+/g, "-"));
-}
+import { categorySlug } from "@/lib/category-slug";
 
 type NavItem = { href: string; label: string; icon?: React.ReactNode };
 

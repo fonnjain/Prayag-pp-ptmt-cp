@@ -5,24 +5,24 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { CorrectiveReplanResultAsOfDate } from './correctiveReplanResultAsOfDate';
-import type { CorrectiveReplanResultWorkingDaysUsed } from './correctiveReplanResultWorkingDaysUsed';
-import type { CorrectiveReplanResultWorkingDaysRemaining } from './correctiveReplanResultWorkingDaysRemaining';
 import type { CorrectiveReplanResultNote } from './correctiveReplanResultNote';
 import type { CorrectiveWeekStat } from './correctiveWeekStat';
 import type { CorrectiveWarning } from './correctiveWarning';
 import type { CorrectiveItemResult } from './correctiveItemResult';
+import type { CorrectiveCategoryResult } from './correctiveCategoryResult';
+import type { CorrectiveReplanResultUnplannedProductionItem } from './correctiveReplanResultUnplannedProductionItem';
 
 export interface CorrectiveReplanResult {
   runId: number;
   month: string;
   segment: string;
   weekClosed: number;
-  /** YYYY-MM-DD — set when run was triggered in as-of-date mode */
+  /** YYYY-MM-DD — effective as-of date (may be derived from weekClosed via P5) */
   asOfDate?: CorrectiveReplanResultAsOfDate;
   /** Non-Sunday days from month start to asOfDate inclusive */
-  workingDaysUsed?: CorrectiveReplanResultWorkingDaysUsed;
-  /** Non-Sunday days from day after asOfDate to month end */
-  workingDaysRemaining?: CorrectiveReplanResultWorkingDaysRemaining;
+  workingDaysUsed: number;
+  /** Non-Sunday days from day after asOfDate to month end; always set */
+  workingDaysRemaining: number;
   /** Human-readable label e.g. 'As of 18/07/26' */
   note?: CorrectiveReplanResultNote;
   dailyCapacity: number;
@@ -35,4 +35,10 @@ export interface CorrectiveReplanResult {
   weekStats: CorrectiveWeekStat[];
   warnings: CorrectiveWarning[];
   items: CorrectiveItemResult[];
+  /** Per-category aggregates with variance attribution (P7) */
+  categories: CorrectiveCategoryResult[];
+  /** Plumbing Sheet3 codes not matched to any plan item */
+  unplannedProduction?: CorrectiveReplanResultUnplannedProductionItem[];
+  /** Sum of unplannedProduction quantities */
+  unplannedTotal: number;
 }

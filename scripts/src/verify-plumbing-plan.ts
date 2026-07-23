@@ -55,8 +55,8 @@ async function runValidate(segment: string, month: string): Promise<ValidateResp
   return callEndpoint(url);
 }
 
-async function runValidateReplan(month: string, workingDaysRemaining: number): Promise<ValidateResponse> {
-  const url = `${API_BASE}/api/plan/validate-replan?month=${encodeURIComponent(month)}&workingDaysRemaining=${workingDaysRemaining}`;
+async function runValidateReplan(month: string, asOfDate: string): Promise<ValidateResponse> {
+  const url = `${API_BASE}/api/plan/validate-replan?month=${encodeURIComponent(month)}&asOfDate=${encodeURIComponent(asOfDate)}`;
   return callEndpoint(url);
 }
 
@@ -248,7 +248,7 @@ async function main(): Promise<void> {
   console.log("\n⏳  Running Plumbing corrective re-plan validation (reads Sheet3, ~5s) …");
   let replanResult: ValidateResponse;
   try {
-    replanResult = await runValidateReplan(PLUMBING_MONTH, 15);
+    replanResult = await runValidateReplan(PLUMBING_MONTH, "2026-07-14");
   } catch (err) {
     console.error(`\n❌  Could not reach validate-replan endpoint: ${err instanceof Error ? err.message : String(err)}`);
     anyFail = true;

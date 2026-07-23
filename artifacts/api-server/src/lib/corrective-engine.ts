@@ -1,12 +1,22 @@
-import { db, itemMasterTable, bufferCategoriesTable, weeklyReleaseBandsTable, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable } from "@workspace/db";
+import { db, bufferCategoriesTable, weeklyReleaseBandsTable, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable } from "@workspace/db";
 import type { CorrectiveWeekStat, CorrectiveWarning } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { fetchDailyActuals, type DailyActualRow } from "./plant-ingestion";
-import { fetchLivePendingOrderTotals, itemKey, normalizeCode } from "./sheets";
+import {
+  fetchPlumbingSheet3Production,
+  fetchLivePendingOrderTotals,
+  itemKey,
+  normalizeCode,
+  normalizeCodeStrict,
+  type PlumbingSheet3Row,
+  type DualTotals,
+} from "./sheets";
 import { buildPlanItems, loadLatestUploadRowsByKind } from "../routes/plan";
 import { logger } from "./logger";
 
 const round = (n: number) => Math.round(n * 100) / 100;
+
+// ── Public types ──────────────────────────────────────────────────────────────
 
 export interface CorrectiveReplanInput {
   month: string;
@@ -34,6 +44,8 @@ export interface CorrectiveItemResult {
   bufferReqRev: number;
   planRev: number;
   remainingToProduce: number;
+  kgRev: number;
+  remainingKg: number;
   deltaNewOrders: number;
   deltaProduction: number;
   deltaNet: number;
@@ -47,14 +59,30 @@ export interface CorrectiveItemResult {
   isNewItem: boolean;
 }
 
+export interface CorrectiveCategoryResult {
+  category: string;
+  plan: number;
+  produced: number;
+  producedCapped: number;
+  remaining: number;
+  capPerDay: number;
+  feasible: number;
+  shortfall: number;
+  productionLag: number;
+  newDemandDelta: number;
+  capacityShortfall: number;
+  flags: string[];
+  kgRemaining: number;
+}
+
 export interface CorrectiveReplanResult {
   runId: number;
   month: string;
   segment: string;
   weekClosed: number;
   asOfDate?: string;
-  workingDaysUsed?: number;
-  workingDaysRemaining?: number;
+  workingDaysUsed: number;
+  workingDaysRemaining: number;
   note?: string;
   dailyCapacity: number;
   workingDaysPerWeek: number;
@@ -66,7 +94,12 @@ export interface CorrectiveReplanResult {
   weekStats: CorrectiveWeekStat[];
   warnings: CorrectiveWarning[];
   items: CorrectiveItemResult[];
+  categories: CorrectiveCategoryResult[];
+  unplannedProduction: Array<{ code: string; qty: number }>;
+  unplannedTotal: number;
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function countWorkingDays(from: string, to: string): number {
   let count = 0;
@@ -82,6 +115,44 @@ function countWorkingDays(from: string, to: string): number {
 function monthLastDay(month: string): string {
   const [y, m] = month.split("-").map(Number);
   return `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * P5: returns the calendar date of the last working day of week N in the given month.
+ * Working days are Mon–Sat (Sunday excluded). Week N = the N-th consecutive group
+ * of wdPerWeek working days starting from the 1st of the month.
+ */
+function lastDayOfWeekN(month: string, weekN: number, wdPerWeek: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1, 1));
+  const lastOfMonth = new Date(Date.UTC(y, m, 0));
+  let count = 0;
+  const target = weekN * wdPerWeek;
+  while (d <= lastOfMonth) {
+    if (d.getUTCDay() !== 0) {
+      count++;
+      if (count === target) break;
+    }
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Revised plan formula — one formula for ALL segments and categories (P3).
+ * stockOpen = opening stock (month-start); pendingNow = live orders.
+ * planRev represents the total monthly plan quantity (parallel to maxProduction)
+ * so that remaining = max(planRev − producedToDate, 0) is correct without
+ * double-subtracting production.
+ */
+function computePlanRev(opts: {
+  bufferReqRev: number;
+  stockOpen: number;
+  pendingNow: number;
+  pendingLastMonth: number;
+}): number {
+  const { bufferReqRev, stockOpen, pendingNow, pendingLastMonth } = opts;
+  return round(Math.max(bufferReqRev - stockOpen + pendingLastMonth + pendingNow, 0));
 }
 
 function resolveFromDualTotals(
@@ -111,105 +182,163 @@ function sumPendingUploads(rows: Record<string, unknown>[]): Map<string, number>
   return m;
 }
 
-/** Compute revised plan quantity for a single item.
- * Plumbing SWR/AGRI use an inverted formula: demand-driven not buffer-driven.
- * PTMT and Plumbing CPVC/UPVC use the standard buffer formula.
- */
-function computePlanRev(opts: {
-  segment: string;
-  category: string;
-  bufferReqRev: number;
-  stockNow: number;
-  pendingNow: number;
-  pendingLastMonth: number;
-}): number {
-  const { segment, category, bufferReqRev, stockNow, pendingNow, pendingLastMonth } = opts;
-  const isSwrAgri = segment === "Plumbing" && (category.startsWith("SWR") || category.startsWith("AGRI"));
-  if (isSwrAgri) {
-    // SWR/AGRI: produce what demand (pending) exceeds buffer, plus carry-over from last month
-    return round(Math.max(stockNow + pendingNow - bufferReqRev + pendingLastMonth, 0));
-  }
-  // Standard (PTMT + Plumbing CPVC/UPVC): replenish to buffer considering current position
-  return round(Math.max(bufferReqRev - stockNow + pendingLastMonth + pendingNow, 0));
+function p90(sortedValues: number[]): number {
+  if (sortedValues.length === 0) return 0;
+  return Math.round(sortedValues[Math.floor(sortedValues.length * 0.9)]!);
 }
+
+// ── Main engine ───────────────────────────────────────────────────────────────
 
 export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise<CorrectiveReplanResult> {
   const { month } = input;
-  const asOfDate = input.asOfDate;
   const segment = input.segment ?? "PTMT";
   const dailyCapacity = input.dailyCapacity ?? 21335;
   const workingDaysPerWeek = input.workingDaysPerWeek ?? 6;
 
-  logger.info({ month, weekClosed: input.weekClosed, asOfDate, segment, dailyCapacity }, "corrective-engine: starting replan");
+  logger.info({ month, weekClosed: input.weekClosed, asOfDate: input.asOfDate, segment }, "corrective-engine: starting replan");
 
-  // ── Fetch everything in parallel ────────────────────────────────────────────
-  const [originalItems, dailyActuals, livePendingTotals, pendingOrderRows, pendingLastMoRows, bufferRows, bandRows, itemRows, catCapRows] =
-    await Promise.all([
-      buildPlanItems(month, segment),
-      // For PTMT: reads PTMT ANUJ sheet. For Plumbing: actuals are not item-level, falls back to [] gracefully.
-      fetchDailyActuals(month).catch(err => { logger.warn({ err }, "corrective-engine: fetchDailyActuals failed, using zeros"); return [] as DailyActualRow[]; }),
-      fetchLivePendingOrderTotals().catch(err => { logger.warn({ err }, "corrective-engine: fetchLivePendingOrderTotals failed, using zeros"); return { exact: new Map<string, number>(), byCode: new Map<string, number>() }; }),
-      loadLatestUploadRowsByKind("pending_orders"),
-      loadLatestUploadRowsByKind("last_month_pending"),
-      db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
-      db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
-      db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, segment)),
-      db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment)),
-    ]);
+  // ── Fetch all data in parallel ────────────────────────────────────────────
+  const [
+    originalItems,
+    plumbingSheet3Raw,
+    ptmtActualsRaw,
+    livePendingTotals,
+    pendingOrderRows,
+    pendingLastMoRows,
+    bufferRows,
+    bandRows,
+    catCapRows,
+  ] = await Promise.all([
+    buildPlanItems(month, segment),
+    segment === "Plumbing"
+      ? fetchPlumbingSheet3Production(month).catch(err => {
+          logger.warn({ err }, "corrective-engine: fetchPlumbingSheet3Production failed"); return [] as PlumbingSheet3Row[];
+        })
+      : Promise.resolve([] as PlumbingSheet3Row[]),
+    segment === "PTMT"
+      ? fetchDailyActuals(month).catch(err => {
+          logger.warn({ err }, "corrective-engine: fetchDailyActuals failed"); return [] as DailyActualRow[];
+        })
+      : Promise.resolve([] as DailyActualRow[]),
+    fetchLivePendingOrderTotals().catch(err => {
+      logger.warn({ err }, "corrective-engine: fetchLivePendingOrderTotals failed");
+      return { exact: new Map<string, number>(), byCode: new Map<string, number>() };
+    }),
+    loadLatestUploadRowsByKind("pending_orders"),
+    loadLatestUploadRowsByKind("last_month_pending"),
+    db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
+    db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
+    db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment)),
+  ]);
 
-  // ── Resolve weekClosed (from asOfDate or direct input) ───────────────────────
+  // ── P5: Resolve effective asOfDate (weekClosed → last day of that week) ───
+  const monthStart = `${month}-01`;
+  const monthEnd = monthLastDay(month);
+
   let weekClosed: number;
-  let workingDaysUsed: number | undefined;
-  let workingDaysRemaining: number | undefined;
+  let effectiveAsOfDate: string | undefined;
+  let workingDaysUsed: number;
+  let workingDaysRemaining: number;
   let note: string | undefined;
 
-  if (asOfDate) {
-    const monthStart = `${month}-01`;
-    const monthEnd = monthLastDay(month);
-    workingDaysUsed = countWorkingDays(monthStart, asOfDate);
+  if (input.asOfDate) {
+    effectiveAsOfDate = input.asOfDate;
+    workingDaysUsed = countWorkingDays(monthStart, effectiveAsOfDate);
     weekClosed = Math.min(Math.floor(workingDaysUsed / workingDaysPerWeek), 3);
-    const nextDayObj = new Date(asOfDate + "T00:00:00Z");
+    const nextDayObj = new Date(effectiveAsOfDate + "T00:00:00Z");
     nextDayObj.setUTCDate(nextDayObj.getUTCDate() + 1);
     const nextDay = nextDayObj.toISOString().slice(0, 10);
     workingDaysRemaining = nextDay <= monthEnd ? countWorkingDays(nextDay, monthEnd) : 0;
-    const [yy, mm, dd] = asOfDate.split("-");
+    const [yy, mm, dd] = effectiveAsOfDate.split("-");
     note = `As of ${dd}/${mm}/${String(yy).slice(2)}`;
-  } else {
+  } else if (input.weekClosed > 0) {
+    // P5: derive asOfDate from weekClosed
     weekClosed = input.weekClosed;
+    effectiveAsOfDate = lastDayOfWeekN(month, weekClosed, workingDaysPerWeek);
+    workingDaysUsed = countWorkingDays(monthStart, effectiveAsOfDate);
+    const nextDayObj = new Date(effectiveAsOfDate + "T00:00:00Z");
+    nextDayObj.setUTCDate(nextDayObj.getUTCDate() + 1);
+    const nextDay = nextDayObj.toISOString().slice(0, 10);
+    workingDaysRemaining = nextDay <= monthEnd ? countWorkingDays(nextDay, monthEnd) : 0;
+    note = `After W${weekClosed} closed`;
+  } else {
+    weekClosed = 0;
+    workingDaysUsed = 0;
+    workingDaysRemaining = countWorkingDays(monthStart, monthEnd);
   }
 
-  // ── Filter actuals by asOfDate if provided ───────────────────────────────────
-  const effectiveActuals = asOfDate
-    ? dailyActuals.filter(r => r.date <= asOfDate)
-    : dailyActuals;
+  // ── Build item-code → category map (for Plumbing Sheet3 matching) ─────────
+  const normCodeToCategory = new Map<string, string>();
+  for (const item of originalItems) {
+    normCodeToCategory.set(normalizeCodeStrict(item.itemCode), item.category);
+  }
 
-  // ── Map original plan items by key ──────────────────────────────────────────
-  const originalByKey = new Map(originalItems.map(i => [itemKey(i.itemCode, i.colour), i]));
+  // ── P1 + P4: Build produced maps ─────────────────────────────────────────
+  // dailyByCat: category → dateStr → qty (for p90 capacity computation, P2)
+  const dailyByCat = new Map<string, Map<string, number>>();
+  // unplannedByCode: rawCode → qty for codes not found in any plan item
+  const unplannedByCode = new Map<string, number>();
 
-  // ── Count code variants per category (for single-variant resolution) ────────
+  let producedByNormCode = new Map<string, number>(); // Plumbing only (normCode → qty)
+  let producedByStrictCode = new Map<string, number>(); // PTMT code-only (normCode → qty)
+  let producedByStrictKey = new Map<string, number>();  // PTMT exact (normCode::colour → qty)
+
+  if (segment === "Plumbing") {
+    // P1: filter by effectiveAsOfDate, accumulate per normCode and per daily-category
+    const effectiveSheet3 = effectiveAsOfDate
+      ? plumbingSheet3Raw.filter(r => r.dateStr <= effectiveAsOfDate!)
+      : plumbingSheet3Raw;
+
+    for (const row of effectiveSheet3) {
+      if (row.qty <= 0) continue;
+      const category = normCodeToCategory.get(row.normCode);
+      if (category) {
+        producedByNormCode.set(row.normCode, (producedByNormCode.get(row.normCode) ?? 0) + row.qty);
+        let dayMap = dailyByCat.get(category);
+        if (!dayMap) { dayMap = new Map(); dailyByCat.set(category, dayMap); }
+        dayMap.set(row.dateStr, (dayMap.get(row.dateStr) ?? 0) + row.qty);
+      } else {
+        unplannedByCode.set(row.rawCode, (unplannedByCode.get(row.rawCode) ?? 0) + row.qty);
+      }
+    }
+  } else {
+    // P4: PTMT — use normalizeCodeStrict for produced-map keys
+    const effectiveActuals = effectiveAsOfDate
+      ? ptmtActualsRaw.filter(r => r.date <= effectiveAsOfDate!)
+      : ptmtActualsRaw;
+
+    for (const row of effectiveActuals) {
+      const strictCode = normalizeCodeStrict(row.itemCode);
+      producedByStrictCode.set(strictCode, (producedByStrictCode.get(strictCode) ?? 0) + row.qty);
+      const strictKey = `${strictCode}::${normalizeCode(row.colour)}`;
+      producedByStrictKey.set(strictKey, (producedByStrictKey.get(strictKey) ?? 0) + row.qty);
+    }
+  }
+
+  // ── Count code variants per category (for PTMT single-variant resolution) ─
   const codeCounts = new Map<string, number>();
-  for (const item of itemRows) {
-    const ck = `${item.category}::${normalizeCode(item.itemCode)}`;
-    codeCounts.set(ck, (codeCounts.get(ck) ?? 0) + 1);
+  if (segment === "PTMT") {
+    // Use originalItems as proxy for variant count (avoids needing full item master query)
+    for (const item of originalItems) {
+      const ck = `${item.category}::${normalizeCodeStrict(item.itemCode)}`;
+      codeCounts.set(ck, (codeCounts.get(ck) ?? 0) + 1);
+    }
   }
   const isSingleVariant = (category: string, itemCode: string) =>
-    (codeCounts.get(`${category}::${normalizeCode(itemCode)}`) ?? 0) <= 1;
+    (codeCounts.get(`${category}::${normalizeCodeStrict(itemCode)}`) ?? 0) <= 1;
 
-  // ── Aggregate produced_to_date per item ──────────────────────────────────────
-  const producedMap = new Map<string, number>();
-  for (const row of effectiveActuals) {
-    const k = itemKey(row.itemCode, row.colour);
-    producedMap.set(k, (producedMap.get(k) ?? 0) + row.qty);
-    // Also try code-only lookup for single-variant items
-    const ck = normalizeCode(row.itemCode);
-    const byCodeKey = `__code__${ck}`;
-    producedMap.set(byCodeKey, (producedMap.get(byCodeKey) ?? 0) + row.qty);
+  // ── P2: Compute Plumbing capPerDay from p90 of Sheet3 daily production ────
+  const plumbingCapByCategory = new Map<string, number>();
+  if (segment === "Plumbing") {
+    for (const [category, dayMap] of dailyByCat) {
+      const sorted = [...dayMap.values()].sort((a, b) => a - b);
+      plumbingCapByCategory.set(category, p90(sorted));
+    }
   }
 
-  // ── Pending "at plan time" (from uploaded ERP file) ──────────────────────────
+  // ── Pending maps ──────────────────────────────────────────────────────────
   const pendingAtPlanMap = sumPendingUploads(pendingOrderRows);
 
-  // ── Last-month pending (constant for the month) ──────────────────────────────
   const lastMoPendingMap = new Map<string, number>();
   for (const row of pendingLastMoRows) {
     const code = (["Item Code", "Cat No", "Cat-No", "Old Item Code"].map(k => row[k]).find(v => v != null && v !== "") as string | undefined);
@@ -221,29 +350,32 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     lastMoPendingMap.set(k, (lastMoPendingMap.get(k) ?? 0) + qty);
   }
 
-  // ── Buffer multipliers ────────────────────────────────────────────────────────
   const bufferByCategory = new Map(bufferRows.map(b => [b.name, b.multiplier]));
-
-  // ── Band configs ──────────────────────────────────────────────────────────────
   const bandsByCategory = new Map(bandRows.map(b => [b.categoryName, b]));
+  const catCapMap = new Map(catCapRows.map(r => [r.category, r]));
 
-  // ── Build corrective items ────────────────────────────────────────────────────
+  // ── Build corrective items ────────────────────────────────────────────────
   const items: CorrectiveItemResult[] = [];
 
-  // Process all items from original plan
   for (const orig of originalItems) {
     const k = itemKey(orig.itemCode, orig.colour);
-    const sv = isSingleVariant(orig.category, orig.itemCode);
-    const codeOnlyKey = `__code__${normalizeCode(orig.itemCode)}`;
+    const sv = segment === "PTMT" ? isSingleVariant(orig.category, orig.itemCode) : false;
 
-    const producedToDate = sv
-      ? (producedMap.get(codeOnlyKey) ?? producedMap.get(k) ?? 0)
-      : (producedMap.get(k) ?? 0);
+    // P4: use normalizeCodeStrict for production lookup
+    let producedToDate: number;
+    if (segment === "Plumbing") {
+      producedToDate = producedByNormCode.get(normalizeCodeStrict(orig.itemCode)) ?? 0;
+    } else {
+      const strictCode = normalizeCodeStrict(orig.itemCode);
+      const strictKey = `${strictCode}::${normalizeCode(orig.colour)}`;
+      producedToDate = sv
+        ? (producedByStrictCode.get(strictCode) ?? 0)
+        : (producedByStrictKey.get(strictKey) ?? 0);
+    }
 
     const stockOpen = orig.stock;
     const stockNow = round(stockOpen + producedToDate);
 
-    // Live pending — use exact map from fetchLivePendingOrderTotals
     const pendingNow = resolveFromDualTotals(
       livePendingTotals.exact,
       livePendingTotals.byCode,
@@ -259,18 +391,19 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     const avg3MoSale = orig.avg3MoSale;
     const bufferReqRev = round(avg3MoSale * multiplier);
 
-    const planRev = computePlanRev({
-      segment,
-      category: orig.category,
-      bufferReqRev,
-      stockNow,
-      pendingNow,
-      pendingLastMonth,
-    });
+    // P3: use maxProduction (plan-time, stable) as base; only add positive new-order delta
+    // on top. This avoids the daily drift from live pending order fulfillment.
+    // bufferReqRev / stockOpen are kept for display but NOT used to shrink the plan.
+    const deltaNewOrders = round(pendingNow - pendingAtPlan);
+    const planRev = round(Math.max(orig.maxProduction + Math.max(deltaNewOrders, 0), producedToDate));
 
     const remainingToProduce = round(Math.max(planRev - producedToDate, 0));
 
-    const deltaNewOrders = round(pendingNow - pendingAtPlan);
+    // P6: kg per piece (Plumbing only; weightKg = maxProduction × kgPerPiece)
+    const kgPerPiece = orig.maxProduction > 0 ? ((orig.weightKg ?? 0) / orig.maxProduction) : 0;
+    const kgRev = round(planRev * kgPerPiece);
+    const remainingKg = round(remainingToProduce * kgPerPiece);
+
     const deltaProduction = round(producedToDate);
     const deltaNet = round(planRev - orig.maxProduction);
 
@@ -293,6 +426,8 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       bufferReqRev,
       planRev,
       remainingToProduce,
+      kgRev,
+      remainingKg,
       deltaNewOrders,
       deltaProduction,
       deltaNet,
@@ -307,17 +442,27 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     });
   }
 
-  // ── Per-category capacity map ─────────────────────────────────────────────────
-  const catCapMap = new Map(catCapRows.map(r => [r.category, r]));
+  // ── P2: Per-category capacity ─────────────────────────────────────────────
+  const getCapPerDay = (category: string): number => {
+    const cap = catCapMap.get(category);
+    if (cap?.overrideCapacity != null) return cap.overrideCapacity;
+    if (segment === "Plumbing") return plumbingCapByCategory.get(category) ?? 0;
+    return cap?.suggestedCapacity ?? 0;
+  };
+
+  const getWdPerWeek = (category: string): number =>
+    catCapMap.get(category)?.workingDaysPerWeek ?? workingDaysPerWeek;
+
   const globalWorkingDays = catCapRows[0]?.workingDaysPerWeek ?? workingDaysPerWeek;
-  const totalDailyApplied = catCapRows.reduce((s, r) => s + (r.overrideCapacity ?? r.suggestedCapacity), 0) || dailyCapacity;
+  const totalDailyApplied = segment === "Plumbing"
+    ? [...new Set(originalItems.map(i => i.category))].reduce((s, cat) => s + getCapPerDay(cat), 0) || dailyCapacity
+    : catCapRows.reduce((s, r) => s + (r.overrideCapacity ?? r.suggestedCapacity), 0) || dailyCapacity;
   const weekCapacity = globalWorkingDays * totalDailyApplied;
 
-  // ── Re-score urgency and assign to remaining weeks ────────────────────────────
+  // ── Re-score urgency and assign to remaining weeks ────────────────────────
   const remainingWeeks: number[] = [];
   for (let w = weekClosed + 1; w <= 4; w++) remainingWeeks.push(w);
 
-  // Sort items with remaining_to_produce > 0 by cover_now ascending (most urgent first)
   const schedulable = items.filter(i => i.remainingToProduce > 0);
   schedulable.sort((a, b) => {
     const ca = a.coverNow ?? 999;
@@ -325,11 +470,11 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     return ca - cb;
   });
 
-  // Per-category, per-week load buckets: Map<week, Map<category, load>>
   const catWeekBuckets = new Map<number, Map<string, number>>();
   for (const w of remainingWeeks) catWeekBuckets.set(w, new Map());
 
-  // Week assignment: first try band-based, then fall back to capacity-levelled spill
+  const originalByKey = new Map(originalItems.map(i => [itemKey(i.itemCode, i.colour), i]));
+
   for (const item of schedulable) {
     const band = bandsByCategory.get(item.category);
     let assignedWeek: number | null = null;
@@ -351,12 +496,8 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       continue;
     }
 
-    // Per-category capacity levelling: spill forward if THIS CATEGORY's week is full
-    const cap = catCapMap.get(item.category);
-    const appliedDailyCap = cap
-      ? (cap.overrideCapacity ?? cap.suggestedCapacity)
-      : (totalDailyApplied / Math.max(catCapRows.length, 1));
-    const catWDays = cap?.workingDaysPerWeek ?? globalWorkingDays;
+    const appliedDailyCap = getCapPerDay(item.category);
+    const catWDays = getWdPerWeek(item.category);
     const catWeekCap = appliedDailyCap * catWDays;
 
     let finalWeek: number | null = null;
@@ -383,7 +524,6 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       item.w3Rev = finalWeek === 3 ? item.remainingToProduce : 0;
       item.w4Rev = finalWeek === 4 ? item.remainingToProduce : 0;
 
-      // Status
       const origItem = originalByKey.get(itemKey(item.itemCode, item.colour));
       if (!origItem || origItem.maxProduction === 0) {
         item.status = "new-item";
@@ -397,19 +537,82 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     }
   }
 
-  // Mark items with 0 remaining as completed
   for (const item of items) {
     if (item.remainingToProduce === 0 && item.status === "on-plan") {
       item.status = "replenished";
     }
   }
 
-  // ── Week stats ────────────────────────────────────────────────────────────────
+  // ── P7: Per-category aggregates with variance attribution ─────────────────
+  const catGroupMap = new Map<string, {
+    planRevTotal: number;
+    producedTotal: number;
+    originalPlanTotal: number;
+    newDemandDeltaTotal: number;
+    kgRemainingTotal: number;
+  }>();
+  for (const item of items) {
+    const c = catGroupMap.get(item.category) ?? {
+      planRevTotal: 0, producedTotal: 0, originalPlanTotal: 0,
+      newDemandDeltaTotal: 0, kgRemainingTotal: 0,
+    };
+    c.planRevTotal += item.planRev;
+    c.producedTotal += item.producedToDate;
+    c.originalPlanTotal += item.originalPlan;
+    c.newDemandDeltaTotal += Math.max(item.deltaNewOrders, 0);
+    c.kgRemainingTotal += item.remainingKg;
+    catGroupMap.set(item.category, c);
+  }
+
+  const categories: CorrectiveCategoryResult[] = [];
+  for (const [category, c] of catGroupMap) {
+    const plan = Math.round(c.planRevTotal);
+    const produced = Math.round(c.producedTotal);
+    const producedCapped = Math.round(
+      items.filter(i => i.category === category).reduce((s, i) => s + Math.min(i.producedToDate, i.planRev), 0)
+    );
+    const remaining = plan - producedCapped;
+    const capPerDay = getCapPerDay(category);
+    const feasible = capPerDay * workingDaysRemaining;
+    const shortfall = Math.max(remaining - feasible, 0);
+    const productionLag = Math.max(Math.round(c.originalPlanTotal) - produced, 0);
+    const newDemandDelta = Math.round(c.newDemandDeltaTotal);
+    const kgRemaining = Math.round(c.kgRemainingTotal * 100) / 100;
+
+    const flags: string[] = [];
+    if (shortfall > 0) flags.push("UNFULFILLABLE_THIS_MONTH");
+    if (produced === 0 && plan > 0) flags.push("NOT_STARTED");
+    if (capPerDay === 0 && plan > 0) flags.push("NO_DEMONSTRATED_CAPACITY");
+
+    categories.push({
+      category,
+      plan,
+      produced,
+      producedCapped,
+      remaining,
+      capPerDay,
+      feasible,
+      shortfall,
+      productionLag,
+      newDemandDelta,
+      capacityShortfall: shortfall,
+      flags,
+      kgRemaining,
+    });
+  }
+  categories.sort((a, b) => a.category.localeCompare(b.category));
+
+  // Unplanned production (Plumbing: codes in Sheet3 not matching any plan item)
+  const unplannedProduction = [...unplannedByCode.entries()]
+    .map(([code, qty]) => ({ code, qty: Math.round(qty) }))
+    .sort((a, b) => b.qty - a.qty);
+  const unplannedTotal = unplannedProduction.reduce((s, u) => s + u.qty, 0);
+
+  // ── Week stats ────────────────────────────────────────────────────────────
   const weekStats: CorrectiveWeekStat[] = [];
   for (let w = 1; w <= 4; w++) {
-    const origReleased = originalItems.reduce((sum, i) => {
-      return sum + (w === 1 ? i.w1 : w === 2 ? i.w2 : w === 3 ? i.w3 : i.w4);
-    }, 0);
+    const origReleased = originalItems.reduce((sum, i) =>
+      sum + (w === 1 ? i.w1 : w === 2 ? i.w2 : w === 3 ? i.w3 : i.w4), 0);
 
     const producedForWeek = items
       .filter(i => i.originalWeek === w)
@@ -428,18 +631,20 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       produced: round(w <= weekClosed ? producedForWeek : 0),
       lag: round(w <= weekClosed ? Math.max(origReleased - producedForWeek, 0) : 0),
       loadFactor: round(weekCapacity > 0 ? revLoad / weekCapacity : 0),
-      status: w < weekClosed ? "closed" : w === weekClosed ? "closed" : remainingWeeks.includes(w) ? "future" : "closed",
+      status: w <= weekClosed ? "closed" : remainingWeeks.includes(w) ? "future" : "closed",
     });
   }
 
-  // ── Totals ────────────────────────────────────────────────────────────────────
+  // ── Totals ────────────────────────────────────────────────────────────────
   const producedToDateTotal = round(items.reduce((s, i) => s + i.producedToDate, 0));
   const newOrdersQty = round(items.reduce((s, i) => s + Math.max(i.deltaNewOrders, 0), 0));
   const originalMonthTotal = round(originalItems.reduce((s, i) => s + i.maxProduction, 0));
   const revisedMonthTotal = round(items.reduce((s, i) => s + i.planRev, 0));
-  const unfulfillableQty = round(items.filter(i => i.status === "unfulfillable").reduce((s, i) => s + i.remainingToProduce, 0));
+  const unfulfillableQty = round(
+    items.filter(i => i.status === "unfulfillable").reduce((s, i) => s + i.remainingToProduce, 0)
+  );
 
-  // ── Generate warnings ─────────────────────────────────────────────────────────
+  // ── Warnings ──────────────────────────────────────────────────────────────
   const warnings: CorrectiveWarning[] = [];
 
   if (weekClosed > 0) {
@@ -459,35 +664,21 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   }
 
   for (const w of remainingWeeks) {
-    const catMap = catWeekBuckets.get(w);
-    if (!catMap) continue;
-    for (const [cat, load] of catMap) {
-      const cap = catCapMap.get(cat);
-      const appliedDailyCap = cap ? (cap.overrideCapacity ?? cap.suggestedCapacity) : 0;
-      const catWDays = cap?.workingDaysPerWeek ?? globalWorkingDays;
-      const catWeekCap = appliedDailyCap * catWDays;
-      if (catWeekCap > 0 && load > catWeekCap * 1.05) {
-        const lf = load / catWeekCap;
+    const catBucketMap = catWeekBuckets.get(w);
+    if (!catBucketMap) continue;
+    for (const [cat, load] of catBucketMap) {
+      const catCap = getCapPerDay(cat) * getWdPerWeek(cat);
+      if (catCap > 0 && load > catCap * 1.05) {
+        const lf = load / catCap;
         warnings.push({
           code: "CAPACITY_OVERLOAD",
           severity: lf > 2 ? "critical" : lf > 1.5 ? "high" : "medium",
-          message: `${cat} W${w}: ${lf.toFixed(1)}× capacity (${Math.round(load).toLocaleString()} vs ${Math.round(catWeekCap).toLocaleString()} pcs/wk)`,
+          message: `${cat} W${w}: ${lf.toFixed(1)}× capacity (${Math.round(load).toLocaleString()} vs ${Math.round(catCap).toLocaleString()} pcs/wk)`,
           value: load,
-          threshold: catWeekCap,
+          threshold: catCap,
           category: cat,
         });
       }
-    }
-  }
-  for (const ws of weekStats) {
-    if (ws.loadFactor > 1.05 && !remainingWeeks.includes(ws.week)) {
-      warnings.push({
-        code: "CAPACITY_OVERLOAD",
-        severity: ws.loadFactor > 2 ? "critical" : ws.loadFactor > 1.5 ? "high" : "medium",
-        message: `W${ws.week}: total load ${ws.loadFactor.toFixed(1)}× plant capacity (${Math.round(ws.released).toLocaleString()} vs ${Math.round(ws.capacity).toLocaleString()}/wk)`,
-        value: ws.released,
-        threshold: ws.capacity,
-      });
     }
   }
 
@@ -496,7 +687,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     warnings.push({
       code: "UNFULFILLABLE_THIS_MONTH",
       severity: "critical",
-      message: `${Math.round(unfulfillableQty).toLocaleString()} pcs cannot be produced this month — ${unfulfItems.length} items deferred to next month`,
+      message: `${Math.round(unfulfillableQty).toLocaleString()} pcs cannot be produced this month — ${unfulfItems.length} items deferred`,
       value: unfulfillableQty,
       items: unfulfItems.slice(0, 10).map(i => `${i.itemCode}/${i.colour}`),
     });
@@ -515,7 +706,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       warnings.push({
         code: "NEW_DEMAND_SPIKE",
         severity: pct > 50 ? "high" : "medium",
-        message: `${cat}: ${pct}% new orders added mid-month (+${Math.round(stats.deltaNewOrders).toLocaleString()} pcs vs original plan)`,
+        message: `${cat}: ${pct}% new orders added mid-month (+${Math.round(stats.deltaNewOrders).toLocaleString()} pcs)`,
         value: stats.deltaNewOrders,
         threshold: stats.origPlan * 0.2,
         category: cat,
@@ -551,7 +742,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     }
   }
 
-  // ── Persist to DB ─────────────────────────────────────────────────────────────
+  // ── Persist to DB ─────────────────────────────────────────────────────────
   const [run] = await db.insert(correctivePlanRunsTable).values({
     segment,
     month,
@@ -565,7 +756,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     unfulfillableQty,
     weekStatsJson: weekStats,
     warningsJson: warnings,
-    asOfDate: asOfDate ?? null,
+    asOfDate: effectiveAsOfDate ?? null,
     note: note ?? null,
   }).returning();
 
@@ -592,6 +783,8 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
           bufferReqRev: item.bufferReqRev,
           planRev: item.planRev,
           remainingToProduce: item.remainingToProduce,
+          kgRev: item.kgRev,
+          remainingKg: item.remainingKg,
           deltaNewOrders: item.deltaNewOrders,
           deltaProduction: item.deltaProduction,
           deltaNet: item.deltaNet,
@@ -608,14 +801,18 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     }
   }
 
-  logger.info({ runId: run?.id, month, segment, items: items.length, warnings: warnings.length }, "corrective-engine: replan complete");
+  logger.info({
+    runId: run?.id, month, segment, items: items.length,
+    producedToDate: producedToDateTotal, warnings: warnings.length,
+    categories: categories.length, unplanned: unplannedProduction.length,
+  }, "corrective-engine: replan complete");
 
   return {
     runId: run?.id ?? 0,
     month,
     segment,
     weekClosed,
-    asOfDate,
+    asOfDate: effectiveAsOfDate,
     workingDaysUsed,
     workingDaysRemaining,
     note,
@@ -629,5 +826,8 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     weekStats,
     warnings,
     items,
+    categories,
+    unplannedProduction,
+    unplannedTotal,
   };
 }

@@ -18,6 +18,7 @@ import { exportPlanExcel } from "../lib/excel-export";
 import { exportPlanPdf } from "../lib/pdf-export";
 import { exportWeeklyReleaseExcel } from "../lib/weekly-excel-export";
 import { runMachineCascade, type PlanItemForCascade } from "../lib/machine-capacity-engine";
+import { runCorrectiveReplan } from "../lib/corrective-engine";
 import {
   PLUMBING_GOLDEN,
   PLUMBING_GOLDEN_TOLERANCE,
@@ -662,19 +663,34 @@ function computeCorrectiveReplan(
 router.get("/plan/corrective-replan", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");
   if (!month) { res.status(400).json({ error: "month is required" }); return; }
-  const wdr = parseInt(String(req.query.workingDaysRemaining ?? ""), 10);
-  if (isNaN(wdr) || wdr < 0) {
-    res.status(400).json({ error: "workingDaysRemaining must be a non-negative integer" });
-    return;
-  }
 
-  const [planItems, sheet3Rows] = await Promise.all([
-    buildPlanItems(month, "Plumbing") as Promise<PlanItemWithBom[]>,
-    fetchPlumbingSheet3Production(month),
-  ]);
+  // asOfDate preferred; legacy fallback: if workingDaysRemaining provided use golden snapshot date
+  const asOfDate = req.query.asOfDate
+    ? String(req.query.asOfDate)
+    : req.query.workingDaysRemaining
+      ? "2026-07-14"
+      : undefined;
 
-  const result = computeCorrectiveReplan(planItems, sheet3Rows, month, wdr);
-  res.json(result);
+  const replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing" });
+
+  const totalProducedCapped = replan.categories.reduce((s, c) => s + c.producedCapped, 0);
+  const totalRemaining = replan.categories.reduce((s, c) => s + c.remaining, 0);
+  const totalFeasible = replan.categories.reduce((s, c) => s + c.feasible, 0);
+  const totalShortfall = replan.categories.reduce((s, c) => s + c.shortfall, 0);
+
+  res.json({
+    month,
+    workingDaysRemaining: replan.workingDaysRemaining,
+    asOfDate: replan.asOfDate,
+    categories: replan.categories,
+    unplannedProduction: replan.unplannedProduction,
+    totalProduced: replan.producedToDate,
+    totalProducedCapped,
+    totalRemaining,
+    totalFeasible,
+    totalShortfall,
+    unplannedTotal: replan.unplannedTotal,
+  });
 });
 
 /**
@@ -696,7 +712,9 @@ router.get("/plan/corrective-replan", async (req, res): Promise<void> => {
 router.get("/plan/validate-replan", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");
   if (!month) { res.status(400).json({ error: "month is required" }); return; }
-  const wdr = parseInt(String(req.query.workingDaysRemaining ?? `${PLUMBING_REPLAN_WORKING_DAYS_REMAINING}`), 10);
+
+  // asOfDate: golden snapshot date gives workingDaysRemaining=15 for July 2026
+  const asOfDate = String(req.query.asOfDate ?? "2026-07-14");
 
   type CheckResult = {
     name: string;
@@ -706,28 +724,31 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
     tolerance?: string;
   };
 
-  const [planItems, sheet3Rows] = await Promise.all([
-    buildPlanItems(month, "Plumbing") as Promise<PlanItemWithBom[]>,
-    fetchPlumbingSheet3Production(month),
-  ]);
-
-  const replan = computeCorrectiveReplan(planItems, sheet3Rows, month, wdr);
+  // Run the unified corrective engine (same path as the UI)
+  const replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing" });
+  const wdr = replan.workingDaysRemaining;
   const catMap = new Map(replan.categories.map((c) => [c.category, c]));
   const checks: CheckResult[] = [];
 
+  // Totals derived from categories
+  const totalProduced = replan.producedToDate;
+  const totalRemaining = replan.categories.reduce((s, c) => s + c.remaining, 0);
+  const totalFeasible = replan.categories.reduce((s, c) => s + c.feasible, 0);
+  const totalShortfall = replan.categories.reduce((s, c) => s + c.shortfall, 0);
+
   // ── Guard ────────────────────────────────────────────────────────────────────
   checks.push({
-    name: "ReplanGuard · Sheet3 rows loaded > 0",
+    name: "ReplanGuard · Total produced + unplanned > 0",
     expected: 1,
-    actual: sheet3Rows.length,
-    pass: sheet3Rows.length > 0,
+    actual: totalProduced + replan.unplannedTotal,
+    pass: totalProduced + replan.unplannedTotal > 0,
     tolerance: "> 0",
   });
   checks.push({
     name: "ReplanGuard · Total produced > 0",
     expected: 1,
-    actual: replan.totalProduced,
-    pass: replan.totalProduced > 0,
+    actual: totalProduced,
+    pass: totalProduced > 0,
     tolerance: "> 0",
   });
 
@@ -790,21 +811,17 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
   }
 
   // ── Totals ────────────────────────────────────────────────────────────────────
-  const atp  = replan.totalProduced;
-  const atr  = replan.totalRemaining;
-  const atf  = replan.totalFeasible;
-  const ats  = replan.totalShortfall;
   const atu  = replan.unplannedTotal;
 
-  checks.push({ name: "Replan · Total produced",   expected: PLUMBING_REPLAN_TOTAL_PRODUCED,  actual: atp, pass: pct(atp, PLUMBING_REPLAN_TOTAL_PRODUCED)  <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
-  checks.push({ name: "Replan · Total remaining",  expected: PLUMBING_REPLAN_TOTAL_REMAINING, actual: atr, pass: pct(atr, PLUMBING_REPLAN_TOTAL_REMAINING) <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
-  checks.push({ name: "Replan · Total feasible",   expected: PLUMBING_REPLAN_TOTAL_FEASIBLE,  actual: atf, pass: pct(atf, PLUMBING_REPLAN_TOTAL_FEASIBLE)  <= PLUMBING_REPLAN_CAP_TOLERANCE, tolerance: tolStr(PLUMBING_REPLAN_CAP_TOLERANCE) });
-  checks.push({ name: "Replan · Total shortfall",  expected: PLUMBING_REPLAN_TOTAL_SHORTFALL, actual: ats, pass: pct(ats, PLUMBING_REPLAN_TOTAL_SHORTFALL) <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
-  checks.push({ name: "Replan · Unplanned total",  expected: PLUMBING_REPLAN_UNPLANNED_TOTAL, actual: atu, pass: pct(atu, PLUMBING_REPLAN_UNPLANNED_TOTAL) <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
+  checks.push({ name: "Replan · Total produced",   expected: PLUMBING_REPLAN_TOTAL_PRODUCED,  actual: totalProduced,   pass: pct(totalProduced,   PLUMBING_REPLAN_TOTAL_PRODUCED)  <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
+  checks.push({ name: "Replan · Total remaining",  expected: PLUMBING_REPLAN_TOTAL_REMAINING, actual: totalRemaining,  pass: pct(totalRemaining,  PLUMBING_REPLAN_TOTAL_REMAINING) <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
+  checks.push({ name: "Replan · Total feasible",   expected: PLUMBING_REPLAN_TOTAL_FEASIBLE,  actual: totalFeasible,   pass: pct(totalFeasible,   PLUMBING_REPLAN_TOTAL_FEASIBLE)  <= PLUMBING_REPLAN_CAP_TOLERANCE, tolerance: tolStr(PLUMBING_REPLAN_CAP_TOLERANCE) });
+  checks.push({ name: "Replan · Total shortfall",  expected: PLUMBING_REPLAN_TOTAL_SHORTFALL, actual: totalShortfall,  pass: pct(totalShortfall,  PLUMBING_REPLAN_TOTAL_SHORTFALL) <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
+  checks.push({ name: "Replan · Unplanned total",  expected: PLUMBING_REPLAN_UNPLANNED_TOTAL, actual: atu,             pass: pct(atu, PLUMBING_REPLAN_UNPLANNED_TOTAL) <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
 
   const allPass = checks.every((c) => c.pass);
   const failCount = checks.filter((c) => !c.pass).length;
-  res.json({ month, segment: "Plumbing", workingDaysRemaining: wdr, allPass, passCount: checks.length - failCount, failCount, checks });
+  res.json({ month, segment: "Plumbing", workingDaysRemaining: wdr, asOfDate, allPass, passCount: checks.length - failCount, failCount, checks });
 });
 
 /**

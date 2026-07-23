@@ -2525,7 +2525,7 @@ components:
 
     CorrectiveItemResult:
       type: object
-      required: [itemCode, colour, category, avg3MoSale, bufferMultiplier, stockOpen, producedToDate, stockNow, pendingAtPlan, pendingNow, pendingLastMonth, originalPlan, bufferReqRev, planRev, remainingToProduce, deltaNewOrders, deltaProduction, deltaNet, w1Rev, w2Rev, w3Rev, w4Rev, status, isNewItem]
+      required: [itemCode, colour, category, avg3MoSale, bufferMultiplier, stockOpen, producedToDate, stockNow, pendingAtPlan, pendingNow, pendingLastMonth, originalPlan, bufferReqRev, planRev, remainingToProduce, kgRev, remainingKg, deltaNewOrders, deltaProduction, deltaNet, w1Rev, w2Rev, w3Rev, w4Rev, status, isNewItem]
       properties:
         itemCode: { type: string }
         colour: { type: string }
@@ -2543,6 +2543,8 @@ components:
         bufferReqRev: { type: number }
         planRev: { type: number }
         remainingToProduce: { type: number }
+        kgRev: { type: number, description: "Revised plan quantity in kg (planRev × BOM weight per piece; 0 for PTMT)" }
+        remainingKg: { type: number, description: "Remaining to produce in kg; 0 for PTMT" }
         deltaNewOrders: { type: number }
         deltaProduction: { type: number }
         deltaNet: { type: number }
@@ -2555,17 +2557,38 @@ components:
         status: { type: string }
         isNewItem: { type: boolean }
 
+    CorrectiveCategoryResult:
+      type: object
+      required: [category, plan, produced, producedCapped, remaining, capPerDay, feasible, shortfall, productionLag, newDemandDelta, capacityShortfall, flags, kgRemaining]
+      properties:
+        category: { type: string }
+        plan: { type: number, description: "Sum of revised plan (planRev) per item in this category" }
+        produced: { type: number, description: "Total produced to date for plan items in this category" }
+        producedCapped: { type: number, description: "Sum of min(produced, planRev) per item — counts toward plan" }
+        remaining: { type: number, description: "plan − producedCapped — what still needs to be produced" }
+        capPerDay: { type: number, description: "p90 of daily category output from actuals (Plumbing: Sheet3; PTMT: DB override or suggested)" }
+        feasible: { type: number, description: "capPerDay × workingDaysRemaining — production possible in remaining time" }
+        shortfall: { type: number, description: "max(remaining − feasible, 0)" }
+        productionLag: { type: number, description: "max(sum(originalPlan) − produced, 0) — how far behind original plan" }
+        newDemandDelta: { type: number, description: "sum(max(deltaNewOrders, 0)) — new orders added mid-month" }
+        capacityShortfall: { type: number, description: "Alias for shortfall for variance-attribution clarity" }
+        flags:
+          type: array
+          items: { type: string }
+          description: "UNFULFILLABLE_THIS_MONTH | NOT_STARTED | NO_DEMONSTRATED_CAPACITY"
+        kgRemaining: { type: number, description: "Total remaining kg for Plumbing categories; 0 for PTMT" }
+
     CorrectiveReplanResult:
       type: object
-      required: [runId, month, segment, weekClosed, dailyCapacity, workingDaysPerWeek, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, weekStats, warnings, items]
+      required: [runId, month, segment, weekClosed, workingDaysUsed, workingDaysRemaining, dailyCapacity, workingDaysPerWeek, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, weekStats, warnings, items, categories, unplannedTotal]
       properties:
         runId: { type: integer }
         month: { type: string }
         segment: { type: string }
         weekClosed: { type: integer }
-        asOfDate: { type: ["string", "null"], description: "YYYY-MM-DD — set when run was triggered in as-of-date mode" }
-        workingDaysUsed: { type: ["integer", "null"], description: "Non-Sunday days from month start to asOfDate inclusive" }
-        workingDaysRemaining: { type: ["integer", "null"], description: "Non-Sunday days from day after asOfDate to month end" }
+        asOfDate: { type: ["string", "null"], description: "YYYY-MM-DD — effective as-of date (may be derived from weekClosed via P5)" }
+        workingDaysUsed: { type: integer, description: "Non-Sunday days from month start to asOfDate inclusive" }
+        workingDaysRemaining: { type: integer, description: "Non-Sunday days from day after asOfDate to month end; always set" }
         note: { type: ["string", "null"], description: "Human-readable label e.g. 'As of 18/07/26'" }
         dailyCapacity: { type: number }
         workingDaysPerWeek: { type: integer }
@@ -2583,6 +2606,20 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/CorrectiveItemResult" }
+        categories:
+          type: array
+          items: { $ref: "#/components/schemas/CorrectiveCategoryResult" }
+          description: "Per-category aggregates with variance attribution (P7)"
+        unplannedProduction:
+          type: array
+          items:
+            type: object
+            required: [code, qty]
+            properties:
+              code: { type: string }
+              qty: { type: integer }
+          description: "Plumbing Sheet3 codes not matched to any plan item"
+        unplannedTotal: { type: integer, description: "Sum of unplannedProduction quantities" }
 
     CategoryCapacity:
       type: object

@@ -68,6 +68,8 @@ export const correctivePlanItemsTable = pgTable("corrective_plan_items", {
   bufferReqRev: real("buffer_req_rev").notNull().default(0),
   planRev: real("plan_rev").notNull().default(0),
   remainingToProduce: real("remaining_to_produce").notNull().default(0),
+  kgRev: real("kg_rev").notNull().default(0),
+  remainingKg: real("remaining_kg").notNull().default(0),
   deltaNewOrders: real("delta_new_orders").notNull().default(0),
   deltaProduction: real("delta_production").notNull().default(0),
   deltaNet: real("delta_net").notNull().default(0),
