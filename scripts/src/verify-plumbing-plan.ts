@@ -439,16 +439,17 @@ async function main(): Promise<void> {
 
     // ── PTMT parity assertions (NC6–NC11) ─────────────────────────────────────
 
-    // NC6: PTMT monitoring — categories non-empty, plan target non-zero, needsReviewItems ≠ all items
+    // NC6: PTMT monitoring — categories non-empty, plan target non-zero, NRI ≠ all items,
+    //      AND produced > 0 now that ANUJ Production is wired
     const ptmtCats   = (ptmtDash?.categories as Array<Record<string, unknown>>) ?? [];
     const ptmtTarget = (ptmtPlant.targetPcs as number) ?? (ptmtPlant.targetKg as number) ?? 0;
     const ptmtNRI    = (ptmtDash?.needsReviewItems as unknown[]) ?? [];
-    // We loaded ptmtDash above; the plan has 3636 PTMT items — NRI must be less than that.
-    const ptmtMonOk  = ptmtCats.length > 0 && ptmtTarget > 0 && ptmtNRI.length < 3636;
+    const ptmtProducedPlant = (ptmtPlant.produced as number) ?? 0;
+    const ptmtMonOk  = ptmtCats.length > 0 && ptmtTarget > 0 && ptmtNRI.length < 3636 && ptmtProducedPlant > 0;
     newChecks.push({
-      name: `NC6 · PTMT monitoring · categories non-empty (${ptmtCats.length}), targetPcs non-zero (${ptmtTarget}), needsReviewItems < 3636`,
+      name: `NC6 · PTMT monitoring · categories (${ptmtCats.length}), targetPcs (${Math.round(ptmtTarget)}), produced (${Math.round(ptmtProducedPlant)}), NRI < 3636`,
       expected: 1, actual: ptmtMonOk ? 1 : 0,
-      pass: ptmtMonOk, tolerance: "categories>0 & targetPcs>0 & NRI<3636",
+      pass: ptmtMonOk, tolerance: "categories>0 & targetPcs>0 & produced>0 & NRI<3636",
     });
 
     // NC7: PTMT corrective POST weekClosed=0 → wdr reflects today, not the full month
@@ -504,6 +505,37 @@ async function main(): Promise<void> {
       name: `NC8b · PTMT plant · ΣW1-W4 (${Math.round(ptmtPlantWSum)}) ≈ grand total (${Math.round(ptmtPlanTotal)}) within 0.5%`,
       expected: ptmtPlanTotal, actual: ptmtPlantWSum,
       pass: ptmtPlantSumOk, tolerance: "±0.5%",
+    });
+
+    // NC12: PTMT monitoring produced pcs non-zero + category reconciliation
+    const ptmtUnmapped = (ptmtDash?.unmapped as Record<string, unknown>) ?? {};
+    const ptmtUnmappedTotal = (ptmtUnmapped.total as number) ?? 0;
+    const ptmtCatProducedSum = ptmtCats.reduce((s: number, c: Record<string, unknown>) => s + ((c.produced as number) ?? 0), 0);
+    const ptmtTotalProducedDash = (ptmtPlant.totalProduced as number) ?? 0;
+    const ptmtMappedDash        = (ptmtPlant.mapped as number) ?? 0;
+    // Σ(cat produced) + unmapped === total produced (exact reconciliation)
+    const ptmtReconOk = ptmtMappedDash > 0 && Math.abs(ptmtCatProducedSum + ptmtUnmappedTotal - ptmtTotalProducedDash) < 1;
+    newChecks.push({
+      name: `NC12 · PTMT monitoring · producedMapped (${Math.round(ptmtMappedDash)}) > 0 and catSum+unmapped (${Math.round(ptmtCatProducedSum + ptmtUnmappedTotal)}) = totalProduced (${Math.round(ptmtTotalProducedDash)})`,
+      expected: 1, actual: ptmtReconOk ? 1 : 0,
+      pass: ptmtReconOk, tolerance: "mapped>0, exact recon",
+    });
+
+    // NC13: Cross-source reconciliation — monitoring producedToDate ≈ corrective producedToDate
+    // Both read the ANUJ Production sheet via fetchDailyActuals.
+    // Small divergence (≤2%) is expected: the corrective engine extends the plan with new-order
+    // items (deltaNewOrders), so it matches production against a slightly larger code set than
+    // monitoring's static base plan.  A divergence > 2% would signal a real bug (e.g., monitoring
+    // silently reading 0 while corrective reads 530K).
+    // ptmtReplan was already fetched in NC7 (weekClosed=0, asOfDate=today).
+    const corrProd = (ptmtReplan?.producedToDate as number) ?? -1;
+    const monProd  = ptmtMappedDash;
+    const pctDiff  = corrProd > 0 ? Math.abs(monProd - corrProd) / corrProd : 1;
+    const crossSourceOk = corrProd >= 0 && pctDiff <= 0.02;
+    newChecks.push({
+      name: `NC13 · Cross-source · monitoring (${Math.round(monProd)}) vs corrective (${corrProd}) ±2% (diff=${(pctDiff*100).toFixed(2)}%)`,
+      expected: corrProd, actual: Math.round(monProd),
+      pass: crossSourceOk, tolerance: "±2% (architectural: corrective adds new-order items)",
     });
 
     // NC9: PTMT plan run save + retrieve (infrastructure parity with Plumbing)

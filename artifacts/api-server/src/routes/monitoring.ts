@@ -9,7 +9,8 @@ import {
 import { eq, and } from "drizzle-orm";
 import { buildPlanItems, computePlumbingMonitoringPayload } from "./plan";
 import { parseReport5 } from "../lib/report5";
-import { getWorkbookIdForMonth } from "../lib/sheets";
+import { getWorkbookIdForMonth, normalizeCodeStrict } from "../lib/sheets";
+import { fetchDailyActuals, type DailyActualRow } from "../lib/plant-ingestion";
 import {
   buildCalendarModel,
   countWorkingDaysElapsed,
@@ -73,6 +74,82 @@ async function loadOverridesForMonth(month: string): Promise<Map<string, number>
   return new Map(rows.map((r) => [r.machineId, Number(r.hours)]));
 }
 
+// ─── PTMT daily-actuals aggregation (mirrors computePlumbingMonitoringPayload) ──
+type PtmtActuals = ReturnType<typeof computePtmtActuals>;
+function computePtmtActuals(
+  planItems: { itemCode: string; category: string; maxProduction: number; [k: string]: unknown }[],
+  actuals: DailyActualRow[],
+  pcConversion: { targetPcsByCategory: Map<string, number> },
+) {
+  // code → category map (normalised)
+  const codeToCategory = new Map<string, string>();
+  const catRelease = new Map<string, [number, number, number, number]>();
+  for (const item of planItems) {
+    const norm = normalizeCodeStrict(item.itemCode);
+    if (!codeToCategory.has(norm)) codeToCategory.set(norm, item.category);
+    const arr = catRelease.get(item.category) ?? [0, 0, 0, 0];
+    arr[0] += (item as Record<string, number>)["w1"] ?? 0;
+    arr[1] += (item as Record<string, number>)["w2"] ?? 0;
+    arr[2] += (item as Record<string, number>)["w3"] ?? 0;
+    arr[3] += (item as Record<string, number>)["w4"] ?? 0;
+    catRelease.set(item.category, arr);
+  }
+
+  function wkIdx(day: number) { return day <= 7 ? 0 : day <= 14 ? 1 : day <= 21 ? 2 : 3 as 0|1|2|3; }
+
+  const catActual = new Map<string, [number, number, number, number]>();
+  const unmappedByWeek: [number, number, number, number] = [0, 0, 0, 0];
+  const unmappedCodeQty = new Map<string, number>();
+
+  for (const row of actuals) {
+    const cat = codeToCategory.get(normalizeCodeStrict(row.itemCode));
+    const wi = wkIdx(parseInt(row.date.slice(8), 10));
+    if (!cat) {
+      unmappedByWeek[wi] += row.qty;
+      unmappedCodeQty.set(row.itemCode, (unmappedCodeQty.get(row.itemCode) ?? 0) + row.qty);
+      continue;
+    }
+    const arr = catActual.get(cat) ?? [0, 0, 0, 0];
+    arr[wi] += row.qty;
+    catActual.set(cat, arr);
+  }
+
+  const lastDataDate = actuals.length > 0 ? [...actuals].map((r) => r.date).sort().pop()! : null;
+  const totalMapped   = [...catActual.values()].reduce((s, a) => s + a.reduce((x, v) => x + v, 0), 0);
+  const totalUnmapped = unmappedByWeek.reduce((s, v) => s + v, 0);
+  const totalProduced = totalMapped + totalUnmapped;
+  const topCodes = [...unmappedCodeQty.entries()]
+    .sort((a, b) => b[1] - a[1]).slice(0, 20).map(([code, qty]) => ({ code, qty }));
+
+  // Per-category detailed (same shape as Plumbing)
+  const allCats = new Set([...catRelease.keys(), ...catActual.keys()]);
+  function p2(n: number) { return String(n).padStart(2, "0"); }
+  const categoriesDetailed = [...allCats].map((cat) => {
+    const rel = catRelease.get(cat) ?? [0, 0, 0, 0];
+    const act = catActual.get(cat) ?? [0, 0, 0, 0];
+    return {
+      category: cat,
+      targetPcs: pcConversion.targetPcsByCategory.get(cat) ?? 0,
+      w1Release: Math.round(rel[0]), w1Actual: act[0],
+      w2Release: Math.round(rel[1]), w2Actual: act[1],
+      w3Release: Math.round(rel[2]), w3Actual: act[2],
+      w4Release: Math.round(rel[3]), w4Actual: act[3],
+      totalRelease: Math.round(rel.reduce((s, v) => s + v, 0)),
+      totalActual:  act.reduce((s, v) => s + v, 0),
+      produced: act.reduce((s, v) => s + v, 0),
+      released: Math.round(rel.reduce((s, v) => s + v, 0)),
+      notStarted: act.reduce((s, v) => s + v, 0) === 0 && rel.reduce((s, v) => s + v, 0) > 0,
+    };
+  }).sort((a, b) => b.totalRelease - a.totalRelease);
+
+  return {
+    catActual, catRelease, unmappedByWeek, totalMapped, totalUnmapped, totalProduced,
+    lastDataDate, categoriesDetailed,
+    unmappedPtmt: { byWeek: [...unmappedByWeek] as number[], total: totalUnmapped, topCodes },
+    p2,
+  };
+}
+
 export interface MonitoringBundle {
   month: string;
   calendarPlant: ReturnType<typeof buildCalendarModel>;
@@ -84,29 +161,54 @@ export interface MonitoringBundle {
   lastDataDate: string | null;
   thresholds: WarningThresholds;
   dataAvailable: boolean;
-  /** Plan target expressed in pieces (plan items have no BOM weight data for PTMT). */
+  /** Plan target expressed in pieces. */
   plantTargetPcs: number;
+  /** Produced pieces matched to plan items (from ANUJ Production sheet). */
+  producedToDatePcs: number;
+  /** Total produced pieces including unmapped items. */
+  totalProducedPcs: number;
   /** Actual kg output from Report-5 (machine-level; independent of piece plan). */
   outputToDateKg: number;
+  /** Non-Sunday working days elapsed to lastDataDate. */
+  workingDaysElapsed: number;
+  /** Produced pieces per working day. */
+  runRatePerDay: number;
+  /** Unmapped production (codes not in plan). */
+  unmappedPtmt: PtmtActuals["unmappedPtmt"];
+  /** W1–W4 weekly summary rows. */
+  weeks: {
+    week: number; label: string; startDate: string; endDate: string;
+    release: number; mapped: number; unmapped: number; actual: number;
+    wkAttPct: number | null;
+    cumRelease: number; cumMapped: number; cumTotal: number; cumAttPct: number | null;
+  }[];
+  /** Per-category data with W1–W4 release + actual breakdown. */
+  categoriesDetailed: PtmtActuals["categoriesDetailed"];
 }
 
 export async function buildMonitoringBundle(month: string): Promise<MonitoringBundle> {
   const sheetId = await getWorkbookIdForMonth("PTMT", month);
-  const [planItems, config, thresholds, overrides] = await Promise.all([
+  const [planItems, config, thresholds, overrides, actuals] = await Promise.all([
     buildPlanItems(month),
     loadConfig(month),
     loadThresholds(),
     loadOverridesForMonth(month),
+    // PTMT piece-level actuals: same Google Sheet the corrective engine reads,
+    // so monitoring producedToDate will agree with corrective producedToDate.
+    fetchDailyActuals(month).catch((err) => {
+      logger.warn({ err, month }, "monitoring: failed to fetch PTMT daily actuals");
+      return [] as DailyActualRow[];
+    }),
   ]);
 
-  // PTMT monitoring is piece-based: item weights are not stored in the monitoring
-  // weight table, so convertTargetsToKg would flag every item as needsReview and
-  // produce targetKg=0.  Use convertTargetsToPcs instead so category paces and
-  // the RAG band are computed from the piece plan.
+  // Plan targets in pieces (no BOM weights stored for PTMT items).
   const pcConversion = convertTargetsToPcs(planItems);
 
+  // Aggregate actuals by category + week.
+  const ptmtActuals = computePtmtActuals(planItems, actuals, pcConversion);
+
   let report5Machines: Awaited<ReturnType<typeof parseReport5>>["machines"] = [];
-  let lastDataDate: string | null = null;
+  let report5LastDate: string | null = null;
   let dataAvailable = true;
   if (!sheetId) {
     dataAvailable = false;
@@ -115,12 +217,15 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
     try {
       const result = await parseReport5(sheetId, month);
       report5Machines = result.machines;
-      lastDataDate = result.lastDataDate;
+      report5LastDate = result.lastDataDate;
     } catch (err) {
       dataAvailable = false;
       logger.error({ err, month }, "monitoring: failed to parse Report-5");
     }
   }
+
+  // lastDataDate: prefer ANUJ Production (the piece-plan source) over Report-5.
+  const lastDataDate = ptmtActuals.lastDataDate ?? report5LastDate;
 
   const elapsed = config.snapshotDate
     ? countWorkingDaysElapsed(month, config.snapshotDate)
@@ -131,15 +236,14 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
     .filter((m) => !m.isGrinder)
     .reduce((sum, m) => sum + m.days.reduce((s, d) => s + d.outputKg, 0), 0);
 
-  // plantPace.targetKg slot holds the piece total (no kg equivalent available).
-  // outputToDateKg from Report-5 is stored separately and exposed in the response.
-  const plantPace = computePaceMetrics(pcConversion.plantTargetPcs, 0, calendarPlant);
+  // Now that we have real produced pcs, both plan and actual are in the same unit.
+  const plantPace = computePaceMetrics(pcConversion.plantTargetPcs, ptmtActuals.totalMapped, calendarPlant);
 
-  const categoryPaces: CategoryPace[] = [...pcConversion.targetPcsByCategory.entries()].map(([category, targetPcs]) => ({
-    category,
-    // Show plan burn-down only; produced pcs by category not available from Report-5.
-    pace: computePaceMetrics(targetPcs, 0, calendarPlant),
-  }));
+  const categoryPaces: CategoryPace[] = [...pcConversion.targetPcsByCategory.entries()].map(([category, targetPcs]) => {
+    const actArr = ptmtActuals.catActual.get(category) ?? [0, 0, 0, 0];
+    const producedPcs = actArr.reduce((s, v) => s + v, 0);
+    return { category, pace: computePaceMetrics(targetPcs, producedPcs, calendarPlant) };
+  });
 
   const machineQuality = report5Machines.map((m) => computeMachineQuality(m, overrides.get(m.machineId)));
 
@@ -153,19 +257,72 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
       pendingOrder: i.pendingOrder,
     }));
 
+  // ── W1–W4 weekly summary rows (same shape as Plumbing weeks) ─────────────
+  const [yr, mo] = month.split("-").map(Number);
+  const lastDayOfMonth = new Date(yr, mo, 0).getDate();
+  const p2 = ptmtActuals.p2;
+  const weekCalendar = [
+    { week: 1, label: `W1 (${mo}/1–7)`,           startDay: 1,  endDay: 7,              startDate: `${yr}-${p2(mo)}-01`, endDate: `${yr}-${p2(mo)}-07` },
+    { week: 2, label: `W2 (${mo}/8–14)`,           startDay: 8,  endDay: 14,             startDate: `${yr}-${p2(mo)}-08`, endDate: `${yr}-${p2(mo)}-14` },
+    { week: 3, label: `W3 (${mo}/15–21)`,          startDay: 15, endDay: 21,             startDate: `${yr}-${p2(mo)}-15`, endDate: `${yr}-${p2(mo)}-21` },
+    { week: 4, label: `W4 (${mo}/22–${lastDayOfMonth})`, startDay: 22, endDay: lastDayOfMonth, startDate: `${yr}-${p2(mo)}-22`, endDate: `${yr}-${p2(mo)}-${p2(lastDayOfMonth)}` },
+  ];
+
+  const plantRelease: [number, number, number, number] = [0, 0, 0, 0];
+  const plantMapped:  [number, number, number, number] = [0, 0, 0, 0];
+  for (const [, arr] of ptmtActuals.catRelease) for (let i = 0; i < 4; i++) plantRelease[i] += arr[i];
+  for (const [, arr] of ptmtActuals.catActual)  for (let i = 0; i < 4; i++) plantMapped[i]  += arr[i];
+  for (let i = 0; i < 4; i++) plantRelease[i] = Math.round(plantRelease[i]);
+
+  // Non-Sunday working days elapsed through lastDataDate
+  let workingDaysElapsed = 0;
+  if (lastDataDate) {
+    const throughDay = parseInt(lastDataDate.slice(8), 10);
+    for (let d = 1; d <= throughDay; d++) {
+      if (new Date(`${month}-${p2(d)}T00:00:00Z`).getUTCDay() !== 0) workingDaysElapsed++;
+    }
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  let cumRelease = 0, cumMapped = 0, cumTotal = 0;
+  const weeks = weekCalendar.map((wk, i) => {
+    const release  = plantRelease[i]!;
+    const mapped   = plantMapped[i]!;
+    const unmapped = ptmtActuals.unmappedByWeek[i]!;
+    const actual   = mapped + unmapped;
+    cumRelease += release;
+    cumMapped  += mapped;
+    cumTotal   += actual;
+    const wkStarted = today.slice(0, 7) === month && today >= wk.startDate;
+    const cumAttPct = cumRelease > 0 && wkStarted ? Math.round((cumMapped / cumRelease) * 1000) / 10 : null;
+    const wkAttPct  = release   > 0 && wkStarted ? Math.round((mapped    / release)    * 1000) / 10 : null;
+    return { week: wk.week, label: wk.label, startDate: wk.startDate, endDate: wk.endDate,
+      release, mapped, unmapped, actual, wkAttPct,
+      cumRelease, cumMapped, cumTotal, cumAttPct };
+  });
+
+  const runRatePerDay = workingDaysElapsed > 0 ? Math.round(ptmtActuals.totalProduced / workingDaysElapsed) : 0;
+
   return {
     month,
     calendarPlant,
     plantPace,
     categoryPaces,
     machineQuality,
-    needsReviewItems: [],  // piece-based: no weight lookup → no items flagged
+    needsReviewItems: [],   // piece-based: no weight lookup → no items flagged
     stockoutItems,
     lastDataDate,
     thresholds,
     dataAvailable,
     plantTargetPcs: pcConversion.plantTargetPcs,
+    producedToDatePcs: ptmtActuals.totalMapped,
+    totalProducedPcs: ptmtActuals.totalProduced,
     outputToDateKg,
+    workingDaysElapsed,
+    runRatePerDay,
+    unmappedPtmt: ptmtActuals.unmappedPtmt,
+    weeks,
+    categoriesDetailed: ptmtActuals.categoriesDetailed,
   };
 }
 
@@ -200,29 +357,39 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
     return;
   }
 
-  // ── PTMT: piece-based plan targets + kg-based actuals from Report-5 ─────────
+  // ── PTMT: piece-based plan targets + piece-based actuals from ANUJ Production ─
   const bundle = await buildMonitoringBundle(month);
   res.json({
     month,
     segment: "PTMT",
     dataAvailable: bundle.dataAvailable,
     lastDataDate: bundle.lastDataDate,
+    workingDaysElapsed: bundle.workingDaysElapsed,
     calendar: bundle.calendarPlant,
     plant: {
       ...bundle.plantPace,
-      // targetKg slot holds the piece plan total (no per-item kg weights for PTMT).
-      // targetPcs is the explicit alias; outputToDateKg is the machine-level actuals.
+      // targetKg slot in PaceMetrics holds the piece plan total (field renamed for clarity below).
       targetPcs: bundle.plantTargetPcs,
-      outputToDateKg: bundle.outputToDateKg,
+      produced: bundle.producedToDatePcs,    // mapped pcs (for plan attainment)
+      mapped: bundle.producedToDatePcs,
+      unmapped: bundle.totalProducedPcs - bundle.producedToDatePcs,
+      totalProduced: bundle.totalProducedPcs,
+      runRatePerDay: bundle.runRatePerDay,
+      outputToDateKg: bundle.outputToDateKg, // machine-level kg from Report-5 (separate KPI)
       ragBand: ragBand(bundle.plantPace.paceIndex),
     },
-    categories: bundle.categoryPaces.map((c) => ({
-      category: c.category,
-      target: c.pace.targetKg,       // holds targetPcs (piece plan for this category)
-      targetPcs: c.pace.targetKg,    // explicit alias
-      requiredPerDay: c.pace.requiredPerDay,
-      ragBand: ragBand(c.pace.attainmentPct),
-    })),
+    // Categories: merge pace metrics with W1–W4 detail (same shape as Plumbing categories)
+    categories: bundle.categoriesDetailed.map((c) => {
+      const pace = bundle.categoryPaces.find((p) => p.category === c.category);
+      return {
+        ...c,
+        target: c.targetPcs,            // alias kept for backward compat
+        requiredPerDay: pace?.pace.requiredPerDay ?? 0,
+        ragBand: ragBand(pace?.pace.paceIndex ?? 0),
+      };
+    }),
+    weeks: bundle.weeks,
+    unmapped: bundle.unmappedPtmt,
     needsReviewItems: bundle.needsReviewItems,
     warningCount: buildBehindPaceAndWillMissWarnings("Plant", bundle.plantPace, bundle.thresholds).length,
     utilisationHeadline: (() => {

@@ -1,0 +1,61 @@
+# Replit Prompt — Wire PTMT Monitoring Actuals to the PTMT ANUJ Production Sheet
+
+PTMT monitoring currently has a correct plan target (`targetPcs = 576,364` in pieces) but no piece-level actuals, so produced-pieces = 0 and the RAG band is stuck red regardless of real performance. The piece-level actuals **already exist** — the PTMT corrective engine reads them (that is why PTMT corrective `producedToDate` is non-zero, 530,264). Monitoring was simply never pointed at the same source; it was trying to convert kg from Report-5 instead.
+
+This is a wiring fix, not a missing-data problem.
+
+---
+
+## Source
+
+Google Sheet `1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw`, worksheet **"Production"**, columns **A–E**:
+- A = Date
+- B = Code
+- C = Colour
+- D = Qty (**pieces**)
+- E = [confirm actual meaning against the sheet]
+
+This is the PTMT equivalent of Plumbing's Sheet3. It is a daily production log in **pieces**, by item code. Resolve columns by header name where possible; do not hardcode positions if headers are present.
+
+---
+
+## Fix
+
+- In `buildMonitoringBundle` for PTMT, read produced **pieces** by item / category from the PTMT ANUJ **Production** tab, matched to plan items on a **normalised code** (uppercase, strip hyphens, spaces, dots) — the same normalisation the corrective engine already uses. (PTMT codes like "A-465" must match production "A465".)
+- Aggregate produced pieces **by category** and **by week** (W1 = days 1–7, W2 = 8–14, W3 = 15–21, W4 = 22–end), exactly as Plumbing monitoring does from Sheet3.
+- Now that both the plan target (`targetPcs`) and produced are in **pieces**, compute from real pieces (not the kg placeholder):
+  - per-category attainment %,
+  - the cumulative-released-vs-cumulative-produced headline (not per-week attainment),
+  - run-rate per working day,
+  - the RAG band.
+- Keep the Report-5 **kg** machine-output KPIs as a **separate machine-level panel** — they are real for that purpose; they just are not the plan-vs-actual source. Do not mix kg and pieces in the same comparison.
+- Report **unmapped PTMT production** (codes produced but not in the plan) as its own line, the same treatment as Plumbing.
+- Suppress attainment percentages on zero/tiny-release weeks (divide-by-zero guard), consistent with the Plumbing monitoring metric changes.
+
+---
+
+## Verify
+
+- PTMT monitoring shows **non-zero produced pieces per category** where production exists.
+- Total PTMT produced pieces ≈ the corrective engine's `producedToDate` (530,264 on 28 Jul) — both now read the same sheet, so they must reconcile.
+- RAG band reflects **genuine attainment**, not a stuck red.
+- `needsReviewItems` is not the entire item set.
+
+---
+
+## Add assertions (so this can't silently regress)
+
+1. PTMT monitoring produced-pieces is **non-zero** where production exists.
+2. `Σ(category produced) + unmapped === total produced` (exact reconciliation).
+3. **Cross-source reconciliation:** PTMT monitoring `producedToDate` === PTMT corrective `producedToDate` for the same as-of date. They read the same sheet, so they must agree — if they ever diverge, something is wrong, and this check catches it.
+4. PTMT monitoring `categories` is non-empty and a plan target is present (already covered by NC6 — confirm it now also has real produced values, not just a target).
+
+---
+
+## Report
+
+- Confirm PTMT monitoring now shows real produced pieces, attainment %, and a meaningful RAG band.
+- Report the PTMT monitoring vs PTMT corrective `producedToDate` reconciliation (should match).
+- New total suite count and pass/fail, listing the assertions added.
+
+**Note:** this fully closes the P2 caveat from the 28-Jul audit — PTMT monitoring plan-vs-actual was half-wired (plan side correct, actuals side stubbed). With the ANUJ Production feed connected, both sides are in pieces and the comparison is real. Do not change the plan target logic (targetPcs = 576,364 is correct); only add the actuals side.
