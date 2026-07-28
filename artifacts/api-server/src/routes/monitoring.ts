@@ -13,7 +13,7 @@ import { getWorkbookIdForMonth } from "../lib/sheets";
 import {
   buildCalendarModel,
   countWorkingDaysElapsed,
-  convertTargetsToKg,
+  convertTargetsToPcs,
   computePaceMetrics,
   computeMachineQuality,
   ragBand,
@@ -22,7 +22,6 @@ import {
   buildStockoutWarnings,
   buildRecommendedActions,
   DEFAULT_WARNING_THRESHOLDS,
-  type ItemWeightMap,
   type WarningThresholds,
   type CategoryPace,
   type Warning,
@@ -85,19 +84,26 @@ export interface MonitoringBundle {
   lastDataDate: string | null;
   thresholds: WarningThresholds;
   dataAvailable: boolean;
+  /** Plan target expressed in pieces (plan items have no BOM weight data for PTMT). */
+  plantTargetPcs: number;
+  /** Actual kg output from Report-5 (machine-level; independent of piece plan). */
+  outputToDateKg: number;
 }
 
 export async function buildMonitoringBundle(month: string): Promise<MonitoringBundle> {
   const sheetId = await getWorkbookIdForMonth("PTMT", month);
-  const [planItems, weightMap, config, thresholds, overrides] = await Promise.all([
+  const [planItems, config, thresholds, overrides] = await Promise.all([
     buildPlanItems(month),
-    loadWeightMap(),
     loadConfig(month),
     loadThresholds(),
     loadOverridesForMonth(month),
   ]);
 
-  const conversion = convertTargetsToKg(planItems, weightMap);
+  // PTMT monitoring is piece-based: item weights are not stored in the monitoring
+  // weight table, so convertTargetsToKg would flag every item as needsReview and
+  // produce targetKg=0.  Use convertTargetsToPcs instead so category paces and
+  // the RAG band are computed from the piece plan.
+  const pcConversion = convertTargetsToPcs(planItems);
 
   let report5Machines: Awaited<ReturnType<typeof parseReport5>>["machines"] = [];
   let lastDataDate: string | null = null;
@@ -125,13 +131,14 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
     .filter((m) => !m.isGrinder)
     .reduce((sum, m) => sum + m.days.reduce((s, d) => s + d.outputKg, 0), 0);
 
-  const plantPace = computePaceMetrics(conversion.plantTargetKg, outputToDateKg, calendarPlant);
+  // plantPace.targetKg slot holds the piece total (no kg equivalent available).
+  // outputToDateKg from Report-5 is stored separately and exposed in the response.
+  const plantPace = computePaceMetrics(pcConversion.plantTargetPcs, 0, calendarPlant);
 
-  const categoryPaces: CategoryPace[] = [...conversion.targetKgByCategory.entries()].map(([category, targetKg]) => ({
+  const categoryPaces: CategoryPace[] = [...pcConversion.targetPcsByCategory.entries()].map(([category, targetPcs]) => ({
     category,
-    // Category-level plant attainment needs a machine->category map, which does not exist yet;
-    // per spec §5 Rule 2, show plan-side burn-down (target vs required-per-day) only.
-    pace: computePaceMetrics(targetKg, 0, calendarPlant),
+    // Show plan burn-down only; produced pcs by category not available from Report-5.
+    pace: computePaceMetrics(targetPcs, 0, calendarPlant),
   }));
 
   const machineQuality = report5Machines.map((m) => computeMachineQuality(m, overrides.get(m.machineId)));
@@ -152,11 +159,13 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
     plantPace,
     categoryPaces,
     machineQuality,
-    needsReviewItems: conversion.needsReviewItems,
+    needsReviewItems: [],  // piece-based: no weight lookup → no items flagged
     stockoutItems,
     lastDataDate,
     thresholds,
     dataAvailable,
+    plantTargetPcs: pcConversion.plantTargetPcs,
+    outputToDateKg,
   };
 }
 
@@ -191,7 +200,7 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
     return;
   }
 
-  // ── PTMT: kg-based data from Report-5 ─────────────────────────────────────
+  // ── PTMT: piece-based plan targets + kg-based actuals from Report-5 ─────────
   const bundle = await buildMonitoringBundle(month);
   res.json({
     month,
@@ -199,10 +208,18 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
     dataAvailable: bundle.dataAvailable,
     lastDataDate: bundle.lastDataDate,
     calendar: bundle.calendarPlant,
-    plant: { ...bundle.plantPace, ragBand: ragBand(bundle.plantPace.paceIndex) },
+    plant: {
+      ...bundle.plantPace,
+      // targetKg slot holds the piece plan total (no per-item kg weights for PTMT).
+      // targetPcs is the explicit alias; outputToDateKg is the machine-level actuals.
+      targetPcs: bundle.plantTargetPcs,
+      outputToDateKg: bundle.outputToDateKg,
+      ragBand: ragBand(bundle.plantPace.paceIndex),
+    },
     categories: bundle.categoryPaces.map((c) => ({
       category: c.category,
-      target: c.pace.targetKg,
+      target: c.pace.targetKg,       // holds targetPcs (piece plan for this category)
+      targetPcs: c.pace.targetKg,    // explicit alias
       requiredPerDay: c.pace.requiredPerDay,
       ragBand: ragBand(c.pace.attainmentPct),
     })),

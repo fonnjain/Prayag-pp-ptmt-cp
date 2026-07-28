@@ -81,6 +81,32 @@ export function convertTargetsToKg(
   return { targetKgByCategory, floorKgByCategory, plantTargetKg, plantFloorKg, needsReviewItems };
 }
 
+/**
+ * Piece-based alternative to convertTargetsToKg.
+ *
+ * Used for segments that have no BOM weight data (PTMT), so the plan target
+ * is expressed in pieces rather than kg.  needsReviewItems is always empty
+ * because no weight lookup is performed.
+ */
+export function convertTargetsToPcs(items: PlanItemForMonitoring[]): {
+  targetPcsByCategory: Map<string, number>;
+  floorPcsByCategory: Map<string, number>;
+  plantTargetPcs: number;
+  plantFloorPcs: number;
+} {
+  const targetPcsByCategory = new Map<string, number>();
+  const floorPcsByCategory = new Map<string, number>();
+  let plantTargetPcs = 0;
+  let plantFloorPcs = 0;
+  for (const item of items) {
+    targetPcsByCategory.set(item.category, (targetPcsByCategory.get(item.category) ?? 0) + item.maxProduction);
+    floorPcsByCategory.set(item.category, (floorPcsByCategory.get(item.category) ?? 0) + item.minProduction);
+    plantTargetPcs += item.maxProduction;
+    plantFloorPcs += item.minProduction;
+  }
+  return { targetPcsByCategory, floorPcsByCategory, plantTargetPcs, plantFloorPcs };
+}
+
 export interface PaceMetrics {
   targetKg: number;
   outputToDateKg: number;

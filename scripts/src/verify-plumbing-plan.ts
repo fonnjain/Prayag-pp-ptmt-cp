@@ -367,12 +367,13 @@ async function main(): Promise<void> {
       fetch(`${API_BASE}/api/monitoring/dashboard?month=${PLUMBING_MONTH}&segment=PTMT`).then((r) => r.json() as Promise<Record<string, unknown>>),
       fetch(`${API_BASE}/api/monitoring/dashboard?month=${PLUMBING_MONTH}&segment=PLUMBING`).then((r) => r.json() as Promise<Record<string, unknown>>),
     ]);
-    const ptmtHasKg      = typeof (ptmtDash?.plant as Record<string, unknown>)?.targetKg === "number";
+    const ptmtPlant      = (ptmtDash?.plant as Record<string, unknown>) ?? {};
+    const ptmtHasTarget  = typeof ptmtPlant.targetKg === "number" || typeof ptmtPlant.targetPcs === "number";
     const plumbHasPieces = typeof (plumbDash?.plant as Record<string, unknown>)?.produced === "number";
     newChecks.push({
-      name: "NC1 · monitoring/dashboard · PTMT returns kg-based, PLUMBING returns pieces-based",
-      expected: 1, actual: (ptmtHasKg && plumbHasPieces) ? 1 : 0,
-      pass: ptmtHasKg && plumbHasPieces, tolerance: "structural diff",
+      name: "NC1 · monitoring/dashboard · PTMT has plan target field, PLUMBING returns pieces-based",
+      expected: 1, actual: (ptmtHasTarget && plumbHasPieces) ? 1 : 0,
+      pass: ptmtHasTarget && plumbHasPieces, tolerance: "structural diff",
     });
 
     // NC2: Plumbing monitoring categories have `produced` field, at least one non-zero
@@ -434,6 +435,140 @@ async function main(): Promise<void> {
       name: "NC5 · GET /plan · Plumbing returns items when FG upload present (422 guard active)",
       expected: 1, actual: planOk ? 1 : 0,
       pass: planOk, tolerance: "non-empty array",
+    });
+
+    // ── PTMT parity assertions (NC6–NC11) ─────────────────────────────────────
+
+    // NC6: PTMT monitoring — categories non-empty, plan target non-zero, needsReviewItems ≠ all items
+    const ptmtCats   = (ptmtDash?.categories as Array<Record<string, unknown>>) ?? [];
+    const ptmtTarget = (ptmtPlant.targetPcs as number) ?? (ptmtPlant.targetKg as number) ?? 0;
+    const ptmtNRI    = (ptmtDash?.needsReviewItems as unknown[]) ?? [];
+    // We loaded ptmtDash above; the plan has 3636 PTMT items — NRI must be less than that.
+    const ptmtMonOk  = ptmtCats.length > 0 && ptmtTarget > 0 && ptmtNRI.length < 3636;
+    newChecks.push({
+      name: `NC6 · PTMT monitoring · categories non-empty (${ptmtCats.length}), targetPcs non-zero (${ptmtTarget}), needsReviewItems < 3636`,
+      expected: 1, actual: ptmtMonOk ? 1 : 0,
+      pass: ptmtMonOk, tolerance: "categories>0 & targetPcs>0 & NRI<3636",
+    });
+
+    // NC7: PTMT corrective POST weekClosed=0 → wdr reflects today, not the full month
+    const ptmtReplanResp = await fetch(`${API_BASE}/api/corrective/replan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ month: PTMT_MONTH, segment: "PTMT", weekClosed: 0 }),
+    });
+    const ptmtReplan = await ptmtReplanResp.json() as Record<string, unknown>;
+    const ptmtWdr     = (ptmtReplan?.workingDaysRemaining as number) ?? 27;
+    const fullMonWdr  = 27; // July 2026
+    const todayInMo   = new Date().toISOString().slice(0, 7) === PTMT_MONTH;
+    const ptmtWdrOk   = !todayInMo || ptmtWdr < fullMonWdr;
+    newChecks.push({
+      name: `NC7 · PTMT corrective POST weekClosed=0 · wdr (${ptmtWdr}) < full month when mid-month`,
+      expected: 1, actual: ptmtWdrOk ? 1 : 0,
+      pass: ptmtWdrOk, tolerance: `< ${fullMonWdr} when in ${PTMT_MONTH}`,
+    });
+
+    // NC8: PTMT weekly release — plant W1+W2+W3+W4 ≈ plan total (within 0.5%) per category
+    const ptmtPlanItems = await fetch(`${API_BASE}/api/plan?month=${PTMT_MONTH}&segment=PTMT`)
+      .then((r) => r.json() as Promise<Array<Record<string, unknown>>>);
+    const ptmtCatMap = new Map<string, { w1: number; w2: number; w3: number; w4: number; plan: number }>();
+    for (const it of ptmtPlanItems) {
+      const cat = String(it["category"] ?? "");
+      if (!ptmtCatMap.has(cat)) ptmtCatMap.set(cat, { w1: 0, w2: 0, w3: 0, w4: 0, plan: 0 });
+      const c = ptmtCatMap.get(cat)!;
+      c.w1   += (it["w1"]   as number) ?? 0;
+      c.w2   += (it["w2"]   as number) ?? 0;
+      c.w3   += (it["w3"]   as number) ?? 0;
+      c.w4   += (it["w4"]   as number) ?? 0;
+      c.plan += (it["maxProduction"] as number) ?? 0;
+    }
+    let ptmtWeeklyOk = ptmtCatMap.size === 7; // must have exactly 7 PTMT categories
+    for (const [cat, v] of ptmtCatMap) {
+      const wSum = v.w1 + v.w2 + v.w3 + v.w4;
+      if (v.plan > 0 && Math.abs(wSum - v.plan) / v.plan > 0.005) { // within 0.5%
+        console.error(`  NC8 fail: ${cat} wSum=${Math.round(wSum)} plan=${Math.round(v.plan)}`);
+        ptmtWeeklyOk = false;
+      }
+    }
+    const ptmtPlantW1 = [...ptmtCatMap.values()].reduce((s, v) => s + v.w1, 0);
+    const ptmtPlanTotal = [...ptmtCatMap.values()].reduce((s, v) => s + v.plan, 0);
+    newChecks.push({
+      name: `NC8 · PTMT weekly release · 7 categories, W1+W2+W3+W4 ≈ plan per cat (±0.5%), W1=${Math.round(ptmtPlantW1)}`,
+      expected: 1, actual: ptmtWeeklyOk ? 1 : 0,
+      pass: ptmtWeeklyOk, tolerance: "7 cats, each W-sum within 0.5% of plan",
+    });
+    // Plant-level W-sum within 0.5% of grand total
+    const ptmtPlantWSum = [...ptmtCatMap.values()].reduce((s, v) => s + v.w1 + v.w2 + v.w3 + v.w4, 0);
+    const ptmtPlantSumOk = Math.abs(ptmtPlantWSum - ptmtPlanTotal) / ptmtPlanTotal < 0.005;
+    newChecks.push({
+      name: `NC8b · PTMT plant · ΣW1-W4 (${Math.round(ptmtPlantWSum)}) ≈ grand total (${Math.round(ptmtPlanTotal)}) within 0.5%`,
+      expected: ptmtPlanTotal, actual: ptmtPlantWSum,
+      pass: ptmtPlantSumOk, tolerance: "±0.5%",
+    });
+
+    // NC9: PTMT plan run save + retrieve (infrastructure parity with Plumbing)
+    const ptmtRunResp = await fetch(`${API_BASE}/api/plan/runs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ month: PTMT_MONTH, segment: "PTMT", note: "suite-NC9" }),
+    });
+    const ptmtRun = await ptmtRunResp.json() as Record<string, unknown>;
+    const ptmtRunSaved = ptmtRunResp.status === 201 && typeof ptmtRun.id === "number";
+    // Verify retrieval
+    let ptmtRunRetrieved = false;
+    if (ptmtRunSaved) {
+      const listResp = await fetch(`${API_BASE}/api/plan/runs?month=${PTMT_MONTH}&segment=PTMT`);
+      const list = await listResp.json() as Array<Record<string, unknown>>;
+      ptmtRunRetrieved = Array.isArray(list) && list.some((r) => r.id === ptmtRun.id);
+    }
+    newChecks.push({
+      name: `NC9 · PTMT plan run · save (201) and retrieve from list`,
+      expected: 1, actual: (ptmtRunSaved && ptmtRunRetrieved) ? 1 : 0,
+      pass: ptmtRunSaved && ptmtRunRetrieved, tolerance: "POST 201 + appears in GET list",
+    });
+
+    // NC10: Ops overview segment filter — PTMT ≠ Plumbing ≠ Combined orderValue
+    const [opsP, opsT, opsC] = await Promise.all([
+      fetch(`${API_BASE}/api/ops/overview?fy=2026-27&segment=Plumbing`).then((r) => r.json() as Promise<Record<string, unknown>>),
+      fetch(`${API_BASE}/api/ops/overview?fy=2026-27&segment=PTMT`).then((r) => r.json() as Promise<Record<string, unknown>>),
+      fetch(`${API_BASE}/api/ops/overview?fy=2026-27&segment=Combined`).then((r) => r.json() as Promise<Record<string, unknown>>),
+    ]);
+    const opsOvPtmt  = (opsT.orderValue as number) ?? 0;
+    const opsOvPlumb = (opsP.orderValue as number) ?? 0;
+    const opsOvComb  = (opsC.orderValue as number) ?? 0;
+    const opsSegOk   = opsOvPtmt > 0 && opsOvPlumb > 0 && opsOvComb > 0
+                     && opsOvPtmt !== opsOvPlumb
+                     && opsOvComb > opsOvPtmt
+                     && opsOvComb > opsOvPlumb;
+    newChecks.push({
+      name: `NC10 · Ops overview · PTMT (${fmt(opsOvPtmt)}) ≠ Plumbing (${fmt(opsOvPlumb)}) ≠ Combined (${fmt(opsOvComb)})`,
+      expected: 1, actual: opsSegOk ? 1 : 0,
+      pass: opsSegOk, tolerance: "PTMT≠Plumbing, Combined>both",
+    });
+
+    // NC11: Management-view golden values — item 144-O / BURGUNDY (Cocks Standard)
+    const mgmtData = await fetch(`${API_BASE}/api/ops/management-view?month=${PTMT_MONTH}`)
+      .then((r) => r.json() as Promise<Record<string, unknown>>);
+    const mgmtCats  = (mgmtData?.categories as Array<Record<string, unknown>>) ?? [];
+    let mgmtItem: Record<string, unknown> | undefined;
+    for (const cat of mgmtCats) {
+      const items = (cat.items as Array<Record<string, unknown>>) ?? [];
+      mgmtItem = items.find((i) => i.itemCode === "144-O" && i.colour === "BURGUNDY");
+      if (mgmtItem) break;
+    }
+    // Reference values (2026-07-28 snapshot, ±1% tolerance)
+    const MGMT_E = 7552, MGMT_F = 7587, MGMT_G = 7534, MGMT_H = 6146, MGMT_I = 4620;
+    const tol1Pct = (actual: number, expected: number) => expected > 0 && Math.abs(actual - expected) / expected < 0.01;
+    const mgmtOk = !!mgmtItem
+      && tol1Pct((mgmtItem.E as number) ?? 0, MGMT_E)
+      && tol1Pct((mgmtItem.F as number) ?? 0, MGMT_F)
+      && tol1Pct((mgmtItem.G as number) ?? 0, MGMT_G)
+      && tol1Pct((mgmtItem.H as number) ?? 0, MGMT_H)
+      && tol1Pct((mgmtItem.I as number) ?? 0, MGMT_I);
+    newChecks.push({
+      name: `NC11 · Management-view · 144-O/BURGUNDY E/F/G/H/I within ±1% of golden`,
+      expected: 1, actual: mgmtOk ? 1 : 0,
+      pass: mgmtOk, tolerance: "E≈7552 F≈7587 G≈7534 H≈6146 I≈4620 (±1%)",
     });
 
   } catch (err) {

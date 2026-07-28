@@ -2,7 +2,8 @@ import { Router, type IRouter } from "express";
 import { getTabValues, listTabs, SHEET_IDS, throttledGetTabValues, itemKey, normalizeCode, type DualTotals, fetchAvg3MoSaleTotals } from "../lib/sheets";
 import { logger } from "../lib/logger";
 import type * as ExcelJSType from "exceljs";
-import { db, itemMasterTable } from "@workspace/db";
+import { db, itemMasterTable, planRunsTable, planRunResultsTable } from "@workspace/db";
+import { and, eq, desc } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -422,6 +423,27 @@ router.get("/ops/sales", async (req, res): Promise<void> => {
   }
 });
 
+// ─── Order-group → segment mapping ───────────────────────────────────────────
+// The order sheet "GROUP" column uses product-category names.
+// PTMT products are always in group "PTMT".
+// Plumbing products span several groups corresponding to manufactured plumbing lines.
+const PTMT_ORDER_GROUPS   = new Set(["PTMT"]);
+const PLUMBING_ORDER_GROUPS = new Set(["C P", "CPVC", "SWR", "UPVC", "AGRI", "GARDEN PIPE", "PPR", "HDPE PIPE"]);
+
+function rowMatchesSegment(group: string, segment: string): boolean {
+  if (segment === "Combined") return true;
+  if (segment === "PTMT")     return PTMT_ORDER_GROUPS.has(group);
+  if (segment === "Plumbing") return PLUMBING_ORDER_GROUPS.has(group);
+  return true; // unknown segment: include everything
+}
+
+/** Returns IST-adjusted current month as YYYY-MM. */
+function currentMonthIst(): string {
+  const istMs = Date.now() + 5.5 * 60 * 60 * 1000;
+  const d = new Date(istMs);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 // ─── GET /ops/overview ────────────────────────────────────────────────────────
 router.get("/ops/overview", async (req, res): Promise<void> => {
   const fy = String(req.query.fy ?? "2026-27");
@@ -443,8 +465,12 @@ router.get("/ops/overview", async (req, res): Promise<void> => {
         try {
           const values = await getTabValues(sheetId, tab, "A1:Z20000");
           const rows = rowsToObjects(values);
-          orderValue += rows.reduce((s, r) => s + toNum(r["Taxable Value"]), 0);
-          orderQty += rows.reduce((s, r) => s + toNum(r["Quantity"]), 0);
+          for (const r of rows) {
+            const group = String(r["GROUP"] ?? "").trim();
+            if (!rowMatchesSegment(group, segment)) continue;
+            orderValue += toNum(r["Taxable Value"]);
+            orderQty   += toNum(r["Quantity"]);
+          }
           await new Promise((r) => setTimeout(r, 200));
         } catch { /* skip */ }
       }
@@ -453,13 +479,39 @@ router.get("/ops/overview", async (req, res): Promise<void> => {
     }
   }
 
+  // salesValue: orders ARE dispatched sales; use the segment-filtered order value.
+  const salesValue = orderValue;
+
+  // productionPlan: latest saved plan run for the current month + this segment.
+  // Falls back to 0 if no plan run has been saved yet.
+  let productionPlan = 0;
+  try {
+    const normSegment = segment === "Plumbing" ? "Plumbing" : "PTMT";
+    const month = currentMonthIst();
+    const [latestRun] = await db
+      .select({ id: planRunsTable.id })
+      .from(planRunsTable)
+      .where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, normSegment)))
+      .orderBy(desc(planRunsTable.createdAt))
+      .limit(1);
+    if (latestRun) {
+      const results = await db
+        .select({ productionPlan: planRunResultsTable.productionPlan })
+        .from(planRunResultsTable)
+        .where(eq(planRunResultsTable.runId, latestRun.id));
+      productionPlan = results.reduce((s, r) => s + Math.max(r.productionPlan, 0), 0);
+    }
+  } catch (err) {
+    logger.warn({ err }, "overview productionPlan fetch failed");
+  }
+
   const result = {
     fy,
     segment,
     orderValue,
     orderQty,
-    salesValue: 0, // placeholder — full sales is expensive
-    productionPlan: 0, // placeholder — use /api/plan/summary?segment= for live figures
+    salesValue,
+    productionPlan,
     festivals: FESTIVAL_CONFIG,
   };
   setCached(cacheKey, result);

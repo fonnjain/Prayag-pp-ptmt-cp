@@ -1,0 +1,83 @@
+# Replit Prompt — Fix QA Findings (28 Jul 2026): "Bring PTMT to Parity with Plumbing"
+
+The 325/325 suite is green, but a live-UI audit found 9 issues the suite missed. The organizing theme: **this session's work was Plumbing-focused, and several shared-code fixes were only ever applied to (or exercised on) the Plumbing path — PTMT lags behind.** Fix in the order below. For each, change the code AND add the regression assertion that would have caught it, so the PTMT side of the suite stops being the blind spot.
+
+**First, two "failures" in the audit that are NOT bugs — do not act on them:**
+- The Plumbing plan "drift" (−0.63%) and the weekly-release deltas are the already-diagnosed, already-accepted avg3MoSale rolling-window movement. The suite goldens are current; the audit compared against pre-drift reference values. Ignore.
+
+---
+
+## P1 — BLOCKER: Ops Dashboard content routes all 404
+
+The Ops Dashboard shell loads at `/ops-dashboard/` but every content page shows "Page not found". The wouter `Router` has no `base="/ops-dashboard"`, so a route `path="/"` never matches the full pathname `/ops-dashboard/`.
+
+**Fix:** set the router base path so the dashboard's internal routes resolve. Verify every nav item (Overview, Orders, Production, Stock/Buffer, Sales, Management Reports) loads real content, not "Page not found".
+
+---
+
+## P2 — HIGH: PTMT monitoring plan-vs-actual is completely broken
+
+PTMT monitoring returns `targetKg = 0`, `categories = []`, `ragBand = null`, and pushes **all 3,636 PTMT items into needsReviewItems**. Root cause: `loadWeightMap()` returns no weight for any PTMT item code, so no plan target can be computed. The machine-level dashboard renders (it reads Report-5 directly), which **masks** the fact that PTMT has no working plan-vs-actual monitoring at all.
+
+Context: Plumbing monitoring works because we built the kg-from-BOM layer for it. PTMT is kg-based but has **no kg source wired**, so this feature was likely never functional.
+
+**Fix:** give PTMT monitoring a working plan target. Options, in order of preference:
+1. If PTMT has a BOM/weight source, wire `loadWeightMap()` to it so PTMT item codes resolve to weights (mirror the Plumbing Combined+NEW merge approach).
+2. If PTMT has no weight data, make PTMT monitoring **piece-based** (like Plumbing's piece-based categories) rather than kg-based, so plan-vs-actual, category attainment, and the RAG band compute from pieces.
+
+Either way: `categories` must be non-empty, `targetKg`/`targetPcs` non-zero, RAG band computed, and `needsReviewItems` must not contain every item. Verify against real PTMT plan quantities.
+
+---
+
+## P3 — HIGH (live-wrong-number): PTMT corrective wdr = 27
+
+`POST /corrective/replan` with `{month, segment:"PTMT", weekClosed:0}` returns `workingDaysRemaining = 27` (full month) instead of the actual days remaining. The Plumbing path already defaults `asOfDate = today`; the PTMT path does not. A planner clicking "Re-plan now" late in the month sees a full-month projection (everything feasible, zero shortfall) instead of the true 3-days-remaining picture — misleading at exactly the moment the tool matters.
+
+This is the **same fix already applied to Plumbing**, just not to the PTMT path.
+
+**Fix:** when neither `asOfDate` nor a closed week is supplied, default `asOfDate = today` for PTMT too, and derive wdr from it (exclude Sundays). Verify a PTMT re-plan on 28 Jul returns wdr ≈ 3, not 27, with realistic shortfalls.
+
+---
+
+## P4 — MEDIUM: Ops Dashboard order data not segment-filtered
+
+`/api/ops/overview` returns identical `orderValue = 777,599,596` / `orderQty = 12,599,728` for PTMT, Plumbing AND Combined — the segment param is stored in the response but never used in the data query.
+
+**Fix:** apply the segment filter to the order aggregation so PTMT, Plumbing and Combined return different, correct values. Verify the three selections differ and that Combined = PTMT + Plumbing.
+
+---
+
+## P5 — MEDIUM: PTMT has never had a plan run saved
+
+4 Plumbing plan runs exist for July; PTMT has **0**. So the immutable-baseline / "as issued vs re-run" audit trail — which we built this session — does not exist for PTMT. The infrastructure is fine; PTMT was never run through it.
+
+**Fix:** ensure a PTMT plan run can be (and is) saved via the same `POST /api/plan/runs` path, producing an immutable "as issued" baseline for PTMT. Verify a PTMT run appears in `GET /api/plan/runs`, prior versions stay byte-unchanged on re-run, and the compare endpoint works for PTMT.
+
+---
+
+## P6 — LOW: salesValue and productionPlan hardcoded to 0
+
+`/api/ops/overview` returns `salesValue = 0` and `productionPlan = 0` (acknowledged placeholders). Wire these to the real sources (sales sheet, plan totals) so the KPI cards show real numbers, segment-scoped like P4.
+
+---
+
+## SUITE GAPS — add these assertions (this is why 325/325 missed the above)
+
+The suite is thorough on Plumbing and thin on PTMT. Add PTMT-side assertions so the blind spot closes:
+
+1. **PTMT weekly release** — plant W1/W2/W3/W4 and per-category bands (exact within ±1%), plus the `W1+W2+W3+W4 = category total` reconciliation invariant (exact). Plumbing has these; PTMT does not.
+2. **PTMT corrective wdr** — assert wdr reflects the as-of date (defaults to today), never the full month mid-month. (NC3 currently tests Plumbing only.)
+3. **PTMT monitoring** — assert `categories` is non-empty, a plan target is computed, and `needsReviewItems` is not the entire item set.
+4. **PTMT plan-run save** — assert a PTMT run can be saved and retrieved.
+5. **Ops segment filter** — assert PTMT/Plumbing/Combined return different orderValue, and Combined = PTMT + Plumbing.
+6. **Management-view goldens** — the endpoint returns E/F/G/H/I but nothing asserts the values; add golden checks for a known item.
+
+---
+
+## Report after all fixes
+
+- One-line PASS/FAIL per item P1–P6.
+- Confirm: Ops Dashboard pages load; PTMT monitoring shows categories + a plan target; PTMT corrective wdr ≈ 3 on 28 Jul; ops orderValue differs by segment; a PTMT plan run exists.
+- New total suite count and pass/fail, listing which new assertions were added.
+
+**Guiding principle:** every fix here already exists on the Plumbing side. The goal is parity — and an assertion for each, so the PTMT path can never silently diverge from Plumbing again. Do not loosen any existing check to accommodate a fix.

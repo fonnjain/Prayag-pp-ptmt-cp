@@ -94,8 +94,15 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
   const seg = (typeof segment === "string" && segment.trim()) ? segment.trim() : "PTMT";
   const effectiveWeekClosed = asOfDate !== undefined ? 0 : (weekClosed as number);
 
+  // When weekClosed=0 and no asOfDate, default to today so workingDaysRemaining
+  // reflects actual days left in the month (not the full month count).
+  // This mirrors the Plumbing GET /plan/corrective-replan which defaults asOfDate=today.
+  const effectiveAsOfDate = (asOfDate === undefined && effectiveWeekClosed === 0)
+    ? new Date().toISOString().slice(0, 10)
+    : asOfDate;
+
   try {
-    const result = await runCorrectiveReplan({ month, weekClosed: effectiveWeekClosed, asOfDate, segment: seg, dailyCapacity, workingDaysPerWeek });
+    const result = await runCorrectiveReplan({ month, weekClosed: effectiveWeekClosed, asOfDate: effectiveAsOfDate, segment: seg, dailyCapacity, workingDaysPerWeek });
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "corrective/replan failed");
