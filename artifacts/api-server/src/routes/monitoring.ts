@@ -7,7 +7,7 @@ import {
   monitoringConfigTable,
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { buildPlanItems } from "./plan";
+import { buildPlanItems, computePlumbingMonitoringPayload } from "./plan";
 import { parseReport5 } from "../lib/report5";
 import { getWorkbookIdForMonth } from "../lib/sheets";
 import {
@@ -166,9 +166,36 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
     res.status(400).json({ error: "month is required" });
     return;
   }
+
+  const segment = String(req.query.segment ?? "PTMT");
+
+  // ── Plumbing: pieces-based data from Sheet3 ────────────────────────────────
+  if (segment.toUpperCase() === "PLUMBING") {
+    const data = await computePlumbingMonitoringPayload(month);
+    res.json({
+      month,
+      segment: "PLUMBING",
+      dataAvailable: !!data.lastDataDate,
+      lastDataDate: data.lastDataDate,
+      workingDaysElapsed: data.workingDaysElapsed,
+      plant: {
+        produced: data.totalProduced,
+        mapped: data.totalMapped,
+        unmapped: data.totalUnmapped,
+        runRatePerDay: data.runRatePerDay,
+      },
+      categories: data.categories,
+      weeks: data.weeks,
+      unmapped: data.unmapped,
+    });
+    return;
+  }
+
+  // ── PTMT: kg-based data from Report-5 ─────────────────────────────────────
   const bundle = await buildMonitoringBundle(month);
   res.json({
     month,
+    segment: "PTMT",
     dataAvailable: bundle.dataAvailable,
     lastDataDate: bundle.lastDataDate,
     calendar: bundle.calendarPlant,

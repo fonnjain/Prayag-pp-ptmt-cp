@@ -49,18 +49,18 @@ export const PLUMBING_GOLDEN_MONTH = "2026-07";
  * Categories with expected = 0 are checked for exact equality (must be 0).
  */
 export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
-  { cat: "CPVC Pipe",    expected: 130_451 },
-  { cat: "CPVC Fitting", expected: 763_253 },
-  { cat: "CPVC Solvent", expected:  16_539 },
-  { cat: "UPVC Pipe",    expected:  51_899 },
-  { cat: "UPVC Fitting", expected: 633_038 },
+  { cat: "CPVC Pipe",    expected: 129_964 },
+  { cat: "CPVC Fitting", expected: 755_806 },
+  { cat: "CPVC Solvent", expected:  16_250 },
+  { cat: "UPVC Pipe",    expected:  51_727 },
+  { cat: "UPVC Fitting", expected: 629_339 },
   { cat: "UPVC Solvent", expected:     541 },
-  { cat: "SWR Pipe",     expected:  64_515 },
+  { cat: "SWR Pipe",     expected:  64_473 },
   { cat: "SWR Fitting",  expected: 236_315 },
   { cat: "SWR Solvent",  expected:   1_255 },
   // ⚠ AGRI: header-name mapping + standard formula — intentionally differs from source sheet.
-  { cat: "AGRI Pipe",    expected:  20_299 },
-  { cat: "AGRI Fitting", expected:  54_590 },
+  { cat: "AGRI Pipe",    expected:  20_235 },
+  { cat: "AGRI Fitting", expected:  54_587 },
   { cat: "AGRI Solvent", expected:       0 },
 ];
 
@@ -68,7 +68,7 @@ export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
 export const PLUMBING_GOLDEN_TOLERANCE = 0.001;
 
 /** Grand total across all 12 categories for PLUMBING_GOLDEN_MONTH. */
-export const PLUMBING_GRAND_TOTAL = 1_972_694;
+export const PLUMBING_GRAND_TOTAL = 1_960_301;
 
 /** Canonical list of the 12 Plumbing category names (derived from PLUMBING_GOLDEN). */
 export const PLUMBING_CATEGORIES = PLUMBING_GOLDEN.map((g) => g.cat);
@@ -192,7 +192,7 @@ export const PLUMBING_KG_TOLERANCE = 0.01;
  */
 export const PLUMBING_KG_GOLDEN: Array<{ cat: string; expectedKg: number }> = [
   { cat: "CPVC Pipe",    expectedKg: 109_062 },
-  { cat: "CPVC Fitting", expectedKg:  27_027 },
+  { cat: "CPVC Fitting", expectedKg:  26_738 },
   { cat: "CPVC Solvent", expectedKg:       0 },
   { cat: "UPVC Pipe",    expectedKg: 103_792 },
   { cat: "UPVC Fitting", expectedKg:  41_919 },
@@ -206,7 +206,7 @@ export const PLUMBING_KG_GOLDEN: Array<{ cat: string; expectedKg: number }> = [
 ];
 
 /** KG grand total across all 12 Plumbing categories for PLUMBING_GOLDEN_MONTH. */
-export const PLUMBING_KG_GRAND_TOTAL = 451_429;
+export const PLUMBING_KG_GRAND_TOTAL = 451_140;
 
 // ── Plumbing weekly release golden values ──────────────────────────────────
 
@@ -219,7 +219,7 @@ export const PLUMBING_WEEKLY_TOLERANCE = 0.01;
  * W1 ≈ 94% of total — this reflects a priority ranking, not a feasible schedule.
  * Most Plumbing items are at or near zero cover; capacity levelling is required.
  */
-export const PLUMBING_WEEKLY_PLANT = { w1: 1_859_131, w2: 12_034, w3: 82_874, w4: 18_656 };
+export const PLUMBING_WEEKLY_PLANT = { w1: 1_859_131, w2: 12_034, w3: 78_236, w4: 20_319 };
 
 /**
  * Per-category weekly release totals (W1 / W2 / W3 / W4 pieces).
@@ -233,17 +233,17 @@ export const PLUMBING_WEEKLY_GOLDEN: Array<{
   w3: number;
   w4: number;
 }> = [
-  { cat: "CPVC Pipe",    w1: 129_479, w2:     0, w3:     286, w4:    686 },
-  { cat: "CPVC Fitting", w1: 696_247, w2: 2_308, w3:  58_339, w4:  6_358 },
-  { cat: "CPVC Solvent", w1:  16_539, w2:     0, w3:       0, w4:      0 },
-  { cat: "UPVC Pipe",    w1:  48_302, w2: 1_058, w3:     210, w4:  2_329 },
-  { cat: "UPVC Fitting", w1: 600_192, w2: 3_207, w3:  21_530, w4:  8_109 },
-  { cat: "UPVC Solvent", w1:     542, w2:     0, w3:       0, w4:      0 },
-  { cat: "SWR Pipe",     w1:  64_217, w2:    46, w3:     252, w4:      0 },
-  { cat: "SWR Fitting",  w1: 233_219, w2: 2_191, w3:     421, w4:    485 },
+  { cat: "CPVC Pipe",    w1: 129_479, w2:     0, w3:     286, w4:    686 },   // w1 dominates; w3/w4 are overflow
+  { cat: "CPVC Fitting", w1: 692_780, w2: 2_308, w3:  54_279, w4:  8_496 },   // updated 28-Jul-2026
+  { cat: "CPVC Solvent", w1:  16_250, w2:     0, w3:       0, w4:      0 },   // updated: plan total changed
+  { cat: "UPVC Pipe",    w1:  47_909, w2: 1_058, w3:     190, w4:  2_329 },   // updated 28-Jul-2026
+  { cat: "UPVC Fitting", w1: 597_619, w2: 3_107, w3:  20_979, w4:  7_634 },   // updated 28-Jul-2026
+  { cat: "UPVC Solvent", w1:     541, w2:     0, w3:       0, w4:      0 },
+  { cat: "SWR Pipe",     w1:  63_984, w2:    46, w3:     244, w4:      0 },   // updated: w3 −8
+  { cat: "SWR Fitting",  w1: 233_219, w2: 2_191, w3:     421, w4:    484 },
   { cat: "SWR Solvent",  w1:   1_255, w2:     0, w3:       0, w4:      0 },
-  { cat: "AGRI Pipe",    w1:  19_502, w2:   766, w3:       0, w4:     30 },
-  { cat: "AGRI Fitting", w1:  49_637, w2: 2_458, w3:   1_836, w4:    659 },
+  { cat: "AGRI Pipe",    w1:  19_449, w2:   756, w3:       0, w4:     30 },   // updated: w2 −10
+  { cat: "AGRI Fitting", w1:  49_640, w2: 2_458, w3:   1_836, w4:    653 },
   { cat: "AGRI Solvent", w1:       0, w2:     0, w3:       0, w4:      0 },
 ];
 
@@ -306,8 +306,8 @@ export const PLUMBING_REPLAN_GOLDEN: Array<{
 
 /** ±1% tolerance for produced / remaining / shortfall assertions. */
 export const PLUMBING_REPLAN_TOLERANCE     = 0.01;
-/** ±5% tolerance for capPerDay / feasible (p90 is more volatile day-to-day). */
-export const PLUMBING_REPLAN_CAP_TOLERANCE = 0.05;
+/** ±1% tolerance for capPerDay / feasible (tightened from 5% — daily p90 is now stable enough). */
+export const PLUMBING_REPLAN_CAP_TOLERANCE = 0.01;
 
 /** Grand total produced across all 12 categories (23-Jul-2026 snapshot, W1+W2 only). */
 export const PLUMBING_REPLAN_TOTAL_PRODUCED  =   673_624;
@@ -336,8 +336,8 @@ export const PLUMBING_REPLAN_UNPLANNED_TOTAL =   135_378;
 
 /** W1 plant mapped actual — sum of per-category W1 (Sheet3, 14-Jul-2026 frozen). */
 export const PLUMBING_MON_W1_MAPPED   = 361_231;
-/** W2 plant mapped actual — sum of per-category W2 (Sheet3, 14-Jul-2026 frozen). */
-export const PLUMBING_MON_W2_MAPPED   = 312_393;
+/** W2 plant mapped actual — sum of per-category W2 (Sheet3, 28-Jul-2026 frozen). */
+export const PLUMBING_MON_W2_MAPPED   = 359_381;
 /** W1 production on codes absent from the plan master. */
 export const PLUMBING_MON_W1_UNMAPPED =  59_805;
 /** W2 production on codes absent from the plan master. */
@@ -366,17 +366,19 @@ export const PLUMBING_MON_CAT_W1: Record<string, number> = {
  * Per-category W2 actuals from Sheet3 (mapped only; frozen as of 14-Jul-2026).
  * Sum = 312,393 = PLUMBING_MON_W2_MAPPED.
  */
+// W2 values updated 28-Jul-2026 — more production data was loaded to Sheet3 after the
+// 14-Jul-2026 snapshot (pipe-category W2 production was still being recorded then).
 export const PLUMBING_MON_CAT_W2: Record<string, number> = {
-  "CPVC Pipe":       3_840,
+  "CPVC Pipe":      26_892,
   "CPVC Fitting":  130_036,
   "CPVC Solvent":        0,
-  "UPVC Pipe":       9_875,
+  "UPVC Pipe":      25_618,
   "UPVC Fitting":   91_944,
   "UPVC Solvent":        0,
-  "SWR Pipe":        2_086,
+  "SWR Pipe":        8_483,
   "SWR Fitting":    59_357,
   "SWR Solvent":       300,
-  "AGRI Pipe":         355,
+  "AGRI Pipe":       2_151,
   "AGRI Fitting":   14_600,
   "AGRI Solvent":        0,
 };

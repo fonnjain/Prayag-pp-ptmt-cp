@@ -55,8 +55,11 @@ async function runValidate(segment: string, month: string): Promise<ValidateResp
   return callEndpoint(url);
 }
 
-async function runValidateReplan(month: string, asOfDate: string): Promise<ValidateResponse> {
-  const url = `${API_BASE}/api/plan/validate-replan?month=${encodeURIComponent(month)}&asOfDate=${encodeURIComponent(asOfDate)}`;
+async function runValidateReplan(month: string, asOfDate?: string): Promise<ValidateResponse> {
+  const params = asOfDate
+    ? `month=${encodeURIComponent(month)}&asOfDate=${encodeURIComponent(asOfDate)}`
+    : `month=${encodeURIComponent(month)}`;
+  const url = `${API_BASE}/api/plan/validate-replan?${params}`;
   return callEndpoint(url);
 }
 
@@ -248,7 +251,7 @@ async function main(): Promise<void> {
   console.log("\n⏳  Running Plumbing corrective re-plan validation (reads Sheet3, ~5s) …");
   let replanResult: ValidateResponse;
   try {
-    replanResult = await runValidateReplan(PLUMBING_MONTH, "2026-07-14");
+    replanResult = await runValidateReplan(PLUMBING_MONTH); // no asOfDate → endpoint uses today
   } catch (err) {
     console.error(`\n❌  Could not reach validate-replan endpoint: ${err instanceof Error ? err.message : String(err)}`);
     anyFail = true;
@@ -264,8 +267,8 @@ async function main(): Promise<void> {
 
   printSection(`Replan — guards`, replanGuards);
   printSection(`Replan — structural invariants (always exact, ${PLUMBING_MONTH})`, replanInvs);
-  printSection(`Replan — per-category golden values (14-Jul-2026 snapshot, ±1%/±5%)`, replanGoldens);
-  printSection(`Replan — totals (14-Jul-2026 snapshot, ±1%)`, replanTotals);
+  printSection(`Replan — per-category dynamic guards (date-independent)`, replanGoldens);
+  printSection(`Replan — total dynamic guards`, replanTotals);
 
   if (!replanResult.allPass) {
     anyFail = true;
@@ -355,9 +358,100 @@ async function main(): Promise<void> {
     console.log(`\n✅  Schema-parity: all ${schemaParityResult.passCount} checks PASSED`);
   }
 
+  // ── 6. New permanent endpoint-level checks ───────────────────────────────
+  console.log("\n⏳  Running new permanent endpoint-level checks …");
+  const newChecks: CheckResult[] = [];
+  try {
+    // NC1: monitoring/dashboard segment isolation — PTMT and PLUMBING return different data shapes
+    const [ptmtDash, plumbDash] = await Promise.all([
+      fetch(`${API_BASE}/api/monitoring/dashboard?month=${PLUMBING_MONTH}&segment=PTMT`).then((r) => r.json() as Promise<Record<string, unknown>>),
+      fetch(`${API_BASE}/api/monitoring/dashboard?month=${PLUMBING_MONTH}&segment=PLUMBING`).then((r) => r.json() as Promise<Record<string, unknown>>),
+    ]);
+    const ptmtHasKg      = typeof (ptmtDash?.plant as Record<string, unknown>)?.targetKg === "number";
+    const plumbHasPieces = typeof (plumbDash?.plant as Record<string, unknown>)?.produced === "number";
+    newChecks.push({
+      name: "NC1 · monitoring/dashboard · PTMT returns kg-based, PLUMBING returns pieces-based",
+      expected: 1, actual: (ptmtHasKg && plumbHasPieces) ? 1 : 0,
+      pass: ptmtHasKg && plumbHasPieces, tolerance: "structural diff",
+    });
+
+    // NC2: Plumbing monitoring categories have `produced` field, at least one non-zero
+    const monData = await fetch(`${API_BASE}/api/plan/plumbing-monitoring?month=${PLUMBING_MONTH}`)
+      .then((r) => r.json() as Promise<Record<string, unknown>>);
+    const cats = (monData?.categories as Array<Record<string, unknown>>) ?? [];
+    const anyProduced = cats.some((c) => ((c["produced"] as number) ?? 0) > 0);
+    newChecks.push({
+      name: "NC2 · plumbing-monitoring · at least one category has produced > 0",
+      expected: 1, actual: anyProduced ? 1 : 0,
+      pass: anyProduced, tolerance: "> 0",
+    });
+
+    // NC2b: Σ(produced) + unmapped ≈ totalProduced (reconciliation, ±1 unit for rounding)
+    const sumProduced = cats.reduce((s, c) => s + (((c["produced"] as number)) ?? 0), 0);
+    const totalUnmappedMon = (monData?.totalUnmapped as number) ?? 0;
+    const totalProducedMon = (monData?.totalProduced as number) ?? 0;
+    const reconOk = Math.abs(sumProduced + totalUnmappedMon - totalProducedMon) <= 1;
+    newChecks.push({
+      name: "NC2b · plumbing-monitoring · Σ(produced) + unmapped ≈ totalProduced",
+      expected: totalProducedMon, actual: sumProduced + totalUnmappedMon,
+      pass: reconOk, tolerance: "±1 unit",
+    });
+
+    // NC3: corrective workingDaysRemaining reflects today (not the full-month total)
+    const replanLive = await fetch(`${API_BASE}/api/plan/corrective-replan?month=${PLUMBING_MONTH}`)
+      .then((r) => r.json() as Promise<Record<string, unknown>>);
+    const todayStr   = new Date().toISOString().slice(0, 10);
+    const inCurrMo   = todayStr.startsWith(PLUMBING_MONTH);
+    const fullMonthWdr = 27; // July 2026 has 27 working days
+    const wdrActual  = (replanLive?.workingDaysRemaining as number) ?? fullMonthWdr;
+    const wdrOk      = !inCurrMo || wdrActual < fullMonthWdr;
+    newChecks.push({
+      name: `NC3 · corrective-replan · workingDaysRemaining (${wdrActual}) < full month when mid-month`,
+      expected: 1, actual: wdrOk ? 1 : 0,
+      pass: wdrOk, tolerance: `< ${fullMonthWdr} when in ${PLUMBING_MONTH}`,
+    });
+
+    // NC4: capacityPerDay field present, non-zero, consistent with feasible ÷ wdr
+    const wdr = (replanLive?.workingDaysRemaining as number) ?? 0;
+    const repCats = (replanLive?.categories as Array<Record<string, unknown>>) ?? [];
+    let capDayOk = true;
+    for (const c of repCats.filter((c) => ((c["produced"] as number) ?? 0) > 0)) {
+      const cap = (c["capacityPerDay"] as number) ?? (c["capPerDay"] as number) ?? 0;
+      if (cap === 0) { capDayOk = false; break; }
+      if (wdr > 0 && Math.abs(((c["feasible"] as number) ?? 0) - cap * wdr) > 1) { capDayOk = false; break; }
+    }
+    newChecks.push({
+      name: "NC4 · corrective-replan · capacityPerDay non-zero and = feasible ÷ wdr for active cats",
+      expected: 1, actual: capDayOk ? 1 : 0,
+      pass: capDayOk, tolerance: "feasible = capDay × wdr",
+    });
+
+    // NC5: Plan GET 200 + non-empty array when Plumbing FG upload is present (422 guard active)
+    const planResp = await fetch(`${API_BASE}/api/plan?month=${PLUMBING_MONTH}&segment=Plumbing`);
+    const planBody = await planResp.json() as unknown;
+    const planOk = planResp.ok && Array.isArray(planBody) && (planBody as unknown[]).length > 0;
+    newChecks.push({
+      name: "NC5 · GET /plan · Plumbing returns items when FG upload present (422 guard active)",
+      expected: 1, actual: planOk ? 1 : 0,
+      pass: planOk, tolerance: "non-empty array",
+    });
+
+  } catch (err) {
+    console.error(`\n❌  New permanent checks error: ${err instanceof Error ? err.message : String(err)}`);
+    anyFail = true;
+  }
+
+  printSection("New permanent endpoint checks", newChecks);
+  if (newChecks.some((c) => !c.pass)) {
+    anyFail = true;
+    console.error(`\n❌  New checks: ${newChecks.filter((c) => !c.pass).length} check(s) FAILED`);
+  } else {
+    console.log(`\n✅  New checks: all ${newChecks.length} PASSED`);
+  }
+
   // ── Summary ───────────────────────────────────────────────────────────────
-  const totalChecks = plumbingResult.checks.length + replanResult.checks.length + ptmtResult.checks.length + monResult.checks.length + schemaParityResult.checks.length;
-  const totalFail   = plumbingResult.failCount + replanResult.failCount + ptmtResult.failCount + monResult.failCount + schemaParityResult.failCount;
+  const totalChecks = plumbingResult.checks.length + replanResult.checks.length + ptmtResult.checks.length + monResult.checks.length + schemaParityResult.checks.length + newChecks.length;
+  const totalFail   = plumbingResult.failCount + replanResult.failCount + ptmtResult.failCount + monResult.failCount + schemaParityResult.failCount + newChecks.filter((c) => !c.pass).length;
   const totalPass   = totalChecks - totalFail;
 
   console.log("\n" + "=".repeat(60));

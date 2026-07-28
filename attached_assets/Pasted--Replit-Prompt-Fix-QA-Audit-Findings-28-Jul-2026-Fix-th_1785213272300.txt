@@ -1,0 +1,97 @@
+# Replit Prompt — Fix QA Audit Findings (28 Jul 2026)
+
+Fix the QA findings below. For each, change the specific code path and re-verify against the actual API endpoint the UI calls (not an internal function). **Distinguish real bugs (fix the code) from stale test data (fix the test, not the engine).** Report PASS/FAIL with the actual value for each after the fix. Do not touch PTMT plan logic except where a fix explicitly requires it.
+
+---
+
+## CRITICAL 1 — Plumbing monitoring shows produced = 0 for all 12 categories
+
+`/plan/plumbing-monitoring` reports `totalProduced = 1,493,014` but every category's `produced` field is `0`. Mapped production is being counted in `totalMapped` internally but is never written to the per-category rows — only the unmapped bucket (≈320,160) surfaces.
+
+**Fix:** in the monitoring aggregation, write each category's mapped production into its category `produced` field, using the same normalised-code matching (uppercase, strip hyphens/spaces/dots) as the plan engine.
+
+**Verify:**
+- Each of the 12 categories shows non-zero `produced` where production exists.
+- `Σ(category produced) + unmapped = totalProduced` (reconciles exactly).
+
+---
+
+## CRITICAL 2 — monitoring/dashboard ignores the segment param
+
+`GET /api/monitoring/dashboard?segment=PLUMBING` returns PTMT data verbatim — identical `outputToDateKg` (149,915.1) and `actualPerDay` (6,814.3) for both segments. The route ignores `segment` entirely.
+
+**Fix:** dispatch by segment — PTMT reads the PTMT ANUJ sheet, Plumbing reads Sheet3. Every field in the response must be segment-scoped.
+
+**Verify:** the two segments return **different**, segment-correct numbers; passing `?segment=PLUMBING` no longer returns PTMT machine output.
+
+---
+
+## HIGH 3 — workingDaysRemaining = 27 always
+
+`GET /plan/corrective-replan` calls the engine with `weekClosed: 0` and no `asOfDate`, so it returns the full month's working days (27) instead of the days actually remaining.
+
+**Fix:** when neither `asOfDate` nor a closed week is supplied, default `asOfDate` to **today** and derive working-days-remaining from it (exclude Sundays, consistent with the 27-working-day month basis).
+
+**Verify:** as of 28 Jul the endpoint returns ~3 working days remaining, not 27; feasibility figures update accordingly.
+
+---
+
+## HIGH 4 — capacityPerDay = 0 in the corrective response
+
+The engine computes p90 from Sheet3 daily production for feasibility correctly, but the response's `capacityPerDay` is read from the unseeded `category_capacity` table, so it shows 0 next to a sensible `feasible` (e.g. "capacity 0 pcs/day, feasible 927,126" — contradictory).
+
+**Fix:** return the **same p90 value used to compute feasibility** in the `capacityPerDay` field, so capacity and feasible are always consistent.
+
+**Verify:** CPVC Fitting `capacityPerDay` ≈ 34,338 (not 0); every category's `feasible = capacityPerDay × workingDaysRemaining`.
+
+---
+
+## MEDIUM 5 — /api/plan?segment=PLUMBING returns [] silently when FG upload is missing
+
+The required-FG guard only fires in `/plan/validate`, not in the plan GET itself. A UI that doesn't call validate separately reads an empty array as "no plan" instead of "upload missing".
+
+**Fix:** make the plan GET endpoint return an explicit error (HTTP 4xx, clear message: "FG Stock upload required for Plumbing") when the FG upload is absent, rather than an empty array. Do not fall back to sheet numbers.
+
+**Verify:** with no FG upload, `/api/plan?segment=PLUMBING` returns the error, not `[]`.
+
+---
+
+## MEDIUM 6 — Stale replan goldens (24 failing checks) — NOT an engine bug
+
+The `validate-replan` endpoint hardcodes `asOfDate = 2026-07-14` (workingDaysRemaining = 15). By 28 Jul, ~14 more days of production have accrued (e.g. CPVC Pipe produced 50,032 vs golden 26,980), so the checks fail against a frozen July-14 snapshot. **The engine is correct.**
+
+**Fix (do NOT change the engine):** make `validate-replan` compute its expected values **dynamically from the same live production the engine reads**, so the check is date-independent (preferred). Alternatively parameterise the as-of date and refresh the goldens. Prefer the dynamic approach.
+
+**Verify:** the replan suite passes because it compares like-for-like against current production, not a July-14 snapshot.
+
+---
+
+## LOW 7 — /api/ops/overview: salesValue = 0, productionPlan = 0, no segment filter
+
+**Fix / confirm:** determine whether this is a dev data-seeding gap or a real wiring problem — check the endpoint against seeded Order Sheet / sales data. Add a `segment` param so overview can scope to PTMT / Plumbing / Combined like the `/api/ops/orders` endpoint already does.
+
+**Verify:** overview accepts `?segment=` and returns non-zero salesValue/productionPlan where data exists.
+
+---
+
+## Tolerances
+
+The replan `remaining`/`produced` and `cap/day` checks currently use ±5%. Tighten to **±1%** (±0.1% where the value is deterministic), consistent with the plan checks.
+
+---
+
+## Add these to the PERMANENT suite (endpoint-level, so they can't silently regress)
+
+1. `monitoring/dashboard?segment=PTMT` and `?segment=PLUMBING` return **different** data (segment isolation at the endpoint, not just the plan engine).
+2. Plumbing monitoring: each category `produced` is non-zero where production exists, and `Σ produced + unmapped = totalProduced`.
+3. Corrective `workingDaysRemaining` reflects the as-of date (defaults to today), never the full month when mid-month.
+4. Corrective `capacityPerDay` is non-zero and equals `feasible ÷ workingDaysRemaining`.
+5. Plan GET returns an explicit error (not `[]`) when a required upload is missing.
+
+---
+
+## Report after all fixes
+
+- Total checks, pass/fail count.
+- Confirm: the two segments return different monitoring data; Plumbing monitoring shows per-category production; `workingDaysRemaining` reflects today; `capacityPerDay` is non-zero and consistent with `feasible`.
+- Per-category corrective state (plan · produced · remaining · capacity/day · feasible · shortfall) for both segments, using **today's** actual working days remaining.

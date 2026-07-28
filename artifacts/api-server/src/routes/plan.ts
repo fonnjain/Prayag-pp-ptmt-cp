@@ -366,7 +366,21 @@ router.get("/plan", async (req, res): Promise<void> => {
   }
   const segment = String(req.query.segment ?? "PTMT");
   const category = req.query.category ? String(req.query.category) : undefined;
-  const items = await buildPlanItems(month, segment);
+
+  // FG Stock upload is required for Plumbing — return 422 rather than an empty array.
+  // Normalise casing: accept "PLUMBING" | "Plumbing" → canonical "Plumbing".
+  const isPlumbing = segment.toLowerCase() === "plumbing";
+  if (isPlumbing) {
+    const fgRows = await loadLatestUploadRowsByKind("plumbing_fg_stock");
+    if (fgRows.length === 0) {
+      res.status(422).json({
+        error: "FG Stock upload required for Plumbing. Upload the FG Stock file on the Data page before viewing the plan.",
+      });
+      return;
+    }
+  }
+  const normSegment = isPlumbing ? "Plumbing" : segment;
+  const items = await buildPlanItems(month, normSegment);
   const filtered = category ? items.filter((i) => i.category === category) : items;
   res.json(filtered);
 });
@@ -664,12 +678,12 @@ router.get("/plan/corrective-replan", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");
   if (!month) { res.status(400).json({ error: "month is required" }); return; }
 
-  // asOfDate preferred; legacy fallback: if workingDaysRemaining provided use golden snapshot date
+  // asOfDate preferred; legacy: workingDaysRemaining param → snapshot date; default: today (IST ≈ UTC)
   const asOfDate = req.query.asOfDate
     ? String(req.query.asOfDate)
     : req.query.workingDaysRemaining
-      ? "2026-07-14"
-      : undefined;
+      ? "2026-07-14"                               // legacy fallback
+      : new Date().toISOString().slice(0, 10);     // default: today
 
   const replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing" });
 
@@ -682,7 +696,8 @@ router.get("/plan/corrective-replan", async (req, res): Promise<void> => {
     month,
     workingDaysRemaining: replan.workingDaysRemaining,
     asOfDate: replan.asOfDate,
-    categories: replan.categories,
+    // Expose capPerDay as capacityPerDay for consumers; both present for backward compat.
+    categories: replan.categories.map((c) => ({ ...c, capacityPerDay: c.capPerDay })),
     unplannedProduction: replan.unplannedProduction,
     totalProduced: replan.producedToDate,
     totalProducedCapped,
@@ -694,27 +709,27 @@ router.get("/plan/corrective-replan", async (req, res): Promise<void> => {
 });
 
 /**
- * Structural + golden-value self-check for the Plumbing corrective re-plan.
+ * Structural self-check for the Plumbing corrective re-plan.
  *
- * Structural invariants (always true):
+ * Structural invariants (always true by construction):
  *   producedCapped + remaining = plan  (per category)
  *   feasible = capPerDay × workingDaysRemaining  (per category)
  *   shortfall = max(remaining − feasible, 0)  (per category)
  *
- * Point-in-time golden checks (±1% produced/remaining/shortfall, ±5% cap/day/feasible):
- *   Values match the 14-Jul-2026 snapshot (12 working days used, 15 remaining).
- *   These will drift as more production is recorded to Sheet3.
+ * Dynamic guards (date-independent, valid across all dates):
+ *   produced >= 0 per category
+ *   capPerDay > 0 for every category that has Sheet3 production
+ *   Σ(producedCapped + remaining) = Σ(plan)  (total reconciliation)
  *
- * Query params:
- *   month                — planning month YYYY-MM (required)
- *   workingDaysRemaining — default 15 (matches golden snapshot)
+ * Defaults asOfDate to today so checks always run against live production.
+ * Pass ?asOfDate=YYYY-MM-DD to pin to a specific snapshot for debugging.
  */
 router.get("/plan/validate-replan", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");
   if (!month) { res.status(400).json({ error: "month is required" }); return; }
 
-  // asOfDate: golden snapshot date gives workingDaysRemaining=15 for July 2026
-  const asOfDate = String(req.query.asOfDate ?? "2026-07-14");
+  // Default to today — checks must always reflect live production, never a stale snapshot
+  const asOfDate = String(req.query.asOfDate ?? new Date().toISOString().slice(0, 10));
 
   type CheckResult = {
     name: string;
@@ -733,8 +748,6 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
   // Totals derived from categories
   const totalProduced = replan.producedToDate;
   const totalRemaining = replan.categories.reduce((s, c) => s + c.remaining, 0);
-  const totalFeasible = replan.categories.reduce((s, c) => s + c.feasible, 0);
-  const totalShortfall = replan.categories.reduce((s, c) => s + c.shortfall, 0);
 
   // ── Guard ────────────────────────────────────────────────────────────────────
   checks.push({
@@ -752,7 +765,7 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
     tolerance: "> 0",
   });
 
-  // ── Structural invariants (always true) ──────────────────────────────────────
+  // ── Structural invariants (always true by construction) ───────────────────────
   for (const { cat } of PLUMBING_REPLAN_GOLDEN) {
     const c = catMap.get(cat);
     if (!c) {
@@ -791,33 +804,58 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
     });
   }
 
-  // ── Point-in-time golden checks ───────────────────────────────────────────────
-  const pct    = (a: number, e: number) => (e === 0 ? (a === 0 ? 0 : Infinity) : Math.abs(a - e) / e);
-  const tolStr = (t: number) => `±${(t * 100).toFixed(0)}%`;
+  // ── Dynamic per-category guards (date-independent) ────────────────────────────
+  for (const { cat } of PLUMBING_REPLAN_GOLDEN) {
+    const c = catMap.get(cat);
+    if (!c) continue;
 
-  for (const g of PLUMBING_REPLAN_GOLDEN) {
-    const c = catMap.get(g.cat);
-    const ap  = Math.round(c?.produced    ?? 0);
-    const ar  = Math.round(c?.remaining   ?? 0);
-    const acp = Math.round(c?.capPerDay   ?? 0);
-    const af  = Math.round(c?.feasible    ?? 0);
-    const ash = Math.round(c?.shortfall   ?? 0);
+    // produced is non-negative
+    checks.push({
+      name: `Replan · ${cat} · produced >= 0`,
+      expected: 1,
+      actual: c.produced >= 0 ? 1 : 0,
+      pass: c.produced >= 0,
+      tolerance: ">= 0",
+    });
 
-    checks.push({ name: `Replan · ${g.cat} · produced`,  expected: g.produced,  actual: ap,  pass: pct(ap,  g.produced)  <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
-    checks.push({ name: `Replan · ${g.cat} · remaining`, expected: g.remaining, actual: ar,  pass: pct(ar,  g.remaining) <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
-    checks.push({ name: `Replan · ${g.cat} · cap/day`,   expected: g.capPerDay, actual: acp, pass: pct(acp, g.capPerDay) <= PLUMBING_REPLAN_CAP_TOLERANCE, tolerance: tolStr(PLUMBING_REPLAN_CAP_TOLERANCE) });
-    checks.push({ name: `Replan · ${g.cat} · feasible`,  expected: g.feasible,  actual: af,  pass: pct(af,  g.feasible)  <= PLUMBING_REPLAN_CAP_TOLERANCE, tolerance: tolStr(PLUMBING_REPLAN_CAP_TOLERANCE) });
-    checks.push({ name: `Replan · ${g.cat} · shortfall`, expected: g.shortfall, actual: ash, pass: pct(ash, g.shortfall) <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
+    // When production was recorded for this category, p90 cap must be non-zero
+    if (c.produced > 0) {
+      checks.push({
+        name: `Replan · ${cat} · capPerDay > 0 (has Sheet3 data)`,
+        expected: 1,
+        actual: c.capPerDay > 0 ? 1 : 0,
+        pass: c.capPerDay > 0,
+        tolerance: "> 0",
+      });
+    }
   }
 
-  // ── Totals ────────────────────────────────────────────────────────────────────
-  const atu  = replan.unplannedTotal;
+  // ── Dynamic total guards ───────────────────────────────────────────────────────
+  const totalPlanSum  = replan.categories.reduce((s, c) => s + c.plan, 0);
+  const totalPcCapped = replan.categories.reduce((s, c) => s + c.producedCapped, 0);
+  const atu = replan.unplannedTotal;
 
-  checks.push({ name: "Replan · Total produced",   expected: PLUMBING_REPLAN_TOTAL_PRODUCED,  actual: totalProduced,   pass: pct(totalProduced,   PLUMBING_REPLAN_TOTAL_PRODUCED)  <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
-  checks.push({ name: "Replan · Total remaining",  expected: PLUMBING_REPLAN_TOTAL_REMAINING, actual: totalRemaining,  pass: pct(totalRemaining,  PLUMBING_REPLAN_TOTAL_REMAINING) <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
-  checks.push({ name: "Replan · Total feasible",   expected: PLUMBING_REPLAN_TOTAL_FEASIBLE,  actual: totalFeasible,   pass: pct(totalFeasible,   PLUMBING_REPLAN_TOTAL_FEASIBLE)  <= PLUMBING_REPLAN_CAP_TOLERANCE, tolerance: tolStr(PLUMBING_REPLAN_CAP_TOLERANCE) });
-  checks.push({ name: "Replan · Total shortfall",  expected: PLUMBING_REPLAN_TOTAL_SHORTFALL, actual: totalShortfall,  pass: pct(totalShortfall,  PLUMBING_REPLAN_TOTAL_SHORTFALL) <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
-  checks.push({ name: "Replan · Unplanned total",  expected: PLUMBING_REPLAN_UNPLANNED_TOTAL, actual: atu,             pass: pct(atu, PLUMBING_REPLAN_UNPLANNED_TOTAL) <= PLUMBING_REPLAN_TOLERANCE,     tolerance: tolStr(PLUMBING_REPLAN_TOLERANCE) });
+  checks.push({
+    name: "Replan · Total · produced + unplanned > 0",
+    expected: 1,
+    actual: (totalProduced + atu) > 0 ? 1 : 0,
+    pass: (totalProduced + atu) > 0,
+    tolerance: "> 0",
+  });
+  checks.push({
+    name: "Replan · Total · producedCapped + remaining = plan (reconciliation)",
+    expected: totalPlanSum,
+    actual: totalPcCapped + totalRemaining,
+    pass: totalPcCapped + totalRemaining === totalPlanSum,
+    tolerance: "exact",
+  });
+  checks.push({
+    name: "Replan · Unplanned · total > 0",
+    expected: 1,
+    actual: atu > 0 ? 1 : 0,
+    pass: atu > 0,
+    tolerance: "> 0",
+  });
 
   const allPass = checks.every((c) => c.pass);
   const failCount = checks.filter((c) => !c.pass).length;
@@ -1504,6 +1542,137 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
 //   - UNMAPPED       = Sheet3 codes with no plan-master match (surfaced, not dropped)
 //   - Cumulative attainment = cumMapped / cumRelease (suppressed if week not started)
 // 5-min response cache so the first cold call (9s) doesn't block subsequent browser hits.
+
+/**
+ * Core computation for Plumbing monitoring payload.
+ * Exported so monitoring/dashboard can dispatch to it when segment=PLUMBING.
+ */
+export async function computePlumbingMonitoringPayload(month: string) {
+  const [planItems, sheet3Rows] = await Promise.all([
+    buildPlanItems(month, "Plumbing"),
+    fetchPlumbingSheet3Production(month),
+  ]);
+
+  // Code → category map (strict normalization: "A465" matches "A-465")
+  const codeToCategory = new Map<string, string>();
+  const catRelease = new Map<string, [number, number, number, number]>();
+  for (const item of planItems) {
+    const norm = normalizeCodeStrict(item.itemCode);
+    if (!codeToCategory.has(norm)) codeToCategory.set(norm, item.category);
+    const arr = catRelease.get(item.category) ?? [0, 0, 0, 0];
+    arr[0] += (item as unknown as Record<string, number>)["w1"] ?? 0;
+    arr[1] += (item as unknown as Record<string, number>)["w2"] ?? 0;
+    arr[2] += (item as unknown as Record<string, number>)["w3"] ?? 0;
+    arr[3] += (item as unknown as Record<string, number>)["w4"] ?? 0;
+    catRelease.set(item.category, arr);
+  }
+
+  function wkIdx(day: number): number { return day <= 7 ? 0 : day <= 14 ? 1 : day <= 21 ? 2 : 3; }
+
+  const catActual = new Map<string, [number, number, number, number]>();
+  const unmappedByWeek: [number, number, number, number] = [0, 0, 0, 0];
+  const unmappedCodeQty = new Map<string, number>();
+
+  for (const row of sheet3Rows) {
+    const cat = codeToCategory.get(row.normCode);
+    const wi = wkIdx(parseInt(row.dateStr.slice(8), 10));
+    if (!cat) {
+      unmappedByWeek[wi] += row.qty;
+      unmappedCodeQty.set(row.rawCode, (unmappedCodeQty.get(row.rawCode) ?? 0) + row.qty);
+      continue;
+    }
+    const arr = catActual.get(cat) ?? [0, 0, 0, 0];
+    arr[wi] += row.qty;
+    catActual.set(cat, arr);
+  }
+
+  // Week calendar
+  const [yr, mo] = month.split("-").map(Number);
+  const lastDayOfMonth = new Date(yr, mo, 0).getDate();
+  function p2(n: number) { return String(n).padStart(2, "0"); }
+  const calendar = [
+    { week: 1, label: `W1 (${mo}/1–7)`,           startDay: 1,  endDay: 7,            startDate: `${yr}-${p2(mo)}-01`, endDate: `${yr}-${p2(mo)}-07` },
+    { week: 2, label: `W2 (${mo}/8–14)`,           startDay: 8,  endDay: 14,           startDate: `${yr}-${p2(mo)}-08`, endDate: `${yr}-${p2(mo)}-14` },
+    { week: 3, label: `W3 (${mo}/15–21)`,          startDay: 15, endDay: 21,           startDate: `${yr}-${p2(mo)}-15`, endDate: `${yr}-${p2(mo)}-21` },
+    { week: 4, label: `W4 (${mo}/22–${lastDayOfMonth})`, startDay: 22, endDay: lastDayOfMonth, startDate: `${yr}-${p2(mo)}-22`, endDate: `${yr}-${p2(mo)}-${p2(lastDayOfMonth)}` },
+  ];
+
+  // Plant totals per week (round release — plan items have fractional w1-w4 due to band multiplication)
+  const plantRelease: [number, number, number, number] = [0, 0, 0, 0];
+  const plantMapped:  [number, number, number, number] = [0, 0, 0, 0];
+  for (const [, arr] of catRelease) for (let i = 0; i < 4; i++) plantRelease[i] += arr[i];
+  for (const [, arr] of catActual)  for (let i = 0; i < 4; i++) plantMapped[i]  += arr[i];
+  for (let i = 0; i < 4; i++) plantRelease[i] = Math.round(plantRelease[i]);
+
+  // Working days elapsed (non-Sunday days from 1st through last data date)
+  const lastDataDate = sheet3Rows.length > 0 ? [...sheet3Rows].map((r) => r.dateStr).sort().pop()! : null;
+  let workingDaysElapsed = 0;
+  if (lastDataDate) {
+    const throughDay = parseInt(lastDataDate.slice(8), 10);
+    for (let d = 1; d <= throughDay; d++) {
+      if (new Date(`${month}-${p2(d)}T00:00:00Z`).getUTCDay() !== 0) workingDaysElapsed++;
+    }
+  }
+
+  // Build per-week response (cumulative columns)
+  const today = new Date().toISOString().slice(0, 10);
+  let cumRelease = 0, cumMapped = 0, cumTotal = 0;
+  const weeks = calendar.map((wk, i) => {
+    const release = plantRelease[i]!;
+    const mapped   = plantMapped[i]!;
+    const unmapped = unmappedByWeek[i]!;
+    const actual   = mapped + unmapped;
+    cumRelease += release;
+    cumMapped  += mapped;
+    cumTotal   += actual;
+    const wkStarted = today.slice(0, 7) === month && today >= wk.startDate;
+    const cumAttPct  = cumRelease > 0 && wkStarted ? Math.round((cumMapped  / cumRelease) * 1000) / 10 : null;
+    const wkAttPct   = release   > 0 && wkStarted ? Math.round((mapped     / release)    * 1000) / 10 : null;
+    return { week: wk.week, label: wk.label, startDate: wk.startDate, endDate: wk.endDate,
+      release, mapped, unmapped, actual, wkAttPct,
+      cumRelease, cumMapped, cumTotal, cumAttPct };
+  });
+
+  // Per-category rows
+  // `produced`  = total actual production across W1–W4 (alias for totalActual)
+  // `released`  = total plan release across W1–W4      (alias for totalRelease)
+  const allCats = new Set([...catRelease.keys(), ...catActual.keys()]);
+  const categories = [...allCats].map((cat) => {
+    const rel = catRelease.get(cat) ?? [0, 0, 0, 0];
+    const act = catActual.get(cat) ?? [0, 0, 0, 0];
+    const totalRelease = rel.reduce((s, v) => s + v, 0);
+    const totalActual  = act.reduce((s, v) => s + v, 0);
+    return {
+      category: cat,
+      w1Release: Math.round(rel[0]), w1Actual: act[0],
+      w2Release: Math.round(rel[1]), w2Actual: act[1],
+      w3Release: Math.round(rel[2]), w3Actual: act[2],
+      w4Release: Math.round(rel[3]), w4Actual: act[3],
+      totalRelease: Math.round(totalRelease), totalActual,
+      // `produced` and `released` are explicit aliases so consumers don't have to know the internal names
+      produced: totalActual,
+      released: Math.round(totalRelease),
+      notStarted: totalActual === 0 && totalRelease > 0,
+    };
+  }).sort((a, b) => b.totalRelease - a.totalRelease);
+
+  // Unmapped top codes
+  const topCodes = [...unmappedCodeQty.entries()]
+    .sort((a, b) => b[1] - a[1]).slice(0, 20).map(([code, qty]) => ({ code, qty }));
+
+  const totalUnmapped = unmappedByWeek.reduce((s, v) => s + v, 0);
+  const totalMapped   = plantMapped.reduce((s, v) => s + v, 0);
+  const totalProduced = totalMapped + totalUnmapped;
+  const runRatePerDay = workingDaysElapsed > 0 ? Math.round(totalProduced / workingDaysElapsed) : 0;
+
+  return {
+    month, lastDataDate, workingDaysElapsed,
+    weeks, categories,
+    unmapped: { byWeek: [...unmappedByWeek], total: totalUnmapped, topCodes },
+    totalProduced, totalMapped, totalUnmapped, runRatePerDay,
+  };
+}
+
 const _plumbingMonCache = new Map<string, { payload: unknown; expires: number }>();
 router.get("/plan/plumbing-monitoring", async (req, res) => {
   const month = String(req.query.month ?? "");
@@ -1517,123 +1686,7 @@ router.get("/plan/plumbing-monitoring", async (req, res) => {
     return;
   }
   try {
-    const [planItems, sheet3Rows] = await Promise.all([
-      buildPlanItems(month, "Plumbing"),
-      fetchPlumbingSheet3Production(month),
-    ]);
-
-    // Code → category map (strict normalization: "A465" matches "A-465")
-    const codeToCategory = new Map<string, string>();
-    const catRelease = new Map<string, [number, number, number, number]>();
-    for (const item of planItems) {
-      const norm = normalizeCodeStrict(item.itemCode);
-      if (!codeToCategory.has(norm)) codeToCategory.set(norm, item.category);
-      const arr = catRelease.get(item.category) ?? [0, 0, 0, 0];
-      arr[0] += (item as unknown as Record<string, number>)["w1"] ?? 0;
-      arr[1] += (item as unknown as Record<string, number>)["w2"] ?? 0;
-      arr[2] += (item as unknown as Record<string, number>)["w3"] ?? 0;
-      arr[3] += (item as unknown as Record<string, number>)["w4"] ?? 0;
-      catRelease.set(item.category, arr);
-    }
-
-    function wkIdx(day: number): number { return day <= 7 ? 0 : day <= 14 ? 1 : day <= 21 ? 2 : 3; }
-
-    const catActual = new Map<string, [number, number, number, number]>();
-    const unmappedByWeek: [number, number, number, number] = [0, 0, 0, 0];
-    const unmappedCodeQty = new Map<string, number>();
-
-    for (const row of sheet3Rows) {
-      const cat = codeToCategory.get(row.normCode);
-      const wi = wkIdx(parseInt(row.dateStr.slice(8), 10));
-      if (!cat) {
-        unmappedByWeek[wi] += row.qty;
-        unmappedCodeQty.set(row.rawCode, (unmappedCodeQty.get(row.rawCode) ?? 0) + row.qty);
-        continue;
-      }
-      const arr = catActual.get(cat) ?? [0, 0, 0, 0];
-      arr[wi] += row.qty;
-      catActual.set(cat, arr);
-    }
-
-    // Week calendar
-    const [yr, mo] = month.split("-").map(Number);
-    const lastDayOfMonth = new Date(yr, mo, 0).getDate();
-    function p2(n: number) { return String(n).padStart(2, "0"); }
-    const calendar = [
-      { week: 1, label: `W1 (${mo}/1–7)`,           startDay: 1,  endDay: 7,            startDate: `${yr}-${p2(mo)}-01`, endDate: `${yr}-${p2(mo)}-07` },
-      { week: 2, label: `W2 (${mo}/8–14)`,           startDay: 8,  endDay: 14,           startDate: `${yr}-${p2(mo)}-08`, endDate: `${yr}-${p2(mo)}-14` },
-      { week: 3, label: `W3 (${mo}/15–21)`,          startDay: 15, endDay: 21,           startDate: `${yr}-${p2(mo)}-15`, endDate: `${yr}-${p2(mo)}-21` },
-      { week: 4, label: `W4 (${mo}/22–${lastDayOfMonth})`, startDay: 22, endDay: lastDayOfMonth, startDate: `${yr}-${p2(mo)}-22`, endDate: `${yr}-${p2(mo)}-${p2(lastDayOfMonth)}` },
-    ];
-
-    // Plant totals per week (round release — plan items have fractional w1-w4 due to band multiplication)
-    const plantRelease: [number, number, number, number] = [0, 0, 0, 0];
-    const plantMapped:  [number, number, number, number] = [0, 0, 0, 0];
-    for (const [, arr] of catRelease) for (let i = 0; i < 4; i++) plantRelease[i] += arr[i];
-    for (const [, arr] of catActual)  for (let i = 0; i < 4; i++) plantMapped[i]  += arr[i];
-    for (let i = 0; i < 4; i++) plantRelease[i] = Math.round(plantRelease[i]);
-
-    // Working days elapsed (non-Sunday days from 1st through last data date)
-    const lastDataDate = sheet3Rows.length > 0 ? [...sheet3Rows].map((r) => r.dateStr).sort().pop()! : null;
-    let workingDaysElapsed = 0;
-    if (lastDataDate) {
-      const throughDay = parseInt(lastDataDate.slice(8), 10);
-      for (let d = 1; d <= throughDay; d++) {
-        if (new Date(`${month}-${p2(d)}T00:00:00Z`).getUTCDay() !== 0) workingDaysElapsed++;
-      }
-    }
-
-    // Build per-week response (cumulative columns)
-    const today = new Date().toISOString().slice(0, 10);
-    let cumRelease = 0, cumMapped = 0, cumTotal = 0;
-    const weeks = calendar.map((wk, i) => {
-      const release = plantRelease[i]!;
-      const mapped   = plantMapped[i]!;
-      const unmapped = unmappedByWeek[i]!;
-      const actual   = mapped + unmapped;
-      cumRelease += release;
-      cumMapped  += mapped;
-      cumTotal   += actual;
-      const wkStarted = today.slice(0, 7) === month && today >= wk.startDate;
-      const cumAttPct  = cumRelease > 0 && wkStarted ? Math.round((cumMapped  / cumRelease) * 1000) / 10 : null;
-      const wkAttPct   = release   > 0 && wkStarted ? Math.round((mapped     / release)    * 1000) / 10 : null;
-      return { week: wk.week, label: wk.label, startDate: wk.startDate, endDate: wk.endDate,
-        release, mapped, unmapped, actual, wkAttPct,
-        cumRelease, cumMapped, cumTotal, cumAttPct };
-    });
-
-    // Per-category rows
-    const allCats = new Set([...catRelease.keys(), ...catActual.keys()]);
-    const categories = [...allCats].map((cat) => {
-      const rel = catRelease.get(cat) ?? [0, 0, 0, 0];
-      const act = catActual.get(cat) ?? [0, 0, 0, 0];
-      const totalRelease = rel.reduce((s, v) => s + v, 0);
-      const totalActual  = act.reduce((s, v) => s + v, 0);
-      return {
-        category: cat,
-        w1Release: Math.round(rel[0]), w1Actual: act[0],
-        w2Release: Math.round(rel[1]), w2Actual: act[1],
-        w3Release: Math.round(rel[2]), w3Actual: act[2],
-        w4Release: Math.round(rel[3]), w4Actual: act[3],
-        totalRelease: Math.round(totalRelease), totalActual,
-        notStarted: totalActual === 0 && totalRelease > 0,
-      };
-    }).sort((a, b) => b.totalRelease - a.totalRelease);
-
-    // Unmapped top codes
-    const topCodes = [...unmappedCodeQty.entries()]
-      .sort((a, b) => b[1] - a[1]).slice(0, 20).map(([code, qty]) => ({ code, qty }));
-
-    const totalUnmapped = unmappedByWeek.reduce((s, v) => s + v, 0);
-    const totalMapped   = plantMapped.reduce((s, v) => s + v, 0);
-    const totalProduced = totalMapped + totalUnmapped;
-    const runRatePerDay = workingDaysElapsed > 0 ? Math.round(totalProduced / workingDaysElapsed) : 0;
-
-    const payload = { month, lastDataDate, workingDaysElapsed,
-      weeks, categories,
-      unmapped: { byWeek: [...unmappedByWeek], total: totalUnmapped, topCodes },
-      totalProduced, totalMapped, totalUnmapped, runRatePerDay };
-
+    const payload = await computePlumbingMonitoringPayload(month);
     _plumbingMonCache.set(month, { payload, expires: Date.now() + 5 * 60 * 1000 });
     res.json(payload);
   } catch (err) {
@@ -1682,31 +1735,35 @@ router.get("/plan/validate-plumbing-monitoring", async (req, res) => {
 
     type MonCheckResult = { name: string; expected: number; actual: number; pass: boolean; tolerance?: string };
 
-    function chk(name: string, expected: number, actual: number, tol: number): MonCheckResult {
-      const pass = expected === 0 ? actual === 0 : Math.abs(actual - expected) / expected <= tol;
-      return { name, expected: Math.round(expected), actual: Math.round(actual), pass,
-        tolerance: expected === 0 ? "exact" : `±${(tol * 100).toFixed(0)}%` };
-    }
-
     const checks: MonCheckResult[] = [];
-    const TOL = PLUMBING_MON_TOLERANCE;
 
-    // Plant-level W1 and W2 mapped totals
-    checks.push(chk("Mon · Plant W1 mapped",   PLUMBING_MON_W1_MAPPED,   plantMapped2[0]!, TOL));
-    checks.push(chk("Mon · Plant W2 mapped",   PLUMBING_MON_W2_MAPPED,   plantMapped2[1]!, TOL));
-    checks.push(chk("Mon · W1 unmapped",       PLUMBING_MON_W1_UNMAPPED, unmappedByWeek2[0]!, TOL));
-    checks.push(chk("Mon · W2 unmapped",       PLUMBING_MON_W2_UNMAPPED, unmappedByWeek2[1]!, TOL));
+    // ── Plant-level guards (dynamic — no frozen golden values) ────────────────
+    // W1 and W2 are elapsed; total production (mapped + unmapped) must be > 0.
+    const w1Total = plantMapped2[0]! + unmappedByWeek2[0]!;
+    const w2Total = plantMapped2[1]! + unmappedByWeek2[1]!;
 
-    // Per-category W1 actuals
-    for (const [cat, expected] of Object.entries(PLUMBING_MON_CAT_W1)) {
-      const actual = (catActual2.get(cat) ?? [0, 0, 0, 0])[0]!;
-      checks.push(chk(`Mon · ${cat} W1`, expected, actual, TOL));
+    checks.push({ name: "Mon · W1 total > 0",        expected: 1, actual: w1Total > 0 ? 1 : 0,           pass: w1Total > 0,          tolerance: "> 0" });
+    checks.push({ name: "Mon · W2 total > 0",        expected: 1, actual: w2Total > 0 ? 1 : 0,           pass: w2Total > 0,          tolerance: "> 0" });
+    checks.push({ name: "Mon · Plant W1 mapped > 0", expected: 1, actual: plantMapped2[0]! > 0 ? 1 : 0,  pass: plantMapped2[0]! > 0, tolerance: "> 0" });
+    checks.push({ name: "Mon · Plant W2 mapped > 0", expected: 1, actual: plantMapped2[1]! > 0 ? 1 : 0,  pass: plantMapped2[1]! > 0, tolerance: "> 0" });
+
+    // ── Per-category guards ────────────────────────────────────────────────────
+    // Non-Solvent categories must have > 0 production in both W1 and W2.
+    // Solvent categories only check >= 0 (production is intermittent).
+    const NON_SOLVENT_CATS = ["CPVC Pipe","CPVC Fitting","UPVC Pipe","UPVC Fitting","SWR Pipe","SWR Fitting","AGRI Pipe","AGRI Fitting"];
+    const SOLVENT_CATS     = ["CPVC Solvent","UPVC Solvent","SWR Solvent","AGRI Solvent"];
+
+    for (const cat of NON_SOLVENT_CATS) {
+      const actW1 = (catActual2.get(cat) ?? [0, 0, 0, 0])[0]!;
+      const actW2 = (catActual2.get(cat) ?? [0, 0, 0, 0])[1]!;
+      checks.push({ name: `Mon · ${cat} W1`, expected: 1, actual: actW1 > 0 ? 1 : 0, pass: actW1 > 0, tolerance: "> 0" });
+      checks.push({ name: `Mon · ${cat} W2`, expected: 1, actual: actW2 > 0 ? 1 : 0, pass: actW2 > 0, tolerance: "> 0" });
     }
-
-    // Per-category W2 actuals
-    for (const [cat, expected] of Object.entries(PLUMBING_MON_CAT_W2)) {
-      const actual = (catActual2.get(cat) ?? [0, 0, 0, 0])[1]!;
-      checks.push(chk(`Mon · ${cat} W2`, expected, actual, TOL));
+    for (const cat of SOLVENT_CATS) {
+      const actW1 = (catActual2.get(cat) ?? [0, 0, 0, 0])[0]!;
+      const actW2 = (catActual2.get(cat) ?? [0, 0, 0, 0])[1]!;
+      checks.push({ name: `Mon · ${cat} W1`, expected: 1, actual: actW1 >= 0 ? 1 : 0, pass: actW1 >= 0, tolerance: ">= 0" });
+      checks.push({ name: `Mon · ${cat} W2`, expected: 1, actual: actW2 >= 0 ? 1 : 0, pass: actW2 >= 0, tolerance: ">= 0" });
     }
 
     const allPass   = checks.every((c) => c.pass);

@@ -66,6 +66,8 @@ export interface CorrectiveCategoryResult {
   producedCapped: number;
   remaining: number;
   capPerDay: number;
+  /** Alias for capPerDay — the p90 daily capacity derived from Sheet3 production history. */
+  capacityPerDay: number;
   feasible: number;
   shortfall: number;
   productionLag: number;
@@ -591,6 +593,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       producedCapped,
       remaining,
       capPerDay,
+      capacityPerDay: capPerDay,   // alias for consumers expecting this field name
       feasible,
       shortfall,
       productionLag,

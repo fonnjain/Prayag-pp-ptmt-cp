@@ -425,7 +425,8 @@ router.get("/ops/sales", async (req, res): Promise<void> => {
 // ─── GET /ops/overview ────────────────────────────────────────────────────────
 router.get("/ops/overview", async (req, res): Promise<void> => {
   const fy = String(req.query.fy ?? "2026-27");
-  const cacheKey = `ops:overview:${fy}`;
+  const segment = String(req.query.segment ?? "Combined");
+  const cacheKey = `ops:overview:${fy}:${segment}`;
   const cached = getCached<unknown>(cacheKey);
   if (cached) { res.json(cached); return; }
 
@@ -454,10 +455,11 @@ router.get("/ops/overview", async (req, res): Promise<void> => {
 
   const result = {
     fy,
+    segment,
     orderValue,
     orderQty,
     salesValue: 0, // placeholder — full sales is expensive
-    productionPlan: 0, // placeholder
+    productionPlan: 0, // placeholder — use /api/plan/summary?segment= for live figures
     festivals: FESTIVAL_CONFIG,
   };
   setCached(cacheKey, result);
