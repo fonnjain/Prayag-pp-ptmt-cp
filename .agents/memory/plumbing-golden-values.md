@@ -1,61 +1,37 @@
 ---
 name: Plumbing golden values
-description: July 2026 Production Required golden values for Plumbing — 12 categories, ONE formula for all, grand total 1,922,309 pcs.
+description: How Plumbing plan golden values are structured, what legitimate drift looks like, and how to diagnose vs update.
 ---
 
-## Verified July 2026 values
+## Current snapshot
+- Reference month: **2026-07**, snapshot taken **2026-07-28**
+- Grand total: **1,960,303** pieces · KG grand total: **449,476** kg
+- 12 categories; ONE formula for all: `max(buffer − stock + lmPending + pending, 0)`
+- CPVC 40/244/9 items · UPVC 52/242/30 · SWR 160/134/3 · AGRI 123/82/1
+- FG Stock file: 1,042 rows (June file, uploaded 2026-07-17)
+- SWR multiplier = 1.0× (NOT 1.5×)
 
-| Category      | Prod Required |
-|---------------|-------------:|
-| CPVC Pipe     |      130,451 |
-| CPVC Fitting  |      763,253 |
-| CPVC Solvent  |       16,539 |
-| UPVC Pipe     |       51,899 |
-| UPVC Fitting  |      633,038 |
-| UPVC Solvent  |          542 |
-| SWR Pipe      |       64,515 |
-| SWR Fitting   |      236,315 |
-| SWR Solvent   |        1,255 |
-| AGRI Pipe     |        9,688 |
-| AGRI Fitting  |       14,814 |
-| AGRI Solvent  |            0 |
-| **TOTAL**     |  **1,922,309** |
+## Tolerance tiers in plumbing-golden.ts
+- Category plan totals: `PLUMBING_GOLDEN_TOLERANCE = 0.001` (±0.1%)
+- KG per category: `PLUMBING_KG_TOLERANCE = 0.01` (±1%)
+- Weekly per-category and plant: `PLUMBING_WEEKLY_TOLERANCE = 0.01` (±1%)
+- Grand total check: uses PLUMBING_GOLDEN_TOLERANCE (±0.1%)
 
-## Formula — ONE formula for ALL 12 categories
+## Diagnosing golden drift — two cases
 
-```
-MaxProduction = max(BufferReq − Stock + PendingLM + Pending, 0)
-BufferReq = Avg3MoSale × bufferMultiplier
-```
+**Case 1 (legitimate):** avg3MoSale rolling window advanced, FG Stock file unchanged.
+- Signs: item counts all intact, FG Stock row count unchanged, movement non-uniform (some cats flat or up), W1+W2+W3+W4=planTotal sum invariants still pass
+- Action: update PLUMBING_GOLDEN + PLUMBING_GRAND_TOTAL + KG + weekly to current actuals
 
-**Why one formula:** A previous "swragri" variant (`max(stock + pending − buffer + lastMo, 0)`)
-was implemented based on incorrect instructions; it is wrong and has been removed (migration 011).
-The per-item `max(…,0)` clamp makes negative items contribute 0, which is equivalent to
-"sum only positive items" (master's SUMIFS > 0) without a separate code path.
+**Case 2 (regression):** pipeline reading fewer rows than before.
+- Signs: ANY item count dropped below reference, or FG Stock row count shrank, or ALL categories uniformly down by the same proportion
+- Action: DO NOT update goldens — fix the data path so missing items are read again
 
-## Buffer multipliers
+**Why:** updating goldens to match a data-loss bug silently launders the regression into the new baseline. Item counts are the smoking-gun check (exact, not ±%).
 
-| Material | Default | Applied (DB) |
-|---|---|---|
-| CPVC | 1.5× | AI-tuned ~1.23–1.30 |
-| UPVC | 1.5× | AI-tuned ~1.23–1.29 |
-| AGRI | 1.5× | AI-tuned ~1.27–1.60 |
-| **SWR** | **1.0×** | **1.0× (fixed by migration 011)** |
-
-SWR was incorrectly seeded at 1.5× (migrations 006/007). Migration 011 corrects this.
-Multipliers stored in `buffer_categories.multiplier` (editable via Suggested/Override/Applied UI).
-
-## Stock / Pending-LM from FG Stock upload
-
-`plumbing_fg_stock` Net Stock column (signed):
-- Net Stock > 0 → Stock = value; Pending-LM = 0
-- Net Stock < 0 → Stock = 0; Pending-LM = |value|
-- Net Stock = 0 → skip
-
-Column name fallbacks tried: "Net Stock", "Net-Stock", "Net stock", "NetStock".
-
-## 12 categories
-
-4 materials (CPVC, UPVC, SWR, AGRI) × 3 types (Pipe, Fitting, Solvent).
-Solvent rows detected via item name (SOLVENT/CEMENT keyword) before Pipe/Fitting check.
-AGRI Solvent = 0 is correct — no items in positive territory this month.
+## How to take a new snapshot
+1. Confirm item counts match reference (CPVC 40/244/9 · UPVC 52/242/30 · SWR 160/134/3 · AGRI 123/82/1)
+2. Confirm FG Stock row count = 1,042 (or re-verify after a new upload)
+3. Run `curl .../api/plan/validate?segment=Plumbing&month=2026-07` and extract actuals
+4. Update all arrays/constants in `artifacts/api-server/src/lib/plumbing-golden.ts` in one pass
+5. Re-run suite — expect 325/325

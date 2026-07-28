@@ -1,0 +1,47 @@
+# Replit Prompt — Diagnose the 19 Plan-Layer Drift Failures BEFORE Touching Any Golden
+
+The suite is at **306/325** with 19 failing plan-layer checks, all showing category totals **down** 0.3–1.75%. The engine is almost certainly fine — every reconciliation invariant still passes, and the downstream effects chain correctly (CPVC Fitting drops → its kg drops proportionally → its W3 items shift to W4). So the **calculation is sound; the inputs moved.**
+
+**The critical question is WHY the inputs moved, and there are two very different explanations:**
+
+1. **Legitimate** — a newer FG stock file was uploaded, or the live Google Sheet genuinely updated. → Update the goldens.
+2. **Regression** — the pipeline is now reading *less* data than before (truncated upload, dropped tab, partial sync). → The goldens are correct and the ingestion is broken.
+
+**DO NOT update PLUMBING_GOLDEN yet.** Updating goldens to match live values would silently launder a data-loss bug into the new "correct" baseline. We have already been burned this session by plans reading less than they should (the empty-plan regression and the Combined-vs-NEW BOM gap). Diagnose first.
+
+**The warning sign:** the drop is **broad and one-directional** — six categories all down, none up. A genuine stock/pending update usually moves items in *both* directions (some need more, some less). A uniform ~0.5–1% shrink across the board looks more like *fewer rows being read* than genuine demand shifts.
+
+---
+
+## 1. Real input change, or data-loss regression?
+
+Report:
+- Is a **different FG Stock file** uploaded now vs. when the reference goldens were set? Show the current FG file's **row count** and **upload timestamp**. (Reference was 1,042 rows.)
+- **Current item counts per category** vs. the golden counts: CPVC 40/244/9 · UPVC 52/242/30 · SWR 160/134/3 · AGRI 123/82/1.
+  **→ If any item count is now LOWER, this is data loss, not a demand change — that is the smoking gun.**
+- Are all source tabs still being read (both BOM tabs — Combined + NEW — and all 4 material tabs), or is something reading fewer rows than before? Show row counts read per tab.
+
+## 2. Direction check
+
+Every failing category is DOWN. Confirm whether **any** category went UP. Report the per-category delta **with sign** (current total − golden). A genuine stock/pending update usually moves items in both directions; a uniform shrink across all categories points to fewer rows being ingested.
+
+## 3. Localise the drop
+
+For **CPVC Fitting** (−0.98%, the largest absolute drop), compare the current item list against the reference and classify the change:
+- Are items **missing entirely** from the current run? (→ data loss)
+- Or do the same items have **different stock / pending values**? (→ legitimate update)
+
+List the specific items whose contribution changed, with old vs. new stock/pending, so the cause is unambiguous. This single distinction resolves the whole question.
+
+## 4. Decision — only after 1–3
+
+- **If item counts are intact AND the changes are stock/pending value differences on existing items** → legitimate input update. Update PLUMBING_GOLDEN to the live values, record the date the snapshot was taken, and re-run.
+- **If ANY item count dropped OR items are missing** → this is a pipeline regression. The goldens are correct; the ingestion needs fixing. **Do NOT update the goldens** — fix the data path so the missing items are read again.
+
+---
+
+## Report
+
+State which of the two cases it is, **with the evidence from steps 1–3**, before changing anything. If it is legitimate, show the item-level stock/pending changes that justify it. If it is a regression, show which items/rows are missing and from which source.
+
+**Guiding principle:** the restored exact checks exist to make drift *visible*. Now that it is visible, it must be *explained* before it is accepted. Do not make the suite green by moving the goldens to wherever the live numbers happen to be — that defeats the entire purpose of the exact checks.
