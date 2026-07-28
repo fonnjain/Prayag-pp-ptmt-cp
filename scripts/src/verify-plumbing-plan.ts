@@ -390,11 +390,11 @@ async function main(): Promise<void> {
     const sumProduced = cats.reduce((s, c) => s + (((c["produced"] as number)) ?? 0), 0);
     const totalUnmappedMon = (monData?.totalUnmapped as number) ?? 0;
     const totalProducedMon = (monData?.totalProduced as number) ?? 0;
-    const reconOk = Math.abs(sumProduced + totalUnmappedMon - totalProducedMon) <= 1;
+    const reconOk = (sumProduced + totalUnmappedMon) === totalProducedMon;
     newChecks.push({
-      name: "NC2b · plumbing-monitoring · Σ(produced) + unmapped ≈ totalProduced",
+      name: "NC2b · plumbing-monitoring · Σ(produced) + unmapped === totalProduced",
       expected: totalProducedMon, actual: sumProduced + totalUnmappedMon,
-      pass: reconOk, tolerance: "±1 unit",
+      pass: reconOk, tolerance: "exact",
     });
 
     // NC3: corrective workingDaysRemaining reflects today (not the full-month total)

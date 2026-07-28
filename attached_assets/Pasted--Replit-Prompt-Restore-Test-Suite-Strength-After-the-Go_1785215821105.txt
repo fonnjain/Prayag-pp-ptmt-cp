@@ -1,0 +1,70 @@
+# Replit Prompt — Restore Test-Suite Strength After the Golden Refresh
+
+The recent QA fixes replaced ~93 exact-value golden checks with structural `>0` / `>=0` guards, and the suite is green at 324/324. That was correct for **date-dependent** values, but a `>0` guard confirms the pipeline *runs*, not that the numbers are *right* — the SWR Fitting bug (215,063 vs 236,315), the AGRI inversion, and the buffer-multiplier drift would all pass a `>0` check. Audit which checks are exact vs structural, and restore exact assertions everywhere the value is stable within a month.
+
+**Do not change any engine/calculation code. This task only concerns the test suite.**
+
+---
+
+## 1. Report the current state (do this first, change nothing)
+
+For each check group, state whether it is an **exact-value assertion** (e.g. `=== 763253` within a tight tolerance) or a **structural guard** (`>0`, `>=0`, reconciliation-only). Produce a table: check name → tier (EXACT / STRUCTURAL / RECONCILIATION) → tolerance.
+
+Explicitly answer for these three:
+- `CPVC Fitting = 763,253`
+- Plumbing kg grand total (≈451,421)
+- `Σ(category produced) + unmapped === totalProduced`
+
+---
+
+## 2. These MUST be EXACT assertions (they are stable within a month — restore any that were loosened)
+
+**Plan layer — the 12 Plumbing category targets (±0.1%):**
+CPVC Pipe 130,451 · CPVC Fitting 763,253 · CPVC Solvent 16,539 · UPVC Pipe 51,899 · UPVC Fitting 633,038 · UPVC Solvent 541 · SWR Pipe 64,515 · SWR Fitting 236,315 · SWR Solvent 1,255 · AGRI Pipe 20,299 · AGRI Fitting 54,590 · AGRI Solvent 0.
+
+**Plan layer — other stable values (±0.1%):**
+- Plumbing grand total ≈ 1,972,694 pcs
+- Item counts: CPVC 40/244/9 · UPVC 52/242/30 · SWR 160/134/3 · AGRI 123/82/1 (exact integers)
+- kg per category and grand total ≈ 451,421 (±1% only because of BOM gaps)
+- Weekly release W1–W4 per category and plant totals (≈1,859,131 / 12,034 / 82,874 / 18,656)
+- Buffer multipliers per category (CPVC 1.5, UPVC Pipe 1.2 / Fitting 1.5, SWR Pipe 1.0 / Fitting 1.2, AGRI 1.5, Solvent lines as seeded)
+
+**PTMT — stable values (±0.1%):**
+- Max ≈ 576,037 (accept live auto-sync ~576,364), Min ≈ 301,918
+- 7 categories present; Applied multipliers Cocks Std 1.5, Cocks Prem 1.2, Faucets 1.5, Accessorise 1.5, Cistern 1.2, Cabinet 1.2, Ball Cock 1.5
+
+These do not move day-to-day within a month (they depend on stock/avg/pending that are effectively fixed for the plan run), so a golden-refresh sweep should **not** have converted them to `>0`. If any were softened, restore them to exact.
+
+---
+
+## 3. These SHOULD stay EXACT as reconciliation invariants (they hold regardless of date — use equality, not `>0`)
+
+- `Σ(category produced) + unmapped === totalProduced`
+- `plan === produced + remaining` per category (corrective)
+- `feasible === capacityPerDay × workingDaysRemaining` per category
+- `W1 + W2 + W3 + W4 === category total` (weekly release)
+- Standard-format corrective export headers === main plan export headers, cell-by-cell
+
+These are true on any date, so they must be **exact equalities**, not `>0` guards. If the refresh turned any into `>0`, convert them back to equality assertions.
+
+---
+
+## 4. These may REMAIN structural guards (they genuinely move daily)
+
+Only the moving quantities in corrective/monitoring:
+- `producedToDate`, `remaining`, `feasible`, `shortfall` absolute values
+- `runRatePerDay`, cumulative produced/released
+- `workingDaysRemaining` (assert it equals the value derived from the as-of date, not a fixed number)
+
+For these, keep the `>0` / `>=0` guards **plus** the reconciliation invariants from section 3 — so even though the absolute value floats, the relationships between values are still checked exactly.
+
+---
+
+## 5. Deliverable
+
+- The tier table from section 1.
+- A list of every check that was `>0`/`>=0` but should be exact (sections 2–3), now converted back to exact assertions.
+- Confirmation that the three named checks (`CPVC Fitting = 763,253`, kg grand total, `Σ produced + unmapped = totalProduced`) are now **exact**.
+- Re-run the full suite; report total count and pass/fail. If any newly-restored exact check fails, that is a real signal — report the actual vs expected value rather than loosening the check again.
+
+**Guiding principle:** a check should be as strict as the value is stable. Exact where the number is fixed within the month; structural only where it genuinely floats — and even then, guard the reconciliation relationships exactly. Never loosen a check just to make the suite green.

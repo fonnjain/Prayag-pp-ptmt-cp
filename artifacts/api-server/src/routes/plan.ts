@@ -21,6 +21,7 @@ import { runMachineCascade, type PlanItemForCascade } from "../lib/machine-capac
 import { runCorrectiveReplan } from "../lib/corrective-engine";
 import {
   PLUMBING_GOLDEN,
+  PLUMBING_GRAND_TOTAL,
   PLUMBING_GOLDEN_TOLERANCE,
   PLUMBING_BUFFER_DEFAULTS,
   SOLVENT_MEMBERSHIP,
@@ -935,6 +936,21 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
       pass: grandTotal > 0,
       tolerance: "> 0",
     });
+    // Exact golden check for the grand total — catches any silent regression in
+    // plan totals that the per-category ±0.1% checks would also surface, but
+    // having it at the plant level makes it immediately visible in summary views.
+    {
+      const gt = roundInt(grandTotal);
+      const gtPct = PLUMBING_GRAND_TOTAL === 0 ? (gt === 0 ? 0 : Infinity)
+        : Math.abs(gt - PLUMBING_GRAND_TOTAL) / PLUMBING_GRAND_TOTAL;
+      checks.push({
+        name: "Grand total (±0.1%)",
+        expected: PLUMBING_GRAND_TOTAL,
+        actual: gt,
+        pass: gtPct <= PLUMBING_GOLDEN_TOLERANCE,
+        tolerance: `±${(PLUMBING_GOLDEN_TOLERANCE * 100).toFixed(1)}%`,
+      });
+    }
 
     // ── 2. Required-upload guard ───────────────────────────────────────────
     // The FG Stock upload is the ONLY source of Stock and Pending-Last-Month.
