@@ -611,6 +611,55 @@ async function main(): Promise<void> {
       pass: mgmtOk, tolerance: "E≈7552 F≈7587 G≈7534 H≈6146 I≈4620 (±1%)",
     });
 
+    // NC12: GET /corrective/runs/:id must return the run you clicked, not the
+    // latest run for that month/segment (regression: routes were once rewritten
+    // to filter by undefined month/segment instead of the id).
+    type RunListEntry = { id: number; month: string; segment: string; weekClosed: number; revisedMonthTotal: number; createdAt: string };
+    const allRuns = await fetch(`${API_BASE}/api/corrective/runs`)
+      .then((r) => r.json() as Promise<RunListEntry[]>);
+    // Pick an OLDER run: one that is not the newest id for its month+segment.
+    const newestByKey = new Map<string, number>();
+    for (const r of allRuns) {
+      const key = `${r.segment}|${r.month}`;
+      newestByKey.set(key, Math.max(newestByKey.get(key) ?? 0, r.id));
+    }
+    const olderRun = allRuns
+      .filter((r) => r.id !== newestByKey.get(`${r.segment}|${r.month}`))
+      .sort((a, b) => b.id - a.id)[0]
+      // Fallback: any non-newest overall run still exercises the by-id path.
+      ?? allRuns.sort((a, b) => a.id - b.id)[0];
+    if (!olderRun) {
+      newChecks.push({
+        name: "NC14 · corrective/runs/:id · by-id lookup returns the clicked run (skipped: no runs exist)",
+        expected: 1, actual: 0, pass: false, tolerance: "needs ≥1 corrective run",
+      });
+    } else {
+      const detail = await fetch(`${API_BASE}/api/corrective/runs/${olderRun.id}`)
+        .then((r) => r.json() as Promise<Record<string, unknown>>);
+      const byIdOk =
+        (detail.runId as number) === olderRun.id &&
+        (detail.month as string) === olderRun.month &&
+        (detail.segment as string) === olderRun.segment &&
+        (detail.weekClosed as number) === olderRun.weekClosed &&
+        Math.abs(((detail.revisedMonthTotal as number) ?? NaN) - olderRun.revisedMonthTotal) < 0.01 &&
+        Array.isArray(detail.items);
+      newChecks.push({
+        name: `NC14 · corrective/runs/${olderRun.id} · detail returns run #${olderRun.id} (${olderRun.segment}/${olderRun.month}), not the latest for the month`,
+        expected: olderRun.id, actual: (detail.runId as number) ?? -1,
+        pass: byIdOk, tolerance: "runId + month + segment + weekClosed + revisedMonthTotal match list entry",
+      });
+
+      // Excel export for the same id must carry that run's month/week in the filename.
+      const xlResp = await fetch(`${API_BASE}/api/corrective/runs/${olderRun.id}/export/excel?format=standard`);
+      const dispo  = xlResp.headers.get("content-disposition") ?? "";
+      const xlOk   = xlResp.ok && dispo.includes(`${olderRun.segment}_Corrective_Plan_${olderRun.month}_W${olderRun.weekClosed}_`);
+      newChecks.push({
+        name: `NC14b · corrective/runs/${olderRun.id}/export/excel · filename cites ${olderRun.month} W${olderRun.weekClosed}`,
+        expected: 1, actual: xlOk ? 1 : 0,
+        pass: xlOk, tolerance: `content-disposition contains ${olderRun.segment}_Corrective_Plan_${olderRun.month}_W${olderRun.weekClosed}_`,
+      });
+    }
+
   } catch (err) {
     console.error(`\n❌  New permanent checks error: ${err instanceof Error ? err.message : String(err)}`);
     anyFail = true;
