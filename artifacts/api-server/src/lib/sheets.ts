@@ -1,7 +1,71 @@
 import { ReplitConnectors } from "@replit/connectors-sdk";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { db, workbookConfigTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { logger } from "./logger";
+
+// ── Planning isolation guard ──────────────────────────────────────────────────
+//
+// RULE (scoped 2026-08): the plan-BUILD path may read Google Sheets ONLY for
+// reference data on an explicit allow-list:
+//   • fetchAvg3MoSaleTotals   — sales history (avg-3-month figures)
+//   • fetchPlumbingPlanData   — Plumbing workbook: item roster (code/type/material),
+//                               avg-3-month, per-item multiplier — NOTHING else
+//   • fetchPlumbingBomWeights — BOM weight-per-piece (kg computation)
+//
+// Stock and pending (current + last-month) MUST come from uploads and fail
+// loudly when missing (see routes/plan.ts). Any other sheet read inside a
+// planning context throws PlanningIsolationError naming the call site.
+// Non-planning paths (monitoring actuals, corrective production-to-date,
+// machine capacity reference) are unaffected — they never run inside a
+// planning context.
+
+/** Thrown when the plan-build path attempts a sheet read outside the allow-list. */
+export class PlanningIsolationError extends Error {
+  constructor(callSite: string, context: string) {
+    super(
+      `Planning isolation violation: sheet read "${callSite}" attempted inside planning context "${context}". ` +
+      `Planning may only read sales history (fetchAvg3MoSaleTotals), the Plumbing workbook roster/avg/multiplier ` +
+      `(fetchPlumbingPlanData), and BOM weights (fetchPlumbingBomWeights). Stock and pending must come from uploads.`,
+    );
+    this.name = "PlanningIsolationError";
+  }
+}
+
+const _planningContext = new AsyncLocalStorage<{ label: string }>();
+const _allowedReadScope = new AsyncLocalStorage<{ fetcher: string }>();
+
+/** Marks fn (and everything it awaits) as the plan-build path. */
+export function runInPlanningContext<T>(label: string, fn: () => Promise<T>): Promise<T> {
+  return _planningContext.run({ label }, fn);
+}
+
+/** Names of sheet fetchers permitted inside a planning context. */
+export const PLANNING_SHEET_READ_ALLOWLIST = [
+  "fetchAvg3MoSaleTotals",
+  "fetchPlumbingPlanData",
+  "fetchPlumbingBomWeights",
+] as const;
+
+function runInAllowedReadScope<T>(fetcher: string, fn: () => Promise<T>): Promise<T> {
+  return _allowedReadScope.run({ fetcher }, fn);
+}
+
+/** Call at the top of every NON-allow-listed public fetcher: throws in planning context. */
+function guardPlanningRead(callSite: string): void {
+  const ctx = _planningContext.getStore();
+  if (ctx) throw new PlanningIsolationError(callSite, ctx.label);
+}
+
+/** Choke-point safety net (proxyJson/driveProxyJson): catches any future fetcher
+ *  added without a named guard. Names the API path when the fetcher is unknown. */
+function guardPlanningReadAtChokePoint(path: string): void {
+  const ctx = _planningContext.getStore();
+  if (!ctx) return;
+  const scope = _allowedReadScope.getStore();
+  if (scope && (PLANNING_SHEET_READ_ALLOWLIST as readonly string[]).includes(scope.fetcher)) return;
+  throw new PlanningIsolationError(`unregistered sheet read (API path: ${path})`, ctx.label);
+}
 
 let _connectors: ReplitConnectors | null = null;
 function getConnectors(): ReplitConnectors {
@@ -96,6 +160,7 @@ export function invalidateWorkbookCache(division: string, month: string): void {
 }
 
 async function proxyJson(path: string): Promise<any> {
+  guardPlanningReadAtChokePoint(path);
   const MAX_RETRIES = 4;
   let delay = 1000;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -115,6 +180,7 @@ async function proxyJson(path: string): Promise<any> {
 // ── Google Drive helpers ──────────────────────────────────────────────────────
 
 async function driveProxyJson(path: string): Promise<any> {
+  guardPlanningReadAtChokePoint(path);
   const res = await getConnectors().proxy("google-drive", path, { method: "GET" });
   if (!res.ok) {
     const body = await res.text();
@@ -382,6 +448,11 @@ function rowsToObjects(values: string[][]): Record<string, string>[] {
  * (Item Code, Colour), then divide by 3 for the average.
  */
 export async function fetchAvg3MoSaleTotals(month: string): Promise<DualTotals> {
+  // ALLOW-LISTED for planning: sales-history avg-3-month figures only.
+  return runInAllowedReadScope("fetchAvg3MoSaleTotals", () => fetchAvg3MoSaleTotalsInner(month));
+}
+
+async function fetchAvg3MoSaleTotalsInner(month: string): Promise<DualTotals> {
   const months = priorThreeMonths(month);
   const tabs = await listTabs(SHEET_IDS.sale2627);
   const matchTab = tabs.find((t) => tabMatchesAllMonths(t, months));
@@ -456,6 +527,7 @@ function parseSheetDate(raw: unknown): Date | null {
  * Rows are filtered to the target month before aggregation.
  */
 export async function fetchLiveDailyProductionTotals(month: string): Promise<DualTotals> {
+  guardPlanningRead("fetchLiveDailyProductionTotals"); // monitoring-only — never in plan build
   const [year, mon] = month.split("-").map(Number);
   const values = await throttledGetTabValues(SHEET_IDS.ptmtAnuj, "Production", "A3:D300000");
   const totals: DualTotals = { exact: new Map(), byCode: new Map() };
@@ -482,6 +554,7 @@ export async function fetchLiveDailyProductionTotals(month: string): Promise<Dua
  * Falls back to Combined-tab filter if no matching month tab is found.
  */
 export async function fetchLiveOrderByMonthTab(month: string): Promise<DualTotals> {
+  guardPlanningRead("fetchLiveOrderByMonthTab"); // display-only order book — never in plan build
   const [y, m] = month.split("-").map(Number);
   const label = monthLabel(y, m - 1); // e.g. "Jul-26"
   const monthShort = label.split("-")[0].toLowerCase(); // "jul"
@@ -548,9 +621,13 @@ const PLUMBING_BOM_SHEET_ID = "1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA";
 let _bomWeightsCache: { weights: Map<string, number>; expires: number } | null = null;
 
 export async function fetchPlumbingBomWeights(): Promise<Map<string, number>> {
+  // ALLOW-LISTED for planning: BOM weight-per-piece reference (kg computation).
   const now = Date.now();
   if (_bomWeightsCache && _bomWeightsCache.expires > now) return _bomWeightsCache.weights;
+  return runInAllowedReadScope("fetchPlumbingBomWeights", () => fetchPlumbingBomWeightsInner(now));
+}
 
+async function fetchPlumbingBomWeightsInner(now: number): Promise<Map<string, number>> {
   const tabs = await listTabs(PLUMBING_BOM_SHEET_ID);
   const combinedTab = tabs.find((t) => /^combined$/i.test(t.trim()));
   const newTab      = tabs.find((t) => /^new$/i.test(t.trim()));
@@ -655,6 +732,7 @@ const _sheet3Cache = new Map<string, { rows: PlumbingSheet3Row[]; expires: numbe
  * Cached 15 min in-process.
  */
 export async function fetchPlumbingSheet3Production(month: string): Promise<PlumbingSheet3Row[]> {
+  guardPlanningRead("fetchPlumbingSheet3Production"); // monitoring/corrective actuals — never in plan build
   const now = Date.now();
   const cached = _sheet3Cache.get(month);
   if (cached && cached.expires > now) return cached.rows;
@@ -704,6 +782,7 @@ export function invalidatePlumbingSheet3Cache(month: string): void {
  * @param group ERP GROUP value to filter on — "PTMT" for PTMT segment, "PLUMBING" for Plumbing.
  */
 export async function fetchLiveOrderTotals(month: string, group: string = "PTMT"): Promise<DualTotals> {
+  guardPlanningRead("fetchLiveOrderTotals"); // display-only order book — never in plan build
   const [y, m] = month.split("-").map(Number);
   const label = monthLabel(y, m - 1).toLowerCase();
   const values = await throttledGetTabValues(SHEET_IDS.orderSheet, "Combined");
@@ -752,6 +831,7 @@ function applyPendingOrderAlias(code: string, colour: string): { code: string; c
  * Verified: PTMT total 15,906; 120-WS/WHITE = 180; 123-LSB/BLUE = 184 (via alias).
  */
 export async function fetchLivePendingOrderTotals(): Promise<DualTotals> {
+  guardPlanningRead("fetchLivePendingOrderTotals"); // pending must come from uploads in plan build
   // Read enough columns to cover Segment at col X (index 23). Use "A1:X" to include
   // all columns A through X without a hard row cap that would truncate large sheets.
   const values = await throttledGetTabValues(SHEET_IDS.pendingOrder, "report", "A1:X50000");
@@ -779,6 +859,7 @@ export async function fetchLivePendingOrderTotals(): Promise<DualTotals> {
  * Returns an array of { catNo, colour, qty } for all PTMT rows after aliasing.
  */
 export async function snapshotPendingOrderRows(): Promise<{ catNo: string; colour: string; qty: number }[]> {
+  guardPlanningRead("snapshotPendingOrderRows");
   const values = await throttledGetTabValues(SHEET_IDS.pendingOrder, "report", "A1:X50000");
   const rows = rowsToObjects(values);
   const result: { catNo: string; colour: string; qty: number }[] = [];
@@ -811,9 +892,6 @@ export interface PlumbingPlanRow {
   itemCode: string;
   /** Monthly average — "LAST 3 MONTH AVG SALE" is already the monthly average. */
   avg3MoSale: number;
-  stock: number;
-  pendingOrder: number;
-  pendingOrderLastMonth: number;
   /**
    * Per-item buffer multiplier read from the sheet's own multiplier column.
    * Each material tab stores the multiplier (e.g. 1.0, 1.2, 1.5, 2.0) in a
@@ -860,6 +938,28 @@ const PLUMBING_MATERIALS = ["CPVC", "UPVC", "SWR", "AGRI"] as const;
  * applied uniformly by plan.ts — intentionally producing values that differ from the source sheet.
  */
 export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlanRow[]> {
+  // ALLOW-LISTED for planning — but restricted to the COLUMN allow-list:
+  // item roster (code / type / material), avg-3-month, per-item multiplier.
+  // Stock, pending, pending-last-month, buffer and any computed Production-
+  // Required / Min / Max columns are NEVER read here (see tripwire below).
+  return runInAllowedReadScope("fetchPlumbingPlanData", () => fetchPlumbingPlanDataInner(month));
+}
+
+/**
+ * COMPUTED, NOT COPIED tripwire: none of the columns we map for reading may be
+ * a finished plan column. The workbook contains both raw inputs and computed
+ * Production-Required figures — reading the latter is prohibited outright.
+ */
+function assertNotComputedColumn(material: string, tab: string, purpose: string, headerText: string): void {
+  if (/production\s*req|prod\.?\s*req|required\s*production|min\s*prod|max\s*prod|plan\s*qty|production\s*plan/i.test(headerText)) {
+    throw new PlanningIsolationError(
+      `fetchPlumbingPlanData mapped a COMPUTED plan column for "${purpose}" (tab ${tab} / ${material}: header "${headerText}")`,
+      _planningContext.getStore()?.label ?? "column allow-list tripwire",
+    );
+  }
+}
+
+async function fetchPlumbingPlanDataInner(month: string): Promise<PlumbingPlanRow[]> {
   // Priority: DB-configured ID → Drive discovery → hardcoded map.
   // After finding any file, validate it has at least one material tab.
   // The Drive search can match wrong files (e.g. purchase workbooks) that share
@@ -934,15 +1034,12 @@ export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlan
 
     const header = values[headerRowIdx].map((h) => String(h ?? "").trim());
 
-    // Map each required column to its index by matching header text.
+    // COLUMN ALLOW-LIST (uploads-only rule, scoped 2026-08): only the item
+    // roster (code/type), avg-3-month, and per-item multiplier are mapped.
+    // Stock / pending / pending-LM / buffer columns exist in this workbook but
+    // are NOT read — stock and pending come exclusively from uploads (plan.ts),
+    // and the buffer is recomputed from avg × multiplier.
     const avg3moCol    = header.findIndex((h) => /last\s*3\s*month\s*avg|3.*month.*avg.*sale/i.test(h));
-    const stockCol     = header.findIndex((h) => /stock\s*as\s*on/i.test(h));
-    const bufferCol    = header.findIndex((h) => /buffer\s*stock\s*req/i.test(h)); // informational
-    const pendingLmCol = header.findIndex((h) => /pending.*last\s*month|last\s*month.*pending/i.test(h));
-    // "PENDING ORDER" — must NOT be the "LAST MONTH" column
-    const pendingCol = header.findIndex(
-      (h, i) => /pending\s*order/i.test(h) && !/last\s*month/i.test(h) && i !== pendingLmCol,
-    );
     // Prefer the canonical "ITEM CODE" / "ERP CODE" column over "OLD ITEM CODE".
     // "OLD ITEM CODE" columns are often populated only for fitting/finished-goods rows
     // and are empty for pipe items, causing entire pipe blocks to be silently skipped.
@@ -1032,17 +1129,23 @@ export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlan
     }
 
     logger.info(
-      { material, tab, headerRowIdx, codeCol, typeCol, multiplierCol, avg3moCol, stockCol, pendingCol, pendingLmCol, bufferCol,
+      { material, tab, headerRowIdx, codeCol, typeCol, multiplierCol, avg3moCol,
         header: header.slice(0, 20) },
-      "fetchPlumbingPlanData: columns mapped",
+      "fetchPlumbingPlanData: columns mapped (allow-list: roster / avg3mo / multiplier)",
     );
 
-    // codeCol, avg3moCol, and pendingCol are required from the workbook.
-    // stockCol / pendingLmCol come from the FG Stock upload; not required here.
-    if (codeCol < 0 || avg3moCol < 0 || pendingCol < 0) {
+    // COMPUTED-NOT-COPIED tripwire: fail loudly if any mapped column is a
+    // finished plan column rather than a raw input.
+    if (avg3moCol >= 0)     assertNotComputedColumn(material, tab, "avg3MoSale", header[avg3moCol] ?? "");
+    if (codeCol >= 0)       assertNotComputedColumn(material, tab, "itemCode",   header[codeCol] ?? "");
+    if (multiplierCol >= 0) assertNotComputedColumn(material, tab, "multiplier", header[multiplierCol] ?? "");
+
+    // codeCol and avg3moCol are required from the workbook (roster + sales history).
+    // Stock / pending / pending-LM come from uploads — never required or read here.
+    if (codeCol < 0 || avg3moCol < 0) {
       logger.warn(
-        { material, tab, codeCol, avg3moCol, pendingCol },
-        "fetchPlumbingPlanData: required columns (code/avg3mo/pending) not found — skipping tab",
+        { material, tab, codeCol, avg3moCol },
+        "fetchPlumbingPlanData: required columns (code/avg3mo) not found — skipping tab",
       );
       continue;
     }
@@ -1074,11 +1177,8 @@ export async function fetchPlumbingPlanData(month: string): Promise<PlumbingPlan
         type: itemType,
         category: itemType ? `${material} ${itemType}` : material,
         itemCode: rawCode,
-        avg3MoSale:            toNumber(row[avg3moCol]),
-        // stockCol / pendingLmCol come from the FG Stock upload (plan.ts), not the workbook.
-        stock:                 stockCol >= 0 ? toNumber(row[stockCol]) : 0,
-        pendingOrder:          toNumber(row[pendingCol]),
-        pendingOrderLastMonth: pendingLmCol >= 0 ? toNumber(row[pendingLmCol]) : 0,
+        avg3MoSale: toNumber(row[avg3moCol]),
+        // Stock / pending / pending-LM intentionally NOT read — uploads only (plan.ts).
         sheetMultiplier,
       });
       rowCount++;

@@ -1,4 +1,5 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { db, itemMasterTable, bufferCategoriesTable, uploadedFilesTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { computeItemPlan, annotateWeeklyRelease, summarizePlan, type ItemSourceRow, type WeeklyBandConfig } from "../lib/calc";
@@ -11,9 +12,12 @@ import {
   itemKey,
   normalizeCode,
   normalizeCodeStrict,
+  runInPlanningContext,
+  PlanningIsolationError,
   type DualTotals,
   type PlumbingSheet3Row,
 } from "../lib/sheets";
+import { logger } from "../lib/logger";
 import { exportPlanExcel } from "../lib/excel-export";
 import { exportPlanPdf } from "../lib/pdf-export";
 import { exportWeeklyReleaseExcel } from "../lib/weekly-excel-export";
@@ -63,6 +67,180 @@ import {
 } from "../lib/plumbing-golden";
 
 const router: IRouter = Router();
+
+// ── Uploads-only enforcement (stock & pending) ────────────────────────────────
+//
+// Scope decision (2026-08): stock and pending (current + last-month) come from
+// uploads ONLY. A missing or unparseable upload fails the plan LOUDLY, naming
+// the file — never a sheet fallback, never a zero default, never a partial plan.
+// Reference data allowed live in the plan path: sales history (avg-3-month),
+// the Plumbing workbook roster/avg/multiplier columns, and BOM weights.
+
+/** Thrown when a required planning upload is missing or empty. */
+export class MissingUploadError extends Error {
+  constructor(public readonly uploadKind: string, public readonly fileLabel: string) {
+    super(
+      `Required planning upload missing: ${fileLabel} (upload kind "${uploadKind}"). ` +
+      `Upload the file on the Data page — the plan will not fall back to a sheet or assume zero.`,
+    );
+    this.name = "MissingUploadError";
+  }
+}
+
+/** Thrown when a planning input is present but fails a sanity check. */
+export class PlanningInputError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PlanningInputError";
+  }
+}
+
+/** Request-scoped test hook used by /plan/validate to prove the missing-upload
+ *  guard fires. AsyncLocalStorage-scoped so a concurrent real plan request can
+ *  never see a simulated-missing upload. */
+const _simulateMissingUploads = new AsyncLocalStorage<Set<string>>();
+function withSimulatedMissingUpload<T>(kind: string, fn: () => Promise<T>): Promise<T> {
+  return _simulateMissingUploads.run(new Set([kind]), fn);
+}
+
+/** Loads the latest upload of `kind`; throws MissingUploadError when absent or empty. */
+async function requireUploadRows(kind: string, fileLabel: string): Promise<Record<string, unknown>[]> {
+  if (_simulateMissingUploads.getStore()?.has(kind)) throw new MissingUploadError(kind, fileLabel);
+  const rows = await loadLatestUploadRowsByKind(kind);
+  if (rows.length === 0) throw new MissingUploadError(kind, fileLabel);
+  return rows;
+}
+
+/** Maps plan-path errors to HTTP responses: 422 for named input failures. */
+export function handlePlanError(res: Response, err: unknown): void {
+  if (err instanceof MissingUploadError || err instanceof PlanningInputError || err instanceof PlanningIsolationError) {
+    res.status(422).json({ error: err.message, kind: err.name });
+    return;
+  }
+  throw err;
+}
+
+type PlanCheckResult = {
+  name: string;
+  expected: number;
+  actual: number;
+  pass: boolean;
+  tolerance?: string;
+};
+
+/**
+ * Planning-isolation regression checks, run live inside /plan/validate:
+ *   1. Missing-upload guard — with a required stock upload simulated absent, the
+ *      plan build must throw a named MissingUploadError (no sheet fallback, no
+ *      zero default, no partial plan).
+ *   2. Disallowed-read guard — a non-allow-listed sheet fetcher called inside a
+ *      planning context must throw PlanningIsolationError naming the call site.
+ * NOTE: the simulation flag is global for the few ms the guard test runs; the
+ * validate endpoint is a regression tool, not a user-facing hot path.
+ */
+async function buildPlanningIsolationChecks(month: string, segment: "PTMT" | "Plumbing"): Promise<PlanCheckResult[]> {
+  const checks: PlanCheckResult[] = [];
+
+  // 1. Missing-upload guard
+  const simKind = segment === "Plumbing" ? "plumbing_fg_stock" : "current_stock";
+  const simLabel = segment === "Plumbing" ? "Plumbing FG Stock" : "FG Stock (current stock)";
+  let missingGuardOk = false;
+  try {
+    await withSimulatedMissingUpload(simKind, () => buildPlanItems(month, segment));
+  } catch (err) {
+    missingGuardOk = err instanceof MissingUploadError && err.message.includes(simLabel);
+  }
+  checks.push({
+    name: `ISOLATION · missing ${simLabel} upload → loud named error (no fallback/zero/partial)`,
+    expected: 1,
+    actual: missingGuardOk ? 1 : 0,
+    pass: missingGuardOk,
+    tolerance: "bool",
+  });
+
+  // 2. Disallowed sheet read inside planning context → fails naming the call site
+  let disallowedGuardOk = false;
+  try {
+    await runInPlanningContext("isolation guard self-test", () => fetchLiveOrderTotals(month, "PTMT"));
+  } catch (err) {
+    disallowedGuardOk = err instanceof PlanningIsolationError && err.message.includes("fetchLiveOrderTotals");
+  }
+  checks.push({
+    name: "ISOLATION · non-allow-listed sheet read in plan path → fails naming call site",
+    expected: 1,
+    actual: disallowedGuardOk ? 1 : 0,
+    pass: disallowedGuardOk,
+    tolerance: "bool",
+  });
+
+  return checks;
+}
+
+/**
+ * PENDING-SOURCE classification for DATA.xlsx (pending_orders upload).
+ *
+ * WHY pending can legitimately be 0: the August 2026 DATA.xlsx is an
+ * invoice-register layout (Item Code / Colour / Quantity / Date …) with NO
+ * open-balance column, so no row carries a pending balance — pending
+ * contributes 0 by STRUCTURE, not by silent default. This is PROVISIONAL,
+ * not a permanent rule: if a future month's file carries a balance column
+ * (Balance_Qty / Balance Qty / Bal.Qty), it is picked up automatically.
+ * This classifier makes the distinction explicit so an unparseable file can
+ * never masquerade as "zero pending".
+ */
+export function classifyPendingSource(rows: Record<string, unknown>[]): {
+  layout: "open-balance" | "invoice-register";
+  hasCodeColumn: boolean;
+  balanceColumns: string[];
+} {
+  const CODE_KEYS = ["Old Item Code", "Item Code", "Item No."];
+  const BALANCE_KEYS = ["Balance_Qty", "Balance Qty", "Bal.Qty"];
+  const seenCols = new Set<string>();
+  for (const row of rows.slice(0, 200)) for (const k of Object.keys(row)) seenCols.add(k);
+  const balanceColumns = BALANCE_KEYS.filter((k) => seenCols.has(k));
+  return {
+    layout: balanceColumns.length > 0 ? "open-balance" : "invoice-register",
+    hasCodeColumn: CODE_KEYS.some((k) => seenCols.has(k)),
+    balanceColumns,
+  };
+}
+
+/** Asserts the pending upload's source is present AND parsed — never assumed-zero. */
+function assertPendingSourceParsed(rows: Record<string, unknown>[], fileLabel: string): void {
+  const info = classifyPendingSource(rows);
+  if (!info.hasCodeColumn) {
+    throw new PlanningInputError(
+      `${fileLabel} is present but unparseable: no recognised item-code column ` +
+      `(expected one of "Old Item Code" / "Item Code" / "Item No."). Refusing to treat pending as zero.`,
+    );
+  }
+  if (info.layout === "invoice-register") {
+    logger.info({ fileLabel }, "Pending source: invoice-register layout (no open-balance column) → pending contributes 0 (structural, provisional)");
+  }
+}
+
+/**
+ * DISPLAY-ONLY live order-book annotation. The Order column never enters
+ * Min/Max/weekly computation, so it is fetched OUTSIDE the planning context
+ * and tolerates a Sheets outage (column shows 0). This keeps the plan-build
+ * path free of Order Sheet reads while preserving the UI/export column.
+ */
+async function annotateLiveOrders(items: PlanItemWithBom[], month: string, segment: string): Promise<void> {
+  try {
+    const totals = await fetchLiveOrderTotals(month, segment === "Plumbing" ? "PLUMBING" : "PTMT");
+    const codeCounts = new Map<string, number>();
+    for (const i of items) {
+      const k = normalizeCode(i.itemCode);
+      codeCounts.set(k, (codeCounts.get(k) ?? 0) + 1);
+    }
+    for (const i of items) {
+      const single = (codeCounts.get(normalizeCode(i.itemCode)) ?? 0) <= 1;
+      i.order = resolveTotal(totals, i.itemCode, i.colour, single);
+    }
+  } catch (err) {
+    logger.warn({ month, segment, err: String(err) }, "annotateLiveOrders: order sheet unavailable — Order column left at 0 (display-only)");
+  }
+}
 
 function sumByKey(
   rows: Record<string, unknown>[],
@@ -157,21 +335,69 @@ export type PlanItemWithBom = ReturnType<typeof computeItemPlan> & {
  * The workbook's Stock/PendingLM columns are NOT used — FG Stock upload is authoritative.
  */
 async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanItemWithBom[]> {
-  const [workbookRows, fgStockRows, bufferRows, bandRows, liveOrderTotals, bomWeights, machineRows] = await Promise.all([
-    fetchPlumbingPlanData(month),
-    loadLatestUploadRowsByKind("plumbing_fg_stock"),
+  return runInPlanningContext(`Plumbing plan build (${month})`, () => buildPlumbingPlanItemsInner(month));
+}
+
+async function buildPlumbingPlanItemsInner(month: string): Promise<PlanItemWithBom[]> {
+  // ── 1. UPLOADS + DB FIRST — fail fast (loudly, naming the file) before any sheet read ──
+  const [fgStockRows, rawPendingRows, bufferRows, bandRows, machineRows] = await Promise.all([
+    requireUploadRows("plumbing_fg_stock", "Plumbing FG Stock"),
+    requireUploadRows("pending_orders", "DATA.xlsx (pending orders)"),
     db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
     db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
-    fetchLiveOrderTotals(month, "PLUMBING"),
-    fetchPlumbingBomWeights(),
     db.select().from(plumbingMachineCapacityTable).where(eq(plumbingMachineCapacityTable.segment, "Plumbing")),
   ]);
+  assertPendingSourceParsed(rawPendingRows, "DATA.xlsx (pending orders)");
+
+  // ── 2. Reference-data sheet reads (allow-listed: workbook roster/avg/multiplier + BOM) ──
+  const [workbookRows, bomWeights] = await Promise.all([
+    fetchPlumbingPlanData(month),
+    fetchPlumbingBomWeights(),
+  ]);
+
+  // Reference-data sanity guard: a zero avg-3-month across the board collapses
+  // every buffer and silently under-plans — the same silent-zero failure class.
+  const avgSum = workbookRows.reduce((s, r) => s + r.avg3MoSale, 0);
+  if (workbookRows.length === 0 || avgSum <= 0) {
+    throw new PlanningInputError(
+      `Plumbing workbook avg-3-month sales are ${workbookRows.length === 0 ? "missing (no rows read)" : "all zero"} ` +
+      `for ${month} — refusing to plan on collapsed buffer inputs.`,
+    );
+  }
+
+  // Pending current-month: DATA.xlsx UPLOAD, Plumbing segments (PLUMBING / P / PL / AGRI).
+  // ONLY open-balance columns count — the invoice "Quantity" column must never
+  // masquerade as pending. Invoice-register layouts therefore contribute 0
+  // (structural, documented in classifyPendingSource).
+  const plumbingPendingRows = rawPendingRows.filter((row) => {
+    const seg = String(row["Segment"] ?? "").trim().toUpperCase();
+    return seg === "PLUMBING" || seg === "P" || seg === "PL" || seg === "AGRI";
+  });
+  const pendingTotals = sumByKey(
+    plumbingPendingRows,
+    ["Old Item Code", "Item Code", "Item No."],
+    ["Colour", "Color"],
+    ["Balance_Qty", "Balance Qty", "Bal.Qty"],
+  );
 
   // Parse FG Stock upload (authoritative source for Stock and Pending-Last-Month).
   //   Net Stock positive  → opening stock on 1st of month
   //   Net Stock negative  → |value| = pending order last month (stock = 0)
   // Item type is NO LONGER resolved from FG Stock Category — it comes directly from
   // the workbook's per-row type column (PIPE / FITTING / FITTINGS / SOLVENT).
+  // Schema guard: a present-but-malformed FG Stock file (renamed headers) must
+  // fail loudly, not silently produce a zero-stock plan.
+  {
+    const cols = new Set<string>();
+    for (const row of fgStockRows.slice(0, 50)) for (const k of Object.keys(row)) cols.add(k);
+    if (!cols.has("Item Code") || !cols.has("Net Stock")) {
+      throw new PlanningInputError(
+        `Plumbing FG Stock upload is present but unparseable: expected columns "Item Code" and "Net Stock" ` +
+        `(found: ${[...cols].slice(0, 10).join(", ")}). Refusing to plan with zero stock.`,
+      );
+    }
+  }
+
   const stockMap     = new Map<string, number>();
   const pendingLmMap = new Map<string, number>();
 
@@ -185,6 +411,25 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
       stockMap.set(code, (stockMap.get(code) ?? 0) + netStock);
     } else if (netStock < 0) {
       pendingLmMap.set(code, (pendingLmMap.get(code) ?? 0) + Math.abs(netStock));
+    }
+  }
+
+  // Join-coverage guard: the FG upload parsed, but if NONE of its codes match
+  // the workbook roster the key normalisation is broken → zero-stock plan.
+  if (stockMap.size + pendingLmMap.size === 0) {
+    throw new PlanningInputError(
+      "Plumbing FG Stock upload parsed but yielded no stock or pending-last-month values — refusing to plan with zero stock.",
+    );
+  }
+  {
+    const matched = workbookRows.filter((r) => {
+      const c = normalizeCode(r.itemCode);
+      return stockMap.has(c) || pendingLmMap.has(c);
+    }).length;
+    if (matched === 0) {
+      throw new PlanningInputError(
+        "Plumbing FG Stock upload has no item codes matching the workbook roster (join broken) — refusing to plan with zero stock.",
+      );
     }
   }
 
@@ -224,9 +469,12 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
         stock:                 stockMap.get(code) ?? 0,
         stockNeedsReview:      false,
         pendingOrderLastMonth: pendingLmMap.get(code) ?? 0,
-        // Pending order (current month) from workbook; live open order from Order Sheet.
-        pendingOrder:          row.pendingOrder,
-        order:                 liveOrderTotals.byCode.get(code) ?? 0,
+        // Pending (current month) from the DATA.xlsx UPLOAD (Plumbing segments,
+        // open-balance columns only) — the workbook's PENDING ORDER column is
+        // no longer read (uploads-only rule, scoped 2026-08).
+        pendingOrder:          pendingTotals.byCode.get(code) ?? 0,
+        // Order is display-only and annotated OUTSIDE the planning context.
+        order:                 0,
       };
 
       // Three-tier multiplier priority:
@@ -272,19 +520,35 @@ export async function buildPlanItems(month: string, segment: string = "PTMT"): P
     return buildPlumbingPlanItemsFromWorkbook(month);
   }
 
-  // ── PTMT data loads (all parallel) ──────────────────────────────────────────
-  const [itemRows, bufferRows, bandRows, rawPendingOrderRows, avg3MoTotals, liveOrderTotals, currentStockRows, pendingLastMoRows] =
+  return runInPlanningContext(`PTMT plan build (${month})`, () => buildPtmtPlanItemsInner(month, segment));
+}
+
+async function buildPtmtPlanItemsInner(month: string, segment: string): Promise<PlanItemWithBom[]> {
+  // ── 1. UPLOADS + DB FIRST — fail fast (loudly, naming the file) before any sheet read ──
+  const [itemRows, bufferRows, bandRows, rawPendingOrderRows, currentStockRows, pendingLastMoRows] =
     await Promise.all([
       db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, segment)),
       db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
       db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
       // DATA.xlsx (pending_orders) — global upload; rows for all segments stored, filtered below.
-      loadLatestUploadRowsByKind("pending_orders"),
-      fetchAvg3MoSaleTotals(month),
-      fetchLiveOrderTotals(month, "PTMT"),
-      loadLatestUploadRowsByKind("current_stock"),
-      loadLatestUploadRowsByKind("last_month_pending"),
+      requireUploadRows("pending_orders", "DATA.xlsx (pending orders)"),
+      requireUploadRows("current_stock", "FG Stock (current stock)"),
+      requireUploadRows("last_month_pending", "Last-Month Pending"),
     ]);
+  assertPendingSourceParsed(rawPendingOrderRows, "DATA.xlsx (pending orders)");
+
+  // ── 2. Reference-data sheet read (allow-listed: sales history avg-3-month) ──
+  const avg3MoTotals = await fetchAvg3MoSaleTotals(month);
+  // Reference-data sanity guard: zero sales history collapses every buffer and
+  // silently under-plans across the board — refuse to plan on it. (The
+  // band-vs-prior-month check runs in /plan/validate to avoid doubling sheet
+  // reads on every plan build.)
+  const salesSum = [...avg3MoTotals.byCode.values()].reduce((a, b) => a + b, 0);
+  if (salesSum <= 0) {
+    throw new PlanningInputError(
+      `Sales history (avg-3-month) for ${month} returned zero — refusing to plan on collapsed buffer inputs.`,
+    );
+  }
 
   // DATA.xlsx stores rows for all segments; keep only PTMT rows.
   const pendingOrderRows = rawPendingOrderRows.filter((row) => {
@@ -324,6 +588,25 @@ export async function buildPlanItems(month: string, segment: string = "PTMT"): P
     ["Qty", "Closing Stock", "C/Stock", "C Stock"],
   );
 
+  // Schema + join-coverage guard: a present-but-malformed FG Stock file
+  // (renamed headers, broken key normalisation) must fail loudly, not silently
+  // produce a zero-stock plan.
+  if (stockTotals.byCode.size === 0) {
+    const cols = new Set<string>();
+    for (const row of currentStockRows.slice(0, 50)) for (const k of Object.keys(row)) cols.add(k);
+    throw new PlanningInputError(
+      `FG Stock (current stock) upload is present but yielded no stock values — expected an item-code column ` +
+      `(Item Code / Old Item Code / Cat No) and a qty column (Qty / Closing Stock / C/Stock) ` +
+      `(found: ${[...cols].slice(0, 10).join(", ")}). Refusing to plan with zero stock.`,
+    );
+  }
+  if (pendingLastMoTotals.byCode.size === 0) {
+    throw new PlanningInputError(
+      "Last-Month Pending upload is present but yielded no values — check its item-code and Qty columns. " +
+      "Refusing to treat last-month pending as zero.",
+    );
+  }
+
   // Scoped per category: the same item code can legitimately exist in two
   // different categories (e.g. a code split by colour under one category,
   // and re-listed as a single combined item with a placeholder colour under
@@ -346,7 +629,8 @@ export async function buildPlanItems(month: string, segment: string = "PTMT"): P
         currentStockRows.length > 0 && !hasEntry(stockTotals, item.itemCode, item.colour, isSingleVariant),
       pendingOrderLastMonth: resolveTotal(pendingLastMoTotals, item.itemCode, item.colour, isSingleVariant),
       pendingOrder: resolveTotal(pendingOrderTotals, item.itemCode, item.colour, isSingleVariant),
-      order: resolveTotal(liveOrderTotals, item.itemCode, item.colour, isSingleVariant),
+      // Order is display-only and annotated OUTSIDE the planning context (annotateLiveOrders).
+      order: 0,
     };
     const multiplier = bufferByCategory.get(item.category) ?? 1;
     // One formula for all PTMT categories: max(BufferReq − Stock + PendingLM + Pending, 0).
@@ -377,22 +661,17 @@ router.get("/plan", async (req, res): Promise<void> => {
   const segment = String(req.query.segment ?? "PTMT");
   const category = req.query.category ? String(req.query.category) : undefined;
 
-  // FG Stock upload is required for Plumbing — return 422 rather than an empty array.
   // Normalise casing: accept "PLUMBING" | "Plumbing" → canonical "Plumbing".
-  const isPlumbing = segment.toLowerCase() === "plumbing";
-  if (isPlumbing) {
-    const fgRows = await loadLatestUploadRowsByKind("plumbing_fg_stock");
-    if (fgRows.length === 0) {
-      res.status(422).json({
-        error: "FG Stock upload required for Plumbing. Upload the FG Stock file on the Data page before viewing the plan.",
-      });
-      return;
-    }
+  // Missing required uploads throw MissingUploadError → 422 naming the file.
+  const normSegment = segment.toLowerCase() === "plumbing" ? "Plumbing" : segment;
+  try {
+    const items = await buildPlanItems(month, normSegment);
+    await annotateLiveOrders(items, month, normSegment); // display-only, sheet-outage tolerant
+    const filtered = category ? items.filter((i) => i.category === category) : items;
+    res.json(filtered);
+  } catch (err) {
+    handlePlanError(res, err);
   }
-  const normSegment = isPlumbing ? "Plumbing" : segment;
-  const items = await buildPlanItems(month, normSegment);
-  const filtered = category ? items.filter((i) => i.category === category) : items;
-  res.json(filtered);
 });
 
 // All 12 Plumbing category tabs that must always appear in the export,
@@ -411,14 +690,19 @@ router.get("/plan/export/excel", async (req, res): Promise<void> => {
     return;
   }
   const segment = String(req.query.segment ?? "PTMT");
-  const items = await buildPlanItems(month, segment);
-  const summary = summarizePlan(items);
-  const requiredCategories = segment === "Plumbing" ? PLUMBING_CATEGORIES : undefined;
-  const buffer = await exportPlanExcel(month, items, summary, requiredCategories);
-  const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
-  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Production_Plan_${month}.xlsx"`);
-  res.send(buffer);
+  try {
+    const items = await buildPlanItems(month, segment);
+    await annotateLiveOrders(items, month, segment); // display-only Order column
+    const summary = summarizePlan(items);
+    const requiredCategories = segment === "Plumbing" ? PLUMBING_CATEGORIES : undefined;
+    const buffer = await exportPlanExcel(month, items, summary, requiredCategories);
+    const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Production_Plan_${month}.xlsx"`);
+    res.send(buffer);
+  } catch (err) {
+    handlePlanError(res, err);
+  }
 });
 
 router.get("/plan/export/pdf", async (req, res): Promise<void> => {
@@ -428,13 +712,18 @@ router.get("/plan/export/pdf", async (req, res): Promise<void> => {
     return;
   }
   const segment = String(req.query.segment ?? "PTMT");
-  const items = await buildPlanItems(month, segment);
-  const summary = summarizePlan(items);
-  const buffer = await exportPlanPdf(month, items, summary);
-  const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Production_Plan_${month}.pdf"`);
-  res.send(buffer);
+  try {
+    const items = await buildPlanItems(month, segment);
+    await annotateLiveOrders(items, month, segment); // display-only Order column
+    const summary = summarizePlan(items);
+    const buffer = await exportPlanPdf(month, items, summary);
+    const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Production_Plan_${month}.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    handlePlanError(res, err);
+  }
 });
 
 router.get("/plan/export/weekly-excel", async (req, res): Promise<void> => {
@@ -444,12 +733,16 @@ router.get("/plan/export/weekly-excel", async (req, res): Promise<void> => {
     return;
   }
   const segment = String(req.query.segment ?? "PTMT");
+  try {
   const items = await buildPlanItems(month, segment);
   const buffer = await exportWeeklyReleaseExcel(month, items);
   const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Weekly_Release_Plan_${month}.xlsx"`);
   res.send(buffer);
+  } catch (err) {
+    handlePlanError(res, err);
+  }
 });
 
 /**
@@ -461,7 +754,13 @@ router.get("/plan/bom-quality", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");
   if (!month) { res.status(400).json({ error: "month is required" }); return; }
   const segment = String(req.query.segment ?? "Plumbing");
-  const items = await buildPlanItems(month, segment);
+  let items: PlanItemWithBom[];
+  try {
+    items = await buildPlanItems(month, segment);
+  } catch (err) {
+    handlePlanError(res, err);
+    return;
+  }
   const missing = items.filter((i) => i.noBomWeight && (i.maxProduction ?? 0) > 0);
   const missingPcs = missing.reduce((s, i) => s + (i.maxProduction ?? 0), 0);
   const totalPcs = items.reduce((s, i) => s + (i.maxProduction ?? 0), 0);
@@ -924,6 +1223,32 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
 
     const checks: CheckResult[] = [];
     const roundInt = (v: number) => Math.round(v);
+
+    // ── 0. Planning-isolation guards (uploads-only rule, scoped 2026-08) ──
+    checks.push(...(await buildPlanningIsolationChecks(month, "Plumbing")));
+    {
+      // Pending-source check: DATA.xlsx present AND parsed (never assumed-zero).
+      const pendingUploadRows = await loadLatestUploadRowsByKind("pending_orders");
+      const pendInfo = classifyPendingSource(pendingUploadRows);
+      const pendOk = pendingUploadRows.length > 0 && pendInfo.hasCodeColumn;
+      checks.push({
+        name: `ISOLATION · pending source present & parsed (layout: ${pendInfo.layout})`,
+        expected: 1,
+        actual: pendOk ? 1 : 0,
+        pass: pendOk,
+        tolerance: "bool",
+      });
+      // Sales sanity: workbook avg-3-month must be non-zero (band-vs-prior not
+      // available for Plumbing — no prior workbook loaded here).
+      const avgSum = items.reduce((s, i) => s + i.avg3MoSale, 0);
+      checks.push({
+        name: "ISOLATION · sales history (avg-3-mo) non-zero",
+        expected: 1,
+        actual: roundInt(avgSum),
+        pass: avgSum > 0,
+        tolerance: "> 0",
+      });
+    }
 
     // ── 1. Non-empty guard ─────────────────────────────────────────────────
     // If the FG Stock upload is missing OR the workbook connection failed, every
@@ -1438,6 +1763,45 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
   });
 
   const checks: CheckResult[] = [];
+
+  // ── 0. Planning-isolation guards (uploads-only rule, scoped 2026-08) ──
+  checks.push(...(await buildPlanningIsolationChecks(month, "PTMT")));
+  {
+    // Pending-source check: DATA.xlsx present AND parsed (never assumed-zero).
+    const pendInfo = classifyPendingSource(rawPendingRows);
+    const pendOk = rawPendingRows.length > 0 && pendInfo.hasCodeColumn;
+    checks.push({
+      name: `ISOLATION · pending source present & parsed (layout: ${pendInfo.layout})`,
+      expected: 1,
+      actual: pendOk ? 1 : 0,
+      pass: pendOk,
+      tolerance: "bool",
+    });
+    // Sales sanity band: current avg-3-mo total must be non-zero AND within a
+    // sane band of the prior month's figure. Adjacent 3-month windows overlap
+    // by two months, so a genuine shift beyond 0.4×–2.5× means a broken read
+    // (wrong tab, renamed column, empty range), not real demand movement.
+    const curSum = [...avg3MoTotals.byCode.values()].reduce((a, b) => a + b, 0);
+    const [yy, mm] = month.split("-").map(Number);
+    const priorMonth = mm === 1 ? `${yy! - 1}-12` : `${yy}-${String(mm! - 1).padStart(2, "0")}`;
+    let bandPass = false;
+    let ratio = 0;
+    try {
+      const priorTotals = await fetchAvg3MoSaleTotals(priorMonth);
+      const priorSum = [...priorTotals.byCode.values()].reduce((a, b) => a + b, 0);
+      ratio = priorSum > 0 ? curSum / priorSum : Infinity;
+      bandPass = curSum > 0 && ratio >= 0.4 && ratio <= 2.5;
+    } catch {
+      bandPass = false;
+    }
+    checks.push({
+      name: `ISOLATION · sales band vs prior month (ratio ${ratio.toFixed(2)}, band 0.4–2.5×)`,
+      expected: 1,
+      actual: bandPass ? 1 : 0,
+      pass: bandPass,
+      tolerance: "bool",
+    });
+  }
 
   // ── Month-keyed upload goldens ────────────────────────────────────────
   // The upload scalar checks below assert against the LATEST uploads, so the

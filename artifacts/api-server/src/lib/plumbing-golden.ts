@@ -52,16 +52,19 @@ export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
   // Snapshot: 2026-07-28. Drift from prior snapshot was confirmed as legitimate avg3MoSale
   // rolling-window advancement — item counts intact, FG Stock file unchanged (1,042 rows).
   { cat: "CPVC Pipe",    expected: 129_247 },
-  { cat: "CPVC Fitting", expected: 750_197 },
+  // Point-in-time values re-rolled 2026-08-05: Plumbing current pending now
+  // comes from the DATA.xlsx upload (open-balance columns only) instead of the
+  // workbook PENDING ORDER column — removed ~5.4k pcs of pending across 9 items.
+  { cat: "CPVC Fitting", expected: 749_297 },
   { cat: "CPVC Solvent", expected:  16_250 },
-  { cat: "UPVC Pipe",    expected:  51_727 },
+  { cat: "UPVC Pipe",    expected:  51_477 },
   { cat: "UPVC Fitting", expected: 629_339 },
   { cat: "UPVC Solvent", expected:     541 },
-  { cat: "SWR Pipe",     expected:  64_473 },
-  { cat: "SWR Fitting",  expected: 235_847 },
+  { cat: "SWR Pipe",     expected:  64_123 },
+  { cat: "SWR Fitting",  expected: 235_192 },
   { cat: "SWR Solvent",  expected:   1_256 },
   // ⚠ AGRI: header-name mapping + standard formula — intentionally differs from source sheet.
-  { cat: "AGRI Pipe",    expected:  20_187 },
+  { cat: "AGRI Pipe",    expected:  19_987 },
   { cat: "AGRI Fitting", expected:  54_356 },
   { cat: "AGRI Solvent", expected:       0 },
 ];
@@ -70,7 +73,7 @@ export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
 export const PLUMBING_GOLDEN_TOLERANCE = 0.001;
 
 /** Grand total across all 12 categories for PLUMBING_GOLDEN_MONTH. */
-export const PLUMBING_GRAND_TOTAL = 1_953_418;
+export const PLUMBING_GRAND_TOTAL = 1_950_983; // re-rolled 2026-08-05 (pending → DATA.xlsx upload)
 
 /** Canonical list of the 12 Plumbing category names (derived from PLUMBING_GOLDEN). */
 export const PLUMBING_CATEGORIES = PLUMBING_GOLDEN.map((g) => g.cat);
@@ -236,16 +239,16 @@ export const PLUMBING_KG_GOLDEN: Array<{ cat: string; expectedKg: number }> = [
   { cat: "UPVC Pipe",    expectedKg: 103_363 },
   { cat: "UPVC Fitting", expectedKg:  41_750 },
   { cat: "UPVC Solvent", expectedKg:      28 },
-  { cat: "SWR Pipe",     expectedKg:  18_682 },
+  { cat: "SWR Pipe",     expectedKg:  16_417 },
   { cat: "SWR Fitting",  expectedKg:  59_184 },
   { cat: "SWR Solvent",  expectedKg:     291 },
-  { cat: "AGRI Pipe",    expectedKg:  86_564 },
+  { cat: "AGRI Pipe",    expectedKg:  85_358 },
   { cat: "AGRI Fitting", expectedKg:   4_232 },
   { cat: "AGRI Solvent", expectedKg:       0 },
 ];
 
 /** KG grand total across all 12 Plumbing categories for PLUMBING_GOLDEN_MONTH. */
-export const PLUMBING_KG_GRAND_TOTAL = 449_476;
+export const PLUMBING_KG_GRAND_TOTAL = 444_300; // re-rolled 2026-08-05 (pending → DATA.xlsx upload)
 
 // ── Plumbing weekly release golden values ──────────────────────────────────
 
@@ -258,7 +261,7 @@ export const PLUMBING_WEEKLY_TOLERANCE = 0.01;
  * W1 ≈ 94% of total — this reflects a priority ranking, not a feasible schedule.
  * Most Plumbing items are at or near zero cover; capacity levelling is required.
  */
-export const PLUMBING_WEEKLY_PLANT = { w1: 1_849_824, w2: 11_494, w3: 75_458, w4: 21_796 };
+export const PLUMBING_WEEKLY_PLANT = { w1: 1_849_824, w2: 11_494, w3: 75_458, w4: 21_471 };
 
 /**
  * Per-category weekly release totals (W1 / W2 / W3 / W4 pieces).
@@ -274,15 +277,15 @@ export const PLUMBING_WEEKLY_GOLDEN: Array<{
 }> = [
   // Snapshot: 2026-07-28.
   { cat: "CPVC Pipe",    w1: 128_991, w2:     0, w3:     286, w4:    687 },
-  { cat: "CPVC Fitting", w1: 690_724, w2: 1_956, w3:  51_551, w4:  9_974 },
+  { cat: "CPVC Fitting", w1: 690_724, w2: 1_956, w3:  51_551, w4:  9_824 },
   { cat: "CPVC Solvent", w1:  16_250, w2:     0, w3:       0, w4:      0 },
   { cat: "UPVC Pipe",    w1:  48_149, w2: 1_058, w3:     190, w4:  2_329 },
   { cat: "UPVC Fitting", w1: 597_619, w2: 3_107, w3:  20_979, w4:  7_634 },
   { cat: "UPVC Solvent", w1:     541, w2:     0, w3:       0, w4:      0 },
-  { cat: "SWR Pipe",     w1:  64_183, w2:    46, w3:     244, w4:      0 },
-  { cat: "SWR Fitting",  w1: 233_029, w2: 2_191, w3:     421, w4:    485 },
+  { cat: "SWR Pipe",     w1:  64_183, w2:    46, w3:      94, w4:      0 },
+  { cat: "SWR Fitting",  w1: 233_029, w2: 2_191, w3:     421, w4:    310 },
   { cat: "SWR Solvent",  w1:   1_256, w2:     0, w3:       0, w4:      0 },
-  { cat: "AGRI Pipe",    w1:  19_449, w2:   756, w3:       0, w4:     30 },
+  { cat: "AGRI Pipe",    w1:  19_449, w2:   649, w3:       0, w4:     30 },
   { cat: "AGRI Fitting", w1:  49_634, w2: 2_388, w3:   1_787, w4:    659 },
   { cat: "AGRI Solvent", w1:       0, w2:     0, w3:       0, w4:      0 },
 ];

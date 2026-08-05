@@ -23,12 +23,16 @@ router.get("/dashboard", async (_req, res): Promise<void> => {
 
   let grandMinTotal = 0;
   let grandMaxTotal = 0;
+  let planError: string | null = null;
   try {
     const items = await buildPlanItems(month);
     const summary = summarizePlan(items);
     grandMinTotal = summary.grandMinTotal;
     grandMaxTotal = summary.grandMaxTotal;
-  } catch {
+  } catch (err) {
+    // Surface the failure instead of silently reporting zeros — the plan build
+    // now throws loud, named errors for missing/broken uploads.
+    planError = err instanceof Error ? err.message : String(err);
     grandMinTotal = 0;
     grandMaxTotal = 0;
   }
@@ -39,6 +43,7 @@ router.get("/dashboard", async (_req, res): Promise<void> => {
     categoryCount: categoryRows.length,
     grandMinTotal,
     grandMaxTotal,
+    planError,
     lastSyncedAt: lastSyncedAt ? lastSyncedAt.toISOString() : null,
   });
 });

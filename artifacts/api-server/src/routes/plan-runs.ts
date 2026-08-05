@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, bufferCategoriesTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable } from "@workspace/db";
 import { and, eq, desc } from "drizzle-orm";
-import { buildPlanItems, loadLatestUploadRowsByKind } from "./plan";
+import { buildPlanItems, loadLatestUploadRowsByKind, handlePlanError } from "./plan";
 import { summarizePlan } from "../lib/calc";
 
 const router: IRouter = Router();
@@ -37,14 +37,21 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
   const factorsJson: Record<string, number> = {};
   for (const b of bufferRows) factorsJson[b.name] = b.multiplier;
 
-  const uploadPrefix = segment === "Plumbing" ? "plumbing_" : "";
-
   // Compute plan from uploaded files + Google Sheets in parallel with loading
-  // the raw pending_orders rows for the audit snapshot.
-  const [planItems, pendingOrderRows] = await Promise.all([
-    buildPlanItems(month, segment),
-    loadLatestUploadRowsByKind(`${uploadPrefix}pending_orders`),
-  ]);
+  // the raw pending rows for the audit snapshot. Both segments source current
+  // pending from the GLOBAL DATA.xlsx upload ("pending_orders") — the snapshot
+  // must mirror what the plan build actually consumed.
+  let planItems: Awaited<ReturnType<typeof buildPlanItems>>;
+  let pendingOrderRows: Awaited<ReturnType<typeof loadLatestUploadRowsByKind>>;
+  try {
+    [planItems, pendingOrderRows] = await Promise.all([
+      buildPlanItems(month, segment),
+      loadLatestUploadRowsByKind("pending_orders"),
+    ]);
+  } catch (err) {
+    handlePlanError(res, err); // 422 naming the missing/broken upload
+    return;
+  }
 
   // Create the plan run record
   const [run] = await db
