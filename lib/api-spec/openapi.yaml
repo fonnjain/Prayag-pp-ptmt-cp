@@ -733,6 +733,28 @@ paths:
         "404":
           description: Not found
 
+  /plan/runs/{id}/drift:
+    get:
+      operationId: getPlanRunDrift
+      tags: [plan]
+      summary: Frozen "as issued" plan vs live rebuild "if re-run today"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Drift between the frozen run and a live rebuild
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanRunDrift"
+        "404":
+          description: Not found
+        "422":
+          description: Live rebuild failed (missing/broken upload)
+
   /plan/runs/{id}/finalize:
     post:
       operationId: finalizePlanRun
@@ -1681,6 +1703,46 @@ components:
           items:
             $ref: "#/components/schemas/PlanRunItem"
 
+    PlanRunDriftCategory:
+      type: object
+      required: [category, frozenMax, liveMax, delta]
+      properties:
+        category: { type: string }
+        frozenMax: { type: number }
+        liveMax: { type: number }
+        delta: { type: number }
+
+    PlanRunDriftItem:
+      type: object
+      required: [itemCode, colour, category, frozenPlan, livePlan, delta]
+      properties:
+        itemCode: { type: string }
+        colour: { type: string }
+        category: { type: string }
+        frozenPlan: { type: number }
+        livePlan: { type: number }
+        delta: { type: number }
+
+    PlanRunDrift:
+      type: object
+      required: [runId, month, segment, status, asOfAt, frozenGrandTotal, liveGrandTotal, grandDelta, categories, changedItems, changedItemCount]
+      properties:
+        runId: { type: integer }
+        month: { type: string }
+        segment: { type: string }
+        status: { type: string }
+        asOfAt: { type: string, format: date-time }
+        frozenGrandTotal: { type: number }
+        liveGrandTotal: { type: number }
+        grandDelta: { type: number }
+        categories:
+          type: array
+          items: { $ref: "#/components/schemas/PlanRunDriftCategory" }
+        changedItems:
+          type: array
+          items: { $ref: "#/components/schemas/PlanRunDriftItem" }
+        changedItemCount: { type: integer }
+
     PlanRunDiffItem:
       type: object
       required: [itemCode, colour, category, minProductionDelta, productionPlanDelta, pendingCurrentDelta, stockDelta]
@@ -2494,6 +2556,7 @@ components:
         segment: { type: string, description: "PTMT or Plumbing (default PTMT)" }
         dailyCapacity: { type: number, description: "Pieces per day (default 21335)" }
         workingDaysPerWeek: { type: integer, description: "Working days per week (default 6)" }
+        planRunId: { type: ["integer", "null"], description: "Immutable plan run to use as the baseline. Number = that frozen run; null = force live rebuild; omitted = auto (latest finalized run for month+segment, else live)." }
 
     CorrectiveWeekStat:
       type: object
@@ -2619,6 +2682,8 @@ components:
               code: { type: string }
               qty: { type: integer }
           description: "Plumbing Sheet3 codes not matched to any plan item"
+        baselinePlanRunId: { type: ["integer", "null"], description: "Immutable plan run cited as the baseline (null = live rebuild)" }
+        baselineSource: { type: string, enum: [frozen-run, live], description: "Where the original plan baseline came from" }
         unplannedTotal: { type: integer, description: "Sum of unplannedProduction quantities" }
 
     CategoryCapacity:
@@ -2662,6 +2727,7 @@ components:
         originalMonthTotal: { type: number }
         revisedMonthTotal: { type: number }
         unfulfillableQty: { type: number }
+        planRunId: { type: ["integer", "null"], description: "Immutable plan run cited as the baseline (null = live rebuild)" }
         warnings:
           type: array
           items: { $ref: "#/components/schemas/CorrectiveWarning" }

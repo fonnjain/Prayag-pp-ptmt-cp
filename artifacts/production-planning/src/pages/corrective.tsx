@@ -649,7 +649,17 @@ function HeaderSummary({ result }: { result: CorrectiveReplanResult }) {
       <div className="rounded-md border bg-white px-3 py-2.5">
         <p className="text-xs text-gray-500">New orders received</p>
         <p className="text-xl font-bold tabular-nums text-orange-700">+{fmtPcs(result.newOrdersQty)}</p>
-        <p className="text-xs text-gray-400">vs plan baseline</p>
+        {(() => {
+          const r = result as unknown as { baselinePlanRunId?: number | null; planRunId?: number | null };
+          const baselineId = r.baselinePlanRunId ?? r.planRunId ?? null;
+          return (
+            <p className="text-xs text-gray-400">
+              {baselineId !== null
+                ? <>baseline: Plan run <span className="font-medium text-gray-600">#{baselineId}</span> (frozen)</>
+                : "vs live plan baseline"}
+            </p>
+          );
+        })()}
       </div>
       <div className={cn("rounded-md border px-3 py-2.5", outlookFeasible ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200")}>
         <p className="text-xs text-gray-500">Month-end outlook</p>

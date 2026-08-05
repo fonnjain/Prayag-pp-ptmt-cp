@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, bufferCategoriesTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable } from "@workspace/db";
+import { db, bufferCategoriesTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, correctivePlanRunsTable } from "@workspace/db";
 import { and, eq, desc } from "drizzle-orm";
 import { buildPlanItems, loadLatestUploadRowsByKind, handlePlanError } from "./plan";
 import { summarizePlan } from "../lib/calc";
@@ -237,12 +237,97 @@ router.get("/plan/runs/:id", async (req, res): Promise<void> => {
   res.json({ run: makeSummary(run, results), items });
 });
 
+/** GET /api/plan/runs/:id/drift — frozen "as issued" vs live rebuild "if re-run today" */
+router.get("/plan/runs/:id/drift", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const [run] = await db.select().from(planRunsTable).where(eq(planRunsTable.id, id));
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+
+  let liveItems: Awaited<ReturnType<typeof buildPlanItems>>;
+  try {
+    liveItems = await buildPlanItems(run.month, run.segment);
+  } catch (err) {
+    handlePlanError(res, err);
+    return;
+  }
+
+  const frozen = await db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, id));
+
+  // Category-qualified identity: the same code+colour can legitimately appear in
+  // multiple categories (documented dual-category roster pattern), so keying only
+  // by code::colour would silently collapse those rows.
+  const frozenByKey = new Map(frozen.map((r) => [`${r.itemCode}::${r.colour}::${r.category}`, r]));
+  const liveByKey = new Map(liveItems.map((i) => [`${i.itemCode}::${i.colour}::${i.category}`, i]));
+  const allKeys = new Set([...frozenByKey.keys(), ...liveByKey.keys()]);
+
+  const catAgg = new Map<string, { frozenMax: number; liveMax: number }>();
+  const itemDiffs: Array<{
+    itemCode: string; colour: string; category: string;
+    frozenPlan: number; livePlan: number; delta: number;
+  }> = [];
+  let frozenGrand = 0;
+  let liveGrand = 0;
+
+  for (const key of allKeys) {
+    const f = frozenByKey.get(key);
+    const l = liveByKey.get(key);
+    const category = f?.category ?? l?.category ?? "";
+    const frozenPlan = Math.round(Math.max(f?.productionPlan ?? 0, 0));
+    const livePlan = Math.round(Math.max(l?.maxProduction ?? 0, 0));
+    frozenGrand += frozenPlan;
+    liveGrand += livePlan;
+    const agg = catAgg.get(category) ?? { frozenMax: 0, liveMax: 0 };
+    agg.frozenMax += frozenPlan;
+    agg.liveMax += livePlan;
+    catAgg.set(category, agg);
+    if (frozenPlan !== livePlan) {
+      const itemCode = f?.itemCode ?? l?.itemCode ?? "";
+      const colour = f?.colour ?? l?.colour ?? "";
+      itemDiffs.push({ itemCode, colour, category, frozenPlan, livePlan, delta: livePlan - frozenPlan });
+    }
+  }
+  itemDiffs.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+  res.json({
+    runId: run.id,
+    month: run.month,
+    segment: run.segment,
+    status: run.status,
+    asOfAt: run.asOfAt,
+    frozenGrandTotal: frozenGrand,
+    liveGrandTotal: liveGrand,
+    grandDelta: liveGrand - frozenGrand,
+    categories: [...catAgg.entries()]
+      .map(([category, v]) => ({ category, frozenMax: v.frozenMax, liveMax: v.liveMax, delta: v.liveMax - v.frozenMax }))
+      .sort((a, b) => a.category.localeCompare(b.category)),
+    changedItems: itemDiffs,
+    changedItemCount: itemDiffs.length,
+  });
+});
+
 /** DELETE /api/plan/runs/:id — permanently delete a run and all its data */
 router.delete("/plan/runs/:id", async (req, res): Promise<void> => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
   const [run] = await db.select().from(planRunsTable).where(eq(planRunsTable.id, id));
   if (!run) { res.status(404).json({ error: "Run not found" }); return; }
+
+  // A plan run cited by a corrective run is an immutable audit reference —
+  // deleting it would erase the "measured against" citation from history.
+  const citing = await db
+    .select({ id: correctivePlanRunsTable.id })
+    .from(correctivePlanRunsTable)
+    .where(eq(correctivePlanRunsTable.planRunId, id));
+  if (citing.length > 0) {
+    res.status(409).json({
+      error: `Plan run #${id} is cited as the baseline by ${citing.length} corrective run(s) (#${citing.slice(0, 5).map(c => c.id).join(", #")}${citing.length > 5 ? ", …" : ""}) and cannot be deleted.`,
+    });
+    return;
+  }
+
   await db.delete(planRunsTable).where(eq(planRunsTable.id, id));
   res.status(204).end();
 });

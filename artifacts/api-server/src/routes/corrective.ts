@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable } from "@workspace/db";
+import { db, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable, planRunsTable } from "@workspace/db";
 import { eq, desc, and } from "drizzle-orm";
 import { runCorrectiveReplan, type CorrectiveItemResult } from "../lib/corrective-engine";
 import { exportPlanExcel, ITEM_COLUMNS, addLegendSheet, RED_FILL, GREEN_FILL } from "../lib/excel-export";
@@ -65,13 +65,15 @@ function groupByCategory(items: CorrectiveItem[], requiredCats?: string[]): Map<
 
 // ─── POST /corrective/replan ─────────────────────────────────────────────────
 router.post("/corrective/replan", async (req, res): Promise<void> => {
-  const { month, weekClosed, asOfDate, segment, dailyCapacity, workingDaysPerWeek } = req.body as {
+  const { month, weekClosed, asOfDate, segment, dailyCapacity, workingDaysPerWeek, planRunId } = req.body as {
     month?: string;
     weekClosed?: number;
     asOfDate?: string;
     segment?: string;
     dailyCapacity?: number;
     workingDaysPerWeek?: number;
+    /** number = use that frozen plan run; null = force live rebuild; undefined = auto (latest finalized) */
+    planRunId?: number | null;
   };
 
   if (!month || typeof month !== "string" || !/^\d{4}-\d{2}$/.test(month)) {
@@ -101,8 +103,43 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
     ? new Date().toISOString().slice(0, 10)
     : asOfDate;
 
+  // Resolve the baseline plan run:
+  //   explicit number → that frozen run; explicit null → force live rebuild;
+  //   undefined → latest FINALIZED plan run for this month+segment, else live.
+  let resolvedPlanRunId: number | undefined;
+  if (typeof planRunId === "number") {
+    // Explicit baseline must exist, match month+segment, and be finalized —
+    // a draft is not "as issued". Reject with a client error, not a 500.
+    const [baseline] = await db.select().from(planRunsTable).where(eq(planRunsTable.id, planRunId));
+    if (!baseline) {
+      res.status(400).json({ error: `Plan run #${planRunId} not found` });
+      return;
+    }
+    if (baseline.month !== month || baseline.segment !== seg) {
+      res.status(400).json({ error: `Plan run #${planRunId} is for ${baseline.segment}/${baseline.month}, not ${seg}/${month}` });
+      return;
+    }
+    if (baseline.status !== "finalized") {
+      res.status(400).json({ error: `Plan run #${planRunId} is still a draft — finalize it before citing it as the corrective baseline` });
+      return;
+    }
+    resolvedPlanRunId = planRunId;
+  } else if (planRunId === undefined) {
+    const [latest] = await db
+      .select({ id: planRunsTable.id })
+      .from(planRunsTable)
+      .where(and(
+        eq(planRunsTable.month, month),
+        eq(planRunsTable.segment, seg),
+        eq(planRunsTable.status, "finalized"),
+      ))
+      .orderBy(desc(planRunsTable.id))
+      .limit(1);
+    resolvedPlanRunId = latest?.id;
+  }
+
   try {
-    const result = await runCorrectiveReplan({ month, weekClosed: effectiveWeekClosed, asOfDate: effectiveAsOfDate, segment: seg, dailyCapacity, workingDaysPerWeek });
+    const result = await runCorrectiveReplan({ month, weekClosed: effectiveWeekClosed, asOfDate: effectiveAsOfDate, segment: seg, dailyCapacity, workingDaysPerWeek, planRunId: resolvedPlanRunId });
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "corrective/replan failed");
@@ -143,6 +180,7 @@ router.get("/corrective/runs", async (req, res): Promise<void> => {
     originalMonthTotal: r.originalMonthTotal,
     revisedMonthTotal: r.revisedMonthTotal,
     unfulfillableQty: r.unfulfillableQty,
+    planRunId: r.planRunId ?? null,
     warnings: r.warningsJson,
     createdAt: r.createdAt,
   })));
@@ -172,6 +210,7 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
     originalMonthTotal: run.originalMonthTotal,
     revisedMonthTotal: run.revisedMonthTotal,
     unfulfillableQty: run.unfulfillableQty,
+    planRunId: run.planRunId ?? null,
     weekStats: run.weekStatsJson,
     warnings: run.warningsJson,
     items: items.map(i => ({

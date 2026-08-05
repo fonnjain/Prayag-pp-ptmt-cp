@@ -11,6 +11,8 @@ import type { CorrectiveWarning } from './correctiveWarning';
 import type { CorrectiveItemResult } from './correctiveItemResult';
 import type { CorrectiveCategoryResult } from './correctiveCategoryResult';
 import type { CorrectiveReplanResultUnplannedProductionItem } from './correctiveReplanResultUnplannedProductionItem';
+import type { CorrectiveReplanResultBaselinePlanRunId } from './correctiveReplanResultBaselinePlanRunId';
+import type { CorrectiveReplanResultBaselineSource } from './correctiveReplanResultBaselineSource';
 
 export interface CorrectiveReplanResult {
   runId: number;
@@ -39,6 +41,10 @@ export interface CorrectiveReplanResult {
   categories: CorrectiveCategoryResult[];
   /** Plumbing Sheet3 codes not matched to any plan item */
   unplannedProduction?: CorrectiveReplanResultUnplannedProductionItem[];
+  /** Immutable plan run cited as the baseline (null = live rebuild) */
+  baselinePlanRunId?: CorrectiveReplanResultBaselinePlanRunId;
+  /** Where the original plan baseline came from */
+  baselineSource?: CorrectiveReplanResultBaselineSource;
   /** Sum of unplannedProduction quantities */
   unplannedTotal: number;
 }

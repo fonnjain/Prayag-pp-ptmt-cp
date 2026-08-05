@@ -1130,6 +1130,8 @@ type CheckResult = {
   expected: number;
   actual: number;
   pass: boolean;
+  /** Advisory: check passed but is outside the comfort band — rendered amber. */
+  warn?: boolean;
   tolerance?: string;
 };
 
@@ -1221,15 +1223,18 @@ function ValidationPanel({ segment }: { segment: string }) {
 
           <div className="rounded-md border divide-y text-sm">
             {result.checks.map((c) => (
-              <div key={c.name} className="flex items-center justify-between px-3 py-2">
+              <div key={c.name} className={cn("flex items-center justify-between px-3 py-2", c.pass && c.warn && "bg-amber-50")}>
                 <div className="flex items-center gap-2">
-                  <span>{c.pass ? "✅" : "❌"}</span>
-                  <span className={cn("font-medium", !c.pass && "text-red-700")}>{c.name}</span>
+                  <span>{c.pass ? (c.warn ? "⚠️" : "✅") : "❌"}</span>
+                  <span className={cn("font-medium", !c.pass && "text-red-700", c.pass && c.warn && "text-amber-800")}>{c.name}</span>
+                  {c.pass && c.warn && (
+                    <span className="text-xs font-medium text-amber-700 bg-amber-100 rounded px-1.5 py-0.5">advisory</span>
+                  )}
                   {c.tolerance && <span className="text-xs text-gray-400">({c.tolerance})</span>}
                 </div>
                 <div className="text-right text-xs font-mono">
                   {c.pass ? (
-                    <span className="text-green-700">{c.actual.toLocaleString()}</span>
+                    <span className={c.warn ? "text-amber-700" : "text-green-700"}>{c.actual.toLocaleString()}</span>
                   ) : (
                     <span className="text-red-700">
                       got {c.actual.toLocaleString()} · expected {c.expected.toLocaleString()}

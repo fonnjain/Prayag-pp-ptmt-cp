@@ -1,4 +1,4 @@
-import { db, bufferCategoriesTable, weeklyReleaseBandsTable, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable } from "@workspace/db";
+import { db, bufferCategoriesTable, weeklyReleaseBandsTable, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable, planRunsTable, planRunInputsTable, planRunResultsTable } from "@workspace/db";
 import type { CorrectiveWeekStat, CorrectiveWarning } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { fetchDailyActuals, type DailyActualRow } from "./plant-ingestion";
@@ -11,7 +11,8 @@ import {
   type PlumbingSheet3Row,
   type DualTotals,
 } from "./sheets";
-import { buildPlanItems, loadLatestUploadRowsByKind } from "../routes/plan";
+import { buildPlanItems, loadLatestUploadRowsByKind, type PlanItemWithBom } from "../routes/plan";
+import { annotateWeeklyRelease, type CalcPlanItem } from "./calc";
 import { logger } from "./logger";
 
 const round = (n: number) => Math.round(n * 100) / 100;
@@ -25,6 +26,13 @@ export interface CorrectiveReplanInput {
   segment?: string;
   dailyCapacity?: number;
   workingDaysPerWeek?: number;
+  /**
+   * Immutable plan run to use as the baseline ("as issued"). When set, the
+   * original plan is read from the frozen plan_run_results/inputs snapshot —
+   * NOT rebuilt live — so the corrective run measures against the issued plan.
+   * Undefined = live rebuild (legacy behaviour, used by the validate suite).
+   */
+  planRunId?: number;
 }
 
 export interface CorrectiveItemResult {
@@ -99,6 +107,10 @@ export interface CorrectiveReplanResult {
   categories: CorrectiveCategoryResult[];
   unplannedProduction: Array<{ code: string; qty: number }>;
   unplannedTotal: number;
+  /** Plan run cited as the baseline (null = live rebuild, no frozen run used). */
+  baselinePlanRunId: number | null;
+  /** "frozen-run" when the baseline came from an immutable plan run snapshot. */
+  baselineSource: "frozen-run" | "live";
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -189,6 +201,62 @@ function p90(sortedValues: number[]): number {
   return Math.round(sortedValues[Math.floor(sortedValues.length * 0.9)]!);
 }
 
+// ── Frozen baseline loader ────────────────────────────────────────────────────
+
+/**
+ * Rebuilds the "as issued" baseline from an immutable plan run snapshot.
+ * Weekly release (week/w1–w4) is re-derived from the frozen plan numbers using
+ * the CURRENT weekly release bands (bands are configuration, not plan data).
+ * weightKg is not part of the frozen snapshot, so kg figures are 0 for frozen
+ * baselines — acceptable: kg fields are a Plumbing display aid, and the frozen
+ * baseline path is primarily a PTMT month-issuance feature.
+ */
+async function loadFrozenBaselineItems(
+  planRunId: number,
+  month: string,
+  segment: string,
+): Promise<PlanItemWithBom[]> {
+  const [run] = await db.select().from(planRunsTable).where(eq(planRunsTable.id, planRunId));
+  if (!run) throw new Error(`Plan run #${planRunId} not found`);
+  if (run.month !== month || run.segment !== segment) {
+    throw new Error(
+      `Plan run #${planRunId} is for ${run.segment}/${run.month}, not ${segment}/${month}`,
+    );
+  }
+  const [results, inputs] = await Promise.all([
+    db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, planRunId)),
+    db.select().from(planRunInputsTable).where(eq(planRunInputsTable.runId, planRunId)),
+  ]);
+  const inputByKey = new Map(inputs.map((i) => [`${i.itemCode}::${i.colour}`, i]));
+  return results.map((r) => {
+    const inp = inputByKey.get(`${r.itemCode}::${r.colour}`);
+    const avg3MoSale = inp?.avg3MoSale ?? 0;
+    const stock = inp?.stock ?? 0;
+    const cover: number | "OS" = avg3MoSale > 0 ? round(stock / avg3MoSale) : "OS";
+    return {
+      itemCode: r.itemCode,
+      colour: r.colour,
+      category: r.category,
+      avg3MoSale,
+      stock,
+      stockNeedsReview: false,
+      bufferReq: r.bufferReq,
+      minProduction: r.minProduction,
+      maxProduction: r.productionPlan,
+      pendingOrderLastMonth: inp?.pendingLastMonth ?? 0,
+      pendingOrder: inp?.pendingCurrent ?? 0,
+      order: 0,
+      achievementPct: null,
+      cover,
+      week: null,
+      w1: 0,
+      w2: 0,
+      w3: 0,
+      w4: 0,
+    };
+  });
+}
+
 // ── Main engine ───────────────────────────────────────────────────────────────
 
 export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise<CorrectiveReplanResult> {
@@ -211,7 +279,9 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     bandRows,
     catCapRows,
   ] = await Promise.all([
-    buildPlanItems(month, segment),
+    input.planRunId != null
+      ? loadFrozenBaselineItems(input.planRunId, month, segment)
+      : buildPlanItems(month, segment),
     segment === "Plumbing"
       ? fetchPlumbingSheet3Production(month).catch(err => {
           logger.warn({ err }, "corrective-engine: fetchPlumbingSheet3Production failed"); return [] as PlumbingSheet3Row[];
@@ -354,6 +424,12 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
 
   const bufferByCategory = new Map(bufferRows.map(b => [b.name, b.multiplier]));
   const bandsByCategory = new Map(bandRows.map(b => [b.categoryName, b]));
+
+  // Frozen baselines carry no week assignment in the snapshot — re-derive it
+  // from the frozen plan numbers using the current weekly release bands.
+  if (input.planRunId != null) {
+    annotateWeeklyRelease(originalItems as CalcPlanItem[], bandsByCategory);
+  }
   const catCapMap = new Map(catCapRows.map(r => [r.category, r]));
 
   // ── Build corrective items ────────────────────────────────────────────────
@@ -760,6 +836,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     weekStatsJson: weekStats,
     warningsJson: warnings,
     asOfDate: effectiveAsOfDate ?? null,
+    planRunId: input.planRunId ?? null,
     note: note ?? null,
   }).returning();
 
@@ -832,5 +909,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     categories,
     unplannedProduction,
     unplannedTotal,
+    baselinePlanRunId: input.planRunId ?? null,
+    baselineSource: input.planRunId != null ? "frozen-run" : "live",
   };
 }

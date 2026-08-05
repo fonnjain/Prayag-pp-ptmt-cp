@@ -43,6 +43,8 @@ export const correctivePlanRunsTable = pgTable("corrective_plan_runs", {
     .$type<CorrectiveWarning[]>()
     .default([]),
   asOfDate: text("as_of_date"),
+  // Immutable plan run this corrective run measured against (NULL = live rebuild baseline)
+  planRunId: integer("plan_run_id"),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

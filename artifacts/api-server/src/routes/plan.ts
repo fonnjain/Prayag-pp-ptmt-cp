@@ -1207,6 +1207,8 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     expected: number;
     actual: number;
     pass: boolean;
+    /** Advisory: check passed but sits outside the comfort band — surface amber in UI. */
+    warn?: boolean;
     tolerance?: string;
   };
 
@@ -1779,26 +1781,36 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     });
     // Sales sanity band: current avg-3-mo total must be non-zero AND within a
     // sane band of the prior month's figure. Adjacent 3-month windows overlap
-    // by two months, so a genuine shift beyond 0.4×–2.5× means a broken read
-    // (wrong tab, renamed column, empty range), not real demand movement.
+    // by two months, so month-over-month movement of the average is mechanically
+    // damped — a large shift means a broken read (wrong tab, renamed column,
+    // empty range), not real demand movement.
+    //
+    // Two thresholds (tightened 2026-08-05; sales is the one planning input
+    // deliberately left live, and avg-3-mo drives Buffer proportionally):
+    //   HARD band 0.6–1.6×  → outside this the check FAILS.
+    //   ADVISORY 0.85–1.2×  → outside this (but inside hard band) the check
+    //     still passes, with warn=true surfaced in validate output and the UI.
     const curSum = [...avg3MoTotals.byCode.values()].reduce((a, b) => a + b, 0);
     const [yy, mm] = month.split("-").map(Number);
     const priorMonth = mm === 1 ? `${yy! - 1}-12` : `${yy}-${String(mm! - 1).padStart(2, "0")}`;
     let bandPass = false;
+    let bandWarn = false;
     let ratio = 0;
     try {
       const priorTotals = await fetchAvg3MoSaleTotals(priorMonth);
       const priorSum = [...priorTotals.byCode.values()].reduce((a, b) => a + b, 0);
       ratio = priorSum > 0 ? curSum / priorSum : Infinity;
-      bandPass = curSum > 0 && ratio >= 0.4 && ratio <= 2.5;
+      bandPass = curSum > 0 && ratio >= 0.6 && ratio <= 1.6;
+      bandWarn = bandPass && (ratio < 0.85 || ratio > 1.2);
     } catch {
       bandPass = false;
     }
     checks.push({
-      name: `ISOLATION · sales band vs prior month (ratio ${ratio.toFixed(2)}, band 0.4–2.5×)`,
+      name: `ISOLATION · sales band vs prior month (ratio ${ratio.toFixed(2)}, hard 0.6–1.6×, advisory 0.85–1.2×)`,
       expected: 1,
       actual: bandPass ? 1 : 0,
       pass: bandPass,
+      warn: bandWarn,
       tolerance: "bool",
     });
   }

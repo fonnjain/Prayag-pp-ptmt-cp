@@ -92,6 +92,7 @@ import type {
   PlanItem,
   PlanRunDetail,
   PlanRunDiff,
+  PlanRunDrift,
   PlanRunSummary,
   PlanSummary,
   PlantBundle,
@@ -3159,6 +3160,107 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(mutationOptions);
     }
     
+/**
+ * @summary Frozen "as issued" plan vs live rebuild "if re-run today"
+ */
+export type getPlanRunDriftResponse200 = {
+  data: PlanRunDrift
+  status: 200
+}
+
+export type getPlanRunDriftResponse404 = {
+  data: void
+  status: 404
+}
+
+export type getPlanRunDriftResponse422 = {
+  data: void
+  status: 422
+}
+    
+export type getPlanRunDriftResponseSuccess = (getPlanRunDriftResponse200) & {
+  headers: Headers;
+};
+export type getPlanRunDriftResponseError = (getPlanRunDriftResponse404 | getPlanRunDriftResponse422) & {
+  headers: Headers;
+};
+
+export type getPlanRunDriftResponse = (getPlanRunDriftResponseSuccess | getPlanRunDriftResponseError)
+
+export const getGetPlanRunDriftUrl = (id: number,) => {
+
+
+  
+
+  return `/api/plan/runs/${id}/drift`
+}
+
+export const getPlanRunDrift = async (id: number, options?: RequestInit): Promise<getPlanRunDriftResponse> => {
+  
+  return customFetch<getPlanRunDriftResponse>(getGetPlanRunDriftUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetPlanRunDriftQueryKey = (id?: number,) => {
+    return [
+    `/api/plan/runs/${id}/drift`
+    ] as const;
+    }
+
+    
+export const getGetPlanRunDriftQueryOptions = <TData = Awaited<ReturnType<typeof getPlanRunDrift>>, TError = void>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlanRunDrift>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlanRunDriftQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlanRunDrift>>> = ({ signal }) => getPlanRunDrift(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlanRunDrift>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlanRunDriftQueryResult = NonNullable<Awaited<ReturnType<typeof getPlanRunDrift>>>
+export type GetPlanRunDriftQueryError = void
+
+
+/**
+ * @summary Frozen "as issued" plan vs live rebuild "if re-run today"
+ */
+
+export function useGetPlanRunDrift<TData = Awaited<ReturnType<typeof getPlanRunDrift>>, TError = void>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlanRunDrift>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlanRunDriftQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
 export type finalizePlanRunResponse200 = {
   data: PlanRunSummary
   status: 200

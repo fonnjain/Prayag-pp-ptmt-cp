@@ -4,6 +4,7 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { CorrectiveReplanInputPlanRunId } from './correctiveReplanInputPlanRunId';
 
 export interface CorrectiveReplanInput {
   /** YYYY-MM */
@@ -18,4 +19,6 @@ export interface CorrectiveReplanInput {
   dailyCapacity?: number;
   /** Working days per week (default 6) */
   workingDaysPerWeek?: number;
+  /** Immutable plan run to use as the baseline. Number = that frozen run; null = force live rebuild; omitted = auto (latest finalized run for month+segment, else live). */
+  planRunId?: CorrectiveReplanInputPlanRunId;
 }

@@ -32,10 +32,12 @@ import {
   useDeletePlanRun,
   getPlanRun,
   getGetPlanRunQueryKey,
+  useGetPlanRunDrift,
   type PlanRunSummary,
+  type PlanRunDrift,
 } from "@workspace/api-client-react";
 import { useSegment } from "@/contexts/segment-context";
-import { Trash2, GitCompare } from "lucide-react";
+import { Trash2, GitCompare, Activity } from "lucide-react";
 
 function statusColor(status: string) {
   return status === "finalized"
@@ -229,6 +231,113 @@ function MultiRunCompare({ ids, onClose }: { ids: number[]; onClose: () => void 
   );
 }
 
+function DriftView({ runId, onClose }: { runId: number; onClose: () => void }) {
+  const { data, isLoading, error } = useGetPlanRunDrift(runId, {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    query: {} as any,
+  });
+  const drift = data as unknown as PlanRunDrift | undefined;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Drift — Run #{runId} (as issued) vs live rebuild (if re-run today)
+          </CardTitle>
+          <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading && <p className="text-sm text-gray-500 py-4 text-center">Rebuilding live plan for comparison…</p>}
+        {error != null && (
+          <p className="text-sm text-red-600 py-2">
+            Live rebuild failed — check that all required uploads are still present.
+          </p>
+        )}
+        {drift && (
+          <>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-md border px-3 py-2.5">
+                <p className="text-xs text-gray-500">Frozen total (as issued)</p>
+                <p className="text-xl font-bold tabular-nums">{fmt(drift.frozenGrandTotal)}</p>
+              </div>
+              <div className="rounded-md border px-3 py-2.5">
+                <p className="text-xs text-gray-500">Live total (re-run today)</p>
+                <p className="text-xl font-bold tabular-nums">{fmt(drift.liveGrandTotal)}</p>
+              </div>
+              <div className={cn("rounded-md border px-3 py-2.5", drift.grandDelta !== 0 ? "bg-amber-50 border-amber-200" : "bg-green-50 border-green-200")}>
+                <p className="text-xs text-gray-500">Drift</p>
+                <p className="text-xl font-bold tabular-nums">{fmtDelta(drift.grandDelta)}</p>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto rounded-lg border border-border/50">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Category</TableHead>
+                    <TableHead className="text-right">Frozen</TableHead>
+                    <TableHead className="text-right">Live</TableHead>
+                    <TableHead className="text-right">Δ</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {drift.categories.map((c) => (
+                    <TableRow key={c.category}>
+                      <TableCell className="text-sm font-medium">{c.category}</TableCell>
+                      <TableCell className="text-right font-mono text-xs">{fmt(c.frozenMax)}</TableCell>
+                      <TableCell className="text-right font-mono text-xs">{fmt(c.liveMax)}</TableCell>
+                      <TableCell className="text-right font-mono text-xs">{fmtDelta(c.delta)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+
+            {drift.changedItemCount === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-2">No drift — live inputs still produce the issued plan.</p>
+            ) : (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wider">
+                  Changed items ({drift.changedItemCount})
+                </p>
+                <div className="overflow-x-auto rounded-lg border border-border/50 max-h-72 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Item Code</TableHead>
+                        <TableHead>Colour</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead className="text-right">Frozen</TableHead>
+                        <TableHead className="text-right">Live</TableHead>
+                        <TableHead className="text-right">Δ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {drift.changedItems.map((i) => (
+                        <TableRow key={`${i.itemCode}-${i.colour}`}>
+                          <TableCell className="font-medium text-sm">{i.itemCode}</TableCell>
+                          <TableCell className="text-sm">{i.colour}</TableCell>
+                          <TableCell className="text-xs text-gray-600">{i.category}</TableCell>
+                          <TableCell className="text-right font-mono text-xs">{fmt(i.frozenPlan)}</TableCell>
+                          <TableCell className="text-right font-mono text-xs">{fmt(i.livePlan)}</TableCell>
+                          <TableCell className="text-right">{fmtDelta(i.delta)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function RunsPage() {
   const month = currentMonth();
   const { segment } = useSegment();
@@ -238,6 +347,7 @@ export default function RunsPage() {
   const finalizeRun = useFinalizePlanRun();
   const deleteRun = useDeletePlanRun();
   const [compareIds, setCompareIds] = useState<number[] | null>(null);
+  const [driftRunId, setDriftRunId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -357,6 +467,10 @@ export default function RunsPage() {
           />
         )}
 
+        {driftRunId !== null && (
+          <DriftView runId={driftRunId} onClose={() => setDriftRunId(null)} />
+        )}
+
         <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center justify-between">
@@ -415,16 +529,27 @@ export default function RunsPage() {
                       <TableCell className="text-right">{fmt(run.grandMaxTotal)}</TableCell>
                       <TableCell className="text-sm text-gray-500">{run.note ?? "—"}</TableCell>
                       <TableCell>
-                        {run.status === "draft" && (
+                        <div className="flex gap-1.5 justify-end">
+                          {run.status === "draft" && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleFinalize(run.id)}
+                              disabled={finalizeRun.isPending}
+                            >
+                              Finalize
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleFinalize(run.id)}
-                            disabled={finalizeRun.isPending}
+                            className="gap-1"
+                            onClick={() => setDriftRunId(run.id)}
                           >
-                            Finalize
+                            <Activity className="h-3.5 w-3.5" />
+                            Drift
                           </Button>
-                        )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

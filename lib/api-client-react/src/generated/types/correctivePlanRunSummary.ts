@@ -6,6 +6,7 @@
  */
 import type { CorrectivePlanRunSummaryAsOfDate } from './correctivePlanRunSummaryAsOfDate';
 import type { CorrectivePlanRunSummaryNote } from './correctivePlanRunSummaryNote';
+import type { CorrectivePlanRunSummaryPlanRunId } from './correctivePlanRunSummaryPlanRunId';
 import type { CorrectiveWarning } from './correctiveWarning';
 
 export interface CorrectivePlanRunSummary {
@@ -21,6 +22,8 @@ export interface CorrectivePlanRunSummary {
   originalMonthTotal: number;
   revisedMonthTotal: number;
   unfulfillableQty: number;
+  /** Immutable plan run cited as the baseline (null = live rebuild) */
+  planRunId?: CorrectivePlanRunSummaryPlanRunId;
   warnings: CorrectiveWarning[];
   createdAt: string;
 }

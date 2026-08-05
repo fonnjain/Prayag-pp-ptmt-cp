@@ -178,7 +178,8 @@ export const runCorrectiveReplanBody = zod.object({
   "asOfDate": zod.string().optional().describe('YYYY-MM-DD — derive weekClosed from this date (filter actuals ≤ date). Mutually exclusive with weekClosed in the UI; weekClosed is derived internally.'),
   "segment": zod.string().optional().describe('PTMT or Plumbing (default PTMT)'),
   "dailyCapacity": zod.number().optional().describe('Pieces per day (default 21335)'),
-  "workingDaysPerWeek": zod.number().optional().describe('Working days per week (default 6)')
+  "workingDaysPerWeek": zod.number().optional().describe('Working days per week (default 6)'),
+  "planRunId": zod.number().nullish().describe('Immutable plan run to use as the baseline. Number = that frozen run; null = force live rebuild; omitted = auto (latest finalized run for month+segment, else live).')
 })
 
 export const runCorrectiveReplanResponse = zod.object({
@@ -267,6 +268,8 @@ export const runCorrectiveReplanResponse = zod.object({
   "code": zod.string(),
   "qty": zod.number()
 })).optional().describe('Plumbing Sheet3 codes not matched to any plan item'),
+  "baselinePlanRunId": zod.number().nullish().describe('Immutable plan run cited as the baseline (null = live rebuild)'),
+  "baselineSource": zod.enum(['frozen-run', 'live']).optional().describe('Where the original plan baseline came from'),
   "unplannedTotal": zod.number().describe('Sum of unplannedProduction quantities')
 })
 
@@ -289,6 +292,7 @@ export const listCorrectiveRunsResponseItem = zod.object({
   "originalMonthTotal": zod.number(),
   "revisedMonthTotal": zod.number(),
   "unfulfillableQty": zod.number(),
+  "planRunId": zod.number().nullish().describe('Immutable plan run cited as the baseline (null = live rebuild)'),
   "warnings": zod.array(zod.object({
   "code": zod.string(),
   "severity": zod.enum(['info', 'medium', 'high', 'critical']),
@@ -393,6 +397,8 @@ export const getCorrectiveRunResponse = zod.object({
   "code": zod.string(),
   "qty": zod.number()
 })).optional().describe('Plumbing Sheet3 codes not matched to any plan item'),
+  "baselinePlanRunId": zod.number().nullish().describe('Immutable plan run cited as the baseline (null = live rebuild)'),
+  "baselineSource": zod.enum(['frozen-run', 'live']).optional().describe('Where the original plan baseline came from'),
   "unplannedTotal": zod.number().describe('Sum of unplannedProduction quantities')
 })
 
@@ -812,6 +818,40 @@ export const getPlanRunResponse = zod.object({
 
 export const deletePlanRunParams = zod.object({
   "id": zod.number()
+})
+
+
+/**
+ * @summary Frozen "as issued" plan vs live rebuild "if re-run today"
+ */
+export const getPlanRunDriftParams = zod.object({
+  "id": zod.number()
+})
+
+export const getPlanRunDriftResponse = zod.object({
+  "runId": zod.number(),
+  "month": zod.string(),
+  "segment": zod.string(),
+  "status": zod.string(),
+  "asOfAt": zod.string().datetime({}),
+  "frozenGrandTotal": zod.number(),
+  "liveGrandTotal": zod.number(),
+  "grandDelta": zod.number(),
+  "categories": zod.array(zod.object({
+  "category": zod.string(),
+  "frozenMax": zod.number(),
+  "liveMax": zod.number(),
+  "delta": zod.number()
+})),
+  "changedItems": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "category": zod.string(),
+  "frozenPlan": zod.number(),
+  "livePlan": zod.number(),
+  "delta": zod.number()
+})),
+  "changedItemCount": zod.number()
 })
 
 
