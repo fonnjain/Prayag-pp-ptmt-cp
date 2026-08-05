@@ -33,6 +33,12 @@ export interface CorrectiveReplanInput {
    * Undefined = live rebuild (legacy behaviour, used by the validate suite).
    */
   planRunId?: number;
+  /**
+   * When true, run the full engine but skip persisting the run + items to the
+   * DB. Used by the regression/validate suite so repeated verification runs
+   * don't pile duplicate corrective_plan_runs rows into the run history.
+   */
+  dryRun?: boolean;
 }
 
 export interface CorrectiveItemResult {
@@ -821,8 +827,10 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     }
   }
 
-  // ── Persist to DB ─────────────────────────────────────────────────────────
-  const [run] = await db.insert(correctivePlanRunsTable).values({
+  // ── Persist to DB (skipped for dry runs, e.g. the validate suite) ─────────
+  let run: typeof correctivePlanRunsTable.$inferSelect | undefined;
+  if (!input.dryRun) {
+  [run] = await db.insert(correctivePlanRunsTable).values({
     segment,
     month,
     weekClosed,
@@ -841,12 +849,13 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   }).returning();
 
   if (run && items.length > 0) {
+    const runId = run.id;
     const CHUNK = 200;
     for (let i = 0; i < items.length; i += CHUNK) {
       const chunk = items.slice(i, i + CHUNK);
       await db.insert(correctivePlanItemsTable).values(
         chunk.map(item => ({
-          runId: run.id,
+          runId,
           itemCode: item.itemCode,
           colour: item.colour,
           category: item.category,
@@ -879,6 +888,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
         })),
       );
     }
+  }
   }
 
   logger.info({

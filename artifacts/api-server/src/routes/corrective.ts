@@ -65,7 +65,7 @@ function groupByCategory(items: CorrectiveItem[], requiredCats?: string[]): Map<
 
 // ─── POST /corrective/replan ─────────────────────────────────────────────────
 router.post("/corrective/replan", async (req, res): Promise<void> => {
-  const { month, weekClosed, asOfDate, segment, dailyCapacity, workingDaysPerWeek, planRunId } = req.body as {
+  const { month, weekClosed, asOfDate, segment, dailyCapacity, workingDaysPerWeek, planRunId, dryRun } = req.body as {
     month?: string;
     weekClosed?: number;
     asOfDate?: string;
@@ -74,6 +74,8 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
     workingDaysPerWeek?: number;
     /** number = use that frozen plan run; null = force live rebuild; undefined = auto (latest finalized) */
     planRunId?: number | null;
+    /** true = compute but do not persist a run (used by the regression suite) */
+    dryRun?: boolean;
   };
 
   if (!month || typeof month !== "string" || !/^\d{4}-\d{2}$/.test(month)) {
@@ -139,7 +141,7 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
   }
 
   try {
-    const result = await runCorrectiveReplan({ month, weekClosed: effectiveWeekClosed, asOfDate: effectiveAsOfDate, segment: seg, dailyCapacity, workingDaysPerWeek, planRunId: resolvedPlanRunId });
+    const result = await runCorrectiveReplan({ month, weekClosed: effectiveWeekClosed, asOfDate: effectiveAsOfDate, segment: seg, dailyCapacity, workingDaysPerWeek, planRunId: resolvedPlanRunId, dryRun: dryRun === true });
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "corrective/replan failed");

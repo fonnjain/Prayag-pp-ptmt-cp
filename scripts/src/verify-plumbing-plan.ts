@@ -460,7 +460,7 @@ async function main(): Promise<void> {
     const ptmtReplanResp = await fetch(`${API_BASE}/api/corrective/replan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ month: PTMT_MONTH, segment: "PTMT", weekClosed: 0 }),
+      body: JSON.stringify({ month: PTMT_MONTH, segment: "PTMT", weekClosed: 0, dryRun: true }),
     });
     const ptmtReplan = await ptmtReplanResp.json() as Record<string, unknown>;
     const ptmtWdr     = (ptmtReplan?.workingDaysRemaining as number) ?? 27;

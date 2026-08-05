@@ -994,7 +994,8 @@ router.get("/plan/corrective-replan", async (req, res): Promise<void> => {
       ? "2026-07-14"                               // legacy fallback
       : new Date().toISOString().slice(0, 10);     // default: today
 
-  const replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing" });
+  // Read-only view: never persist a run from a GET (the UI polls this and the suite hits it)
+  const replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing", dryRun: true });
 
   const totalProducedCapped = replan.categories.reduce((s, c) => s + c.producedCapped, 0);
   const totalRemaining = replan.categories.reduce((s, c) => s + c.remaining, 0);
@@ -1048,8 +1049,9 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
     tolerance?: string;
   };
 
-  // Run the unified corrective engine (same path as the UI)
-  const replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing" });
+  // Run the unified corrective engine (same path as the UI) — dryRun so the
+  // regression suite doesn't persist a duplicate corrective run on every pass
+  const replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing", dryRun: true });
   const wdr = replan.workingDaysRemaining;
   const catMap = new Map(replan.categories.map((c) => [c.category, c]));
   const checks: CheckResult[] = [];
