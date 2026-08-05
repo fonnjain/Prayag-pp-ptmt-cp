@@ -182,7 +182,7 @@ function inferPlumbingCategory(raw: string, itemName = ""): string | null {
  * Suffix aliases: -LSBB -> -LSB, -LSTBB -> -LSTB, -LSQBB -> -LSQB, all
  * recorded as colour BLACK in the ERP but BLUE in the planning catalogue.
  */
-function applyPendingOrderAlias(code: string, colour: string): { code: string; colour: string } {
+export function applyPendingOrderAlias(code: string, colour: string): { code: string; colour: string } {
   const trimmedCode = code.trim();
   const trimmedColour = colour.trim().toUpperCase();
 
@@ -231,7 +231,7 @@ function extractRows(workbook: XLSX.WorkBook, kind: string): Record<string, unkn
     return rows.map((row) => {
       const normalized: Record<string, unknown> = { ...row };
       // Rename "C/Stock" (and common variants) to "Qty" for downstream aggregation
-      const cstockKey = Object.keys(normalized).find((k) => /c[\s/\\]?stock/i.test(k));
+      const cstockKey = Object.keys(normalized).find((k) => /c[\s/\\]?stock/i.test(k) || /closing\s*stock/i.test(k));
       if (cstockKey && cstockKey !== "Qty") {
         normalized["Qty"] = normalized[cstockKey];
         delete normalized[cstockKey];

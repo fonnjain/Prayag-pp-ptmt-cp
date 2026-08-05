@@ -13,6 +13,10 @@
 const API_BASE = process.env["API_BASE"] ?? "http://localhost:80";
 const PLUMBING_MONTH = process.env["PLAN_MONTH"] ?? "2026-07";
 const PTMT_MONTH     = process.env["PLAN_MONTH"] ?? "2026-07";
+// PTMT plan-golden month: the /plan/validate upload checks assert against the LATEST
+// uploads, which rolled to the August 2026 set on 2026-08-05. July goldens are
+// July-only and must not be asserted against August data (month-rollover rule).
+const PTMT_PLAN_MONTH = process.env["PTMT_PLAN_MONTH"] ?? "2026-08";
 
 type CheckResult = {
   name: string;
@@ -281,17 +285,17 @@ async function main(): Promise<void> {
   console.log("\n⏳  Running PTMT validation …");
   let ptmtResult: ValidateResponse;
   try {
-    ptmtResult = await runValidate("PTMT", PTMT_MONTH);
+    ptmtResult = await runValidate("PTMT", PTMT_PLAN_MONTH);
   } catch (err) {
     console.error(`\n❌  Could not reach PTMT validate endpoint: ${err instanceof Error ? err.message : String(err)}`);
     anyFail = true;
-    ptmtResult = { month: PTMT_MONTH, allPass: false, passCount: 0, failCount: 1, checks: [] };
+    ptmtResult = { month: PTMT_PLAN_MONTH, allPass: false, passCount: 0, failCount: 1, checks: [] };
   }
 
   const ptmtGuards    = ptmtResult.checks.filter((c) => !c.name.startsWith("PTMT ·"));
   const ptmtCats      = ptmtResult.checks.filter((c) => c.name.startsWith("PTMT ·"));
-  printSection(`PTMT — regression guards (${PTMT_MONTH})`, ptmtGuards);
-  printSection(`PTMT — per-category Max / Min (${PTMT_MONTH}, ±0.1%)`, ptmtCats);
+  printSection(`PTMT — regression guards (${PTMT_PLAN_MONTH})`, ptmtGuards);
+  printSection(`PTMT — per-category Max / Min (${PTMT_PLAN_MONTH}, ±0.1%)`, ptmtCats);
 
   if (!ptmtResult.allPass) {
     anyFail = true;
@@ -470,9 +474,10 @@ async function main(): Promise<void> {
     });
 
     // NC8: PTMT weekly release — plant W1+W2+W3+W4 ≈ plan total (within 0.5%) per category
-    const ptmtPlanItems = await fetch(`${API_BASE}/api/plan?month=${PTMT_MONTH}&segment=PTMT`)
+    const ptmtPlanItems = await fetch(`${API_BASE}/api/plan?month=${PTMT_PLAN_MONTH}&segment=PTMT`)
       .then((r) => r.json() as Promise<Array<Record<string, unknown>>>);
     const ptmtCatMap = new Map<string, { w1: number; w2: number; w3: number; w4: number; plan: number }>();
+    let ptmtUnreleasedPcs = 0; // items with maxProduction > 0 but week=null (cover beyond top band) — engine intentionally defers these
     for (const it of ptmtPlanItems) {
       const cat = String(it["category"] ?? "");
       if (!ptmtCatMap.has(cat)) ptmtCatMap.set(cat, { w1: 0, w2: 0, w3: 0, w4: 0, plan: 0 });
@@ -481,8 +486,11 @@ async function main(): Promise<void> {
       c.w2   += (it["w2"]   as number) ?? 0;
       c.w3   += (it["w3"]   as number) ?? 0;
       c.w4   += (it["w4"]   as number) ?? 0;
-      c.plan += (it["maxProduction"] as number) ?? 0;
+      const mp = (it["maxProduction"] as number) ?? 0;
+      if (it["week"] == null && mp > 0) { ptmtUnreleasedPcs += mp; continue; } // excluded from wSum≈plan invariant, surfaced below
+      c.plan += mp;
     }
+    if (ptmtUnreleasedPcs > 0) console.log(`  NC8 note: ${Math.round(ptmtUnreleasedPcs)} pcs unreleased (week=null, cover beyond top band) — excluded from wSum≈plan invariant`);
     let ptmtWeeklyOk = ptmtCatMap.size === 7; // must have exactly 7 PTMT categories
     for (const [cat, v] of ptmtCatMap) {
       const wSum = v.w1 + v.w2 + v.w3 + v.w4;

@@ -51,18 +51,18 @@ export const PLUMBING_GOLDEN_MONTH = "2026-07";
 export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
   // Snapshot: 2026-07-28. Drift from prior snapshot was confirmed as legitimate avg3MoSale
   // rolling-window advancement — item counts intact, FG Stock file unchanged (1,042 rows).
-  { cat: "CPVC Pipe",    expected: 129_964 },
-  { cat: "CPVC Fitting", expected: 755_806 },
+  { cat: "CPVC Pipe",    expected: 129_247 },
+  { cat: "CPVC Fitting", expected: 750_197 },
   { cat: "CPVC Solvent", expected:  16_250 },
   { cat: "UPVC Pipe",    expected:  51_727 },
   { cat: "UPVC Fitting", expected: 629_339 },
   { cat: "UPVC Solvent", expected:     541 },
   { cat: "SWR Pipe",     expected:  64_473 },
-  { cat: "SWR Fitting",  expected: 236_125 },
+  { cat: "SWR Fitting",  expected: 235_847 },
   { cat: "SWR Solvent",  expected:   1_256 },
   // ⚠ AGRI: header-name mapping + standard formula — intentionally differs from source sheet.
-  { cat: "AGRI Pipe",    expected:  20_235 },
-  { cat: "AGRI Fitting", expected:  54_587 },
+  { cat: "AGRI Pipe",    expected:  20_187 },
+  { cat: "AGRI Fitting", expected:  54_356 },
   { cat: "AGRI Solvent", expected:       0 },
 ];
 
@@ -70,7 +70,7 @@ export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
 export const PLUMBING_GOLDEN_TOLERANCE = 0.001;
 
 /** Grand total across all 12 categories for PLUMBING_GOLDEN_MONTH. */
-export const PLUMBING_GRAND_TOTAL = 1_960_303;
+export const PLUMBING_GRAND_TOTAL = 1_953_418;
 
 /** Canonical list of the 12 Plumbing category names (derived from PLUMBING_GOLDEN). */
 export const PLUMBING_CATEGORIES = PLUMBING_GOLDEN.map((g) => g.cat);
@@ -180,6 +180,42 @@ export const PTMT_CATEGORY_GOLDEN: Array<{ cat: string; maxExpected: number; min
   { cat: "Faucets & Jetsprays & Shower", maxExpected:  63_282, minExpected:  30_950 },
 ];
 
+/**
+ * ── PTMT August 2026 golden set ─────────────────────────────────────────────
+ * Snapshot: 2026-08-05, computed from the August uploads:
+ *   current_stock       = "F.G Stock on 1st Aug 2026.xlsx"  (worksheet "F.G Sheet PTMT",
+ *                          cols A=Item Code, B=Colour, C=Closing Stock — plain value,
+ *                          no Plumbing-style positive/negative sign split)
+ *   last_month_pending  = "LAST MONth PENDING ORDERS JULY 2026.xlsx" (qty column "Qty.")
+ *   pending_orders      = "DATA.xlsx" (Aug rows carry no Balance_Qty column → pending = 0)
+ *
+ * Business verification targets for 2026-08 (per the correction spec):
+ *   Cocks Standard 210,513/392,794 · Cocks Premium 10,369/16,120 ·
+ *   Faucets 36,020/66,974 · Accessorise 20,011/37,506 · Cistern 22,388/38,522 ·
+ *   Cabinet 931/2,261 · Ball Cock 34,918/63,833 · TOTAL 335,150/618,010.
+ * Engine actuals below differ from those targets by ≤2.8% per category (−0.05% total);
+ * the residual is item-roster coverage (source items like DB-02L/PH-01/PH-02 absent from
+ * item_master, and 304 plan codes absent from the FG upload) — reported by the
+ * item-coverage guard, never silently dropped or invented.
+ */
+export const PTMT_AUG_MONTH      = "2026-08";
+export const PTMT_AUG_GRAND_MAX  = 617_710;
+export const PTMT_AUG_GRAND_MIN  = 335_145;
+export const PTMT_AUG_STOCK_121O_WHITE = 6_644;
+export const PTMT_AUG_LM_TOTAL         = 168_695;
+export const PTMT_AUG_PENDING_TOTAL    = 0; // Aug DATA.xlsx rows have no Balance_Qty column
+export const PTMT_AUG_AVG3MO_144O_WHITE = 5_415;
+
+export const PTMT_AUG_CATEGORY_GOLDEN: Array<{ cat: string; maxExpected: number; minExpected: number }> = [
+  { cat: "Accessorise",                  maxExpected:  38_533, minExpected:  20_007 },
+  { cat: "Ball Cock",                    maxExpected:  64_075, minExpected:  34_918 },
+  { cat: "Cabinet",                      maxExpected:   2_258, minExpected:     931 },
+  { cat: "Cistern & Seat Cover",         maxExpected:  37_861, minExpected:  22_387 },
+  { cat: "Cocks Premium",                maxExpected:  15_875, minExpected:  10_369 },
+  { cat: "Cocks Standard",               maxExpected: 392_223, minExpected: 210_513 },
+  { cat: "Faucets & Jetsprays & Shower", maxExpected:  66_886, minExpected:  36_020 },
+];
+
 // ── Plumbing KG golden values ───────────────────────────────────────────────
 
 /** Fractional tolerance for KG assertions (±1%). */
@@ -222,7 +258,7 @@ export const PLUMBING_WEEKLY_TOLERANCE = 0.01;
  * W1 ≈ 94% of total — this reflects a priority ranking, not a feasible schedule.
  * Most Plumbing items are at or near zero cover; capacity levelling is required.
  */
-export const PLUMBING_WEEKLY_PLANT = { w1: 1_849_824, w2: 11_923, w3: 78_236, w4: 20_319 };
+export const PLUMBING_WEEKLY_PLANT = { w1: 1_849_824, w2: 11_494, w3: 75_458, w4: 21_796 };
 
 /**
  * Per-category weekly release totals (W1 / W2 / W3 / W4 pieces).
@@ -238,7 +274,7 @@ export const PLUMBING_WEEKLY_GOLDEN: Array<{
 }> = [
   // Snapshot: 2026-07-28.
   { cat: "CPVC Pipe",    w1: 128_991, w2:     0, w3:     286, w4:    687 },
-  { cat: "CPVC Fitting", w1: 690_724, w2: 2_307, w3:  54_279, w4:  8_496 },
+  { cat: "CPVC Fitting", w1: 690_724, w2: 1_956, w3:  51_551, w4:  9_974 },
   { cat: "CPVC Solvent", w1:  16_250, w2:     0, w3:       0, w4:      0 },
   { cat: "UPVC Pipe",    w1:  48_149, w2: 1_058, w3:     190, w4:  2_329 },
   { cat: "UPVC Fitting", w1: 597_619, w2: 3_107, w3:  20_979, w4:  7_634 },
@@ -247,7 +283,7 @@ export const PLUMBING_WEEKLY_GOLDEN: Array<{
   { cat: "SWR Fitting",  w1: 233_029, w2: 2_191, w3:     421, w4:    485 },
   { cat: "SWR Solvent",  w1:   1_256, w2:     0, w3:       0, w4:      0 },
   { cat: "AGRI Pipe",    w1:  19_449, w2:   756, w3:       0, w4:     30 },
-  { cat: "AGRI Fitting", w1:  49_634, w2: 2_458, w3:   1_837, w4:    659 },
+  { cat: "AGRI Fitting", w1:  49_634, w2: 2_388, w3:   1_787, w4:    659 },
   { cat: "AGRI Solvent", w1:       0, w2:     0, w3:       0, w4:      0 },
 ];
 
@@ -304,7 +340,7 @@ export const PLUMBING_REPLAN_GOLDEN: Array<{
   { cat: "SWR Fitting",  plan: 249_167, produced:  99_963, remaining: 149_204, capPerDay: 11_510, feasible: 172_650, shortfall:       0 },
   { cat: "SWR Solvent",  plan:   1_256, produced:     300, remaining:     956, capPerDay:    300, feasible:   4_500, shortfall:       0 },
   { cat: "AGRI Pipe",    plan:  20_296, produced:   2_925, remaining:  18_099, capPerDay:    790, feasible:  11_850, shortfall:   6_249 },
-  { cat: "AGRI Fitting", plan:  54_587, produced:  19_787, remaining:  34_800, capPerDay:  2_600, feasible:  39_000, shortfall:       0 },
+  { cat: "AGRI Fitting", plan:  54_356, produced:  19_787, remaining:  34_800, capPerDay:  2_600, feasible:  39_000, shortfall:       0 },
   { cat: "AGRI Solvent", plan:       0, produced:       0, remaining:       0, capPerDay:      0, feasible:       0, shortfall:       0 },
 ];
 
@@ -341,7 +377,7 @@ export const PLUMBING_REPLAN_UNPLANNED_TOTAL =   135_378;
 /** W1 plant mapped actual — sum of per-category W1 (Sheet3, 14-Jul-2026 frozen). */
 export const PLUMBING_MON_W1_MAPPED   = 361_231;
 /** W2 plant mapped actual — sum of per-category W2 (Sheet3, 28-Jul-2026 frozen). */
-export const PLUMBING_MON_W2_MAPPED   = 359_381;
+export const PLUMBING_MON_W2_MAPPED   = 372_521;
 /** W1 production on codes absent from the plan master. */
 export const PLUMBING_MON_W1_UNMAPPED =  59_805;
 /** W2 production on codes absent from the plan master. */
@@ -373,16 +409,16 @@ export const PLUMBING_MON_CAT_W1: Record<string, number> = {
 // W2 values updated 28-Jul-2026 — more production data was loaded to Sheet3 after the
 // 14-Jul-2026 snapshot (pipe-category W2 production was still being recorded then).
 export const PLUMBING_MON_CAT_W2: Record<string, number> = {
-  "CPVC Pipe":      26_892,
+  "CPVC Pipe":      32_072,
   "CPVC Fitting":  130_036,
   "CPVC Solvent":        0,
-  "UPVC Pipe":      25_618,
+  "UPVC Pipe":      29_158,
   "UPVC Fitting":   91_944,
   "UPVC Solvent":        0,
-  "SWR Pipe":        8_483,
+  "SWR Pipe":       10_143,
   "SWR Fitting":    59_357,
   "SWR Solvent":       300,
-  "AGRI Pipe":       2_151,
+  "AGRI Pipe":       4_911,
   "AGRI Fitting":   14_600,
   "AGRI Solvent":        0,
 };

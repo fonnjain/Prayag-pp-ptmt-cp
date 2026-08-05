@@ -42,6 +42,14 @@ import {
   PLUMBING_REPLAN_UNPLANNED_TOTAL,
   PTMT_GRAND_MAX,
   PTMT_GRAND_MIN,
+  PTMT_AUG_MONTH,
+  PTMT_AUG_GRAND_MAX,
+  PTMT_AUG_GRAND_MIN,
+  PTMT_AUG_STOCK_121O_WHITE,
+  PTMT_AUG_LM_TOTAL,
+  PTMT_AUG_PENDING_TOTAL,
+  PTMT_AUG_AVG3MO_144O_WHITE,
+  PTMT_AUG_CATEGORY_GOLDEN,
   PTMT_TOLERANCE,
   PTMT_CATEGORY_GOLDEN,
   PTMT_MULTIPLIER_GOLDEN,
@@ -304,15 +312,16 @@ export async function buildPlanItems(month: string, segment: string = "PTMT"): P
     pendingLastMoRows,
     ["Item Code", "Cat No", "Cat-No", "Old Item Code"],
     ["Colour", "Color"],
-    ["Qty", "Balance_Qty", "Balance Qty"],
+    ["Qty", "Qty.", "Balance_Qty", "Balance Qty"],
   );
 
   // Stock: F.G Sheet — try every item-code column variant the FG Stock upload may carry.
+  // Qty column variants: "Qty" (normalized July format), "Closing Stock" (Aug 2026 "F.G Sheet PTMT" layout).
   const stockTotals = sumByKey(
     currentStockRows,
     ["Item Code", "Old Item Code", "Cat No", "Cat-No", "Item No."],
     ["Colour", "Color"],
-    ["Qty"],
+    ["Qty", "Closing Stock", "C/Stock", "C Stock"],
   );
 
   // Scoped per category: the same item code can legitimately exist in two
@@ -964,6 +973,37 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
       tolerance: "≥ 1 row",
     });
 
+    // ── 2b. Stock-join coverage guard (same silent-zero class as PTMT Fault 1) ─
+    // Count of plan items with stock = 0 while the plumbing FG upload holds a
+    // POSITIVE Net Stock for the same code. Must be 0 — a column rename or key
+    // normalization break in the FG join would show up here before it inflates
+    // the plan.
+    {
+      const fgPositiveByCode = new Map<string, number>();
+      for (const row of fgStockRows) {
+        const code = normalizeCode(String((row as Record<string, unknown>)["Item Code"] ?? "").trim());
+        if (!code) continue;
+        const rawNet = (row as Record<string, unknown>)["Net Stock"];
+        const netStock = typeof rawNet === "number" ? rawNet : Number(String(rawNet ?? "").replace(/,/g, "")) || 0;
+        if (netStock > 0) fgPositiveByCode.set(code, (fgPositiveByCode.get(code) ?? 0) + netStock);
+      }
+      const seenCodes = new Set<string>();
+      let plumbingStockJoinMisses = 0;
+      for (const item of items) {
+        const code = normalizeCode(item.itemCode);
+        if (seenCodes.has(code)) continue;
+        seenCodes.add(code);
+        if ((item.stock ?? 0) === 0 && (fgPositiveByCode.get(code) ?? 0) > 0) plumbingStockJoinMisses++;
+      }
+      checks.push({
+        name: "GUARD · Stock-join coverage (plan items with Stock=0 but FG positive)",
+        expected: 0,
+        actual: plumbingStockJoinMisses,
+        pass: plumbingStockJoinMisses === 0,
+        tolerance: "exact",
+      });
+    }
+
     // ── 3. Segment isolation ───────────────────────────────────────────────
     const plumbingCategories = new Set(items.map((i) => i.category));
     const distinctCatCount = plumbingCategories.size;
@@ -1399,35 +1439,51 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
 
   const checks: CheckResult[] = [];
 
-  // ── 1. Stock 121-O / WHITE = 1,644 ────────────────────────────────────
-  const stockTotals = sumByKey(stockRows, ["Item Code"], ["Colour", "Color"], ["Qty"]);
-  const stock121 = resolveTotal(stockTotals, "121-O", "WHITE", false);
-  checks.push({ name: "Stock 121-O / WHITE", expected: 1644, actual: stock121, pass: stock121 === 1644 });
+  // ── Month-keyed upload goldens ────────────────────────────────────────
+  // The upload scalar checks below assert against the LATEST uploads, so the
+  // expected values must roll with the upload month (spec: never assert July
+  // goldens against August data). 2026-08 = August upload set; anything else
+  // falls back to the July 2026 legacy values.
+  const isAugGolden = month === PTMT_AUG_MONTH;
 
-  // ── 2. Last-month pending total = 137,939 ─────────────────────────────
+  // ── 1. Stock 121-O / WHITE ────────────────────────────────────────────
+  const stockTotals = sumByKey(stockRows, ["Item Code"], ["Colour", "Color"], ["Qty", "Closing Stock", "C/Stock", "C Stock"]);
+  const stock121 = resolveTotal(stockTotals, "121-O", "WHITE", false);
+  const stock121Exp = isAugGolden ? PTMT_AUG_STOCK_121O_WHITE : 1644;
+  checks.push({ name: "Stock 121-O / WHITE", expected: stock121Exp, actual: stock121, pass: stock121 === stock121Exp });
+
+  // ── 2. Last-month pending total ───────────────────────────────────────
   const lmTotals = sumByKey(
     lastMoRows,
     ["Item Code", "Cat No", "Cat-No", "Old Item Code"],
     ["Colour", "Color"],
-    ["Qty", "Balance_Qty", "Balance Qty"],
+    ["Qty", "Qty.", "Balance_Qty", "Balance Qty"],
   );
   const lmTotal = Math.round([...lmTotals.byCode.values()].reduce((a, b) => a + b, 0));
-  checks.push({ name: "Last-month pending total", expected: 137939, actual: lmTotal, pass: lmTotal === 137939 });
+  const lmExp = isAugGolden ? PTMT_AUG_LM_TOTAL : 137939;
+  checks.push({ name: "Last-month pending total", expected: lmExp, actual: lmTotal, pass: lmTotal === lmExp });
 
-  // ── 3. Current pending 144-O / WHITE = 132 ────────────────────────────
+  // ── 3. Current pending ────────────────────────────────────────────────
   const pendTotals = sumByKey(
     pendingRows,
     ["Old Item Code", "Item Code", "Item No."],
     ["Colour", "Color"],
     ["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"],
   );
-  const pend144 = resolveTotal(pendTotals, "144-O", "WHITE", false);
-  checks.push({ name: "Current pending 144-O / WHITE", expected: 132, actual: pend144, pass: pend144 === 132 });
+  if (isAugGolden) {
+    // Aug DATA.xlsx rows carry no Balance_Qty column → total PTMT pending must be 0.
+    const pendTotal = Math.round([...pendTotals.byCode.values()].reduce((a, b) => a + b, 0));
+    checks.push({ name: "Current pending total (Aug: no Balance_Qty column)", expected: PTMT_AUG_PENDING_TOTAL, actual: pendTotal, pass: pendTotal === PTMT_AUG_PENDING_TOTAL });
+  } else {
+    const pend144 = resolveTotal(pendTotals, "144-O", "WHITE", false);
+    checks.push({ name: "Current pending 144-O / WHITE", expected: 132, actual: pend144, pass: pend144 === 132 });
+  }
 
-  // ── 4. Avg 3-Mo Sale 144-O / WHITE = 5,222 ───────────────────────────
+  // ── 4. Avg 3-Mo Sale 144-O / WHITE ────────────────────────────────────
   const avg3MoRaw = resolveTotal(avg3MoTotals, "144-O", "WHITE", false);
   const avg3Mo = Math.round(avg3MoRaw / 3);
-  checks.push({ name: "Avg 3-Mo Sale 144-O / WHITE", expected: 5222, actual: avg3Mo, pass: avg3Mo === 5222 });
+  const avg3Exp = isAugGolden ? PTMT_AUG_AVG3MO_144O_WHITE : 5222;
+  checks.push({ name: "Avg 3-Mo Sale 144-O / WHITE", expected: avg3Exp, actual: avg3Mo, pass: avg3Mo === avg3Exp });
 
   // ── 5 & 6. Grand totals ≈ Max 576,037 / Min 301,918 (±5 %) ──────────
   // Build plan items directly from already-fetched data — no second Sheets round trip.
@@ -1441,7 +1497,7 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     lastMoRows,
     ["Item Code", "Cat No", "Cat-No", "Old Item Code"],
     ["Colour", "Color"],
-    ["Qty", "Balance_Qty", "Balance Qty"],
+    ["Qty", "Qty.", "Balance_Qty", "Balance Qty"],
   );
   const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
   const codeCounts = new Map<string, number>();
@@ -1449,8 +1505,8 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     const codeKey = `${item.category}::${normalizeCode(item.itemCode)}`;
     codeCounts.set(codeKey, (codeCounts.get(codeKey) ?? 0) + 1);
   }
-  const currentStockRows = await loadLatestUploadRowsByKind("current_stock");
-  const stockTotalsForPlan = sumByKey(currentStockRows, ["Item Code"], ["Colour", "Color"], ["Qty"]);
+  const currentStockRows = stockRows;
+  const stockTotalsForPlan = stockTotals;
   const planItems = itemRows.map((item) => {
     const isSingleVariant = (codeCounts.get(`${item.category}::${normalizeCode(item.itemCode)}`) ?? 0) <= 1;
     return computeItemPlan(
@@ -1470,19 +1526,21 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     );
   });
   const summary = summarizePlan(planItems);
-  const maxPct = Math.abs(summary.grandMaxTotal - PTMT_GRAND_MAX) / PTMT_GRAND_MAX;
-  const minPct = Math.abs(summary.grandMinTotal - PTMT_GRAND_MIN) / PTMT_GRAND_MIN;
+  const grandMaxExp = isAugGolden ? PTMT_AUG_GRAND_MAX : PTMT_GRAND_MAX;
+  const grandMinExp = isAugGolden ? PTMT_AUG_GRAND_MIN : PTMT_GRAND_MIN;
+  const maxPct = Math.abs(summary.grandMaxTotal - grandMaxExp) / grandMaxExp;
+  const minPct = Math.abs(summary.grandMinTotal - grandMinExp) / grandMinExp;
   const tolLabel = `±${(PTMT_TOLERANCE * 100).toFixed(1)}%`;
   checks.push({
-    name: `Grand Max total ≈ ${PTMT_GRAND_MAX.toLocaleString("en-IN")}`,
-    expected: PTMT_GRAND_MAX,
+    name: `Grand Max total ≈ ${grandMaxExp.toLocaleString("en-IN")}`,
+    expected: grandMaxExp,
     actual: summary.grandMaxTotal,
     pass: maxPct <= PTMT_TOLERANCE,
     tolerance: tolLabel,
   });
   checks.push({
-    name: `Grand Min total ≈ ${PTMT_GRAND_MIN.toLocaleString("en-IN")}`,
-    expected: PTMT_GRAND_MIN,
+    name: `Grand Min total ≈ ${grandMinExp.toLocaleString("en-IN")}`,
+    expected: grandMinExp,
     actual: summary.grandMinTotal,
     pass: minPct <= PTMT_TOLERANCE,
     tolerance: tolLabel,
@@ -1490,7 +1548,8 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
 
   // ── Per-category Max / Min (±0.1%) ─────────────────────────────────────────
   const catMap = new Map(summary.categories.map((c) => [c.category, c]));
-  for (const g of PTMT_CATEGORY_GOLDEN) {
+  const categoryGolden = isAugGolden ? PTMT_AUG_CATEGORY_GOLDEN : PTMT_CATEGORY_GOLDEN;
+  for (const g of categoryGolden) {
     const cat = catMap.get(g.cat);
     const actualMax = cat?.maxTotal ?? 0;
     const actualMin = cat?.minTotal ?? 0;
@@ -1515,6 +1574,140 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
       tolerance: tolLabel,
     });
   }
+
+  // ── Stock-join coverage guard (Fault-1 class) ───────────────────────────────
+  // Independently re-derive per-key stock from the RAW upload rows using broad
+  // header detection (any column matching /stock|qty/i), then compare against the
+  // engine's alias-based join AT THE SAME KEY (code+colour for multi-variant,
+  // code for single-variant). A plan row where the engine sees 0 but the file
+  // holds non-zero stock for the same key = silent-zero join → must be 0.
+  // This is the check that would have caught the "Closing Stock" column miss
+  // in the August 2026 upload (~1,015 silently-zero rows).
+  const indepExact = new Map<string, number>();
+  const indepByCode = new Map<string, number>();
+  for (const row of stockRows) {
+    const rec = row as Record<string, unknown>;
+    const code = normalizeCode(String(rec["Item Code"] ?? "").trim());
+    if (!code) continue;
+    const colour = String(rec["Colour"] ?? rec["Color"] ?? "").trim().toUpperCase();
+    let qty = 0;
+    for (const [col, val] of Object.entries(rec)) {
+      if (!/stock|qty/i.test(col) || /item|code|colou?r|category|name/i.test(col)) continue;
+      const n = typeof val === "number" ? val : Number(String(val ?? "").replace(/,/g, ""));
+      if (Number.isFinite(n) && n !== 0) { qty = n; break; }
+    }
+    indepExact.set(`${code}::${colour}`, (indepExact.get(`${code}::${colour}`) ?? 0) + qty);
+    indepByCode.set(code, (indepByCode.get(code) ?? 0) + qty);
+  }
+  // Strict-layer maps: same rows keyed by punctuation-stripped code, so a future
+  // upload that writes "A465" where item_master says "A-465" still trips the guard.
+  const indepStrictExact = new Map<string, number>();
+  const indepStrictByCode = new Map<string, number>();
+  for (const [key, qty] of indepExact) {
+    const [code, colour] = key.split("::");
+    const sc = normalizeCodeStrict(code);
+    indepStrictExact.set(`${sc}::${colour}`, (indepStrictExact.get(`${sc}::${colour}`) ?? 0) + qty);
+    indepStrictByCode.set(sc, (indepStrictByCode.get(sc) ?? 0) + qty);
+  }
+  let stockJoinMisses = 0;       // engine-normalization layer — must be 0
+  let stockJoinStrictMisses = 0; // strict layer — baseline 1 (501-S WHITE, hyphen-variant in FG file)
+  for (const item of itemRows) {
+    const isSingleVariant = (codeCounts.get(`${item.category}::${normalizeCode(item.itemCode)}`) ?? 0) <= 1;
+    const engineStock = resolveTotal(stockTotalsForPlan, item.itemCode, item.colour, isSingleVariant);
+    if (engineStock !== 0) continue;
+    const code = normalizeCode(item.itemCode);
+    const colourKey = item.colour.trim().toUpperCase();
+    const indep = isSingleVariant
+      ? (indepByCode.get(code) ?? 0)
+      : (indepExact.get(`${code}::${colourKey}`) ?? 0);
+    if (indep !== 0) { stockJoinMisses++; continue; }
+    const sc = normalizeCodeStrict(item.itemCode);
+    const indepStrict = isSingleVariant
+      ? (indepStrictByCode.get(sc) ?? 0)
+      : (indepStrictExact.get(`${sc}::${colourKey}`) ?? 0);
+    if (indepStrict !== 0) stockJoinStrictMisses++;
+  }
+  checks.push({
+    name: "Stock-join coverage guard (plan rows with Stock=0 but FG non-zero, same key)",
+    expected: 0,
+    actual: stockJoinMisses,
+    pass: stockJoinMisses === 0,
+    tolerance: "exact",
+  });
+  // Known baseline: exactly 1 (501-S / WHITE — FG file writes the code with different
+  // punctuation, 208 units; engine intentionally does not strict-join to avoid
+  // cross-code collisions). Any INCREASE means a new punctuation-variant join loss.
+  checks.push({
+    name: "Stock-join strict-layer guard (punctuation-variant code misses, baseline 1)",
+    expected: 1,
+    actual: stockJoinStrictMisses,
+    pass: stockJoinStrictMisses <= 1,
+    tolerance: "≤ 1",
+  });
+
+  // ── Stock reconciliation ─────────────────────────────────────────────────────
+  // Σ(stock joined onto plan rows, deduped per resolved key) must reconcile with
+  // Σ(FG stock for codes present in the plan). A silent-zero join regression
+  // (e.g. the ~498,000-unit gap of the original Fault 1) must fail loudly.
+  // DELIBERATE asymmetry: the denominator is computed with STRICT (punctuation-
+  // stripped) code matching while the numerator uses the engine join. If the
+  // engine join degrades (column rename, normalization drift), the numerator
+  // falls while the denominator holds → the gap widens and this check trips.
+  // Legitimate mapping noise (codes reused across categories, colour splits)
+  // is why the tolerance is ±2% rather than exact; the current gap is ~0.4%.
+  const planStrictCodes = new Set(itemRows.map((i) => normalizeCodeStrict(i.itemCode)));
+  let fgStockForPlanCodes = 0;
+  for (const [key, qty] of stockTotalsForPlan.exact) {
+    const [code] = key.split("::");
+    if (planStrictCodes.has(normalizeCodeStrict(code))) fgStockForPlanCodes += qty;
+  }
+  const joinedKeys = new Map<string, number>();
+  for (const item of itemRows) {
+    const isSingleVariant = (codeCounts.get(`${item.category}::${normalizeCode(item.itemCode)}`) ?? 0) <= 1;
+    const key = isSingleVariant ? `code::${normalizeCode(item.itemCode)}` : `exact::${normalizeCode(item.itemCode)}::${item.colour.trim().toUpperCase()}`;
+    if (!joinedKeys.has(key)) joinedKeys.set(key, resolveTotal(stockTotalsForPlan, item.itemCode, item.colour, isSingleVariant));
+  }
+  const joinedStockSum = Math.round([...joinedKeys.values()].reduce((a, b) => a + b, 0));
+  const reconGapPct = fgStockForPlanCodes > 0 ? Math.abs(joinedStockSum - fgStockForPlanCodes) / fgStockForPlanCodes : 0;
+  checks.push({
+    name: `Stock reconciliation: joined ${joinedStockSum.toLocaleString("en-IN")} vs FG-for-plan-codes ${Math.round(fgStockForPlanCodes).toLocaleString("en-IN")} (gap ${Math.round(joinedStockSum - fgStockForPlanCodes).toLocaleString("en-IN")} units)`,
+    expected: Math.round(fgStockForPlanCodes),
+    actual: joinedStockSum,
+    pass: reconGapPct <= 0.02,
+    tolerance: "±2%",
+  });
+
+  // ── Item-coverage guard (Fault-2 class) ─────────────────────────────────────
+  // Per-category counts of source items absent from the plan and plan items
+  // absent from the source. Reported ALWAYS — never suppressed. The counts are
+  // informational (pass=true); the per-category breakdown ships in the payload.
+  const fgCodeStock = new Map<string, number>();
+  for (const [key, qty] of stockTotalsForPlan.exact) {
+    const [code] = key.split("::");
+    const sc = normalizeCodeStrict(code);
+    fgCodeStock.set(sc, (fgCodeStock.get(sc) ?? 0) + qty);
+  }
+  const planNotInSource = new Map<string, number>();  // category → count of plan codes absent from FG
+  const seenPlanCodes = new Set<string>();
+  for (const item of itemRows) {
+    const sc = normalizeCodeStrict(item.itemCode);
+    const dedupeKey = `${item.category}::${sc}`;
+    if (seenPlanCodes.has(dedupeKey)) continue;
+    seenPlanCodes.add(dedupeKey);
+    if (!fgCodeStock.has(sc)) planNotInSource.set(item.category, (planNotInSource.get(item.category) ?? 0) + 1);
+  }
+  const sourceNotInPlanCodes: Array<{ code: string; stock: number }> = [];
+  for (const [sc, qty] of fgCodeStock) {
+    if (!planStrictCodes.has(sc) && qty > 0) sourceNotInPlanCodes.push({ code: sc, stock: Math.round(qty) });
+  }
+  const planNotInSourceTotal = [...planNotInSource.values()].reduce((a, b) => a + b, 0);
+  checks.push({
+    name: `Item coverage: ${sourceNotInPlanCodes.length} source codes not in plan / ${planNotInSourceTotal} plan codes not in source (reported)`,
+    expected: sourceNotInPlanCodes.length + planNotInSourceTotal,
+    actual: sourceNotInPlanCodes.length + planNotInSourceTotal,
+    pass: true,
+    tolerance: "reported",
+  });
 
   // ── Applied multiplier lock (exact match) ───────────────────────────────────
   // Catches any recompute that lets Suggested silently replace the business multiplier.
@@ -1548,7 +1741,20 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
   const allPass = checks.every((c) => c.pass);
   const failCount = checks.filter((c) => !c.pass).length;
 
-  res.json({ month, segment, allPass, passCount: checks.length - failCount, failCount, checks });
+  res.json({
+    month,
+    segment,
+    allPass,
+    passCount: checks.length - failCount,
+    failCount,
+    checks,
+    itemCoverage: {
+      sourceNotInPlan: sourceNotInPlanCodes.sort((a, b) => b.stock - a.stock).slice(0, 50),
+      sourceNotInPlanCount: sourceNotInPlanCodes.length,
+      planNotInSourceByCategory: Object.fromEntries(planNotInSource),
+      planNotInSourceCount: planNotInSourceTotal,
+    },
+  });
 });
 
 // ── GET /plan/plumbing-monitoring ─────────────────────────────────────────────
