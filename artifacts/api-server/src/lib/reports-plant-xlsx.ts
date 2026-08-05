@@ -41,7 +41,7 @@ function addTitleBlock(ws: ExcelJS.Worksheet, title: string, sub: string, colSpa
 
 export async function generatePlantXlsx(bundle: FullBundle): Promise<Buffer> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const ExcelJS = require("exceljs") as typeof import("exceljs").default;
+  const ExcelJS = require("exceljs") as typeof import("exceljs");
   const { plant, categories, items, dailySeries, variancePareto, warnings, recommendations, context } = bundle;
   const wb = new ExcelJS.Workbook();
   wb.creator = "PTMT Production";

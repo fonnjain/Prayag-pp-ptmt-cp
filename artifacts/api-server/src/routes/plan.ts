@@ -1277,7 +1277,7 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     // having it at the plant level makes it immediately visible in summary views.
     {
       const gt = roundInt(grandTotal);
-      const gtPct = PLUMBING_GRAND_TOTAL === 0 ? (gt === 0 ? 0 : Infinity)
+      const gtPct = (PLUMBING_GRAND_TOTAL as number) === 0 ? (gt === 0 ? 0 : Infinity)
         : Math.abs(gt - PLUMBING_GRAND_TOTAL) / PLUMBING_GRAND_TOTAL;
       checks.push({
         name: "Grand total (±0.1%)",

@@ -150,7 +150,7 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
 // ─── GET /corrective/runs ────────────────────────────────────────────────────
 router.get("/corrective/runs", async (req, res): Promise<void> => {
   const month = req.query.month ? String(req.query.month) : undefined;
-  const segment = req.query.segment ? String(req.query.segment) : undefined;
+  const segment = req.query.segment ? String(req.query.segment) : "PTMT";
 
   let query = db
     .select()
@@ -191,10 +191,18 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
 
-  const [run] = await db.select().from(correctivePlanRunsTable).where(eq(correctivePlanRunsTable.id, id));
-  if (!run) { res.status(404).json({ error: "Run not found" }); return; }
+  const [run] = await db.select()
+    .from(correctivePlanRunsTable)
+    .where(and(eq(correctivePlanRunsTable.month, month), eq(correctivePlanRunsTable.segment, segment)))
+    .orderBy(desc(correctivePlanRunsTable.createdAt))
+    .limit(1);
 
-  const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, id));
+  if (!run) {
+    res.status(404).json({ error: `No corrective run found for ${month} / ${segment}. Run the corrective re-plan first.` });
+    return;
+  }
+
+  const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
 
   res.json({
     runId: run.id,
@@ -536,18 +544,19 @@ async function buildCorrectiveDetailExcel(
 
 // ─── GET /corrective/validate/schema-parity ──────────────────────────────────
 router.get("/corrective/validate/schema-parity", async (req, res): Promise<void> => {
-  const month   = req.query.month   ? String(req.query.month)   : undefined;
-  const segment = req.query.segment ? String(req.query.segment) : "Plumbing";
+  const month = req.query.month ? String(req.query.month) : undefined;
+  const segment = req.query.segment ? String(req.query.segment) : "PTMT";
 
   if (!month) { res.status(400).json({ error: "month is required" }); return; }
 
   const [run] = await db.select()
     .from(correctivePlanRunsTable)
     .where(and(eq(correctivePlanRunsTable.month, month), eq(correctivePlanRunsTable.segment, segment)))
-    .orderBy(desc(correctivePlanRunsTable.createdAt)).limit(1);
+    .orderBy(desc(correctivePlanRunsTable.createdAt))
+    .limit(1);
 
   if (!run) {
-    res.status(404).json({ error: `No corrective run for ${month}/${segment}. Run the corrective re-plan first.` });
+    res.status(404).json({ error: `No corrective run found for ${month} / ${segment}. Run the corrective re-plan first.` });
     return;
   }
 
@@ -571,6 +580,11 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
     minProduction: Math.round(i.originalPlan),
     maxProduction: Math.round(i.planRev),
     order: 0,
+    stockNeedsReview: false,
+    achievementPct: null,
+    cover: "OS" as const,
+    week: null,
+    w1: 0, w2: 0, w3: 0, w4: 0,
   }));
   const planSummary = summarizePlan(planItems);
   const reqCats     = segment === "Plumbing" ? PLUMBING_CATS_ORDER : undefined;
@@ -578,9 +592,9 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
 
   // 3. Parse both workbooks with ExcelJS
   const corrWb = new ExcelJS.Workbook();
-  await corrWb.xlsx.load(corrStdBuffer);
+  await corrWb.xlsx.load(corrStdBuffer as unknown as ArrayBuffer);
   const planWb = new ExcelJS.Workbook();
-  await planWb.xlsx.load(planBuffer);
+  await planWb.xlsx.load(planBuffer as unknown as ArrayBuffer);
 
   const corrSheets = corrWb.worksheets.map(s => s.name);
   const planSheets = planWb.worksheets.map(s => s.name);
@@ -660,23 +674,33 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
 
 // ─── GET /corrective/runs/:id/export/excel ───────────────────────────────────
 router.get("/corrective/runs/:id/export/excel", async (req, res): Promise<void> => {
-  const id     = parseInt(req.params.id, 10);
+  const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
-  const format = req.query.format ? String(req.query.format) : "detail";
+  const format  = req.query.format  ? String(req.query.format)  : "detail";
 
-  const [run] = await db.select().from(correctivePlanRunsTable).where(eq(correctivePlanRunsTable.id, id));
-  if (!run) { res.status(404).json({ error: "Run not found" }); return; }
+  if (!month) { res.status(400).json({ error: "month is required" }); return; }
 
-  const items    = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, id));
-  const segLabel = run.segment ?? "PTMT";
+  const [run] = await db.select()
+    .from(correctivePlanRunsTable)
+    .where(and(eq(correctivePlanRunsTable.month, month), eq(correctivePlanRunsTable.segment, segment)))
+    .orderBy(desc(correctivePlanRunsTable.createdAt))
+    .limit(1);
+
+  if (!run) {
+    res.status(404).json({ error: `No corrective run found for ${month} / ${segment}. Run the corrective re-plan first.` });
+    return;
+  }
+
+  const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
+      const segLabel = run.segment ?? "PTMT";
 
   let buffer: Buffer;
   let suffix: string;
   if (format === "standard") {
-    buffer = await buildCorrectiveStandardExcel(run, items, segLabel);
+    buffer = await buildCorrectiveStandardExcel(run, items, segment);
     suffix = "Standard";
   } else {
-    const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segLabel));
+    const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment));
     buffer = await buildCorrectiveDetailExcel(run, items, capRows, segLabel);
     suffix = "Detail";
   }
@@ -691,10 +715,18 @@ router.get("/corrective/runs/:id/export/pdf", async (req, res): Promise<void> =>
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
 
-  const [run] = await db.select().from(correctivePlanRunsTable).where(eq(correctivePlanRunsTable.id, id));
-  if (!run) { res.status(404).json({ error: "Run not found" }); return; }
+  const [run] = await db.select()
+    .from(correctivePlanRunsTable)
+    .where(and(eq(correctivePlanRunsTable.month, month), eq(correctivePlanRunsTable.segment, segment)))
+    .orderBy(desc(correctivePlanRunsTable.createdAt))
+    .limit(1);
 
-  const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, id));
+  if (!run) {
+    res.status(404).json({ error: `No corrective run found for ${month} / ${segment}. Run the corrective re-plan first.` });
+    return;
+  }
+
+  const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
 
   try {
     const html = buildCorrectivePdfHtml(run, items as unknown as CorrectiveItemResult[]);
@@ -719,7 +751,7 @@ router.get("/corrective/runs/:id/export/pdf", async (req, res): Promise<void> =>
 
 // ─── GET /corrective/export/excel?month=&segment=&format= ────────────────────
 router.get("/corrective/export/excel", async (req, res): Promise<void> => {
-  const month   = req.query.month   ? String(req.query.month)   : undefined;
+  const month = req.query.month ? String(req.query.month) : undefined;
   const segment = req.query.segment ? String(req.query.segment) : "PTMT";
   const format  = req.query.format  ? String(req.query.format)  : "detail";
 

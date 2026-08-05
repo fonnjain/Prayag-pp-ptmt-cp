@@ -25,6 +25,7 @@ import {
   DEFAULT_WARNING_THRESHOLDS,
   type WarningThresholds,
   type CategoryPace,
+  type ItemWeightMap,
   type Warning,
 } from "../lib/monitoring-calc";
 import { logger } from "../lib/logger";
@@ -77,7 +78,7 @@ async function loadOverridesForMonth(month: string): Promise<Map<string, number>
 // ─── PTMT daily-actuals aggregation (mirrors computePlumbingMonitoringPayload) ──
 type PtmtActuals = ReturnType<typeof computePtmtActuals>;
 function computePtmtActuals(
-  planItems: { itemCode: string; category: string; maxProduction: number; [k: string]: unknown }[],
+  planItems: { itemCode: string; category: string; maxProduction: number; w1?: number; w2?: number; w3?: number; w4?: number }[],
   actuals: DailyActualRow[],
   pcConversion: { targetPcsByCategory: Map<string, number> },
 ) {
@@ -88,10 +89,10 @@ function computePtmtActuals(
     const norm = normalizeCodeStrict(item.itemCode);
     if (!codeToCategory.has(norm)) codeToCategory.set(norm, item.category);
     const arr = catRelease.get(item.category) ?? [0, 0, 0, 0];
-    arr[0] += (item as Record<string, number>)["w1"] ?? 0;
-    arr[1] += (item as Record<string, number>)["w2"] ?? 0;
-    arr[2] += (item as Record<string, number>)["w3"] ?? 0;
-    arr[3] += (item as Record<string, number>)["w4"] ?? 0;
+    arr[0] += item.w1 ?? 0;
+    arr[1] += item.w2 ?? 0;
+    arr[2] += item.w3 ?? 0;
+    arr[3] += item.w4 ?? 0;
     catRelease.set(item.category, arr);
   }
 

@@ -156,7 +156,7 @@ function addSummarySheet(workbook: ExcelJS.Workbook, month: string, totalsRows: 
 
 export async function exportWeeklyReleaseExcel(month: string, items: CalcPlanItem[]): Promise<Buffer> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const ExcelJS = require("exceljs") as typeof import("exceljs").default;
+  const ExcelJS = require("exceljs") as typeof import("exceljs");
   const workbook = new ExcelJS.Workbook();
 
   const byCategory = new Map<string, CalcPlanItem[]>();
