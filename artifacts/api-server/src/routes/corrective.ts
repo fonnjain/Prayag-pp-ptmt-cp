@@ -193,12 +193,11 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
 
   const [run] = await db.select()
     .from(correctivePlanRunsTable)
-    .where(and(eq(correctivePlanRunsTable.month, month), eq(correctivePlanRunsTable.segment, segment)))
-    .orderBy(desc(correctivePlanRunsTable.createdAt))
+    .where(eq(correctivePlanRunsTable.id, id))
     .limit(1);
 
   if (!run) {
-    res.status(404).json({ error: `No corrective run found for ${month} / ${segment}. Run the corrective re-plan first.` });
+    res.status(404).json({ error: `No corrective run found with id ${id}.` });
     return;
   }
 
@@ -678,29 +677,26 @@ router.get("/corrective/runs/:id/export/excel", async (req, res): Promise<void> 
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
   const format  = req.query.format  ? String(req.query.format)  : "detail";
 
-  if (!month) { res.status(400).json({ error: "month is required" }); return; }
-
   const [run] = await db.select()
     .from(correctivePlanRunsTable)
-    .where(and(eq(correctivePlanRunsTable.month, month), eq(correctivePlanRunsTable.segment, segment)))
-    .orderBy(desc(correctivePlanRunsTable.createdAt))
+    .where(eq(correctivePlanRunsTable.id, id))
     .limit(1);
 
   if (!run) {
-    res.status(404).json({ error: `No corrective run found for ${month} / ${segment}. Run the corrective re-plan first.` });
+    res.status(404).json({ error: `No corrective run found with id ${id}.` });
     return;
   }
 
   const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
-      const segLabel = run.segment ?? "PTMT";
+  const segLabel = run.segment ?? "PTMT";
 
   let buffer: Buffer;
   let suffix: string;
   if (format === "standard") {
-    buffer = await buildCorrectiveStandardExcel(run, items, segment);
+    buffer = await buildCorrectiveStandardExcel(run, items, segLabel);
     suffix = "Standard";
   } else {
-    const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment));
+    const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segLabel));
     buffer = await buildCorrectiveDetailExcel(run, items, capRows, segLabel);
     suffix = "Detail";
   }
@@ -717,12 +713,11 @@ router.get("/corrective/runs/:id/export/pdf", async (req, res): Promise<void> =>
 
   const [run] = await db.select()
     .from(correctivePlanRunsTable)
-    .where(and(eq(correctivePlanRunsTable.month, month), eq(correctivePlanRunsTable.segment, segment)))
-    .orderBy(desc(correctivePlanRunsTable.createdAt))
+    .where(eq(correctivePlanRunsTable.id, id))
     .limit(1);
 
   if (!run) {
-    res.status(404).json({ error: `No corrective run found for ${month} / ${segment}. Run the corrective re-plan first.` });
+    res.status(404).json({ error: `No corrective run found with id ${id}.` });
     return;
   }
 
