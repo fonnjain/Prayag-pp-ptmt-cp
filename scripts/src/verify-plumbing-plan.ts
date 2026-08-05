@@ -658,6 +658,22 @@ async function main(): Promise<void> {
         expected: 1, actual: xlOk ? 1 : 0,
         pass: xlOk, tolerance: `content-disposition contains ${olderRun.segment}_Corrective_Plan_${olderRun.month}_W${olderRun.weekClosed}_`,
       });
+
+      // NC14c: PDF export for the same id must also cite that run's month/week —
+      // filename comes from the run row loaded by id, so a regression that renders
+      // the latest run instead would surface as the wrong month/week here.
+      console.log(`  NC14c: generating PDF for run #${olderRun.id} (headless Chrome, may take ~15s) …`);
+      const pdfResp = await fetch(`${API_BASE}/api/corrective/runs/${olderRun.id}/export/pdf`);
+      const pdfDispo = pdfResp.headers.get("content-disposition") ?? "";
+      const pdfType  = pdfResp.headers.get("content-type") ?? "";
+      const pdfName  = `${olderRun.segment}_Corrective_Plan_${olderRun.month}_W${olderRun.weekClosed}.pdf`;
+      const pdfOk    = pdfResp.ok && pdfType.includes("application/pdf") && pdfDispo.includes(pdfName);
+      if (!pdfOk) console.error(`  NC14c fail: status=${pdfResp.status} type=${pdfType} dispo=${pdfDispo}`);
+      newChecks.push({
+        name: `NC14c · corrective/runs/${olderRun.id}/export/pdf · PDF filename cites ${olderRun.month} W${olderRun.weekClosed}`,
+        expected: 1, actual: pdfOk ? 1 : 0,
+        pass: pdfOk, tolerance: `application/pdf + content-disposition contains ${pdfName}`,
+      });
     }
 
   } catch (err) {
