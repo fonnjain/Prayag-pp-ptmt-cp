@@ -18,6 +18,7 @@ import {
   FileText,
   Cpu,
   Tag,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -53,6 +54,7 @@ const PRESET_LABELS: Record<DatePreset, string> = {
 const PLANT_PATHS = new Set([
   "/plant", "/plant/velocity", "/plant/attainment", "/plant/warnings",
   "/plant/recommendations", "/plant/trend", "/plant/config", "/plant/reports", "/plant/categories",
+  "/plant/plan-import",
 ]);
 
 // ─── Cross-App Nav ────────────────────────────────────────────────────────────
@@ -105,6 +107,7 @@ export function AppLayout({
     { href: "/plant/recommendations",  label: "Recommendations",  icon: ListChecks        },
     { href: "/plant/trend",            label: "Trend",            icon: BarChart2         },
     { href: "/plant/config",           label: "Config",           icon: SlidersHorizontal },
+    { href: "/plant/plan-import",      label: "Plan Import",      icon: Upload            },
     { href: "/plant/reports",          label: "Reports",          icon: FileText          },
     { href: "/actions",                label: "Actions",          icon: CheckSquare       },
     { href: "/backlog",                label: "Backlog",          icon: PackageMinus      },
@@ -161,6 +164,7 @@ export function AppLayout({
               {sectionLabel("Plant Level", Factory)}
               <nav className="space-y-1">
                 {navLink({ href: "/plumbing", label: "Plan Overview", icon: LayoutDashboard })}
+                {navLink({ href: "/plumbing/plan-import", label: "Plan Import", icon: Upload })}
               </nav>
               {sectionLabel("Machine Level", Cpu)}
               <nav className="space-y-1">

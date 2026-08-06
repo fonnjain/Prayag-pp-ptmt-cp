@@ -37,3 +37,10 @@ uri = "file://reports/item-master-coverage-ptmt-2026-08.xlsx"
 type = "table"
 title = "PTMT Item-Master Coverage Report — Aug 2026"
 description = "A) FG stock codes absent from the item master (354 codes / 137,766 units); B) plan rows with no FG stock entry (1,829 rows, 49,098 planned Max — Ball Cock dominant)."
+
+[[outputs]]
+id = "WkUmx-5z5kajI7cM3flcY"
+uri = "file://reports/Plant_Plan_Import_Feature_Documentation.docx"
+type = "word_document"
+title = "Plant Plan Import — Feature Documentation"
+description = "Complete documentation of the new Excel import: where to find it, how to use it, expected file format, what's stored, summary view, history, API endpoints, and verified test results."

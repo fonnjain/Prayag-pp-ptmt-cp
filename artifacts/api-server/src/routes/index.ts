@@ -15,6 +15,7 @@ import capacityRouter from "./capacity";
 import apiKeysRouter from "./api-keys";
 import plantLiveRouter from "./plant-live";
 import sheetConfigRouter from "./sheet-config";
+import plantPlanUploadRouter from "./plant-plan-upload";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(capacityRouter);
 router.use(apiKeysRouter);
 router.use(plantLiveRouter);
 router.use(sheetConfigRouter);
+router.use("/monitoring", plantPlanUploadRouter);
 
 export default router;
