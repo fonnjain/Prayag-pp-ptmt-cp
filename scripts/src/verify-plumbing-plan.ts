@@ -71,6 +71,63 @@ function fmt(n: number): string {
   return n.toLocaleString("en-IN");
 }
 
+/**
+ * JSON fetch with retry for the "New checks" section.
+ * The main validate calls go through callEndpoint (which retries on Sheets
+ * quota errors), but the endpoint-level checks previously used raw fetch —
+ * a transient 429/5xx from a live-Sheets-backed endpoint could flake a single
+ * assertion that then passed on re-run.
+ */
+async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const delays = [5_000, 15_000, 30_000];
+  let lastErr: Error | undefined;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      const res = await fetch(url, init);
+      if (res.ok) return (await res.json()) as T;
+      const body = await res.text().catch(() => "");
+      lastErr = new Error(`HTTP ${res.status} from ${url}: ${body.slice(0, 200)}`);
+      if (attempt < delays.length && [429, 500, 502, 503].includes(res.status)) {
+        const wait = delays[attempt]!;
+        console.log(`    ⏳  Got ${res.status} from ${url} — retrying in ${wait / 1000}s …`);
+        await new Promise((r) => setTimeout(r, wait));
+        continue;
+      }
+      throw lastErr;
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      if (attempt < delays.length) {
+        const wait = delays[attempt]!;
+        console.log(`    ⏳  Fetch error (${lastErr.message.slice(0, 120)}) — retrying in ${wait / 1000}s …`);
+        await new Promise((r) => setTimeout(r, wait));
+        continue;
+      }
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Evaluate a live-data-backed check; if it fails on the first pass, wait and
+ * re-evaluate once before recording a failure.  This makes checks that read
+ * live Sheets data (NC11 management-view goldens, NC13 cross-source
+ * reconciliation) deterministic against transient partial reads / mid-fetch
+ * drift while still catching persistent regressions.
+ */
+async function evaluateWithRetry(
+  label: string,
+  compute: () => Promise<CheckResult>,
+  retryDelayMs = 20_000,
+): Promise<CheckResult> {
+  const first = await compute();
+  if (first.pass) return first;
+  console.log(`    ⚠  ${label} failed once — re-evaluating in ${retryDelayMs / 1000}s to rule out transient live-data flake …`);
+  await new Promise((r) => setTimeout(r, retryDelayMs));
+  const second = await compute();
+  if (second.pass) console.log(`    ✅  ${label} passed on re-evaluation (transient flake absorbed)`);
+  return second;
+}
+
 function printSection(title: string, checks: CheckResult[]): void {
   console.log(`\n${"─".repeat(60)}`);
   console.log(`  ${title}`);
@@ -368,8 +425,8 @@ async function main(): Promise<void> {
   try {
     // NC1: monitoring/dashboard segment isolation — PTMT and PLUMBING return different data shapes
     const [ptmtDash, plumbDash] = await Promise.all([
-      fetch(`${API_BASE}/api/monitoring/dashboard?month=${PLUMBING_MONTH}&segment=PTMT`).then((r) => r.json() as Promise<Record<string, unknown>>),
-      fetch(`${API_BASE}/api/monitoring/dashboard?month=${PLUMBING_MONTH}&segment=PLUMBING`).then((r) => r.json() as Promise<Record<string, unknown>>),
+      fetchJson<Record<string, unknown>>(`${API_BASE}/api/monitoring/dashboard?month=${PLUMBING_MONTH}&segment=PTMT`),
+      fetchJson<Record<string, unknown>>(`${API_BASE}/api/monitoring/dashboard?month=${PLUMBING_MONTH}&segment=PLUMBING`),
     ]);
     const ptmtPlant      = (ptmtDash?.plant as Record<string, unknown>) ?? {};
     const ptmtHasTarget  = typeof ptmtPlant.targetKg === "number" || typeof ptmtPlant.targetPcs === "number";
@@ -381,8 +438,7 @@ async function main(): Promise<void> {
     });
 
     // NC2: Plumbing monitoring categories have `produced` field, at least one non-zero
-    const monData = await fetch(`${API_BASE}/api/plan/plumbing-monitoring?month=${PLUMBING_MONTH}`)
-      .then((r) => r.json() as Promise<Record<string, unknown>>);
+    const monData = await fetchJson<Record<string, unknown>>(`${API_BASE}/api/plan/plumbing-monitoring?month=${PLUMBING_MONTH}`);
     const cats = (monData?.categories as Array<Record<string, unknown>>) ?? [];
     const anyProduced = cats.some((c) => ((c["produced"] as number) ?? 0) > 0);
     newChecks.push({
@@ -403,8 +459,7 @@ async function main(): Promise<void> {
     });
 
     // NC3: corrective workingDaysRemaining reflects today (not the full-month total)
-    const replanLive = await fetch(`${API_BASE}/api/plan/corrective-replan?month=${PLUMBING_MONTH}`)
-      .then((r) => r.json() as Promise<Record<string, unknown>>);
+    const replanLive = await fetchJson<Record<string, unknown>>(`${API_BASE}/api/plan/corrective-replan?month=${PLUMBING_MONTH}`);
     const todayStr   = new Date().toISOString().slice(0, 10);
     const inCurrMo   = todayStr.startsWith(PLUMBING_MONTH);
     const fullMonthWdr = 27; // July 2026 has 27 working days
@@ -457,12 +512,11 @@ async function main(): Promise<void> {
     });
 
     // NC7: PTMT corrective POST weekClosed=0 → wdr reflects today, not the full month
-    const ptmtReplanResp = await fetch(`${API_BASE}/api/corrective/replan`, {
+    const ptmtReplan = await fetchJson<Record<string, unknown>>(`${API_BASE}/api/corrective/replan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ month: PTMT_MONTH, segment: "PTMT", weekClosed: 0, dryRun: true }),
     });
-    const ptmtReplan = await ptmtReplanResp.json() as Record<string, unknown>;
     const ptmtWdr     = (ptmtReplan?.workingDaysRemaining as number) ?? 27;
     const fullMonWdr  = 27; // July 2026
     const todayInMo   = new Date().toISOString().slice(0, 7) === PTMT_MONTH;
@@ -474,8 +528,7 @@ async function main(): Promise<void> {
     });
 
     // NC8: PTMT weekly release — plant W1+W2+W3+W4 ≈ plan total (within 0.5%) per category
-    const ptmtPlanItems = await fetch(`${API_BASE}/api/plan?month=${PTMT_PLAN_MONTH}&segment=PTMT`)
-      .then((r) => r.json() as Promise<Array<Record<string, unknown>>>);
+    const ptmtPlanItems = await fetchJson<Array<Record<string, unknown>>>(`${API_BASE}/api/plan?month=${PTMT_PLAN_MONTH}&segment=PTMT`);
     const ptmtCatMap = new Map<string, { w1: number; w2: number; w3: number; w4: number; plan: number }>();
     let ptmtUnreleasedPcs = 0; // items with maxProduction > 0 but week=null (cover beyond top band) — engine intentionally defers these
     for (const it of ptmtPlanItems) {
@@ -536,15 +589,36 @@ async function main(): Promise<void> {
     // monitoring's static base plan.  A divergence > 2% would signal a real bug (e.g., monitoring
     // silently reading 0 while corrective reads 530K).
     // ptmtReplan was already fetched in NC7 (weekClosed=0, asOfDate=today).
-    const corrProd = (ptmtReplan?.producedToDate as number) ?? -1;
-    const monProd  = ptmtMappedDash;
-    const pctDiff  = corrProd > 0 ? Math.abs(monProd - corrProd) / corrProd : 1;
-    const crossSourceOk = corrProd >= 0 && pctDiff <= 0.02;
-    newChecks.push({
-      name: `NC13 · Cross-source · monitoring (${Math.round(monProd)}) vs corrective (${corrProd}) ±2% (diff=${(pctDiff*100).toFixed(2)}%)`,
-      expected: corrProd, actual: Math.round(monProd),
-      pass: crossSourceOk, tolerance: "±2% (architectural: corrective adds new-order items)",
-    });
+    // Both sources read live Sheets data; on a first-pass failure, refetch BOTH
+    // at the same moment and re-evaluate once (rules out mid-suite drift and
+    // transient partial reads — the historical flake in this section).
+    let nc13Replan = ptmtReplan;
+    let nc13MonProd = ptmtMappedDash;
+    let nc13Refetched = false;
+    newChecks.push(await evaluateWithRetry("NC13", async () => {
+      if (nc13Refetched) {
+        const [freshDash, freshReplan] = await Promise.all([
+          fetchJson<Record<string, unknown>>(`${API_BASE}/api/monitoring/dashboard?month=${PLUMBING_MONTH}&segment=PTMT`),
+          fetchJson<Record<string, unknown>>(`${API_BASE}/api/corrective/replan`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ month: PTMT_MONTH, segment: "PTMT", weekClosed: 0, dryRun: true }),
+          }),
+        ]);
+        nc13Replan  = freshReplan;
+        nc13MonProd = (((freshDash?.plant as Record<string, unknown>) ?? {}).mapped as number) ?? 0;
+      }
+      nc13Refetched = true; // any subsequent evaluation refetches both sources together
+      const corrProd = (nc13Replan?.producedToDate as number) ?? -1;
+      const monProd  = nc13MonProd;
+      const pctDiff  = corrProd > 0 ? Math.abs(monProd - corrProd) / corrProd : 1;
+      const crossSourceOk = corrProd >= 0 && pctDiff <= 0.02;
+      return {
+        name: `NC13 · Cross-source · monitoring (${Math.round(monProd)}) vs corrective (${corrProd}) ±2% (diff=${(pctDiff*100).toFixed(2)}%)`,
+        expected: corrProd, actual: Math.round(monProd),
+        pass: crossSourceOk, tolerance: "±2% (architectural: corrective adds new-order items)",
+      };
+    }));
 
     // NC9: PTMT plan run save + retrieve (infrastructure parity with Plumbing)
     const ptmtRunResp = await fetch(`${API_BASE}/api/plan/runs`, {
@@ -568,55 +642,61 @@ async function main(): Promise<void> {
     });
 
     // NC10: Ops overview segment filter — PTMT ≠ Plumbing ≠ Combined orderValue
-    const [opsP, opsT, opsC] = await Promise.all([
-      fetch(`${API_BASE}/api/ops/overview?fy=2026-27&segment=Plumbing`).then((r) => r.json() as Promise<Record<string, unknown>>),
-      fetch(`${API_BASE}/api/ops/overview?fy=2026-27&segment=PTMT`).then((r) => r.json() as Promise<Record<string, unknown>>),
-      fetch(`${API_BASE}/api/ops/overview?fy=2026-27&segment=Combined`).then((r) => r.json() as Promise<Record<string, unknown>>),
-    ]);
-    const opsOvPtmt  = (opsT.orderValue as number) ?? 0;
-    const opsOvPlumb = (opsP.orderValue as number) ?? 0;
-    const opsOvComb  = (opsC.orderValue as number) ?? 0;
-    const opsSegOk   = opsOvPtmt > 0 && opsOvPlumb > 0 && opsOvComb > 0
-                     && opsOvPtmt !== opsOvPlumb
-                     && opsOvComb > opsOvPtmt
-                     && opsOvComb > opsOvPlumb;
-    newChecks.push({
-      name: `NC10 · Ops overview · PTMT (${fmt(opsOvPtmt)}) ≠ Plumbing (${fmt(opsOvPlumb)}) ≠ Combined (${fmt(opsOvComb)})`,
-      expected: 1, actual: opsSegOk ? 1 : 0,
-      pass: opsSegOk, tolerance: "PTMT≠Plumbing, Combined>both",
-    });
+    // Live-Sheets-backed; fetch the three segments SEQUENTIALLY (concurrent
+    // fetches under quota pressure produced a transient partial Combined value
+    // where Combined < Plumbing — the historical flake in this section), and
+    // re-evaluate once on failure.
+    newChecks.push(await evaluateWithRetry("NC10", async () => {
+      const opsP = await fetchJson<Record<string, unknown>>(`${API_BASE}/api/ops/overview?fy=2026-27&segment=Plumbing`);
+      const opsT = await fetchJson<Record<string, unknown>>(`${API_BASE}/api/ops/overview?fy=2026-27&segment=PTMT`);
+      const opsC = await fetchJson<Record<string, unknown>>(`${API_BASE}/api/ops/overview?fy=2026-27&segment=Combined`);
+      const opsOvPtmt  = (opsT.orderValue as number) ?? 0;
+      const opsOvPlumb = (opsP.orderValue as number) ?? 0;
+      const opsOvComb  = (opsC.orderValue as number) ?? 0;
+      const opsSegOk   = opsOvPtmt > 0 && opsOvPlumb > 0 && opsOvComb > 0
+                       && opsOvPtmt !== opsOvPlumb
+                       && opsOvComb > opsOvPtmt
+                       && opsOvComb > opsOvPlumb;
+      return {
+        name: `NC10 · Ops overview · PTMT (${fmt(opsOvPtmt)}) ≠ Plumbing (${fmt(opsOvPlumb)}) ≠ Combined (${fmt(opsOvComb)})`,
+        expected: 1, actual: opsSegOk ? 1 : 0,
+        pass: opsSegOk, tolerance: "PTMT≠Plumbing, Combined>both",
+      };
+    }, 30_000));
 
     // NC11: Management-view golden values — item 144-O / BURGUNDY (Cocks Standard)
-    const mgmtData = await fetch(`${API_BASE}/api/ops/management-view?month=${PTMT_MONTH}`)
-      .then((r) => r.json() as Promise<Record<string, unknown>>);
-    const mgmtCats  = (mgmtData?.categories as Array<Record<string, unknown>>) ?? [];
-    let mgmtItem: Record<string, unknown> | undefined;
-    for (const cat of mgmtCats) {
-      const items = (cat.items as Array<Record<string, unknown>>) ?? [];
-      mgmtItem = items.find((i) => i.itemCode === "144-O" && i.colour === "BURGUNDY");
-      if (mgmtItem) break;
-    }
-    // Reference values (2026-07-28 snapshot, ±1% tolerance)
-    const MGMT_E = 7552, MGMT_F = 7587, MGMT_G = 7534, MGMT_H = 6146, MGMT_I = 4620;
-    const tol1Pct = (actual: number, expected: number) => expected > 0 && Math.abs(actual - expected) / expected < 0.01;
-    const mgmtOk = !!mgmtItem
-      && tol1Pct((mgmtItem.E as number) ?? 0, MGMT_E)
-      && tol1Pct((mgmtItem.F as number) ?? 0, MGMT_F)
-      && tol1Pct((mgmtItem.G as number) ?? 0, MGMT_G)
-      && tol1Pct((mgmtItem.H as number) ?? 0, MGMT_H)
-      && tol1Pct((mgmtItem.I as number) ?? 0, MGMT_I);
-    newChecks.push({
-      name: `NC11 · Management-view · 144-O/BURGUNDY E/F/G/H/I within ±1% of golden`,
-      expected: 1, actual: mgmtOk ? 1 : 0,
-      pass: mgmtOk, tolerance: "E≈7552 F≈7587 G≈7534 H≈6146 I≈4620 (±1%)",
-    });
+    // Backed by a live-Sheets recompute behind a 5-min cache; re-evaluate once
+    // on failure to absorb a transient partial read.
+    newChecks.push(await evaluateWithRetry("NC11", async () => {
+      const mgmtData = await fetchJson<Record<string, unknown>>(`${API_BASE}/api/ops/management-view?month=${PTMT_MONTH}`);
+      const mgmtCats  = (mgmtData?.categories as Array<Record<string, unknown>>) ?? [];
+      let mgmtItem: Record<string, unknown> | undefined;
+      for (const cat of mgmtCats) {
+        const items = (cat.items as Array<Record<string, unknown>>) ?? [];
+        mgmtItem = items.find((i) => i.itemCode === "144-O" && i.colour === "BURGUNDY");
+        if (mgmtItem) break;
+      }
+      // Reference values (2026-07-28 snapshot, ±1% tolerance)
+      const MGMT_E = 7552, MGMT_F = 7587, MGMT_G = 7534, MGMT_H = 6146, MGMT_I = 4620;
+      const tol1Pct = (actual: number, expected: number) => expected > 0 && Math.abs(actual - expected) / expected < 0.01;
+      const mgmtOk = !!mgmtItem
+        && tol1Pct((mgmtItem.E as number) ?? 0, MGMT_E)
+        && tol1Pct((mgmtItem.F as number) ?? 0, MGMT_F)
+        && tol1Pct((mgmtItem.G as number) ?? 0, MGMT_G)
+        && tol1Pct((mgmtItem.H as number) ?? 0, MGMT_H)
+        && tol1Pct((mgmtItem.I as number) ?? 0, MGMT_I);
+      return {
+        name: `NC11 · Management-view · 144-O/BURGUNDY E/F/G/H/I within ±1% of golden`,
+        expected: 1, actual: mgmtOk ? 1 : 0,
+        pass: mgmtOk, tolerance: "E≈7552 F≈7587 G≈7534 H≈6146 I≈4620 (±1%)",
+      };
+    }, 30_000));
 
     // NC12: GET /corrective/runs/:id must return the run you clicked, not the
     // latest run for that month/segment (regression: routes were once rewritten
     // to filter by undefined month/segment instead of the id).
     type RunListEntry = { id: number; month: string; segment: string; weekClosed: number; revisedMonthTotal: number; createdAt: string };
-    const allRuns = await fetch(`${API_BASE}/api/corrective/runs`)
-      .then((r) => r.json() as Promise<RunListEntry[]>);
+    const allRuns = await fetchJson<RunListEntry[]>(`${API_BASE}/api/corrective/runs`);
     // Pick an OLDER run: one that is not the newest id for its month+segment.
     const newestByKey = new Map<string, number>();
     for (const r of allRuns) {
@@ -634,8 +714,7 @@ async function main(): Promise<void> {
         expected: 1, actual: 0, pass: false, tolerance: "needs ≥1 corrective run",
       });
     } else {
-      const detail = await fetch(`${API_BASE}/api/corrective/runs/${olderRun.id}`)
-        .then((r) => r.json() as Promise<Record<string, unknown>>);
+      const detail = await fetchJson<Record<string, unknown>>(`${API_BASE}/api/corrective/runs/${olderRun.id}`);
       const byIdOk =
         (detail.runId as number) === olderRun.id &&
         (detail.month as string) === olderRun.month &&

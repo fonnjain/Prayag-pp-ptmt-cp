@@ -456,6 +456,10 @@ router.get("/ops/overview", async (req, res): Promise<void> => {
   const sheetId = ORDER_SHEET_IDS[fy];
   let orderValue = 0;
   let orderQty = 0;
+  // Track partial reads: if any monthly tab fails, the aggregate is incomplete
+  // and MUST NOT be cached (a cached partial "Combined" can transiently be
+  // smaller than "Plumbing", which is nonsensical downstream).
+  let partialRead = false;
 
   if (sheetId) {
     try {
@@ -472,9 +476,13 @@ router.get("/ops/overview", async (req, res): Promise<void> => {
             orderQty   += toNum(r["Quantity"]);
           }
           await new Promise((r) => setTimeout(r, 200));
-        } catch { /* skip */ }
+        } catch (err) {
+          partialRead = true;
+          logger.warn({ err, tab, segment }, "overview: monthly tab read failed — result will not be cached");
+        }
       }
     } catch (err) {
+      partialRead = true;
       logger.warn({ err }, "overview orders fetch failed");
     }
   }
@@ -514,7 +522,7 @@ router.get("/ops/overview", async (req, res): Promise<void> => {
     productionPlan,
     festivals: FESTIVAL_CONFIG,
   };
-  setCached(cacheKey, result);
+  if (!partialRead) setCached(cacheKey, result); // never cache a partial aggregate
   res.json(result);
 });
 

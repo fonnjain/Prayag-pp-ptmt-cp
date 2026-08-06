@@ -40,4 +40,5 @@
 - [Planning uploads-only isolation](planning-isolation.md) — plan build reads stock/pending from uploads only (loud named 422 when missing); sheet reads gated by allow-list guard in sheets.ts; Order column display-only.
 - [Plan-run baseline citation](plan-run-baseline.md) — corrective replans cite frozen plan runs; engine stays live unless route passes planRunId; cited runs undeletable; drift keys need category.
 - [Corrective run dedupe](corrective-run-dedupe.md) — fingerprint(Math.fround-quantized full content) + pg advisory lock; `real` columns break strict float equality.
+- [Ops overview partial cache](ops-overview-partial-cache.md) — never cache a live-sheet aggregate when any tab read failed; suite live checks use fetchJson + evaluateWithRetry.
 - [Plumbing machine cascade](plumbing-machine-cascade.md) — 9 PIPE + 24 MOULDING in plumbing_machine_capacity; cascade runs after annotateWeeklyRelease; AGRI Pipe → flex only (MC3/MC4/MC5); Solvent unconstrained; machineW1-W4 on PlanItemWithBom; DataPage has no month prop (panel derives from new Date()).
