@@ -1,6 +1,7 @@
 import { db, bufferCategoriesTable, weeklyReleaseBandsTable, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable, planRunsTable, planRunInputsTable, planRunResultsTable } from "@workspace/db";
 import type { CorrectiveWeekStat, CorrectiveWarning } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { fetchDailyActuals, type DailyActualRow } from "./plant-ingestion";
 import {
   fetchPlumbingSheet3Production,
@@ -16,6 +17,63 @@ import { annotateWeeklyRelease, type CalcPlanItem } from "./calc";
 import { logger } from "./logger";
 
 const round = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Deterministic SHA-256 fingerprint of the full persisted content of a
+ * corrective run (run-level fields + every item row + weekStats + warnings).
+ * Numbers are quantized to Postgres `real` (single precision, what the DB
+ * stores) so recomputing the fingerprint stays stable across float noise.
+ * Items are sorted by a stable key so ordering can't change the hash.
+ */
+function computeRunFingerprint(content: {
+  segment: string;
+  month: string;
+  weekClosed: number;
+  asOfDate: string | null;
+  note: string | null;
+  planRunId: number | null;
+  dailyCapacity: number;
+  workingDaysPerWeek: number;
+  producedToDate: number;
+  newOrdersQty: number;
+  originalMonthTotal: number;
+  revisedMonthTotal: number;
+  unfulfillableQty: number;
+  weekStats: CorrectiveWeekStat[];
+  warnings: CorrectiveWarning[];
+  items: CorrectiveItemResult[];
+}): string {
+  const q = (n: number | null) => (n == null ? null : Math.fround(n));
+  const payload = {
+    segment: content.segment,
+    month: content.month,
+    weekClosed: content.weekClosed,
+    asOfDate: content.asOfDate,
+    note: content.note,
+    planRunId: content.planRunId,
+    dailyCapacity: q(content.dailyCapacity),
+    workingDaysPerWeek: content.workingDaysPerWeek,
+    producedToDate: q(content.producedToDate),
+    newOrdersQty: q(content.newOrdersQty),
+    originalMonthTotal: q(content.originalMonthTotal),
+    revisedMonthTotal: q(content.revisedMonthTotal),
+    unfulfillableQty: q(content.unfulfillableQty),
+    weekStats: content.weekStats.map(w => [w.week, w.weekLabel, q(w.released), q(w.capacity), w.workingDays, q(w.produced), q(w.lag), q(w.loadFactor), w.status]),
+    warnings: content.warnings.map(w => [w.code, w.severity, w.message, q(w.value ?? null), q(w.threshold ?? null), w.category ?? null, w.items ?? null]),
+    items: [...content.items]
+      .sort((a, b) => (a.category + "::" + a.itemCode + "::" + a.colour).localeCompare(b.category + "::" + b.itemCode + "::" + b.colour))
+      .map(i => [
+        i.itemCode, i.colour, i.category,
+        q(i.avg3MoSale), q(i.bufferMultiplier), q(i.stockOpen), q(i.producedToDate), q(i.stockNow),
+        q(i.pendingAtPlan), q(i.pendingNow), q(i.pendingLastMonth),
+        q(i.originalPlan), i.originalWeek, q(i.bufferReqRev), q(i.planRev), q(i.remainingToProduce),
+        q(i.kgRev), q(i.remainingKg), q(i.deltaNewOrders), q(i.deltaProduction), q(i.deltaNet),
+        q(i.coverNow), i.newWeek, q(i.w1Rev), q(i.w2Rev), q(i.w3Rev), q(i.w4Rev),
+        i.status, i.isNewItem ? 1 : 0,
+      ]),
+  };
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+}
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -828,12 +886,19 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   }
 
   // ── Persist to DB (skipped for dry runs, e.g. the validate suite) ─────────
-  let run: typeof correctivePlanRunsTable.$inferSelect | undefined;
-  if (!input.dryRun) {
-  [run] = await db.insert(correctivePlanRunsTable).values({
+  // Duplicate guard: a deterministic SHA-256 fingerprint of the FULL persisted
+  // content (run fields + every item row + weekStats + warnings) is stored on
+  // each run. Inside a transaction serialized by a per-segment+month advisory
+  // lock, if the latest run carries the same fingerprint we reuse it instead
+  // of inserting — so the auto-sync scheduler, repeated UI clicks, and even
+  // concurrent requests can't pile identical runs into the history.
+  const fingerprint = computeRunFingerprint({
     segment,
     month,
     weekClosed,
+    asOfDate: effectiveAsOfDate ?? null,
+    note: note ?? null,
+    planRunId: input.planRunId ?? null,
     dailyCapacity: Math.round(totalDailyApplied),
     workingDaysPerWeek: globalWorkingDays,
     producedToDate: producedToDateTotal,
@@ -841,21 +906,61 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     originalMonthTotal,
     revisedMonthTotal,
     unfulfillableQty,
-    weekStatsJson: weekStats,
-    warningsJson: warnings,
-    asOfDate: effectiveAsOfDate ?? null,
-    planRunId: input.planRunId ?? null,
-    note: note ?? null,
-  }).returning();
+    weekStats,
+    warnings,
+    items,
+  });
 
-  if (run && items.length > 0) {
-    const runId = run.id;
-    const CHUNK = 200;
-    for (let i = 0; i < items.length; i += CHUNK) {
-      const chunk = items.slice(i, i + CHUNK);
-      await db.insert(correctivePlanItemsTable).values(
-        chunk.map(item => ({
-          runId,
+  let run: typeof correctivePlanRunsTable.$inferSelect | undefined;
+  let reusedExistingRun = false;
+  if (!input.dryRun) {
+  ({ run, reused: reusedExistingRun } = await db.transaction(async (tx) => {
+    // Serialize concurrent persists for the same segment+month for the
+    // duration of this transaction (lock releases automatically on commit).
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`corrective:${segment}:${month}`}))`);
+
+    const [latest] = await tx
+      .select()
+      .from(correctivePlanRunsTable)
+      .where(and(
+        eq(correctivePlanRunsTable.segment, segment),
+        eq(correctivePlanRunsTable.month, month),
+      ))
+      .orderBy(desc(correctivePlanRunsTable.id))
+      .limit(1);
+
+    if (latest && latest.fingerprint != null && latest.fingerprint === fingerprint) {
+      logger.info({ runId: latest.id, month, segment }, "corrective-engine: identical to latest run — reusing, not inserting");
+      return { run: latest, reused: true };
+    }
+
+    const [inserted] = await tx.insert(correctivePlanRunsTable).values({
+      segment,
+      month,
+      weekClosed,
+      dailyCapacity: Math.round(totalDailyApplied),
+      workingDaysPerWeek: globalWorkingDays,
+      producedToDate: producedToDateTotal,
+      newOrdersQty,
+      originalMonthTotal,
+      revisedMonthTotal,
+      unfulfillableQty,
+      weekStatsJson: weekStats,
+      warningsJson: warnings,
+      asOfDate: effectiveAsOfDate ?? null,
+      planRunId: input.planRunId ?? null,
+      note: note ?? null,
+      fingerprint,
+    }).returning();
+
+    if (inserted && items.length > 0) {
+      const runId = inserted.id;
+      const CHUNK = 200;
+      for (let i = 0; i < items.length; i += CHUNK) {
+        const chunk = items.slice(i, i + CHUNK);
+        await tx.insert(correctivePlanItemsTable).values(
+          chunk.map(item => ({
+            runId,
           itemCode: item.itemCode,
           colour: item.colour,
           category: item.category,
@@ -883,15 +988,18 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
           w2Rev: item.w2Rev,
           w3Rev: item.w3Rev,
           w4Rev: item.w4Rev,
-          status: item.status,
-          isNewItem: item.isNewItem ? 1 : 0,
-        })),
-      );
+            status: item.status,
+            isNewItem: item.isNewItem ? 1 : 0,
+          })),
+        );
+      }
     }
-  }
+    return { run: inserted, reused: false };
+  }));
   }
 
   logger.info({
+    reusedExistingRun,
     runId: run?.id, month, segment, items: items.length,
     producedToDate: producedToDateTotal, warnings: warnings.length,
     categories: categories.length, unplanned: unplannedProduction.length,

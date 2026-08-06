@@ -46,6 +46,9 @@ export const correctivePlanRunsTable = pgTable("corrective_plan_runs", {
   // Immutable plan run this corrective run measured against (NULL = live rebuild baseline)
   planRunId: integer("plan_run_id"),
   note: text("note"),
+  // SHA-256 of the full persisted run content (run fields + items + weekStats +
+  // warnings). Used by the duplicate-run guard; NULL on legacy rows.
+  fingerprint: text("fingerprint"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
