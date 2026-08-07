@@ -176,26 +176,28 @@ export type WorkbookDivision = "PTMT" | "PTMT-Machine" | "Plumbing";
 // All operational month/day math must use IST so a UTC-hosted server doesn't
 // lag the plant's calendar by up to 5.5 h around month rollover.
 
-function istDate(): Date {
-  return new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+// `now` defaults to the real clock; tests pass a fixed UTC instant to pin
+// boundary cases (IST-midnight straddle, Dec→Jan rollover).
+function istDate(now?: Date): Date {
+  return new Date((now ? now.getTime() : Date.now()) + 5.5 * 60 * 60 * 1000);
 }
 
 /** Current planning month (YYYY-MM) in IST. */
-export function istPlanningMonth(): string {
-  const d = istDate();
+export function istPlanningMonth(now?: Date): string {
+  const d = istDate(now);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 /** Next planning month (YYYY-MM) in IST. */
-export function istNextPlanningMonth(): string {
-  const d = istDate();
+export function istNextPlanningMonth(now?: Date): string {
+  const d = istDate(now);
   const nd = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
   return `${nd.getUTCFullYear()}-${String(nd.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 /** Day of month (1-31) in IST. */
-export function istDayOfMonth(): number {
-  return istDate().getUTCDate();
+export function istDayOfMonth(now?: Date): number {
+  return istDate(now).getUTCDate();
 }
 
 /** True when a workbook title names the given planning month (month abbrev + year). */

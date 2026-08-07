@@ -119,9 +119,9 @@ const NEXT_MONTH_CHECK_DIVISIONS: WorkbookDivision[] = ["PTMT", "PTMT-Machine", 
  * every run — success when the file exists, error naming the title pattern
  * when it doesn't.
  */
-export async function syncNextMonthWorkbookReadiness(): Promise<void> {
-  const day = istDayOfMonth();
-  const nextMonth = istNextPlanningMonth();
+export async function syncNextMonthWorkbookReadiness(now?: Date): Promise<void> {
+  const day = istDayOfMonth(now);
+  const nextMonth = istNextPlanningMonth(now);
   for (const division of NEXT_MONTH_CHECK_DIVISIONS) {
     const id = `nextWorkbook_${division}`;
     const name = `Next month workbook — ${division} (${nextMonth})`;

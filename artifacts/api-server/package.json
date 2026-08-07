@@ -7,6 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "node esbuild.build.mjs",
     "serve": "node dist/index.js",
+    "test": "tsx --test src/lib/ist-calendar.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
