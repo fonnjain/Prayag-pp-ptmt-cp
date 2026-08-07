@@ -172,6 +172,32 @@ const WORKBOOK_TITLE_PATTERNS: Record<WorkbookDivision, { contains: string; patt
 
 export type WorkbookDivision = "PTMT" | "PTMT-Machine" | "Plumbing";
 
+// ── IST calendar helpers (plant timezone) ──────────────────────────────────
+// All operational month/day math must use IST so a UTC-hosted server doesn't
+// lag the plant's calendar by up to 5.5 h around month rollover.
+
+function istDate(): Date {
+  return new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+}
+
+/** Current planning month (YYYY-MM) in IST. */
+export function istPlanningMonth(): string {
+  const d = istDate();
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Next planning month (YYYY-MM) in IST. */
+export function istNextPlanningMonth(): string {
+  const d = istDate();
+  const nd = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+  return `${nd.getUTCFullYear()}-${String(nd.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** Day of month (1-31) in IST. */
+export function istDayOfMonth(): number {
+  return istDate().getUTCDate();
+}
+
 /** True when a workbook title names the given planning month (month abbrev + year). */
 export function titleMatchesMonth(title: string, month: string): boolean {
   const [year, mo] = month.split("-");

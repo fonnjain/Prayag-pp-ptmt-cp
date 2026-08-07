@@ -9,6 +9,7 @@ import {
   resolveWorkbookForMonth,
   searchWorkbookCandidates,
   WorkbookResolutionError,
+  istPlanningMonth,
 } from "../lib/sheets";
 
 const router: IRouter = Router();
@@ -45,7 +46,7 @@ async function resolveAllFeeds(month: string) {
  * (pinned / static / auto) — or a loud error naming the searched title pattern.
  */
 router.get("/workbook-config/resolved", async (req, res) => {
-  const month = String(req.query.month ?? "") || new Date().toISOString().slice(0, 7);
+  const month = String(req.query.month ?? "") || istPlanningMonth();
   try {
     res.json({ month, feeds: await resolveAllFeeds(month) });
   } catch (err) {
@@ -59,7 +60,7 @@ router.get("/workbook-config/resolved", async (req, res) => {
  * Drops all resolution caches and re-resolves both feeds from Drive.
  */
 router.post("/workbook-config/refresh", async (req, res) => {
-  const month = String(req.body?.month ?? "") || new Date().toISOString().slice(0, 7);
+  const month = String(req.body?.month ?? "") || istPlanningMonth();
   try {
     invalidateAllWorkbookCaches();
     invalidatePlumbingSheet3Cache(month);

@@ -788,21 +788,26 @@ function WorkbookConfigPanel() {
   const [dbRows, setDbRows]   = useState<WorkbookRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [resolved, setResolved] = useState<ResolvedFeed[]>([]);
+  const [nextMonthMissing, setNextMonthMissing] = useState<ResolvedFeed[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [divState, setDivState] = useState<Record<string, DivisionSuggestState>>({
     PTMT: initDivState(),
     Plumbing: initDivState(),
   });
 
+  // All month/day math uses IST (the plant timezone), matching the API's
+  // scheduler — a browser in another timezone must see the same gate/months.
+  const istNow = () => new Date(Date.now() + 5.5 * 60 * 60 * 1000);
+
   const currentMonth = (() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const d = istNow();
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
   })();
 
   const nextMonth = (() => {
-    const d = new Date();
-    const nd = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-    return `${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, "0")}`;
+    const d = istNow();
+    const nd = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
+    return `${nd.getUTCFullYear()}-${String(nd.getUTCMonth() + 1).padStart(2, "0")}`;
   })();
 
   const fetchRows = useCallback(async () => {
@@ -828,11 +833,21 @@ function WorkbookConfigPanel() {
     }
   }, []);
 
+  // From IST day 25 onward, pre-check next month's workbooks so a missing file
+  // is flagged before the rollover would land on a hard error on the 1st.
+  const fetchNextMonthMissing = useCallback(async () => {
+    if (istNow().getUTCDate() < 25) return;
+    try {
+      const res = await fetch(`/api/workbook-config/resolved?month=${nextMonth}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setNextMonthMissing(((data.feeds ?? []) as ResolvedFeed[]).filter(f => f.error));
+    } catch { /* banner is best-effort */ }
+  }, [nextMonth]);
+
   useEffect(() => { fetchRows(); }, [fetchRows]);
-  useEffect(() => {
-    const d = new Date();
-    fetchResolved(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-  }, [fetchResolved]);
+  useEffect(() => { fetchResolved(currentMonth); }, [fetchResolved, currentMonth]);
+  useEffect(() => { fetchNextMonthMissing(); }, [fetchNextMonthMissing]);
 
   const refreshSources = async (month: string) => {
     setRefreshing(true);
@@ -845,6 +860,7 @@ function WorkbookConfigPanel() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       setResolved(data.feeds ?? []);
+      fetchNextMonthMissing();
       const bad = (data.feeds ?? []).filter((f: ResolvedFeed) => f.error);
       toast(bad.length
         ? { title: "Some sources failed to resolve", description: bad.map((f: ResolvedFeed) => f.division).join(", "), variant: "destructive" }
@@ -902,6 +918,7 @@ function WorkbookConfigPanel() {
       toast({ title: "Saved", description: `${division} workbook configured for ${nextMonth}.` });
       patchDiv(division, { saving: false, candidates: [], showManual: false, manualId: "", manualQuery: "" });
       fetchRows();
+      fetchNextMonthMissing();
     } catch {
       toast({ title: "Save failed", variant: "destructive" });
       patchDiv(division, { saving: false });
@@ -914,6 +931,7 @@ function WorkbookConfigPanel() {
       await fetch(`/api/workbook-config/${rowId}`, { method: "DELETE" });
       toast({ title: "Removed" });
       fetchRows();
+      fetchNextMonthMissing();
     } catch {
       toast({ title: "Remove failed", variant: "destructive" });
     }
@@ -1133,6 +1151,23 @@ function WorkbookConfigPanel() {
 
   return (
     <div className="space-y-5">
+      {nextMonthMissing.length > 0 && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 space-y-1">
+          <p className="text-xs font-semibold text-amber-800">
+            ⚠ Next month's workbooks ({nextMonth}) not found yet
+          </p>
+          <ul className="space-y-0.5">
+            {nextMonthMissing.map(f => (
+              <li key={f.division} className="text-xs text-amber-700">
+                <strong>{f.division}</strong>: no Drive file matches{f.pattern ? <> pattern <code className="rounded bg-white border px-1 py-0.5 font-mono text-[10px]">{f.pattern}</code></> : " the expected title pattern"}
+              </li>
+            ))}
+          </ul>
+          <p className="text-[11px] text-amber-600">
+            Ask the plant to create the file, or pin a workbook ID below — otherwise the feed fails on the 1st.
+          </p>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-gray-500">
           Sources auto-resolve from Google Drive by title pattern each month. A pinned ID always wins until unpinned.
@@ -1140,10 +1175,7 @@ function WorkbookConfigPanel() {
         <Button
           size="sm" variant="outline" className="h-7 text-xs shrink-0"
           disabled={refreshing}
-          onClick={() => {
-            const d = new Date();
-            refreshSources(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-          }}
+          onClick={() => { refreshSources(currentMonth); }}
         >
           {refreshing ? "Refreshing…" : "⟳ Refresh sources"}
         </Button>

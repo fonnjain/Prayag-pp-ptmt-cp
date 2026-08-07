@@ -8,16 +8,18 @@ import {
   fetchLiveDailyProductionTotals,
   fetchLiveOrderByMonthTab,
   fetchPlumbingSheet3Production,
+  resolveWorkbookForMonth,
+  istPlanningMonth,
+  istNextPlanningMonth,
+  istDayOfMonth,
+  type WorkbookDivision,
 } from "../lib/sheets";
 
 const router: IRouter = Router();
 
-function currentPlanningMonth(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth() + 1;
-  return `${y}-${String(m).padStart(2, "0")}`;
-}
+// Planning month follows the IST calendar (plant timezone) — a UTC-hosted
+// server must not sync the prior month for the first 5.5 h of a new month.
+const currentPlanningMonth = istPlanningMonth;
 
 async function upsertSyncSource(
   id: string,
@@ -106,6 +108,43 @@ async function syncLiveOrder(month: string): Promise<void> {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// ── Next-month workbook readiness pre-check ────────────────────────────────
+
+const NEXT_MONTH_CHECK_DIVISIONS: WorkbookDivision[] = ["PTMT", "PTMT-Machine", "Plumbing"];
+
+/**
+ * From day 25 (IST) onward, pre-resolve next month's workbooks so a missing
+ * file surfaces as a sync warning BEFORE the rollover lands on a hard error
+ * on the 1st. Each division gets a stable sync-source row that is overwritten
+ * every run — success when the file exists, error naming the title pattern
+ * when it doesn't.
+ */
+export async function syncNextMonthWorkbookReadiness(): Promise<void> {
+  const day = istDayOfMonth();
+  const nextMonth = istNextPlanningMonth();
+  for (const division of NEXT_MONTH_CHECK_DIVISIONS) {
+    const id = `nextWorkbook_${division}`;
+    const name = `Next month workbook — ${division} (${nextMonth})`;
+    if (day < 25) {
+      await upsertSyncSource(id, name, "success", `Pre-check starts on day 25 (today is day ${day})`, []);
+      continue;
+    }
+    try {
+      const r = await resolveWorkbookForMonth(division, nextMonth);
+      await upsertSyncSource(
+        id, name, "success",
+        `Found "${r.title ?? r.workbookId}" (${r.source})`,
+        [{ workbookId: r.workbookId, title: r.title, source: r.source }],
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.warn({ division, nextMonth, err: msg }, "Next-month workbook pre-check: NOT FOUND");
+      await upsertSyncSource(id, name, "error", msg, []);
+    }
+    await sleep(1100);
+  }
+}
+
 export async function runFullSync(month?: string): Promise<void> {
   const m = month ?? currentPlanningMonth();
   logger.info({ month: m }, "Starting full sync");
@@ -119,6 +158,8 @@ export async function runFullSync(month?: string): Promise<void> {
   await syncDailyProduction(m);
   await sleep(1100);
   await syncLiveOrder(m);
+  await sleep(1100);
+  await syncNextMonthWorkbookReadiness();
 
   logger.info({ month: m }, "Full sync complete");
 }
