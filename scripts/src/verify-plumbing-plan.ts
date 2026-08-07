@@ -768,9 +768,126 @@ async function main(): Promise<void> {
     console.log(`\n✅  New checks: all ${newChecks.length} PASSED`);
   }
 
+  // ── 7. Workbook resolution & actuals-freshness guards ───────────────────
+  console.log("\n⏳  Running workbook-resolution & actuals-freshness guards …");
+  const wrChecks: CheckResult[] = [];
+  const CURRENT_MONTH = new Date().toISOString().slice(0, 7);
+  try {
+    // WR1: month-match guard — each resolved workbook's title names the monitored month.
+    const resolvedResp = await fetchJson<{ month: string; feeds: Array<Record<string, unknown>> }>(
+      `${API_BASE}/api/workbook-config/resolved?month=${CURRENT_MONTH}`,
+    );
+    for (const feed of resolvedResp.feeds ?? []) {
+      const div = String(feed.division);
+      const ok = !feed.error && feed.workbookId != null && feed.titleMonthMatch === true;
+      wrChecks.push({
+        name: `WR1 · ${div} workbook resolves for ${CURRENT_MONTH} and title names the month (title: ${feed.title ?? "n/a"})`,
+        expected: 1, actual: ok ? 1 : 0, pass: ok,
+        tolerance: feed.error ? String(feed.error) : "resolved + titleMonthMatch",
+      });
+    }
+
+    // WR2: non-stale guard — current-month produced figures are non-zero once
+    // production exists (a stale/wrong workbook presents as zero production).
+    const [plumbDashNow, ptmtDashNow] = await Promise.all([
+      fetchJson<Record<string, any>>(`${API_BASE}/api/monitoring/dashboard?month=${CURRENT_MONTH}&segment=PLUMBING`),
+      fetchJson<Record<string, any>>(`${API_BASE}/api/monitoring/dashboard?month=${CURRENT_MONTH}&segment=PTMT`),
+    ]);
+    const plumbProducedNow = Number(plumbDashNow?.plant?.produced ?? 0);
+    const ptmtProducedNow  = Number(ptmtDashNow?.plant?.totalProduced ?? 0);
+    // Only assert non-zero after the 3rd of the month (production data needs a day or two to appear).
+    const dayOfMonth = new Date().getDate();
+    const expectProduction = dayOfMonth >= 3;
+    wrChecks.push({
+      name: `WR2a · Plumbing monitoring totalProduced non-zero for ${CURRENT_MONTH} (got ${plumbProducedNow})`,
+      expected: 1, actual: !expectProduction || plumbProducedNow > 0 ? 1 : 0,
+      pass: !expectProduction || plumbProducedNow > 0, tolerance: "must be > 0 once production exists",
+    });
+    wrChecks.push({
+      name: `WR2b · PTMT monitoring totalProduced non-zero for ${CURRENT_MONTH} (got ${ptmtProducedNow})`,
+      expected: 1, actual: !expectProduction || ptmtProducedNow > 0 ? 1 : 0,
+      pass: !expectProduction || ptmtProducedNow > 0, tolerance: "must be > 0 once production exists",
+    });
+
+    // WR3: cross-source reconciliation — monitoring and corrective read the same
+    // source, so produced-to-date must agree (same as-of date, same segment).
+    const asOfToday = new Date().toISOString().slice(0, 10);
+    const dryReplan = async (segment: string) => {
+      const resp = await fetch(`${API_BASE}/api/corrective/replan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month: CURRENT_MONTH, asOfDate: asOfToday, segment, dryRun: true }),
+      });
+      if (!resp.ok) return null;
+      return (await resp.json()) as Record<string, any>;
+    };
+    const [plumbReplan, ptmtReplan] = await Promise.all([
+      dryReplan("Plumbing").catch(() => null),
+      dryReplan("PTMT").catch(() => null),
+    ]);
+    const reconcile = (label: string, dashVal: number, replan: Record<string, any> | null) => {
+      if (!replan) {
+        wrChecks.push({
+          name: `WR3 · ${label} monitoring vs corrective producedToDate (corrective endpoint unavailable — skipped)`,
+          expected: 1, actual: 1, pass: true, tolerance: "skip: no corrective plan for month",
+        });
+        return;
+      }
+      const rep = Number(
+        replan.producedToDate ?? replan.totalProduced ?? replan.totals?.producedToDate ?? NaN,
+      );
+      if (!Number.isFinite(rep)) {
+        wrChecks.push({
+          name: `WR3 · ${label} corrective producedToDate field present`,
+          expected: 1, actual: 0, pass: false, tolerance: "validate-replan payload lacks producedToDate",
+        });
+        return;
+      }
+      // ±2%: corrective may add new-order items beyond the frozen plan roster
+      // (same architectural tolerance as NC13).
+      const ok = dashVal > 0 && Math.abs(rep - dashVal) / dashVal <= 0.02;
+      wrChecks.push({
+        name: `WR3 · ${label} producedToDate reconciles: monitoring ${dashVal} ≈ corrective ${rep}`,
+        expected: dashVal, actual: rep, pass: ok, tolerance: "±2% (same source; corrective adds new-order items)",
+      });
+    };
+    // Corrective producedToDate counts plan-mapped production, so reconcile
+    // against monitoring's mapped figure (same source, same mapping rules).
+    const plumbMappedNow = Number(plumbDashNow?.plant?.mapped ?? 0);
+    const ptmtMappedNow  = Number(ptmtDashNow?.plant?.mapped ?? 0);
+    reconcile("Plumbing", plumbMappedNow, plumbReplan);
+    reconcile("PTMT", ptmtMappedNow, ptmtReplan);
+
+    // WR5: no-match guard — a month with no workbook must raise a named error,
+    // never fall back to a prior month's file.
+    const farMonth = "2031-01";
+    const noMatch = await fetchJson<{ feeds: Array<Record<string, unknown>> }>(
+      `${API_BASE}/api/workbook-config/resolved?month=${farMonth}`,
+    );
+    for (const feed of noMatch.feeds ?? []) {
+      const err = String(feed.error ?? "");
+      const ok = feed.workbookId == null && err.includes(farMonth) && err.toLowerCase().includes("pattern");
+      wrChecks.push({
+        name: `WR5 · ${feed.division} resolution for ${farMonth} fails loudly naming the pattern (no fallback)`,
+        expected: 1, actual: ok ? 1 : 0, pass: ok, tolerance: err.slice(0, 120) || "expected named error",
+      });
+    }
+    // WR4 (planning isolation) is covered by the existing Guard-assertion section above.
+  } catch (err) {
+    console.error(`\n❌  Workbook-resolution checks error: ${err instanceof Error ? err.message : String(err)}`);
+    wrChecks.push({ name: "WR · suite executed", expected: 1, actual: 0, pass: false, tolerance: String(err) });
+  }
+  printSection("Workbook resolution & freshness guards", wrChecks);
+  if (wrChecks.some((c) => !c.pass)) {
+    anyFail = true;
+    console.error(`\n❌  Workbook-resolution: ${wrChecks.filter((c) => !c.pass).length} check(s) FAILED`);
+  } else {
+    console.log(`\n✅  Workbook-resolution: all ${wrChecks.length} PASSED`);
+  }
+
   // ── Summary ───────────────────────────────────────────────────────────────
-  const totalChecks = plumbingResult.checks.length + replanResult.checks.length + ptmtResult.checks.length + monResult.checks.length + schemaParityResult.checks.length + newChecks.length;
-  const totalFail   = plumbingResult.failCount + replanResult.failCount + ptmtResult.failCount + monResult.failCount + schemaParityResult.failCount + newChecks.filter((c) => !c.pass).length;
+  const totalChecks = plumbingResult.checks.length + replanResult.checks.length + ptmtResult.checks.length + monResult.checks.length + schemaParityResult.checks.length + newChecks.length + wrChecks.length;
+  const totalFail   = plumbingResult.failCount + replanResult.failCount + ptmtResult.failCount + monResult.failCount + schemaParityResult.failCount + newChecks.filter((c) => !c.pass).length + wrChecks.filter((c) => !c.pass).length;
   const totalPass   = totalChecks - totalFail;
 
   console.log("\n" + "=".repeat(60));

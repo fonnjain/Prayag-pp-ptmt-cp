@@ -162,6 +162,8 @@ export interface MonitoringBundle {
   lastDataDate: string | null;
   thresholds: WarningThresholds;
   dataAvailable: boolean;
+  /** Set when the PTMT monthly workbook could not be resolved (machine kg feed). */
+  sourceError: string | null;
   /** Plan target expressed in pieces. */
   plantTargetPcs: number;
   /** Produced pieces matched to plan items (from ANUJ Production sheet). */
@@ -188,7 +190,17 @@ export interface MonitoringBundle {
 }
 
 export async function buildMonitoringBundle(month: string): Promise<MonitoringBundle> {
-  const sheetId = await getWorkbookIdForMonth("PTMT", month);
+  // PTMT monthly workbook (Report-5 machine kg). Resolution failure is loud in
+  // logs but must not hide piece-level actuals, which come from the PRODUCTION
+  // mirror sheet — machine kg is a separate KPI.
+  let sheetId: string | null = null;
+  let workbookResolutionError: string | null = null;
+  try {
+    sheetId = await getWorkbookIdForMonth("PTMT", month);
+  } catch (err) {
+    workbookResolutionError = err instanceof Error ? err.message : String(err);
+    logger.error({ month, err: workbookResolutionError }, "monitoring: PTMT workbook resolution failed");
+  }
   const [planItems, config, thresholds, overrides, actuals] = await Promise.all([
     buildPlanItems(month),
     loadConfig(month),
@@ -210,23 +222,26 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
 
   let report5Machines: Awaited<ReturnType<typeof parseReport5>>["machines"] = [];
   let report5LastDate: string | null = null;
-  let dataAvailable = true;
+  let machineDataAvailable = true;
   if (!sheetId) {
-    dataAvailable = false;
-    logger.warn({ month }, "monitoring: no PTMT daily workbook file ID configured for month");
+    machineDataAvailable = false;
+    logger.warn({ month }, "monitoring: no PTMT daily workbook resolved for month — machine kg unavailable");
   } else {
     try {
       const result = await parseReport5(sheetId, month);
       report5Machines = result.machines;
       report5LastDate = result.lastDataDate;
     } catch (err) {
-      dataAvailable = false;
-      logger.error({ err, month }, "monitoring: failed to parse Report-5");
+      machineDataAvailable = false;
+      workbookResolutionError = `Report-5 machine data unavailable: ${err instanceof Error ? err.message : String(err)}`;
+      logger.error({ err, month, sheetId }, "monitoring: failed to parse Report-5");
     }
   }
 
   // lastDataDate: prefer ANUJ Production (the piece-plan source) over Report-5.
   const lastDataDate = ptmtActuals.lastDataDate ?? report5LastDate;
+  // Data is available when either the piece actuals or the machine report have rows.
+  const dataAvailable = machineDataAvailable || lastDataDate !== null;
 
   const elapsed = config.snapshotDate
     ? countWorkingDaysElapsed(month, config.snapshotDate)
@@ -315,6 +330,7 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
     lastDataDate,
     thresholds,
     dataAvailable,
+    sourceError: workbookResolutionError,
     plantTargetPcs: pcConversion.plantTargetPcs,
     producedToDatePcs: ptmtActuals.totalMapped,
     totalProducedPcs: ptmtActuals.totalProduced,
@@ -364,6 +380,7 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
     month,
     segment: "PTMT",
     dataAvailable: bundle.dataAvailable,
+    sourceError: bundle.sourceError,
     lastDataDate: bundle.lastDataDate,
     workingDaysElapsed: bundle.workingDaysElapsed,
     calendar: bundle.calendarPlant,

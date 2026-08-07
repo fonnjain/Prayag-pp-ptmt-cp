@@ -771,10 +771,24 @@ function fmtDriveDate(iso: string) {
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
+type ResolvedFeed = {
+  division: string;
+  month: string;
+  workbookId: string | null;
+  title: string | null;
+  modifiedTime: string | null;
+  source: "pinned" | "static" | "auto" | null;
+  titleMonthMatch: boolean | null;
+  error: string | null;
+  pattern: string | null;
+};
+
 function WorkbookConfigPanel() {
   const { toast } = useToast();
   const [dbRows, setDbRows]   = useState<WorkbookRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [resolved, setResolved] = useState<ResolvedFeed[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
   const [divState, setDivState] = useState<Record<string, DivisionSuggestState>>({
     PTMT: initDivState(),
     Plumbing: initDivState(),
@@ -803,7 +817,44 @@ function WorkbookConfigPanel() {
     }
   }, [toast]);
 
+  const fetchResolved = useCallback(async (month: string) => {
+    try {
+      const res = await fetch(`/api/workbook-config/resolved?month=${month}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setResolved(data.feeds ?? []);
+    } catch {
+      /* resolution box shows nothing on failure; pin UI still works */
+    }
+  }, []);
+
   useEffect(() => { fetchRows(); }, [fetchRows]);
+  useEffect(() => {
+    const d = new Date();
+    fetchResolved(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  }, [fetchResolved]);
+
+  const refreshSources = async (month: string) => {
+    setRefreshing(true);
+    try {
+      const res = await fetch("/api/workbook-config/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ month }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setResolved(data.feeds ?? []);
+      const bad = (data.feeds ?? []).filter((f: ResolvedFeed) => f.error);
+      toast(bad.length
+        ? { title: "Some sources failed to resolve", description: bad.map((f: ResolvedFeed) => f.division).join(", "), variant: "destructive" }
+        : { title: "Sources refreshed", description: `Workbooks re-resolved for ${month}.` });
+    } catch {
+      toast({ title: "Refresh failed", variant: "destructive" });
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const patchDiv = (division: string, patch: Partial<DivisionSuggestState>) =>
     setDivState(prev => ({ ...prev, [division]: { ...prev[division], ...patch } }));
@@ -878,26 +929,71 @@ function WorkbookConfigPanel() {
       <div className="space-y-3">
         <p className="text-xs font-bold text-gray-700 uppercase tracking-widest">{division}</p>
 
-        {/* ── Current month — read-only, in flight ── */}
+        {/* ── Current month — resolved live source ── */}
         <div className="rounded-md border bg-gray-50 px-3 py-2.5 space-y-1.5">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-gray-600">Current month</span>
             <span className="text-xs text-gray-400">({currentMonth})</span>
             <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700">● Active</span>
           </div>
-          {current ? (
-            <div className="flex items-center gap-2">
-              <code className="rounded bg-white border px-1.5 py-0.5 text-xs font-mono">{abbreviateId(current.id)}</code>
-              <a
-                href={`https://docs.google.com/spreadsheets/d/${current.id}`}
-                target="_blank" rel="noreferrer"
-                className="text-xs text-blue-600 hover:underline"
-              >↗ Open</a>
-              <span className="text-xs text-gray-400">source: {current.source}</span>
-            </div>
-          ) : (
-            <p className="text-xs text-amber-600">No workbook configured for this month.</p>
-          )}
+          {(() => {
+            const feed = resolved.find(f => f.division === division);
+            if (feed?.error) {
+              return (
+                <p className="text-xs text-red-600 font-medium">
+                  ⚠ No workbook resolved: {feed.error}
+                </p>
+              );
+            }
+            if (feed?.workbookId) {
+              return (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-medium text-gray-800 truncate max-w-[280px]" title={feed.title ?? undefined}>
+                      {feed.title ?? "(title unavailable)"}
+                    </span>
+                    <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                      feed.source === "pinned" ? "bg-purple-100 text-purple-700" :
+                      feed.source === "auto"   ? "bg-blue-100 text-blue-700" :
+                                                 "bg-gray-200 text-gray-600"
+                    }`}>
+                      {feed.source === "pinned" ? "📌 Pinned" : feed.source === "auto" ? "Auto-discovered" : "Built-in"}
+                    </span>
+                    {feed.titleMonthMatch === false && (
+                      <span className="inline-flex items-center rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
+                        ⚠ Title month ≠ {currentMonth}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <code className="rounded bg-white border px-1.5 py-0.5 text-xs font-mono">{abbreviateId(feed.workbookId)}</code>
+                    <a
+                      href={`https://docs.google.com/spreadsheets/d/${feed.workbookId}`}
+                      target="_blank" rel="noreferrer"
+                      className="text-xs text-blue-600 hover:underline"
+                    >↗ Open</a>
+                    {feed.modifiedTime && (
+                      <span className="text-xs text-gray-400">modified {fmtDriveDate(feed.modifiedTime)}</span>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+            if (current) {
+              return (
+                <div className="flex items-center gap-2">
+                  <code className="rounded bg-white border px-1.5 py-0.5 text-xs font-mono">{abbreviateId(current.id)}</code>
+                  <a
+                    href={`https://docs.google.com/spreadsheets/d/${current.id}`}
+                    target="_blank" rel="noreferrer"
+                    className="text-xs text-blue-600 hover:underline"
+                  >↗ Open</a>
+                  <span className="text-xs text-gray-400">source: {current.source}</span>
+                </div>
+              );
+            }
+            return <p className="text-xs text-amber-600">Resolving workbook…</p>;
+          })()}
         </div>
 
         {/* ── Next month — configurable ── */}
@@ -1037,6 +1133,21 @@ function WorkbookConfigPanel() {
 
   return (
     <div className="space-y-5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-gray-500">
+          Sources auto-resolve from Google Drive by title pattern each month. A pinned ID always wins until unpinned.
+        </p>
+        <Button
+          size="sm" variant="outline" className="h-7 text-xs shrink-0"
+          disabled={refreshing}
+          onClick={() => {
+            const d = new Date();
+            refreshSources(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+          }}
+        >
+          {refreshing ? "Refreshing…" : "⟳ Refresh sources"}
+        </Button>
+      </div>
       <p className="text-xs text-gray-500">
         Each division's daily-production workbook is a Google Spreadsheet. Use{" "}
         <strong>Search Drive</strong> to auto-suggest next month's file — the app will rank candidates

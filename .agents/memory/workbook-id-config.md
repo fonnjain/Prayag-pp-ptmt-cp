@@ -1,28 +1,17 @@
 ---
-name: Workbook ID configuration
-description: DB-backed workbook ID management for PTMT and Plumbing daily-production workbooks.
+name: Workbook ID resolution
+description: How monthly Google workbook IDs are resolved per division (pin → static map → Drive auto-discovery), and the failure semantics.
 ---
 
-**DB table:** `workbook_config` (migration 012_workbook_config.sql)
-- Columns: `id TEXT PK`, `division TEXT`, `month TEXT`, `workbook_id TEXT`, `label TEXT`, `updated_at TIMESTAMPTZ`
-- Schema: `lib/db/src/schema/workbook-config.ts` → `workbookConfigTable`
+Resolution priority in `resolveWorkbookForMonth(division, month)` (api-server sheets lib):
+1. **DB pin** (`workbook_config` row) — always wins until unpinned; a title/month mismatch is logged loudly but the pin still applies (`titleMonthMatch:false`).
+2. **Static map** exact-month entry (PTMT Apr–Jul 26, Plumbing Jul 26).
+3. **Drive auto-discovery** by title pattern — PTMT: title contains "PTMT PLAN & ACTUAL" + month token; Plumbing: "Daily Production PLUMBING" + month token. Month/year must appear in the title; newest `modifiedTime` wins.
 
-**API routes** (in `artifacts/api-server/src/routes/sheet-config.ts`):
-- `GET /api/workbook-config` — returns all rows
-- `PUT /api/workbook-config/:id` — upsert; invalidates in-memory cache
-- `DELETE /api/workbook-config/:id` — removes row
+**Why:** monthly workbooks roll over; reading a prior month's sheet silently presents as stale/zero production. So there is **no fallback to another month** — no match throws `WorkbookResolutionError` naming the searched pattern, and `getWorkbookIdForMonth` now throws instead of returning null.
 
-**Lookup priority (in `sheets.ts`):**
-1. DB (`loadWorkbookIdFromDb`) — 5-minute in-process cache (`_dbWorkbookCache`)
-2. Drive discovery (Plumbing only, skipped if DB has an ID)
-3. Hardcoded maps (`PTMT_DAILY_WORKBOOK_IDS`, `PLUMBING_DAILY_WORKBOOK_IDS`)
+Failure semantics decided with the user:
+- Plumbing Sheet3 read/resolution failures propagate loudly (corrective engine no longer swallows them into `[]` — zero production must never be silent).
+- PTMT machine-kg (Report-5) failure must NOT hide piece actuals (which come from the fixed ANUJ mirror); monitoring exposes it via `sourceError` and `dataAvailable` stays true if piece data exists. Note: the "PTMT Date Sheet & Monthly Report" series (real Report-5 format) ended July 2026; the PLAN & ACTUAL workbook's "REPORT 5" tab is a different format that imports from the forbidden Daily Production PTMT sheet — never read that sheet (planning is uploads-only).
 
-**Key function:** `getWorkbookIdForMonth(division, month)` — used by monitoring.ts
-(PTMT) and sheets.ts `fetchPlumbingPlanData` (Plumbing). Call `invalidateWorkbookCache()`
-after any save.
-
-**UI:** `WorkbookConfigPanel` component on the Data page — shows fallback IDs as
-placeholders, DB-configured rows as editable fields, + Add entry form.
-
-**Why:** Hardcoded maps need updating each new month; user wanted a UI to set IDs
-without code changes. DB entries override hardcoded so no restart is needed.
+**How to apply:** endpoints `GET /workbook-config/resolved?month=` and `POST /workbook-config/refresh` show/refresh resolution for both divisions; pin/unpin via PUT/DELETE `/workbook-config/:id` (id = `<division lowercase>_<YYYY-MM>`; both invalidate resolution + Sheet3 caches). Regression suite WR1/WR2/WR3/WR5 guard month-match, non-stale actuals, monitoring↔corrective reconciliation (±2%, corrective adds new-order items), and the no-match named error. Drive proxy has 429/5xx backoff.

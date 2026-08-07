@@ -140,23 +140,187 @@ async function loadWorkbookIdFromDb(division: string, month: string): Promise<st
 }
 
 /**
+ * Thrown when no workbook can be resolved for a division+month. Named error —
+ * a missing month's sheet must surface as an error, never as zero production.
+ */
+export class WorkbookResolutionError extends Error {
+  readonly division: string;
+  readonly month: string;
+  readonly pattern: string;
+  constructor(division: string, month: string, pattern: string, detail?: string) {
+    super(
+      `No ${division} workbook found for ${month} — searched Drive for title pattern "${pattern}"` +
+        (detail ? ` (${detail})` : "") +
+        ". Refusing to fall back to another month's sheet.",
+    );
+    this.name = "WorkbookResolutionError";
+    this.division = division;
+    this.month = month;
+    this.pattern = pattern;
+  }
+}
+
+/** Human-readable title pattern + Drive name-contains keyword per division. */
+const WORKBOOK_TITLE_PATTERNS: Record<"PTMT" | "Plumbing", { contains: string; pattern: string }> = {
+  PTMT:     { contains: "PTMT PLAN & ACTUAL",       pattern: "N. PTMT PLAN & ACTUAL - <Mon>-<YY>" },
+  Plumbing: { contains: "Daily Production PLUMBING", pattern: "Daily Production PLUMBING <MON> ' <YYYY>" },
+};
+
+/** True when a workbook title names the given planning month (month abbrev + year). */
+export function titleMatchesMonth(title: string, month: string): boolean {
+  const [year, mo] = month.split("-");
+  const abbrevs = _MONTH_ABBREVS[mo] ?? [];
+  const upper = title.toUpperCase();
+  const yearShort = year.slice(2);
+  const monthOk = abbrevs.some((a) => upper.includes(a.toUpperCase()));
+  const yearOk = upper.includes(year) || upper.includes(yearShort);
+  return monthOk && yearOk;
+}
+
+export interface ResolvedWorkbook {
+  division: "PTMT" | "Plumbing";
+  month: string;
+  workbookId: string;
+  /** Drive file title — null when Drive metadata could not be fetched. */
+  title: string | null;
+  modifiedTime: string | null;
+  /** pinned = DB row set by a human; static = legacy hardcoded map; auto = Drive discovery. */
+  source: "pinned" | "static" | "auto";
+  /** false when the workbook title does not name the requested month (pinned/static only — auto requires a match). */
+  titleMonthMatch: boolean;
+}
+
+// Cache resolved workbooks for 30 minutes, keyed division_month.
+const _resolvedWorkbookCache = new Map<string, { resolved: ResolvedWorkbook; expires: number }>();
+
+async function fetchDriveFileMeta(fileId: string): Promise<{ name: string; modifiedTime: string } | null> {
+  try {
+    const data = await driveProxyJson(`/drive/v3/files/${fileId}?fields=id,name,modifiedTime`);
+    return { name: data.name, modifiedTime: data.modifiedTime };
+  } catch (err) {
+    logger.warn({ fileId, err: String(err) }, "resolveWorkbook: Drive metadata fetch failed");
+    return null;
+  }
+}
+
+/**
+ * Resolves the workbook for a division+month with full provenance.
+ * Priority: pinned (DB) → static map (exact-month legacy IDs) → Drive auto-discovery.
+ *
+ * Auto-discovery matches on title pattern + month/year in the title, choosing the
+ * most recently modified match. It NEVER falls back to another month's file —
+ * when nothing matches it throws WorkbookResolutionError naming the pattern.
+ *
+ * A pinned ID always wins (human override), but a title-month mismatch is
+ * logged loudly and surfaced via titleMonthMatch=false.
+ */
+export async function resolveWorkbookForMonth(
+  division: "PTMT" | "Plumbing",
+  month: string,
+): Promise<ResolvedWorkbook> {
+  const cacheKey = `${division}_${month}`;
+  const now = Date.now();
+  const cached = _resolvedWorkbookCache.get(cacheKey);
+  if (cached && cached.expires > now) return cached.resolved;
+
+  const { contains, pattern } = WORKBOOK_TITLE_PATTERNS[division];
+
+  // 1. Pinned (DB) — human override wins until unpinned.
+  const dbId = await loadWorkbookIdFromDb(division, month);
+  // 2. Static legacy map — exact month key only, so it can never serve another month.
+  const staticId = dbId
+    ? null
+    : (division === "PTMT" ? PTMT_DAILY_WORKBOOK_IDS[month] : PLUMBING_DAILY_WORKBOOK_IDS[month]) ?? null;
+
+  if (dbId || staticId) {
+    const workbookId = (dbId ?? staticId)!;
+    const source: ResolvedWorkbook["source"] = dbId ? "pinned" : "static";
+    const meta = await fetchDriveFileMeta(workbookId);
+    const titleMonthMatch = meta ? titleMatchesMonth(meta.name, month) : true; // unknown title → don't false-alarm
+    if (meta && !titleMonthMatch) {
+      logger.error(
+        { division, month, workbookId, title: meta.name, source },
+        "resolveWorkbook: WORKBOOK TITLE MONTH MISMATCH — the configured sheet does not name the requested month",
+      );
+    }
+    const resolved: ResolvedWorkbook = {
+      division, month, workbookId,
+      title: meta?.name ?? null,
+      modifiedTime: meta?.modifiedTime ?? null,
+      source, titleMonthMatch,
+    };
+    logger.info({ ...resolved }, "resolveWorkbook: resolved");
+    _resolvedWorkbookCache.set(cacheKey, { resolved, expires: now + 30 * 60 * 1000 });
+    return resolved;
+  }
+
+  // 3. Drive auto-discovery — title pattern + month/year required; most recent modifiedTime wins.
+  let files: Array<{ id: string; name: string; modifiedTime: string }>;
+  try {
+    const q = encodeURIComponent(
+      `name contains '${contains}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`,
+    );
+    const data = await driveProxyJson(
+      `/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime%20desc&pageSize=30`,
+    );
+    files = data.files ?? [];
+  } catch (err) {
+    throw new WorkbookResolutionError(division, month, pattern, `Drive search failed: ${String(err)}`);
+  }
+
+  const matches = files
+    .filter((f) => titleMatchesMonth(f.name, month))
+    .sort((a, b) => (b.modifiedTime > a.modifiedTime ? 1 : -1));
+
+  if (matches.length === 0) {
+    logger.error(
+      { division, month, pattern, candidates: files.slice(0, 8).map((f) => f.name) },
+      "resolveWorkbook: NO WORKBOOK MATCHES the current month's title pattern",
+    );
+    throw new WorkbookResolutionError(division, month, pattern);
+  }
+
+  const chosen = matches[0]!;
+  const resolved: ResolvedWorkbook = {
+    division, month,
+    workbookId: chosen.id,
+    title: chosen.name,
+    modifiedTime: chosen.modifiedTime,
+    source: "auto",
+    titleMonthMatch: true,
+  };
+  logger.info(
+    { division, month, pattern, chosenTitle: chosen.name, workbookId: chosen.id, modifiedTime: chosen.modifiedTime, otherMatches: matches.slice(1, 4).map((f) => f.name) },
+    "resolveWorkbook: auto-discovered via Drive",
+  );
+  _resolvedWorkbookCache.set(cacheKey, { resolved, expires: now + 30 * 60 * 1000 });
+  return resolved;
+}
+
+/**
  * Resolves the workbook file ID for a given division and month.
- * Priority: DB config → hardcoded map.
- * Call this from monitoring and plan routes.
+ * Priority: pinned (DB) → static map → Drive auto-discovery.
+ * Throws WorkbookResolutionError when nothing matches the month — never
+ * silently returns another month's workbook.
  */
 export async function getWorkbookIdForMonth(
   division: "PTMT" | "Plumbing",
   month: string,
-): Promise<string | null> {
-  const dbId = await loadWorkbookIdFromDb(division, month);
-  if (dbId) return dbId;
-  if (division === "PTMT") return PTMT_DAILY_WORKBOOK_IDS[month] ?? null;
-  return PLUMBING_DAILY_WORKBOOK_IDS[month] ?? null;
+): Promise<string> {
+  return (await resolveWorkbookForMonth(division, month)).workbookId;
 }
 
 /** Invalidate the DB workbook cache for a specific division+month (call after saves). */
 export function invalidateWorkbookCache(division: string, month: string): void {
   _dbWorkbookCache.delete(`${division}_${month}`);
+  _resolvedWorkbookCache.delete(`${division}_${month}`);
+}
+
+/** Drop all resolved/DB workbook caches (the "Refresh sources" action). */
+export function invalidateAllWorkbookCaches(): void {
+  _dbWorkbookCache.clear();
+  _resolvedWorkbookCache.clear();
+  _driveWorkbookCache.clear();
 }
 
 async function proxyJson(path: string): Promise<any> {
@@ -181,12 +345,20 @@ async function proxyJson(path: string): Promise<any> {
 
 async function driveProxyJson(path: string): Promise<any> {
   guardPlanningReadAtChokePoint(path);
-  const res = await getConnectors().proxy("google-drive", path, { method: "GET" });
-  if (!res.ok) {
+  const MAX_RETRIES = 3;
+  let delay = 1000;
+  for (let attempt = 0; ; attempt++) {
+    const res = await getConnectors().proxy("google-drive", path, { method: "GET" });
+    if (res.ok) return res.json();
+    if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
+      logger.warn({ attempt, delay, path, status: res.status }, "Drive API transient error — backing off");
+      await sleep(delay);
+      delay *= 2;
+      continue;
+    }
     const body = await res.text();
     throw new Error(`Drive API error ${res.status}: ${body.slice(0, 300)}`);
   }
-  return res.json();
 }
 
 const _MONTH_ABBREVS: Record<string, string[]> = {
@@ -737,11 +909,9 @@ export async function fetchPlumbingSheet3Production(month: string): Promise<Plum
   const cached = _sheet3Cache.get(month);
   if (cached && cached.expires > now) return cached.rows;
 
+  // Throws WorkbookResolutionError when no August-titled (etc.) workbook exists —
+  // a missing month's sheet must be an error, never "zero production".
   const workbookId = await getWorkbookIdForMonth("Plumbing", month);
-  if (!workbookId) {
-    logger.warn({ month }, "fetchPlumbingSheet3Production: no workbook ID found — returning empty");
-    return [];
-  }
 
   const [year, mon] = month.split("-").map(Number);
 
@@ -750,8 +920,10 @@ export async function fetchPlumbingSheet3Production(month: string): Promise<Plum
   try {
     values = await getTabValues(workbookId, "Sheet3", "A1:C500000");
   } catch (err) {
-    logger.warn({ month, workbookId, err: String(err) }, "fetchPlumbingSheet3Production: failed to read Sheet3");
-    return [];
+    logger.error({ month, workbookId, err: String(err) }, "fetchPlumbingSheet3Production: failed to read Sheet3");
+    throw new Error(
+      `Failed to read Sheet3 from Plumbing workbook ${workbookId} for ${month}: ${String(err)}`,
+    );
   }
 
   const rows: PlumbingSheet3Row[] = [];

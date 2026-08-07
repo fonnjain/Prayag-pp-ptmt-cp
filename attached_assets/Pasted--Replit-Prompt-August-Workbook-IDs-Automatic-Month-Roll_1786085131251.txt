@@ -1,0 +1,74 @@
+# Replit Prompt — August Workbook IDs + Automatic Month Rollover
+
+Two parts: point the app at the **August** source sheets and verify actuals are flowing, then make the rollover **automatic** so this doesn't need doing by hand every month.
+
+Scope reminder — unchanged: **planning uses uploads only.** Everything below concerns the *non-planning* sheet reads that are permitted (monitoring actuals, corrective production-to-date, machine data, BOM).
+
+---
+
+## PART 1 — Update to the August sheets and verify
+
+### The August workbook IDs
+
+| Purpose | Sheet | ID |
+|---|---|---|
+| Plumbing production actuals (monitoring + corrective) | Daily Production PLUMBING AUG ' 2026 → **Sheet3** | `1XIphSUrftEKRR93GyUF_XsE5yKWQhjeKUKCpx9IeO_U` |
+| Machine / item actual production (kg & pcs) | 5. Pipe & Fitting Plant Date Sheet & Monthly Report – AUG ' 2026 → **Report-11** (pipe), **Report-12** (moulding), **Report-5** (machine hours/output) | `1Crlyfg8EpBRwR5sylgqCxF7r1boeD3UjSDQwLB10g7E` |
+| PTMT actuals / opening stock / pending | 4. PTMT PLAN & ACTUAL – Aug-26 | `1tUm0Cx-YFdGNpSV-5f9MG4dd47oBEyQTLe2DAWonP9Q` |
+
+Confirmation that this wiring is right: the Plumbing August Sheet3 formulas literally reference `Report-11!B6:Z` and `Report-12!A6:I` from the Pipe & Fitting workbook.
+
+### MUST NOT be read by the app (planning masters — verification only)
+
+- Daily Production PTMT AUG' 2026 — `1jy-T1ou7r67rWE8O_I6plrbJGXRlxnL0zJbJifHTqLc`
+- The Plumbing master's planning tabs (anything in `1XIphSUr…` other than Sheet3)
+
+Not in scope at all: Daily Production Plan CP AUG' 2026, Daily Production SINK AUG' 2026, HDPE sheets — different segments.
+
+### Why this is urgent
+
+The workbook IDs **change every month** (July Plumbing was `1wlB4Y4l…`, August is `1XIphSUr…`). If the app is still pointed at July's sheet, Plumbing monitoring and the corrective re-plan are reading a stale workbook — which presents exactly like "no production this month," i.e. plausible and wrong.
+
+### Verify after updating — report actual numbers
+
+1. Plumbing monitoring `totalProduced` for August is **non-zero** and per-category `produced` values are non-zero where production exists.
+2. Corrective re-plan `producedToDate` for Plumbing is non-zero and **reconciles with monitoring's figure** (same source, must agree).
+3. PTMT actuals are non-zero and reconcile between monitoring and corrective.
+4. Machine actuals from Report-11 / Report-12 are being read (report a few machine/item rows).
+5. Confirm no planning path reads any of these sheets.
+
+---
+
+## PART 2 — Automatic month rollover (the durable fix)
+
+Doing this by hand every month is a standing source of silent staleness. Make the app find the current month's workbooks itself.
+
+**Behaviour:**
+
+- On month change (and on demand via a "Refresh sources" action), the app **searches Google Drive by title pattern** for the current month's workbooks — e.g. `Daily Production PLUMBING <MON> ' <YYYY>`, `5. Pipe & Fitting Plant Date Sheet & Monthly Report - <MON> ' <YYYY>`, `4. PTMT PLAN & ACTUAL - <Mon>-<YY>` — and resolves each to its file ID.
+- Match on **title pattern + most recent `modifiedTime`**, and require the month/year in the title to match the planning month. Never fall back to an older month's file.
+- **Show the resolved workbook, its ID, its title and its last-modified date in the UI** (the existing workbook-ID config panel), so it's always visible which sheet each feed is actually reading.
+- **Keep manual override.** Auto-discovery proposes; a human can pin a specific ID. A pinned ID wins until unpinned.
+- **Fail loudly, never silently.** If no workbook matches the current month's pattern, surface a clear error naming the pattern searched — do not fall back to last month's sheet and do not return empty actuals. A missing August sheet must look like an error, not like zero production.
+- Log each resolution (month, pattern, chosen file, modified date) so a wrong pick can be traced.
+
+**Guard against the obvious failure:** the app must never silently read a workbook whose title month ≠ the month being planned/monitored. Assert this.
+
+---
+
+## Regression assertions to add
+
+1. **Month-match guard** — the resolved workbook's title month/year equals the month being monitored; a mismatch fails and names both.
+2. **Non-stale guard** — monitoring `totalProduced` and corrective `producedToDate` for the current month are non-zero once production exists; if the resolved sheet yields zero for a month with recorded production, fail rather than report zero.
+3. **Cross-source reconciliation** — monitoring `producedToDate` === corrective `producedToDate` for the same as-of date and segment (same source, must agree).
+4. **Planning isolation intact** — no planning path reads any of these workbooks (existing guard; confirm still passing).
+5. **No-match guard** — when no workbook matches the current month, the app raises a named error rather than falling back to a prior month.
+
+---
+
+## Report
+
+- The resolved workbook ID, title and modified date for each feed.
+- August actuals: Plumbing and PTMT `totalProduced` / `producedToDate`, with the reconciliation check.
+- Confirmation that auto-discovery works, manual override still works, and a simulated "no August workbook" case fails loudly.
+- New suite count and pass/fail.

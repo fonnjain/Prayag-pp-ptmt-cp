@@ -346,10 +346,10 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     input.planRunId != null
       ? loadFrozenBaselineItems(input.planRunId, month, segment)
       : buildPlanItems(month, segment),
+    // Do NOT swallow Sheet3 failures: a missing/unreadable workbook must fail
+    // the replan loudly, never present as zero production (stale-plan hazard).
     segment === "Plumbing"
-      ? fetchPlumbingSheet3Production(month).catch(err => {
-          logger.warn({ err }, "corrective-engine: fetchPlumbingSheet3Production failed"); return [] as PlumbingSheet3Row[];
-        })
+      ? fetchPlumbingSheet3Production(month)
       : Promise.resolve([] as PlumbingSheet3Row[]),
     segment === "PTMT"
       ? fetchDailyActuals(month).catch(err => {
