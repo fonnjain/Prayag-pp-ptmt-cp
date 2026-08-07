@@ -779,11 +779,20 @@ async function main(): Promise<void> {
     );
     for (const feed of resolvedResp.feeds ?? []) {
       const div = String(feed.division);
-      const ok = !feed.error && feed.workbookId != null && feed.titleMonthMatch === true;
+      const resolvedOk = !feed.error && feed.workbookId != null && feed.titleMonthMatch === true;
+      // PTMT-Machine (Report-5 Date Sheet series) may legitimately lag the month:
+      // the plant creates that workbook days into the month. Until it exists, a
+      // NAMED resolution error (citing the pattern) is the correct state — but a
+      // silent/unnamed failure is still a bug.
+      const namedNoMatch =
+        div === "PTMT-Machine" &&
+        feed.workbookId == null &&
+        String(feed.error ?? "").toLowerCase().includes("pattern");
+      const ok = resolvedOk || namedNoMatch;
       wrChecks.push({
-        name: `WR1 · ${div} workbook resolves for ${CURRENT_MONTH} and title names the month (title: ${feed.title ?? "n/a"})`,
+        name: `WR1 · ${div} workbook resolves for ${CURRENT_MONTH} and title names the month (${namedNoMatch ? "named no-match accepted — machine report not yet created" : `title: ${feed.title ?? "n/a"}`})`,
         expected: 1, actual: ok ? 1 : 0, pass: ok,
-        tolerance: feed.error ? String(feed.error) : "resolved + titleMonthMatch",
+        tolerance: feed.error && !namedNoMatch ? String(feed.error) : "resolved + titleMonthMatch (PTMT-Machine may be a named no-match)",
       });
     }
 

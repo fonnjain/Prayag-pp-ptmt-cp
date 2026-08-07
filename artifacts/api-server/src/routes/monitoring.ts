@@ -196,7 +196,7 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
   let sheetId: string | null = null;
   let workbookResolutionError: string | null = null;
   try {
-    sheetId = await getWorkbookIdForMonth("PTMT", month);
+    sheetId = await getWorkbookIdForMonth("PTMT-Machine", month);
   } catch (err) {
     workbookResolutionError = err instanceof Error ? err.message : String(err);
     logger.error({ month, err: workbookResolutionError }, "monitoring: PTMT workbook resolution failed");

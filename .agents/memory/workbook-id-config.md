@@ -6,7 +6,9 @@ description: How monthly Google workbook IDs are resolved per division (pin → 
 Resolution priority in `resolveWorkbookForMonth(division, month)` (api-server sheets lib):
 1. **DB pin** (`workbook_config` row) — always wins until unpinned; a title/month mismatch is logged loudly but the pin still applies (`titleMonthMatch:false`).
 2. **Static map** exact-month entry (PTMT Apr–Jul 26, Plumbing Jul 26).
-3. **Drive auto-discovery** by title pattern — PTMT: title contains "PTMT PLAN & ACTUAL" + month token; Plumbing: "Daily Production PLUMBING" + month token. Month/year must appear in the title; newest `modifiedTime` wins.
+3. **Drive auto-discovery** by title pattern — PTMT: title contains "PTMT PLAN & ACTUAL" + month token; PTMT-Machine: "PTMT Date Sheet & Monthly Report" + month token; Plumbing: "Daily Production PLUMBING" + month token. Month/year must appear in the title; newest `modifiedTime` wins.
+
+There are THREE feeds: `PTMT` (plan/actual), `PTMT-Machine` (Report-5 machine kg — a separate Date Sheet workbook series; the Apr–Jul '26 static IDs belong to THIS feed), and `Plumbing`. The plant creates the machine-report workbook days into the month, so a named PTMT-Machine no-match early in a month is the expected state (WR1 accepts it); once the file appears, auto-discovery picks it up with no code change.
 
 **Why:** monthly workbooks roll over; reading a prior month's sheet silently presents as stale/zero production. So there is **no fallback to another month** — no match throws `WorkbookResolutionError` naming the searched pattern, and `getWorkbookIdForMonth` now throws instead of returning null.
 

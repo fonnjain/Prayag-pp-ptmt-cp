@@ -15,7 +15,7 @@ const router: IRouter = Router();
 
 /** Resolve both divisions' workbooks for a month, returning per-feed results (never throws). */
 async function resolveAllFeeds(month: string) {
-  const divisions = ["PTMT", "Plumbing"] as const;
+  const divisions = ["PTMT", "PTMT-Machine", "Plumbing"] as const;
   return Promise.all(
     divisions.map(async (division) => {
       try {

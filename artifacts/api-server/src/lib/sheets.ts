@@ -161,10 +161,16 @@ export class WorkbookResolutionError extends Error {
 }
 
 /** Human-readable title pattern + Drive name-contains keyword per division. */
-const WORKBOOK_TITLE_PATTERNS: Record<"PTMT" | "Plumbing", { contains: string; pattern: string }> = {
+const WORKBOOK_TITLE_PATTERNS: Record<WorkbookDivision, { contains: string; pattern: string }> = {
   PTMT:     { contains: "PTMT PLAN & ACTUAL",       pattern: "N. PTMT PLAN & ACTUAL - <Mon>-<YY>" },
+  // Machine-level kg (Report-5) lives in the Date Sheet & Monthly Report series —
+  // a DIFFERENT workbook from PLAN & ACTUAL (whose "REPORT 5" tab is a plan grid
+  // importing from the forbidden Daily Production PTMT sheet; never parse it).
+  "PTMT-Machine": { contains: "PTMT Date Sheet & Monthly Report", pattern: "N. PTMT Date Sheet & Monthly Report - <Mon> ' <YYYY>" },
   Plumbing: { contains: "Daily Production PLUMBING", pattern: "Daily Production PLUMBING <MON> ' <YYYY>" },
 };
+
+export type WorkbookDivision = "PTMT" | "PTMT-Machine" | "Plumbing";
 
 /** True when a workbook title names the given planning month (month abbrev + year). */
 export function titleMatchesMonth(title: string, month: string): boolean {
@@ -178,7 +184,7 @@ export function titleMatchesMonth(title: string, month: string): boolean {
 }
 
 export interface ResolvedWorkbook {
-  division: "PTMT" | "Plumbing";
+  division: WorkbookDivision;
   month: string;
   workbookId: string;
   /** Drive file title — null when Drive metadata could not be fetched. */
@@ -215,7 +221,7 @@ async function fetchDriveFileMeta(fileId: string): Promise<{ name: string; modif
  * logged loudly and surfaced via titleMonthMatch=false.
  */
 export async function resolveWorkbookForMonth(
-  division: "PTMT" | "Plumbing",
+  division: WorkbookDivision,
   month: string,
 ): Promise<ResolvedWorkbook> {
   const cacheKey = `${division}_${month}`;
@@ -228,9 +234,15 @@ export async function resolveWorkbookForMonth(
   // 1. Pinned (DB) — human override wins until unpinned.
   const dbId = await loadWorkbookIdFromDb(division, month);
   // 2. Static legacy map — exact month key only, so it can never serve another month.
+  // The Apr–Jul '26 static PTMT IDs are Date Sheet (machine-report) workbooks,
+  // so they belong to the PTMT-Machine feed, not the PLAN & ACTUAL feed.
   const staticId = dbId
     ? null
-    : (division === "PTMT" ? PTMT_DAILY_WORKBOOK_IDS[month] : PLUMBING_DAILY_WORKBOOK_IDS[month]) ?? null;
+    : (division === "PTMT-Machine"
+        ? PTMT_DAILY_WORKBOOK_IDS[month]
+        : division === "Plumbing"
+          ? PLUMBING_DAILY_WORKBOOK_IDS[month]
+          : undefined) ?? null;
 
   if (dbId || staticId) {
     const workbookId = (dbId ?? staticId)!;
@@ -304,7 +316,7 @@ export async function resolveWorkbookForMonth(
  * silently returns another month's workbook.
  */
 export async function getWorkbookIdForMonth(
-  division: "PTMT" | "Plumbing",
+  division: WorkbookDivision,
   month: string,
 ): Promise<string> {
   return (await resolveWorkbookForMonth(division, month)).workbookId;
