@@ -481,6 +481,21 @@ async function buildCorrectiveDetailExcel(
   sumSh.getColumn(1).width = 28;
   for (let c = 2; c <= 7; c++) sumSh.getColumn(c).width = 14;
 
+  if (!hasEngineCats) {
+    // Legacy run: capacity data was not persisted. Add a prominent warning row
+    // so Cap/Day=0 is clearly labelled rather than silently misleading.
+    const legacyWarnRow = sumSh.addRow([
+      "⚠ LEGACY RUN — capacity data was not recorded for this run (saved before per-run capacity tracking). " +
+      "Cap/Day and Feasible figures below are from the category-capacity DB table and may be incorrect " +
+      "(Plumbing values will be 0). Re-run the corrective re-plan to get accurate capacity numbers.",
+    ]);
+    legacyWarnRow.font = { bold: true, color: { argb: "FF92400E" } };
+    legacyWarnRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
+    legacyWarnRow.getCell(1).alignment = { wrapText: true };
+    sumSh.getRow(sumSh.rowCount).height = 42;
+    sumSh.addRow([]);
+  }
+
   const catHdrRow = sumSh.addRow(["Category", "Plan (Revised)", "Produced", "Remaining", "Cap/Day", "Feasible", "Shortfall"]);
   catHdrRow.font = { bold: true };
   catHdrRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
@@ -973,7 +988,17 @@ function buildCorrectivePdfHtml(
     // capacity table, which showed 0 for Plumbing and caused the Cap/Day=0
     // export regression).
     const cats = (run.categoriesJson as Array<{ category: string; plan: number; produced: number; remaining: number; capPerDay: number; feasible: number; shortfall: number; capacityMethod?: string; capacityDays?: number | null }> | null) ?? null;
-    if (!cats || cats.length === 0) return "";
+    if (!cats || cats.length === 0) {
+      // Legacy run: categoriesJson was not persisted (saved before per-run capacity tracking).
+      // Show an explicit note so the reader knows capacity data is unavailable — not that it is zero.
+      return `
+  <h2>Category Capacity &amp; Feasibility</h2>
+  <p style="font-size:8.5px;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;padding:6px 10px;margin-bottom:12px">
+    <strong>⚠ Legacy run</strong> — this corrective run was saved before per-run capacity data was recorded.
+    Capacity &amp; feasibility figures are not available for export.
+    Re-run the corrective re-plan to generate a current export with full capacity numbers.
+  </p>`;
+    }
     const wdr = run.workingDaysRemaining;
     const rows = cats.map(c => `
       <tr>
