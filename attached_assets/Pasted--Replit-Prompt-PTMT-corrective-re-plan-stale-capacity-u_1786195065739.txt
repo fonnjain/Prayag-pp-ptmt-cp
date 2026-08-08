@@ -1,0 +1,75 @@
+# Replit Prompt — PTMT corrective re-plan: stale capacity + uncorrected baseline
+
+The PTMT corrective re-plan export (as-of 2026-08-08, 19 working days remaining) has two problems. The arithmetic is internally consistent — `Feasible = Cap/Day x 19` holds exactly for all seven categories, and shortfalls sum correctly — but the **inputs** are wrong.
+
+**Do these in order.** Fixing capacity while the baseline is still wrong just produces a different wrong answer.
+
+---
+
+## STEP 1 (BLOCKING) — Publish the August PTMT plan fix
+
+The corrective export shows **Original Month Total = 684,492**. That is the **pre-fix** August plan. The corrected figure after the stock-join fix was **617,710**.
+
+So this corrective run is measuring against a plan that over-plans by ~66,482 pcs because ~498,000 units of on-hand stock were never joined. Everything downstream inherits that error.
+
+This strongly suggests the August PTMT stock-join fix was **never published**. Publish it, then confirm the deployed app returns 617,710 — not 684,492 — before re-running anything.
+
+---
+
+## STEP 2 — PTMT capacity is stale July data, not computed from August production
+
+The Cap/Day values in the export are the **exact July golden capacities**, to the unit:
+
+| Category | Cap/Day shown | July golden p90 |
+|---|--:|--:|
+| Cocks Standard | 17,449 | 17,449 |
+| Cocks Premium | 1,242 | 1,242 |
+| Faucets & Jetsprays & Shower | 2,431 | 2,431 |
+| Accessorise | 2,940 | 2,940 |
+| Cistern & Seat Cover | 1,050 | 1,050 |
+| Cabinet | 147 | 147 |
+| Ball Cock | 6,567 | 6,567 |
+
+Seven exact matches is not coincidence. **PTMT capacity is being read from the seeded capacity table rather than recomputed from August production.**
+
+This is the same defect just fixed for Plumbing — the engine capacity ladder (p90 when >=5 distinct production days, mean when 1-4 days, zero only when there is genuinely no production, with `capacityMethod` + day count reported per category) was applied to the Plumbing path only. **Apply the identical ladder to PTMT**, computing from August PTMT production actuals.
+
+Report per category: capacity value, method used (p90 / mean / none), and the number of production days observed.
+
+This is the recurring "Plumbing got the fix, PTMT didn't" pattern flagged in the 28-July audit. Check whether any other recent Plumbing-side fix also needs applying to PTMT.
+
+---
+
+## STEP 3 — Capacity is projected optimistically (applies to BOTH segments)
+
+Capacity is measured **per production day**, then multiplied by **every remaining working day** — which assumes each category runs daily from here. It has not.
+
+PTMT: produced **124,409** over **7 elapsed working days** = **17,773/day actual**, against a modelled total capacity of **31,826/day** — roughly **1.8x optimistic**. So the reported shortfall of 78,573 is understated; at demonstrated run-rate it is nearer **236,000**.
+
+Plumbing shows the same pattern (2.0-2.3x on most categories, 7x on AGRI Fitting).
+
+**Do not silently change the method.** Instead:
+- Report **both** figures per category: `feasible_at_capacity` (current method) and `feasible_at_run_rate` (total produced / elapsed working days x remaining working days).
+- Show the **days-run vs days-elapsed** ratio per category, so it is visible that e.g. CPVC Fitting ran 3 of 7 days.
+- Flag categories where the two projections diverge by more than ~50%.
+
+Whether the optimistic figure is defensible depends on *why* categories skip days — planned campaign runs (batching) versus downtime or material shortage. Surfacing both lets the plant judge; picking one silently does not.
+
+---
+
+## REGRESSION ASSERTIONS TO ADD
+
+1. **Capacity freshness (PTMT and Plumbing):** capacity must be derived from the month being planned. Assert the capacity calculation observed >0 production days in that month; a value identical to a prior month's golden must fail.
+2. **Baseline correctness:** the corrective run's `originalMonthTotal` must equal the current finalized plan-run total for that month. A corrective run measuring against a superseded plan must fail loudly.
+3. **Capacity method reported:** every category exposes `capacityMethod` and the production-day count.
+4. **Run-rate divergence flag:** where `feasible_at_capacity` exceeds `feasible_at_run_rate` by more than 50%, the category is flagged for review.
+5. Confirm the existing **no-zero-capacity-with-production** guard also covers the PTMT path.
+
+---
+
+## REPORT AFTER FIX
+
+- Confirmation the August PTMT plan fix is published and the deployed app returns 617,710.
+- PTMT corrective re-run against the corrected baseline: per category plan / produced / remaining / cap-per-day / method / days observed / feasible / shortfall.
+- Both feasibility projections (capacity vs run-rate) for PTMT and Plumbing, with the days-run ratio.
+- New suite count and pass/fail.
