@@ -568,6 +568,62 @@ async function main(): Promise<void> {
       pass: ptmtWdrOk, tolerance: `< ${fullMonWdr} when in ${PTMT_MONTH}`,
     });
 
+    // NC16a–e: PTMT capacity freshness + run-rate divergence (ptmtReplan now in scope)
+    const ptmtRepCats = (ptmtReplan?.["categories"] as Array<Record<string, unknown>>) ?? [];
+    const ptmtDbWithProd = ptmtRepCats.filter(
+      (c) => ((c["produced"] as number) ?? 0) > 0 && c["capacityMethod"] === "db",
+    );
+    newChecks.push({
+      name: `NC16a · PTMT corrective · no producing category uses stale seeded capacity (${ptmtDbWithProd.length} offenders)`,
+      expected: 0, actual: ptmtDbWithProd.length,
+      pass: ptmtDbWithProd.length === 0,
+      tolerance: "capacityMethod must be p90/mean (from actuals) not db (seeded) when production exists",
+    });
+
+    const ptmtStaleCapMethod = ptmtRepCats.filter(
+      (c) => ((c["produced"] as number) ?? 0) > 0 && ((c["daysRun"] as number) ?? 0) === 0,
+    );
+    newChecks.push({
+      name: `NC16b · PTMT corrective · daysRun > 0 for every category with production (${ptmtStaleCapMethod.length} offenders)`,
+      expected: 0, actual: ptmtStaleCapMethod.length,
+      pass: ptmtStaleCapMethod.length === 0,
+      tolerance: "daysRun must reflect observed production days in the planned month",
+    });
+
+    const ptmtRRFieldsOk = ptmtRepCats.length > 0 && ptmtRepCats.every(
+      (c) => typeof c["daysRun"] === "number" &&
+             typeof c["feasibleAtRunRate"] === "number" &&
+             typeof c["runRateDivergenceFlag"] === "boolean",
+    );
+    newChecks.push({
+      name: "NC16c · PTMT corrective · run-rate divergence fields present (daysRun / feasibleAtRunRate / runRateDivergenceFlag)",
+      expected: 1, actual: ptmtRRFieldsOk ? 1 : 0, pass: ptmtRRFieldsOk,
+      tolerance: "all three fields must exist on every category",
+    });
+
+    const plumbingRRFieldsOk = repCats.length > 0 && repCats.every(
+      (c) => typeof c["daysRun"] === "number" &&
+             typeof c["feasibleAtRunRate"] === "number" &&
+             typeof c["runRateDivergenceFlag"] === "boolean",
+    );
+    newChecks.push({
+      name: "NC16d · Plumbing corrective · run-rate divergence fields present (daysRun / feasibleAtRunRate / runRateDivergenceFlag)",
+      expected: 1, actual: plumbingRRFieldsOk ? 1 : 0, pass: plumbingRRFieldsOk,
+      tolerance: "all three fields must exist on every category",
+    });
+
+    const allRepCatsForDiv = [...repCats, ...ptmtRepCats];
+    const divergenceFlagConsistent = allRepCatsForDiv.every((c) => {
+      const boolFlag = (c["runRateDivergenceFlag"] as boolean) ?? false;
+      const flags = (c["flags"] as string[]) ?? [];
+      return boolFlag === flags.includes("RUN_RATE_DIVERGENCE");
+    });
+    newChecks.push({
+      name: "NC16e · both segments · runRateDivergenceFlag boolean ⟺ RUN_RATE_DIVERGENCE in flags[]",
+      expected: 1, actual: divergenceFlagConsistent ? 1 : 0, pass: divergenceFlagConsistent,
+      tolerance: "boolean field and flags array must always be in sync",
+    });
+
     // NC8: PTMT weekly release — plant W1+W2+W3+W4 ≈ plan total (within 0.5%) per category
     const ptmtPlanItems = await fetchJson<Array<Record<string, unknown>>>(`${API_BASE}/api/plan?month=${PTMT_PLAN_MONTH}&segment=PTMT`);
     const ptmtCatMap = new Map<string, { w1: number; w2: number; w3: number; w4: number; plan: number }>();

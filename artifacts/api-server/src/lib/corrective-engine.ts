@@ -80,6 +80,7 @@ function computeRunFingerprint(content: {
         c.category, q(c.plan), q(c.produced), q(c.remaining),
         q(c.capPerDay), c.capacityMethod, c.capacityDays,
         q(c.feasible), q(c.shortfall),
+        c.daysRun, q(c.feasibleAtRunRate), c.runRateDivergenceFlag ? 1 : 0,
       ]),
   };
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
@@ -148,12 +149,13 @@ export interface CorrectiveCategoryResult {
   producedCapped: number;
   remaining: number;
   capPerDay: number;
-  /** Alias for capPerDay — the p90 daily capacity derived from Sheet3 production history. */
+  /** Alias for capPerDay — the p90 daily capacity derived from production history. */
   capacityPerDay: number;
-  /** How capPerDay was derived: p90 (≥5 production days), mean (1–4 days), override, db (PTMT), none (no demonstrated production). */
+  /** How capPerDay was derived: p90 (≥5 production days), mean (1–4 days), override, db (seeded fallback), none (no demonstrated production). */
   capacityMethod: "p90" | "mean" | "override" | "db" | "none";
-  /** Number of distinct production days behind capPerDay (Plumbing only; null for override/db). */
+  /** Distinct production days observed for this category in the current month (null for override/db fallback). */
   capacityDays: number | null;
+  /** Feasibility at full capacity: capPerDay × workingDaysRemaining. */
   feasible: number;
   shortfall: number;
   productionLag: number;
@@ -161,6 +163,14 @@ export interface CorrectiveCategoryResult {
   capacityShortfall: number;
   flags: string[];
   kgRemaining: number;
+  /** Distinct days this category produced in the elapsed portion of the month. */
+  daysRun: number;
+  /** Working days elapsed (used to compute run-rate). */
+  elapsedWorkingDays: number;
+  /** Feasibility at demonstrated run-rate: (produced ÷ elapsedWorkingDays) × workingDaysRemaining. */
+  feasibleAtRunRate: number;
+  /** True when feasibleAtCapacity > feasibleAtRunRate × 1.5 — optimism flag for review. */
+  runRateDivergenceFlag: boolean;
 }
 
 export interface CorrectiveReplanResult {
@@ -458,10 +468,18 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       : ptmtActualsRaw;
 
     for (const row of effectiveActuals) {
+      if (row.qty <= 0) continue;
       const strictCode = normalizeCodeStrict(row.itemCode);
       producedByStrictCode.set(strictCode, (producedByStrictCode.get(strictCode) ?? 0) + row.qty);
       const strictKey = `${strictCode}::${normalizeCode(row.colour)}`;
       producedByStrictKey.set(strictKey, (producedByStrictKey.get(strictKey) ?? 0) + row.qty);
+      // Also populate dailyByCat for PTMT capacity computation (same ladder as Plumbing)
+      const category = normCodeToCategory.get(strictCode);
+      if (category) {
+        let dayMap = dailyByCat.get(category);
+        if (!dayMap) { dayMap = new Map(); dailyByCat.set(category, dayMap); }
+        dayMap.set(row.date, (dayMap.get(row.date) ?? 0) + row.qty);
+      }
     }
   }
 
@@ -477,24 +495,30 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   const isSingleVariant = (category: string, itemCode: string) =>
     (codeCounts.get(`${category}::${normalizeCodeStrict(itemCode)}`) ?? 0) <= 1;
 
-  // ── P2: Compute Plumbing capPerDay from Sheet3 daily production ───────────
+  // ── P2: Compute capPerDay from daily production (Plumbing + PTMT) ──────────
   // p90 needs a demonstrated distribution: with ≥5 distinct production days use
   // p90; with 1–4 days fall back to the mean of observed days (a category that
   // HAS produced must never get Cap/Day = 0). Zero only when there is truly no
   // production for the category — flagged NO_DEMONSTRATED_CAPACITY downstream.
-  const plumbingCapByCategory = new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
-  if (segment === "Plumbing") {
-    for (const [category, dayMap] of dailyByCat) {
+  // dailyByCat is populated for both segments above; the helper below is shared.
+  const computeCapByCategory = (
+    map: Map<string, Map<string, number>>,
+  ): Map<string, { cap: number; method: "p90" | "mean"; days: number }> => {
+    const result = new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
+    for (const [category, dayMap] of map) {
       const vals = [...dayMap.values()].filter(v => v > 0).sort((a, b) => a - b);
       if (vals.length === 0) continue;
       if (vals.length >= 5) {
-        plumbingCapByCategory.set(category, { cap: p90(vals), method: "p90", days: vals.length });
+        result.set(category, { cap: p90(vals), method: "p90", days: vals.length });
       } else {
         const mean = Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
-        plumbingCapByCategory.set(category, { cap: mean, method: "mean", days: vals.length });
+        result.set(category, { cap: mean, method: "mean", days: vals.length });
       }
     }
-  }
+    return result;
+  };
+  const plumbingCapByCategory = segment === "Plumbing" ? computeCapByCategory(dailyByCat) : new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
+  const ptmtCapByCategory    = segment === "PTMT"     ? computeCapByCategory(dailyByCat) : new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
 
   // ── Pending maps ──────────────────────────────────────────────────────────
   const pendingAtPlanMap = sumPendingUploads(pendingOrderRows);
@@ -615,6 +639,14 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     if (segment === "Plumbing") {
       const e = plumbingCapByCategory.get(category);
       return e ? { cap: e.cap, method: e.method, days: e.days } : { cap: 0, method: "none", days: 0 };
+    }
+    if (segment === "PTMT") {
+      // Use production-derived capacity (p90 / mean) when August actuals are available;
+      // fall back to the seeded DB value only when no production has been observed.
+      const e = ptmtCapByCategory.get(category);
+      if (e) return { cap: e.cap, method: e.method, days: e.days };
+      // No actuals for this category yet — fall back to seeded suggested capacity.
+      return { cap: cap?.suggestedCapacity ?? 0, method: "db", days: null };
     }
     return { cap: cap?.suggestedCapacity ?? 0, method: "db", days: null };
   };
@@ -766,6 +798,18 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       });
     }
 
+    // Run-rate divergence: how many days did this category actually produce,
+    // and what would the total be at that demonstrated rate vs full capacity?
+    const daysRun = dailyByCat.get(category)?.size ?? 0;
+    const feasibleAtRunRate = produced > 0 && workingDaysUsed > 0
+      ? Math.round((produced / workingDaysUsed) * workingDaysRemaining)
+      : 0;
+    // Flag when capacity projection is >50% more optimistic than run-rate.
+    const runRateDivergenceFlag = feasibleAtRunRate > 0 && feasible > feasibleAtRunRate * 1.5;
+    if (runRateDivergenceFlag) {
+      flags.push("RUN_RATE_DIVERGENCE");
+    }
+
     categories.push({
       category,
       plan,
@@ -783,6 +827,10 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       capacityShortfall: shortfall,
       flags,
       kgRemaining,
+      daysRun,
+      elapsedWorkingDays: workingDaysUsed,
+      feasibleAtRunRate,
+      runRateDivergenceFlag,
     });
   }
   categories.sort((a, b) => a.category.localeCompare(b.category));

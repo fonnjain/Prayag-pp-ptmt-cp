@@ -30,6 +30,11 @@ import PlumbingVelocity from "@/pages/plumbing-velocity";
 import PlumbingWarnings from "@/pages/plumbing-warnings";
 import PlumbingQuality from "@/pages/plumbing-quality";
 import PlumbingMachineRelease from "@/pages/plumbing-machine-release";
+import PlumbingAttainment from "@/pages/plumbing-attainment";
+import PlumbingRecommendations from "@/pages/plumbing-recommendations";
+import PlumbingTrend from "@/pages/plumbing-trend";
+import PlumbingConfig from "@/pages/plumbing-config";
+import PlumbingReports from "@/pages/plumbing-reports";
 import PlanImport from "@/pages/plant/plan-import";
 
 const queryClient = new QueryClient({
@@ -128,8 +133,23 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
         <Route path="/plumbing/velocity">
           <PlumbingVelocity month={month} />
         </Route>
+        <Route path="/plumbing/attainment">
+          <PlumbingAttainment month={month} />
+        </Route>
         <Route path="/plumbing/warnings">
           <PlumbingWarnings month={month} />
+        </Route>
+        <Route path="/plumbing/recommendations">
+          <PlumbingRecommendations month={month} />
+        </Route>
+        <Route path="/plumbing/trend">
+          <PlumbingTrend month={month} />
+        </Route>
+        <Route path="/plumbing/config">
+          <PlumbingConfig month={month} />
+        </Route>
+        <Route path="/plumbing/reports">
+          <PlumbingReports month={month} />
         </Route>
         <Route path="/plumbing/quality">
           <PlumbingQuality month={month} />

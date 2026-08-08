@@ -57,6 +57,13 @@ const PLANT_PATHS = new Set([
   "/plant/plan-import",
 ]);
 
+const PLUMBING_PATHS = new Set([
+  "/plumbing", "/plumbing/velocity", "/plumbing/attainment", "/plumbing/warnings",
+  "/plumbing/recommendations", "/plumbing/trend", "/plumbing/config", "/plumbing/reports",
+  "/plumbing/plan-import", "/plumbing/machine-release", "/plumbing/machines",
+  "/plumbing/quality",
+]);
+
 // ─── Cross-App Nav ────────────────────────────────────────────────────────────
 function CrossAppNav() {
   const path = window.location.pathname;
@@ -89,8 +96,8 @@ export function AppLayout({
   setPreset, setCustomMonth, selectedCategory, setSelectedCategory,
 }: AppLayoutProps) {
   const [location] = useLocation();
-  const isPlantPage = PLANT_PATHS.has(location);
-  const isPlumbingPage = location.startsWith("/plumbing");
+  const isPlantPage    = PLANT_PATHS.has(location);
+  const isPlumbingPage = PLUMBING_PATHS.has(location) || location.startsWith("/plumbing");
 
   const { data: bundleRaw } = useGetPlantBundle(
     { month },
@@ -160,21 +167,34 @@ export function AppLayout({
         </div>
         <div className="flex-1 overflow-y-auto py-4 space-y-4">
           {isPlumbingPage ? (
-            <div className="px-3">
-              {sectionLabel("Plant Level", Factory)}
-              <nav className="space-y-1">
-                {navLink({ href: "/plumbing", label: "Plan Overview", icon: LayoutDashboard })}
-                {navLink({ href: "/plumbing/plan-import", label: "Plan Import", icon: Upload })}
-              </nav>
-              {sectionLabel("Machine Level", Cpu)}
-              <nav className="space-y-1">
-                {navLink({ href: "/plumbing/machine-release", label: "Machine Release", icon: SlidersHorizontal })}
-                {navLink({ href: "/plumbing/machines",  label: "Dashboard",  icon: LayoutDashboard })}
-                {navLink({ href: "/plumbing/velocity",  label: "Velocity",   icon: Activity        })}
-                {navLink({ href: "/plumbing/warnings",  label: "Warnings",   icon: AlertTriangle   })}
-                {navLink({ href: "/plumbing/quality",   label: "Quality",    icon: ActivitySquare  })}
-              </nav>
-            </div>
+            <>
+              <div className="px-3">
+                {sectionLabel("Plant Level", Factory)}
+                <nav className="space-y-1">
+                  {navLink({ href: "/plumbing",                  label: "Plan Overview",    icon: LayoutDashboard   })}
+                  {navLink({ href: "/plumbing/velocity",          label: "Velocity",         icon: TrendingUp        })}
+                  {navLink({ href: "/plumbing/attainment",        label: "Attainment",       icon: Layers            })}
+                  {navLink({ href: "/plumbing/warnings",          label: "Warnings",         icon: ShieldAlert       })}
+                  {navLink({ href: "/plumbing/recommendations",   label: "Recommendations",  icon: ListChecks        })}
+                  {navLink({ href: "/plumbing/trend",             label: "Trend",            icon: BarChart2         })}
+                  {navLink({ href: "/plumbing/config",            label: "Config",           icon: SlidersHorizontal })}
+                  {navLink({ href: "/plumbing/plan-import",       label: "Plan Import",      icon: Upload            })}
+                  {navLink({ href: "/plumbing/reports",           label: "Reports",          icon: FileText          })}
+                  {navLink({ href: "/actions",                    label: "Actions",          icon: CheckSquare       })}
+                  {navLink({ href: "/backlog",                    label: "Backlog",          icon: PackageMinus      })}
+                  {navLink({ href: "/ai-analytics",               label: "AI Analytics",     icon: Sparkles          })}
+                  {navLink({ href: "/settings",                   label: "Settings",         icon: Settings          })}
+                </nav>
+              </div>
+              <div className="px-3">
+                {sectionLabel("Machine Level", Cpu)}
+                <nav className="space-y-1">
+                  {navLink({ href: "/plumbing/machine-release", label: "Machine Release", icon: SlidersHorizontal })}
+                  {navLink({ href: "/plumbing/machines",        label: "Dashboard",       icon: LayoutDashboard   })}
+                  {navLink({ href: "/plumbing/quality",         label: "Quality",         icon: ActivitySquare    })}
+                </nav>
+              </div>
+            </>
           ) : (
             <>
               <div className="px-3">
