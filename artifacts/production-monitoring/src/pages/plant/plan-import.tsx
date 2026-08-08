@@ -225,7 +225,7 @@ function Dropzone({ onFile }: { onFile: (f: File) => void }) {
       <div className="text-center">
         <div className="font-medium text-sm">Drop your plant plan here, or click to browse</div>
         <div className="text-xs text-muted-foreground mt-1">
-          Excel (.xlsx) — expects "Pipe Plan" and "Fitting Plan" sheets
+          Excel (.xlsx) — Consolidated Plan format (sheet "5. Item Assignment") or legacy "Pipe Plan" / "Fitting Plan"
         </div>
       </div>
       <input
