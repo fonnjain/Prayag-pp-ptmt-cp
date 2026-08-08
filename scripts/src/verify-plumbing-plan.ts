@@ -486,6 +486,47 @@ async function main(): Promise<void> {
       pass: capDayOk, tolerance: "feasible = capDay × wdr",
     });
 
+    // NC15a: no category with production may carry Cap/Day = 0 (p90→mean fallback)
+    const zeroCapWithProd = repCats.filter(
+      (c) => ((c["produced"] as number) ?? 0) > 0 && (((c["capPerDay"] as number) ?? 0) === 0),
+    );
+    newChecks.push({
+      name: `NC15a · corrective-replan · no zero Cap/Day for categories with production (${zeroCapWithProd.length} offenders)`,
+      expected: 0, actual: zeroCapWithProd.length,
+      pass: zeroCapWithProd.length === 0, tolerance: "p90 ≥5 days, mean 1–4 days, 0 only with no production",
+    });
+
+    // NC15b: capacityMethod surfaced per category and consistent with production
+    let methodOk = repCats.length > 0;
+    for (const c of repCats) {
+      const method = c["capacityMethod"] as string | undefined;
+      const produced = (c["produced"] as number) ?? 0;
+      if (!method) { methodOk = false; break; }
+      if (produced > 0 && method === "none") { methodOk = false; break; }
+      if (produced === 0 && (method === "p90" || method === "mean")) { methodOk = false; break; }
+    }
+    newChecks.push({
+      name: "NC15b · corrective-replan · capacityMethod present and consistent (p90/mean ⇔ production exists)",
+      expected: 1, actual: methodOk ? 1 : 0,
+      pass: methodOk, tolerance: "method ∈ {p90,mean,override,db,none}",
+    });
+
+    // NC15c: shortfall must NOT equal 100% of remaining for categories with
+    // production and remaining work (the Cap/Day=0 regression signature).
+    // Only meaningful while working days remain: with wdr=0 (month over),
+    // feasible is legitimately 0 and shortfall equals remaining.
+    const totalShortfallBug = wdr <= 0 ? [] : repCats.filter((c) => {
+      const produced = (c["produced"] as number) ?? 0;
+      const remaining = (c["remaining"] as number) ?? 0;
+      const shortfall = (c["shortfall"] as number) ?? 0;
+      return produced > 0 && remaining > 0 && shortfall >= remaining;
+    });
+    newChecks.push({
+      name: `NC15c · corrective-replan · shortfall < remaining when a producing category has capacity (${totalShortfallBug.length} offenders)`,
+      expected: 0, actual: totalShortfallBug.length,
+      pass: totalShortfallBug.length === 0, tolerance: "shortfall = max(remaining − cap×wdr, 0) with cap > 0",
+    });
+
     // NC5: Plan GET 200 + non-empty array when Plumbing FG upload is present (422 guard active)
     const planResp = await fetch(`${API_BASE}/api/plan?month=${PLUMBING_MONTH}&segment=Plumbing`);
     const planBody = await planResp.json() as unknown;

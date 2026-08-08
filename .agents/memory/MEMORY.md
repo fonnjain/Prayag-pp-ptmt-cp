@@ -42,4 +42,5 @@
 - [Corrective run dedupe](corrective-run-dedupe.md) — fingerprint(Math.fround-quantized full content) + pg advisory lock; `real` columns break strict float equality.
 - [Ops overview partial cache](ops-overview-partial-cache.md) — never cache a live-sheet aggregate when any tab read failed; suite live checks use fetchJson + evaluateWithRetry.
 - [Plant-live proxy auth](plant-live-proxy.md) — /api/plant-live/records requires a managed Bearer API key (only route using validateApiKey); upstream fetches have 20s timeout; document 401/503 in openapi.
+- [Corrective export provenance](corrective-export-provenance.md) — exports render persisted engine categoriesJson (never DB capacity table); new persisted fields must join the dedupe fingerprint payload.
 - [Plumbing machine cascade](plumbing-machine-cascade.md) — 9 PIPE + 24 MOULDING in plumbing_machine_capacity; cascade runs after annotateWeeklyRelease; AGRI Pipe → flex only (MC3/MC4/MC5); Solvent unconstrained; machineW1-W4 on PlanItemWithBom; DataPage has no month prop (panel derives from new Date()).

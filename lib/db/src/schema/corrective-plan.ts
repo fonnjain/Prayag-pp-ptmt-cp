@@ -34,6 +34,12 @@ export const correctivePlanRunsTable = pgTable("corrective_plan_runs", {
   originalMonthTotal: real("original_month_total").notNull().default(0),
   revisedMonthTotal: real("revised_month_total").notNull().default(0),
   unfulfillableQty: real("unfulfillable_qty").notNull().default(0),
+  // Per-category engine results (cap/feasible/shortfall + capacityMethod) as
+  // computed at run time — exports MUST use these, never re-derive from the
+  // category-capacity DB table (which can disagree with the engine's p90).
+  categoriesJson: jsonb("categories_json").$type<unknown[]>(),
+  // Working days remaining at run time (asOfDate-aware) — used by exports.
+  workingDaysRemaining: integer("working_days_remaining"),
   weekStatsJson: jsonb("week_stats_json")
     .notNull()
     .$type<CorrectiveWeekStat[]>()

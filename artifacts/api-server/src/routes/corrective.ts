@@ -450,8 +450,23 @@ async function buildCorrectiveDetailExcel(
   const requiredCats = segment === "Plumbing" ? PLUMBING_CATS_ORDER : undefined;
   const byCategory = groupByCategory(items, requiredCats);
 
-  const capMap = new Map(catCapRows.map(r => [r.category, r.overrideCapacity ?? r.suggestedCapacity]));
-  const wdr       = (4 - run.weekClosed) * (run.workingDaysPerWeek ?? 6);
+  // Prefer the engine's persisted per-category results (categoriesJson): these
+  // are the exact Cap/Day + feasible values the replan computed (p90/mean from
+  // Sheet3 for Plumbing). The category-capacity DB table is only a legacy
+  // fallback for runs recorded before categoriesJson existed — it can disagree
+  // with the engine (Plumbing suggested capacities are 0 there).
+  const engineCats = Array.isArray(run.categoriesJson)
+    ? (run.categoriesJson as Array<{ category: string; capPerDay?: number; feasible?: number }>)
+    : [];
+  const engineCapMap  = new Map(engineCats.map(c => [c.category, Math.round(c.capPerDay ?? 0)]));
+  const engineFeasMap = new Map(engineCats.map(c => [c.category, Math.round(c.feasible ?? 0)]));
+  const dbCapMap = new Map(catCapRows.map(r => [r.category, r.overrideCapacity ?? r.suggestedCapacity]));
+  const hasEngineCats = engineCats.length > 0;
+  const getCap = (cat: string): number =>
+    hasEngineCats ? (engineCapMap.get(cat) ?? 0) : (dbCapMap.get(cat) ?? 0);
+  const wdr       = run.workingDaysRemaining ?? (4 - run.weekClosed) * (run.workingDaysPerWeek ?? 6);
+  const getFeasible = (cat: string): number =>
+    hasEngineCats ? (engineFeasMap.get(cat) ?? 0) : Math.round(getCap(cat) * wdr);
   const asOfLabel = run.asOfDate ?? `After W${run.weekClosed}`;
 
   // ── Summary sheet — per-category plan/produced/remaining/feasible/shortfall ──
@@ -475,8 +490,8 @@ async function buildCorrectiveDetailExcel(
     const plan      = catItems.reduce((s, i) => s + Math.round(i.planRev), 0);
     const produced  = catItems.reduce((s, i) => s + Math.round(i.producedToDate), 0);
     const remaining = catItems.reduce((s, i) => s + Math.round(i.remainingToProduce), 0);
-    const cap       = capMap.get(cat) ?? 0;
-    const feasible  = Math.round(cap * wdr);
+    const cap       = getCap(cat);
+    const feasible  = getFeasible(cat);
     const shortfall = Math.max(remaining - feasible, 0);
     grandPlan  += plan;  grandProd   += produced;  grandRem  += remaining;
     grandFeas  += feasible; grandShort += shortfall;
@@ -499,8 +514,8 @@ async function buildCorrectiveDetailExcel(
       noteRow.getCell(1).alignment = { wrapText: true };
     }
 
-    const capPerDay = capMap.get(category) ?? 0;
-    const feasible  = Math.round(capPerDay * wdr);
+    const capPerDay = getCap(category);
+    const feasible  = getFeasible(category);
     const catRem    = catItems.reduce((s, i) => s + Math.round(i.remainingToProduce), 0);
     const shortfall = Math.max(catRem - feasible, 0);
 
@@ -943,6 +958,37 @@ function buildCorrectivePdfHtml(
     <div class="kpi"><div class="label">New Orders</div><div class="val" style="color:#c2410c">+${fmtN(run.newOrdersQty)} pcs</div></div>
     <div class="kpi"><div class="label">Unfulfillable</div><div class="val" style="color:${run.unfulfillableQty > 0 ? "#b91c1c" : "#166534"}">${fmtN(run.unfulfillableQty)} pcs</div></div>
   </div>
+
+  ${(() => {
+    // Category capacity summary from the run's PERSISTED engine results —
+    // the same values the engine computed (never re-derived from the DB
+    // capacity table, which showed 0 for Plumbing and caused the Cap/Day=0
+    // export regression).
+    const cats = (run.categoriesJson as Array<{ category: string; plan: number; produced: number; remaining: number; capPerDay: number; feasible: number; shortfall: number; capacityMethod?: string; capacityDays?: number | null }> | null) ?? null;
+    if (!cats || cats.length === 0) return "";
+    const wdr = run.workingDaysRemaining;
+    const rows = cats.map(c => `
+      <tr>
+        <td>${h(c.category)}</td>
+        <td style="text-align:right">${fmtN(c.plan)}</td>
+        <td style="text-align:right">${fmtN(c.produced)}</td>
+        <td style="text-align:right">${fmtN(c.remaining)}</td>
+        <td style="text-align:right;font-weight:bold">${fmtN(c.capPerDay)}</td>
+        <td style="text-align:center;color:#6b7280">${h(c.capacityMethod ?? "—")}${c.capacityDays ? ` (${c.capacityDays}d)` : ""}</td>
+        <td style="text-align:right">${fmtN(c.feasible)}</td>
+        <td style="text-align:right;color:${c.shortfall > 0 ? "#b91c1c" : "#166534"};font-weight:bold">${fmtN(c.shortfall)}</td>
+      </tr>`).join("");
+    return `
+  <h2>Category Capacity &amp; Feasibility${wdr !== null && wdr !== undefined ? ` — ${wdr} working days remaining` : ""}</h2>
+  <table style="margin-bottom:12px">
+    <thead><tr>
+      <th>Category</th><th style="text-align:right">Plan (Rev)</th><th style="text-align:right">Produced</th>
+      <th style="text-align:right">Remaining</th><th style="text-align:right">Cap/Day</th><th style="text-align:center">Method</th>
+      <th style="text-align:right">Feasible</th><th style="text-align:right">Shortfall</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+  })()}
 
   ${weekStats.length > 0 ? `
   <h2>Week-by-Week Summary</h2>

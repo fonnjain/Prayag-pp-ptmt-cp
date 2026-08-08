@@ -42,6 +42,8 @@ function computeRunFingerprint(content: {
   weekStats: CorrectiveWeekStat[];
   warnings: CorrectiveWarning[];
   items: CorrectiveItemResult[];
+  categories: CorrectiveCategoryResult[];
+  workingDaysRemaining: number;
 }): string {
   const q = (n: number | null) => (n == null ? null : Math.fround(n));
   const payload = {
@@ -70,6 +72,14 @@ function computeRunFingerprint(content: {
         q(i.kgRev), q(i.remainingKg), q(i.deltaNewOrders), q(i.deltaProduction), q(i.deltaNet),
         q(i.coverNow), i.newWeek, q(i.w1Rev), q(i.w2Rev), q(i.w3Rev), q(i.w4Rev),
         i.status, i.isNewItem ? 1 : 0,
+      ]),
+    workingDaysRemaining: content.workingDaysRemaining,
+    categories: [...content.categories]
+      .sort((a, b) => a.category.localeCompare(b.category))
+      .map(c => [
+        c.category, q(c.plan), q(c.produced), q(c.remaining),
+        q(c.capPerDay), c.capacityMethod, c.capacityDays,
+        q(c.feasible), q(c.shortfall),
       ]),
   };
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
@@ -140,6 +150,10 @@ export interface CorrectiveCategoryResult {
   capPerDay: number;
   /** Alias for capPerDay — the p90 daily capacity derived from Sheet3 production history. */
   capacityPerDay: number;
+  /** How capPerDay was derived: p90 (≥5 production days), mean (1–4 days), override, db (PTMT), none (no demonstrated production). */
+  capacityMethod: "p90" | "mean" | "override" | "db" | "none";
+  /** Number of distinct production days behind capPerDay (Plumbing only; null for override/db). */
+  capacityDays: number | null;
   feasible: number;
   shortfall: number;
   productionLag: number;
@@ -463,12 +477,22 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   const isSingleVariant = (category: string, itemCode: string) =>
     (codeCounts.get(`${category}::${normalizeCodeStrict(itemCode)}`) ?? 0) <= 1;
 
-  // ── P2: Compute Plumbing capPerDay from p90 of Sheet3 daily production ────
-  const plumbingCapByCategory = new Map<string, number>();
+  // ── P2: Compute Plumbing capPerDay from Sheet3 daily production ───────────
+  // p90 needs a demonstrated distribution: with ≥5 distinct production days use
+  // p90; with 1–4 days fall back to the mean of observed days (a category that
+  // HAS produced must never get Cap/Day = 0). Zero only when there is truly no
+  // production for the category — flagged NO_DEMONSTRATED_CAPACITY downstream.
+  const plumbingCapByCategory = new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
   if (segment === "Plumbing") {
     for (const [category, dayMap] of dailyByCat) {
-      const sorted = [...dayMap.values()].sort((a, b) => a - b);
-      plumbingCapByCategory.set(category, p90(sorted));
+      const vals = [...dayMap.values()].filter(v => v > 0).sort((a, b) => a - b);
+      if (vals.length === 0) continue;
+      if (vals.length >= 5) {
+        plumbingCapByCategory.set(category, { cap: p90(vals), method: "p90", days: vals.length });
+      } else {
+        const mean = Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
+        plumbingCapByCategory.set(category, { cap: mean, method: "mean", days: vals.length });
+      }
     }
   }
 
@@ -585,12 +609,16 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   }
 
   // ── P2: Per-category capacity ─────────────────────────────────────────────
-  const getCapPerDay = (category: string): number => {
+  const getCapInfo = (category: string): { cap: number; method: CorrectiveCategoryResult["capacityMethod"]; days: number | null } => {
     const cap = catCapMap.get(category);
-    if (cap?.overrideCapacity != null) return cap.overrideCapacity;
-    if (segment === "Plumbing") return plumbingCapByCategory.get(category) ?? 0;
-    return cap?.suggestedCapacity ?? 0;
+    if (cap?.overrideCapacity != null) return { cap: cap.overrideCapacity, method: "override", days: null };
+    if (segment === "Plumbing") {
+      const e = plumbingCapByCategory.get(category);
+      return e ? { cap: e.cap, method: e.method, days: e.days } : { cap: 0, method: "none", days: 0 };
+    }
+    return { cap: cap?.suggestedCapacity ?? 0, method: "db", days: null };
   };
+  const getCapPerDay = (category: string): number => getCapInfo(category).cap;
 
   const getWdPerWeek = (category: string): number =>
     catCapMap.get(category)?.workingDaysPerWeek ?? workingDaysPerWeek;
@@ -706,6 +734,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     catGroupMap.set(item.category, c);
   }
 
+  const capacityWarnings: CorrectiveWarning[] = [];
   const categories: CorrectiveCategoryResult[] = [];
   for (const [category, c] of catGroupMap) {
     const plan = Math.round(c.planRevTotal);
@@ -714,7 +743,8 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       items.filter(i => i.category === category).reduce((s, i) => s + Math.min(i.producedToDate, i.planRev), 0)
     );
     const remaining = plan - producedCapped;
-    const capPerDay = getCapPerDay(category);
+    const capInfo = getCapInfo(category);
+    const capPerDay = capInfo.cap;
     const feasible = capPerDay * workingDaysRemaining;
     const shortfall = Math.max(remaining - feasible, 0);
     const productionLag = Math.max(Math.round(c.originalPlanTotal) - produced, 0);
@@ -725,6 +755,16 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     if (shortfall > 0) flags.push("UNFULFILLABLE_THIS_MONTH");
     if (produced === 0 && plan > 0) flags.push("NOT_STARTED");
     if (capPerDay === 0 && plan > 0) flags.push("NO_DEMONSTRATED_CAPACITY");
+    // Invariant: a category with real production must never carry Cap/Day = 0.
+    if (produced > 0 && capPerDay === 0) {
+      capacityWarnings.push({
+        code: "ZERO_CAP_WITH_PRODUCTION",
+        severity: "critical",
+        message: `${category}: produced ${produced.toLocaleString()} pcs but Cap/Day resolved to 0 (method=${capInfo.method}) — capacity derivation bug`,
+        value: produced,
+        category,
+      });
+    }
 
     categories.push({
       category,
@@ -734,6 +774,8 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       remaining,
       capPerDay,
       capacityPerDay: capPerDay,   // alias for consumers expecting this field name
+      capacityMethod: capInfo.method,
+      capacityDays: capInfo.days,
       feasible,
       shortfall,
       productionLag,
@@ -788,7 +830,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   );
 
   // ── Warnings ──────────────────────────────────────────────────────────────
-  const warnings: CorrectiveWarning[] = [];
+  const warnings: CorrectiveWarning[] = [...capacityWarnings];
 
   if (weekClosed > 0) {
     for (let w = 1; w <= weekClosed; w++) {
@@ -909,6 +951,10 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     weekStats,
     warnings,
     items,
+    // Persisted export inputs — a capacity-derivation change must produce a
+    // NEW run (otherwise dedupe would reuse a run with stale categoriesJson).
+    categories,
+    workingDaysRemaining,
   });
 
   let run: typeof correctivePlanRunsTable.$inferSelect | undefined;
@@ -947,6 +993,8 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       unfulfillableQty,
       weekStatsJson: weekStats,
       warningsJson: warnings,
+      categoriesJson: categories,
+      workingDaysRemaining,
       asOfDate: effectiveAsOfDate ?? null,
       planRunId: input.planRunId ?? null,
       note: note ?? null,
