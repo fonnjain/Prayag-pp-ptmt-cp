@@ -145,6 +145,30 @@ export async function syncNextMonthWorkbookReadiness(now?: Date): Promise<void> 
   }
 }
 
+/**
+ * Probe Plumbing Sheet3 for bad date formats and record the result in sync_sources.
+ * Runs during every auto-sync so the plant sees a named alert immediately on the
+ * Data page — before any replan or monitoring load triggers a hard 500.
+ */
+async function syncPlumbingSheet3DateCheck(month: string): Promise<void> {
+  const id = `plumbingSheet3DateCheck_${month}`;
+  const name = `Plumbing Sheet3 date-format check (${month})`;
+  try {
+    await fetchPlumbingSheet3Production(month);
+    await upsertSyncSource(id, name, "success", "All production-row dates parsed OK", []);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Surface bad-date errors as "warning" so the plant sees them prominently on
+    // the Data page.  Any other Sheet3 error (missing workbook, API timeout, etc.)
+    // is recorded as "error".
+    const isDateError = msg.includes("unrecognised date formats");
+    logger.warn({ month, err: msg }, isDateError
+      ? "Plumbing Sheet3: unrecognised date formats — surfacing as sync warning"
+      : "Plumbing Sheet3 date-check: unexpected error");
+    await upsertSyncSource(id, name, "error", msg, []);
+  }
+}
+
 export async function runFullSync(month?: string): Promise<void> {
   const m = month ?? currentPlanningMonth();
   logger.info({ month: m }, "Starting full sync");
@@ -160,6 +184,8 @@ export async function runFullSync(month?: string): Promise<void> {
   await syncLiveOrder(m);
   await sleep(1100);
   await syncNextMonthWorkbookReadiness();
+  await sleep(1100);
+  await syncPlumbingSheet3DateCheck(m);
 
   logger.info({ month: m }, "Full sync complete");
 }

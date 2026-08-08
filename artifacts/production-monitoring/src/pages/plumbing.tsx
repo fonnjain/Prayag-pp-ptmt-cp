@@ -123,8 +123,28 @@ export default function PlumbingMonitoring({ month }: { month: string }) {
       </header>
 
       {error && (
-        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {error}
+        <div className={`flex items-start gap-3 rounded-lg border px-4 py-3 text-sm ${
+          error.includes("unrecognised date formats")
+            ? "border-orange-300 bg-orange-50 text-orange-900"
+            : "border-red-200 bg-red-50 text-red-700"
+        }`}>
+          <AlertTriangle className={`h-4 w-4 mt-0.5 shrink-0 ${
+            error.includes("unrecognised date formats") ? "text-orange-500" : "text-red-500"
+          }`} />
+          <div className="space-y-1">
+            {error.includes("unrecognised date formats") ? (
+              <>
+                <p className="font-semibold">Sheet3 date format error — production data cannot be read</p>
+                <p className="leading-snug">{error}</p>
+                <p className="text-xs mt-1 opacity-80">
+                  Fix the date in the Plumbing workbook's Sheet3 and re-run sync, or refresh this page once corrected.
+                  Supported formats: Sheets serial, ISO (YYYY-MM-DD), "1-Aug-2026", "Aug 1, 2026".
+                </p>
+              </>
+            ) : (
+              <p>{error}</p>
+            )}
+          </div>
         </div>
       )}
 

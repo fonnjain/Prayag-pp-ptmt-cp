@@ -2290,8 +2290,16 @@ router.get("/plan/plumbing-monitoring", async (req, res) => {
     _plumbingMonCache.set(month, { payload, expires: Date.now() + 5 * 60 * 1000 });
     res.json(payload);
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err, month }, "plan/plumbing-monitoring failed");
-    res.status(500).json({ error: "Failed to compute Plumbing monitoring" });
+    // Surface date-format errors with the full diagnostic message so the plant
+    // sees the workbook ID, bad-date sample, and supported formats in the UI —
+    // not just a generic "Failed" string.
+    if (msg.includes("unrecognised date formats")) {
+      res.status(422).json({ error: msg });
+    } else {
+      res.status(500).json({ error: "Failed to compute Plumbing monitoring" });
+    }
   }
 });
 
