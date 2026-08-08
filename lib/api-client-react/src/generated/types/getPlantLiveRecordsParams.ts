@@ -5,7 +5,7 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export type GetPlantLiveSummaryParams = {
+export type GetPlantLiveRecordsParams = {
 /**
  * Period token e.g. last_updated, last_month, 2026-07
  */

@@ -1455,6 +1455,83 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlantLivePlantsResponse"
 
+  /plant-live/periods:
+    get:
+      operationId: getPlantLivePeriods
+      tags: [plantLive]
+      summary: Valid period tokens and months holding data from prayag-plant.com live API
+      responses:
+        "200":
+          description: Period tokens and months with data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantLivePeriodsResponse"
+        "502":
+          description: Upstream API unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantLiveError"
+        "503":
+          description: PRAYAG_PLANT_API_KEY not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantLiveError"
+
+  /plant-live/records:
+    get:
+      operationId: getPlantLiveRecords
+      tags: [plantLive]
+      summary: Raw row-level production data with provenance from prayag-plant.com live API
+      parameters:
+        - name: period
+          in: query
+          required: false
+          schema: { type: string, default: "last_updated" }
+          description: "Period token e.g. last_updated, last_month, 2026-07"
+        - name: plant
+          in: query
+          required: false
+          schema: { type: string }
+          description: "Plant code e.g. PTMT, PIPE, GARDEN"
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string }
+          description: "Segment filter"
+        - name: machine
+          in: query
+          required: false
+          schema: { type: string }
+          description: "Machine filter"
+      responses:
+        "200":
+          description: Row-level records with confirmation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantLiveRecordsResponse"
+        "401":
+          description: Missing or invalid managed API key (Authorization Bearer)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantLiveError"
+        "502":
+          description: Upstream API unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantLiveError"
+        "503":
+          description: PRAYAG_PLANT_API_KEY not configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantLiveError"
+
   /plant-live/summary:
     get:
       operationId: getPlantLiveSummary
@@ -1471,6 +1548,16 @@ paths:
           required: false
           schema: { type: string }
           description: "Plant code e.g. PTMT, PIPE, GARDEN"
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string }
+          description: "Segment filter"
+        - name: machine
+          in: query
+          required: false
+          schema: { type: string }
+          description: "Machine filter"
       responses:
         "200":
           description: Summary with by_machine and by_date breakdowns
@@ -1480,6 +1567,12 @@ paths:
                 $ref: "#/components/schemas/PlantLiveSummaryResponse"
         "502":
           description: Upstream API unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantLiveError"
+        "503":
+          description: PRAYAG_PLANT_API_KEY not configured
           content:
             application/json:
               schema:
@@ -2854,6 +2947,55 @@ components:
         warnings:
           type: array
           items: { type: string }
+
+    PlantLivePeriodsResponse:
+      type: object
+      required: [period_tokens, months_with_data]
+      properties:
+        period_tokens:
+          type: array
+          items: { type: string }
+        months_with_data:
+          type: array
+          items: { type: string }
+
+    PlantLiveRecordRow:
+      type: object
+      description: Raw production row with provenance; upstream may add fields.
+      additionalProperties: true
+      properties:
+        date: { type: string }
+        plant: { type: string }
+        machine: { type: string }
+        segment: { type: string }
+        period: { type: string }
+        grain: { type: string }
+        unit: { type: string }
+        total_count: { type: ["number", "null"] }
+        reject_count: { type: ["number", "null"] }
+        actual_hours: { type: ["number", "null"] }
+        ideal_hours: { type: ["number", "null"] }
+        downtime_min: { type: ["number", "null"] }
+        source_family: { type: string }
+        source_file: { type: string }
+        source_tab: { type: string }
+
+    PlantLiveRecordsResponse:
+      type: object
+      required: [period, rows, row_count]
+      properties:
+        period:
+          $ref: "#/components/schemas/PlantLivePeriod"
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlantLiveRecordRow"
+        row_count: { type: integer }
+        confirmation_status: { type: string }
+        figures_gated: { type: boolean }
+        quarantined:
+          type: array
+          items: {}
 
     PlantLivePeriod:
       type: object

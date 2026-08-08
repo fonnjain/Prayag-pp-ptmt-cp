@@ -57,6 +57,7 @@ import type {
   GetPlanSummaryParams,
   GetPlantBundleParams,
   GetPlantConfigParams,
+  GetPlantLiveRecordsParams,
   GetPlantLiveSummaryParams,
   GetPlantTrend200,
   GetPlantTrendParams,
@@ -99,7 +100,9 @@ import type {
   PlantConfigData,
   PlantConfigUpdate,
   PlantLiveError,
+  PlantLivePeriodsResponse,
   PlantLivePlantsResponse,
+  PlantLiveRecordsResponse,
   PlantLiveSummaryResponse,
   PlantSourceConfigUpsert,
   PlantWeeklySummary,
@@ -6610,6 +6613,220 @@ export function useGetPlantLivePlants<TData = Awaited<ReturnType<typeof getPlant
 
 
 /**
+ * @summary Valid period tokens and months holding data from prayag-plant.com live API
+ */
+export type getPlantLivePeriodsResponse200 = {
+  data: PlantLivePeriodsResponse
+  status: 200
+}
+
+export type getPlantLivePeriodsResponse502 = {
+  data: PlantLiveError
+  status: 502
+}
+
+export type getPlantLivePeriodsResponse503 = {
+  data: PlantLiveError
+  status: 503
+}
+    
+export type getPlantLivePeriodsResponseSuccess = (getPlantLivePeriodsResponse200) & {
+  headers: Headers;
+};
+export type getPlantLivePeriodsResponseError = (getPlantLivePeriodsResponse502 | getPlantLivePeriodsResponse503) & {
+  headers: Headers;
+};
+
+export type getPlantLivePeriodsResponse = (getPlantLivePeriodsResponseSuccess | getPlantLivePeriodsResponseError)
+
+export const getGetPlantLivePeriodsUrl = () => {
+
+
+  
+
+  return `/api/plant-live/periods`
+}
+
+export const getPlantLivePeriods = async ( options?: RequestInit): Promise<getPlantLivePeriodsResponse> => {
+  
+  return customFetch<getPlantLivePeriodsResponse>(getGetPlantLivePeriodsUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetPlantLivePeriodsQueryKey = () => {
+    return [
+    `/api/plant-live/periods`
+    ] as const;
+    }
+
+    
+export const getGetPlantLivePeriodsQueryOptions = <TData = Awaited<ReturnType<typeof getPlantLivePeriods>>, TError = PlantLiveError>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantLivePeriods>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlantLivePeriodsQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlantLivePeriods>>> = ({ signal }) => getPlantLivePeriods({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlantLivePeriods>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlantLivePeriodsQueryResult = NonNullable<Awaited<ReturnType<typeof getPlantLivePeriods>>>
+export type GetPlantLivePeriodsQueryError = PlantLiveError
+
+
+/**
+ * @summary Valid period tokens and months holding data from prayag-plant.com live API
+ */
+
+export function useGetPlantLivePeriods<TData = Awaited<ReturnType<typeof getPlantLivePeriods>>, TError = PlantLiveError>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantLivePeriods>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlantLivePeriodsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
+ * @summary Raw row-level production data with provenance from prayag-plant.com live API
+ */
+export type getPlantLiveRecordsResponse200 = {
+  data: PlantLiveRecordsResponse
+  status: 200
+}
+
+export type getPlantLiveRecordsResponse401 = {
+  data: PlantLiveError
+  status: 401
+}
+
+export type getPlantLiveRecordsResponse502 = {
+  data: PlantLiveError
+  status: 502
+}
+
+export type getPlantLiveRecordsResponse503 = {
+  data: PlantLiveError
+  status: 503
+}
+    
+export type getPlantLiveRecordsResponseSuccess = (getPlantLiveRecordsResponse200) & {
+  headers: Headers;
+};
+export type getPlantLiveRecordsResponseError = (getPlantLiveRecordsResponse401 | getPlantLiveRecordsResponse502 | getPlantLiveRecordsResponse503) & {
+  headers: Headers;
+};
+
+export type getPlantLiveRecordsResponse = (getPlantLiveRecordsResponseSuccess | getPlantLiveRecordsResponseError)
+
+export const getGetPlantLiveRecordsUrl = (params?: GetPlantLiveRecordsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/plant-live/records?${stringifiedParams}` : `/api/plant-live/records`
+}
+
+export const getPlantLiveRecords = async (params?: GetPlantLiveRecordsParams, options?: RequestInit): Promise<getPlantLiveRecordsResponse> => {
+  
+  return customFetch<getPlantLiveRecordsResponse>(getGetPlantLiveRecordsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetPlantLiveRecordsQueryKey = (params?: GetPlantLiveRecordsParams,) => {
+    return [
+    `/api/plant-live/records`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetPlantLiveRecordsQueryOptions = <TData = Awaited<ReturnType<typeof getPlantLiveRecords>>, TError = PlantLiveError>(params?: GetPlantLiveRecordsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantLiveRecords>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlantLiveRecordsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlantLiveRecords>>> = ({ signal }) => getPlantLiveRecords(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlantLiveRecords>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlantLiveRecordsQueryResult = NonNullable<Awaited<ReturnType<typeof getPlantLiveRecords>>>
+export type GetPlantLiveRecordsQueryError = PlantLiveError
+
+
+/**
+ * @summary Raw row-level production data with provenance from prayag-plant.com live API
+ */
+
+export function useGetPlantLiveRecords<TData = Awaited<ReturnType<typeof getPlantLiveRecords>>, TError = PlantLiveError>(
+ params?: GetPlantLiveRecordsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlantLiveRecords>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlantLiveRecordsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
  * @summary Machine-level performance summary from prayag-plant.com live API
  */
 export type getPlantLiveSummaryResponse200 = {
@@ -6621,11 +6838,16 @@ export type getPlantLiveSummaryResponse502 = {
   data: PlantLiveError
   status: 502
 }
+
+export type getPlantLiveSummaryResponse503 = {
+  data: PlantLiveError
+  status: 503
+}
     
 export type getPlantLiveSummaryResponseSuccess = (getPlantLiveSummaryResponse200) & {
   headers: Headers;
 };
-export type getPlantLiveSummaryResponseError = (getPlantLiveSummaryResponse502) & {
+export type getPlantLiveSummaryResponseError = (getPlantLiveSummaryResponse502 | getPlantLiveSummaryResponse503) & {
   headers: Headers;
 };
 

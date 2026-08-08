@@ -1643,13 +1643,67 @@ export const getPlantLivePlantsResponse = zod.object({
 
 
 /**
+ * @summary Valid period tokens and months holding data from prayag-plant.com live API
+ */
+export const getPlantLivePeriodsResponse = zod.object({
+  "period_tokens": zod.array(zod.string()),
+  "months_with_data": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Raw row-level production data with provenance from prayag-plant.com live API
+ */
+export const getPlantLiveRecordsQueryPeriodDefault = "last_updated";
+
+export const getPlantLiveRecordsQueryParams = zod.object({
+  "period": zod.string().default(getPlantLiveRecordsQueryPeriodDefault).describe('Period token e.g. last_updated, last_month, 2026-07'),
+  "plant": zod.string().optional().describe('Plant code e.g. PTMT, PIPE, GARDEN'),
+  "segment": zod.string().optional().describe('Segment filter'),
+  "machine": zod.string().optional().describe('Machine filter')
+})
+
+export const getPlantLiveRecordsResponse = zod.object({
+  "period": zod.object({
+  "requested": zod.string(),
+  "label": zod.string(),
+  "from": zod.string(),
+  "to": zod.string()
+}),
+  "rows": zod.array(zod.object({
+  "date": zod.string().optional(),
+  "plant": zod.string().optional(),
+  "machine": zod.string().optional(),
+  "segment": zod.string().optional(),
+  "period": zod.string().optional(),
+  "grain": zod.string().optional(),
+  "unit": zod.string().optional(),
+  "total_count": zod.number().nullish(),
+  "reject_count": zod.number().nullish(),
+  "actual_hours": zod.number().nullish(),
+  "ideal_hours": zod.number().nullish(),
+  "downtime_min": zod.number().nullish(),
+  "source_family": zod.string().optional(),
+  "source_file": zod.string().optional(),
+  "source_tab": zod.string().optional()
+}).describe('Raw production row with provenance; upstream may add fields.')),
+  "row_count": zod.number(),
+  "confirmation_status": zod.string().optional(),
+  "figures_gated": zod.boolean().optional(),
+  "quarantined": zod.array(zod.unknown()).optional()
+})
+
+
+/**
  * @summary Machine-level performance summary from prayag-plant.com live API
  */
 export const getPlantLiveSummaryQueryPeriodDefault = "last_updated";
 
 export const getPlantLiveSummaryQueryParams = zod.object({
   "period": zod.string().default(getPlantLiveSummaryQueryPeriodDefault).describe('Period token e.g. last_updated, last_month, 2026-07'),
-  "plant": zod.string().optional().describe('Plant code e.g. PTMT, PIPE, GARDEN')
+  "plant": zod.string().optional().describe('Plant code e.g. PTMT, PIPE, GARDEN'),
+  "segment": zod.string().optional().describe('Segment filter'),
+  "machine": zod.string().optional().describe('Machine filter')
 })
 
 export const getPlantLiveSummaryResponse = zod.object({
