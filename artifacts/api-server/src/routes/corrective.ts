@@ -743,7 +743,11 @@ router.get("/corrective/runs/:id/export/pdf", async (req, res): Promise<void> =>
   try {
     const html = buildCorrectivePdfHtml(run, items as unknown as CorrectiveItemResult[]);
     const puppeteer = (await import("puppeteer")).default;
-    const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      protocolTimeout: 120_000,
+    });
     try {
       const page = await browser.newPage();
       await page.setContent(html, { waitUntil: "networkidle0" });
@@ -821,7 +825,11 @@ router.get("/corrective/export/pdf", async (req, res): Promise<void> => {
   try {
     const html = buildCorrectivePdfHtml(run, items as unknown as CorrectiveItemResult[]);
     const puppeteer = (await import("puppeteer")).default;
-    const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      protocolTimeout: 120_000,
+    });
     try {
       const page = await browser.newPage();
       await page.setContent(html, { waitUntil: "networkidle0" });
