@@ -1109,6 +1109,113 @@ async function main(): Promise<void> {
       }
     }
 
+    // NC17j/k: Spaced slash separator ("MC-05 / MC-06") must NOT create phantom IDs.
+    // The split regex /[,/]+/ without trimming would produce keys "MC-05 " and " MC-06"
+    // (with leading/trailing spaces). The aggregation loop trims each token so both
+    // machines should map to the canonical MC-05 / MC-06 buckets.
+    //
+    // Fixture items:
+    //   Row 4: PIPE   item — "MC-05" (no spaces),        300 pcs, matKg=60,  hrs=2.0
+    //   Row 5: FITTING item — "MC-05 / MC-06" (spaced),  400 pcs, matKg=90,  hrs=3.5
+    //
+    // Expected machine-summary after aggregation:
+    //   MC-05 : pcs = 300 + 400 = 700,  kg = 60 + 90 = 150,  hrs = 2.0 + 3.5 = 5.5
+    //   MC-06 : pcs = 400,               kg = 90,              hrs = 3.5
+    //
+    // Phantom-ID check: no machineId may contain a leading/trailing space.
+    {
+      const XLSXj = await import("xlsx");
+      const FIXTURE_MONTH_J   = "2099-04";   // safe far-future — never real data
+      const FIXTURE_SEGMENT_J = "Plumbing";
+
+      const wsDataJ = [
+        [],
+        [],
+        [],
+        ["Type","Material","Item Code","Qty (pcs)","Wt/pc (kg)","Machine(s)","Machine Hrs","Prod Wt (kg)","Material Req (kg)","Rate (kg/hr)","Rate Tier","Compound Cost (Rs)"],
+        ["Pipe",   "CPVC-25mm","ITEM-J01", 300, 0.15, "MC-05",         2.0, 45,  60, 25, "seeded", 3000],
+        ["Fitting","SWR-4in",  "ITEM-J02", 400, 0.20, "MC-05 / MC-06", 3.5, 80,  90, 22, "seeded", 4000],
+      ];
+      const wsJ = XLSXj.utils.aoa_to_sheet(wsDataJ);
+      const wbJ = XLSXj.utils.book_new();
+      XLSXj.utils.book_append_sheet(wbJ, wsJ, "5. Item Assignment");
+      const bufJ = Buffer.from(XLSXj.write(wbJ, { type: "buffer", bookType: "xlsx" }));
+
+      const fdJ = new FormData();
+      fdJ.append("month",   FIXTURE_MONTH_J);
+      fdJ.append("segment", FIXTURE_SEGMENT_J);
+      fdJ.append("file",
+        new Blob([bufJ], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        "fixture-spaced-slash-machines.xlsx",
+      );
+
+      let uploadIdJ: number | null = null;
+      try {
+        const uploadRespJ = await fetch(`${API_BASE}/api/monitoring/plant-plan`, { method: "POST", body: fdJ });
+        if (!uploadRespJ.ok) {
+          const txt = await uploadRespJ.text().catch(() => "");
+          newChecks.push({
+            name: "NC17j · spaced-slash upload · POST succeeds",
+            expected: 1, actual: 0, pass: false,
+            tolerance: `HTTP ${uploadRespJ.status}: ${txt.slice(0, 120)}`,
+          });
+        } else {
+          const uploadBodyJ = await uploadRespJ.json() as { id: number; itemCount: number };
+          uploadIdJ = uploadBodyJ.id;
+          newChecks.push({
+            name: `NC17j · spaced-slash upload · POST 201, itemCount=2 (got ${uploadBodyJ.itemCount})`,
+            expected: 2, actual: uploadBodyJ.itemCount,
+            pass: uploadBodyJ.itemCount === 2, tolerance: "exact",
+          });
+
+          type MachineTotalsJ = { machineId: string; pcs: number; kg: number; hrs: number; itemCount: number };
+          const summaryDataJ = await fetchJson<{ upload: unknown; machineTotals: MachineTotalsJ[] }>(
+            `${API_BASE}/api/monitoring/plant-plan/machine-summary?month=${FIXTURE_MONTH_J}&segment=${encodeURIComponent(FIXTURE_SEGMENT_J)}`,
+          );
+          const totalsJ = summaryDataJ.machineTotals ?? [];
+          const mc05 = totalsJ.find((m) => m.machineId === "MC-05");
+          const mc06 = totalsJ.find((m) => m.machineId === "MC-06");
+
+          // NC17j: MC-05 receives single-item (300/60/2.0) + spaced-slash-shared (400/90/3.5) = 700/150/5.5
+          newChecks.push({
+            name: `NC17j · spaced-slash · MC-05 pcs=700 kg=150 hrs=5.5 (got pcs=${mc05?.pcs ?? "n/a"} kg=${mc05?.kg ?? "n/a"} hrs=${mc05?.hrs ?? "n/a"})`,
+            expected: 1,
+            actual: (mc05?.pcs === 700 && mc05?.kg === 150 && Math.abs((mc05?.hrs ?? 0) - 5.5) < 0.01) ? 1 : 0,
+            pass: !!mc05 && mc05.pcs === 700 && mc05.kg === 150 && Math.abs(mc05.hrs - 5.5) < 0.01,
+            tolerance: `trim() maps "MC-05 / MC-06" → MC-05/MC-06 (no phantom spaces); got ${mc05?.pcs}/${mc05?.kg}/${mc05?.hrs}`,
+          });
+
+          // NC17k: MC-06 receives only the spaced-slash-shared item (400/90/3.5)
+          newChecks.push({
+            name: `NC17k · spaced-slash · MC-06 pcs=400 kg=90 hrs=3.5 (got pcs=${mc06?.pcs ?? "n/a"} kg=${mc06?.kg ?? "n/a"} hrs=${mc06?.hrs ?? "n/a"})`,
+            expected: 1,
+            actual: (mc06?.pcs === 400 && mc06?.kg === 90 && Math.abs((mc06?.hrs ?? 0) - 3.5) < 0.01) ? 1 : 0,
+            pass: !!mc06 && mc06.pcs === 400 && mc06.kg === 90 && Math.abs(mc06.hrs - 3.5) < 0.01,
+            tolerance: `trim() maps " MC-06" → canonical "MC-06" (no leading space); got ${mc06?.pcs}/${mc06?.kg}/${mc06?.hrs}`,
+          });
+
+          // Phantom-ID guard: no machineId in the summary may have leading or trailing whitespace.
+          const phantomIds = totalsJ.filter((m) => m.machineId !== m.machineId.trim());
+          newChecks.push({
+            name: `NC17k · phantom-ID guard · no machine bucket has leading/trailing spaces (found ${phantomIds.length} phantom IDs: ${phantomIds.map((m) => JSON.stringify(m.machineId)).join(", ") || "none"})`,
+            expected: 0, actual: phantomIds.length,
+            pass: phantomIds.length === 0,
+            tolerance: "split().map(trim()) must eliminate all space-padded keys",
+          });
+        }
+      } catch (errJ) {
+        newChecks.push({
+          name: "NC17j · spaced-slash upload · block error (unexpected exception)",
+          expected: 1, actual: 0, pass: false,
+          tolerance: errJ instanceof Error ? errJ.message : String(errJ),
+        });
+      } finally {
+        if (uploadIdJ !== null) {
+          await fetch(`${API_BASE}/api/monitoring/plant-plan/${uploadIdJ}`, { method: "DELETE" }).catch(() => {});
+        }
+      }
+    }
+
     // NC18: Upload a workbook with no recognised sheets → HTTP 400, no record left behind.
     // Builds a workbook containing only an unrecognised sheet so the empty-items guard fires.
     {
