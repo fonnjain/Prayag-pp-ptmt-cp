@@ -870,10 +870,20 @@ async function main(): Promise<void> {
       //   Row 6    : FITTING item — "MC-01,MC-02",  200 pcs, matKg=80,  hrs=2.0
       //              ↑ multi-machine item: BOTH machines should receive the full
       //                200 pcs / 80 kg / 2.0 hrs (not split 50/50 between them).
+      //   Row 7    : PIPE  item — blank Machine(s), 300 pcs, matKg=60,  hrs=1.5
+      //              ↑ unassigned item: must fall back to the "Unassigned" bucket.
       //
       // Expected machine-summary totals after the aggregation loop:
-      //   MC-01 : pcs = 1000 + 200 = 1200,  kg = 120 + 80 = 200,  hrs = 5.5 + 2.0 = 7.5
-      //   MC-02 : pcs =  500 + 200 =  700,  kg = 110 + 80 = 190,  hrs = 3.0 + 2.0 = 5.0
+      //   MC-01      : pcs = 1000 + 200 = 1200,  kg = 120 + 80 = 200,  hrs = 5.5 + 2.0 = 7.5
+      //   MC-02      : pcs =  500 + 200 =  700,  kg = 110 + 80 = 190,  hrs = 3.0 + 2.0 = 5.0
+      //   Unassigned : pcs =  300,                kg =  60,             hrs = 1.5
+      //
+      // Grand-total pcs (each item counted once per machine it contributes to):
+      //   ITEM-F01 → 1 machine  → 1000
+      //   ITEM-F02 → 1 machine  →  500
+      //   ITEM-F03 → 2 machines →  200 × 2 = 400
+      //   ITEM-F04 → Unassigned →  300
+      //   Total                 → 2200
       //
       // Column layout (cols 0-11):
       //   Type | Material | Item Code | Qty(pcs) | Wt/pc(kg) | Machine(s) |
@@ -886,6 +896,7 @@ async function main(): Promise<void> {
         ["Pipe",   "HDP-20mm","ITEM-F01",1000,0.1,"MC-01",       5.5,100,120,20,"seeded",  5000],
         ["Fitting","SWR-2in", "ITEM-F02", 500,0.2,"MC-02",       3.0,100,110,30,"mat-avg", 2000],
         ["Fitting","SWR-3in", "ITEM-F03", 200,0.4,"MC-01,MC-02", 2.0, 80, 80,20,"seeded",  1000],
+        ["Pipe",   "HDP-25mm","ITEM-F04", 300,0.2,"",            1.5, 60, 60,20,"seeded",  1500],
       ];
       const ws = XLSX.utils.aoa_to_sheet(wsData);
       const wb = XLSX.utils.book_new();
@@ -915,9 +926,9 @@ async function main(): Promise<void> {
           const uploadBody = await uploadResp.json() as { id: number; itemCount: number };
           uploadId = uploadBody.id;
           newChecks.push({
-            name: `NC17a · plant-plan upload (consolidated) · POST 201, itemCount=3 (got ${uploadBody.itemCount})`,
-            expected: 3, actual: uploadBody.itemCount,
-            pass: uploadBody.itemCount === 3, tolerance: "exact",
+            name: `NC17a · plant-plan upload (consolidated) · POST 201, itemCount=4 (got ${uploadBody.itemCount})`,
+            expected: 4, actual: uploadBody.itemCount,
+            pass: uploadBody.itemCount === 4, tolerance: "exact",
           });
 
           // GET machine-summary
@@ -973,6 +984,35 @@ async function main(): Promise<void> {
             expected: 1, actual: mc02MultiOk ? 1 : 0,
             pass: mc02MultiOk,
             tolerance: "full attribution to each listed machine, not split",
+          });
+
+          // NC17g: blank Machine(s) → "Unassigned" bucket
+          // ITEM-F04 has an empty machines cell: the aggregation loop must push it
+          // into the "Unassigned" entry (pcs=300, kg=60, hrs=1.5).
+          const unassigned = totals.find((m) => m.machineId === "Unassigned");
+          const unassignedOk =
+            !!unassigned &&
+            unassigned.pcs === 300 &&
+            unassigned.kg  === 60  &&
+            Math.abs(unassigned.hrs - 1.5) < 0.01;
+          newChecks.push({
+            name: `NC17g · unassigned item · "Unassigned" entry pcs=300 kg=60 hrs=1.5 (got pcs=${unassigned?.pcs ?? "n/a"} kg=${unassigned?.kg ?? "n/a"} hrs=${unassigned?.hrs ?? "n/a"})`,
+            expected: 1, actual: unassignedOk ? 1 : 0,
+            pass: unassignedOk,
+            tolerance: "blank Machine(s) must produce an Unassigned bucket entry",
+          });
+
+          // NC17h: grand-total pcs across all machine buckets equals the per-machine
+          // attribution sum (each item counted once per machine it contributes to).
+          // ITEM-F01 → 1 machine → 1000; ITEM-F02 → 1 machine → 500;
+          // ITEM-F03 → 2 machines → 400; ITEM-F04 → Unassigned → 300  → total 2200
+          const EXPECTED_GRAND_TOTAL_PCS = 2200;
+          const actualGrandTotal = totals.reduce((s, m) => s + m.pcs, 0);
+          newChecks.push({
+            name: `NC17h · grand-total pcs · Σ(all machines) = ${EXPECTED_GRAND_TOTAL_PCS} (got ${actualGrandTotal})`,
+            expected: EXPECTED_GRAND_TOTAL_PCS, actual: actualGrandTotal,
+            pass: actualGrandTotal === EXPECTED_GRAND_TOTAL_PCS,
+            tolerance: "exact — each item counted once per machine (multi-machine = full per machine)",
           });
         }
       } finally {
