@@ -1404,6 +1404,128 @@ async function main(): Promise<void> {
       }
     }
 
+    // NC19: Re-upload same month — machine-summary must reflect only the newest upload.
+    // Uploads two successive consolidated-plan workbooks to the same far-future month,
+    // then asserts machine-summary totals match ONLY the second upload (no doubling).
+    // Both fixture uploads are deleted in the finally block regardless of outcome.
+    {
+      const XLSX19 = await import("xlsx");
+      const FIXTURE_MONTH19   = "2099-03";   // safe far-future — never real data
+      const FIXTURE_SEGMENT19 = "Plumbing";
+
+      // Helper: build a minimal FORMAT-B workbook with two single-machine items.
+      // upload1: MC-01=1000pcs/120kg/5.0hrs (1 item),  MC-02=500pcs/110kg/3.0hrs (1 item)
+      // upload2: MC-01=300pcs/60kg/2.0hrs   (1 item),  MC-02=200pcs/40kg/1.5hrs  (1 item)
+      // All four figures differ between uploads so any aggregation (doubling) is detectable
+      // for pcs, kg, hrs, and itemCount simultaneously.
+      const buildWorkbook = (
+        mc01Pcs: number, mc01Kg: number, mc01Hrs: number,
+        mc02Pcs: number, mc02Kg: number, mc02Hrs: number,
+      ) => {
+        const wsData = [
+          [],
+          [],
+          [],
+          ["Type","Material","Item Code","Qty (pcs)","Wt/pc (kg)","Machine(s)","Machine Hrs","Prod Wt (kg)","Material Req (kg)","Rate (kg/hr)","Rate Tier","Compound Cost (Rs)"],
+          ["Pipe",   "HDP-20mm","NC19-A",mc01Pcs,mc01Kg/mc01Pcs,"MC-01",mc01Hrs,mc01Kg,mc01Kg,20,"seeded",1000],
+          ["Fitting","SWR-2in", "NC19-B",mc02Pcs,mc02Kg/mc02Pcs,"MC-02",mc02Hrs,mc02Kg,mc02Kg,30,"seeded",500],
+        ];
+        const ws = XLSX19.utils.aoa_to_sheet(wsData);
+        const wb = XLSX19.utils.book_new();
+        XLSX19.utils.book_append_sheet(wb, ws, "5. Item Assignment");
+        // Extract a true ArrayBuffer (a valid BlobPart) from the Node Buffer to avoid
+        // the Buffer<ArrayBufferLike> vs Uint8Array<ArrayBuffer> type mismatch.
+        const nodeBuf = Buffer.from(XLSX19.write(wb, { type: "buffer", bookType: "xlsx" }));
+        return nodeBuf.buffer.slice(nodeBuf.byteOffset, nodeBuf.byteOffset + nodeBuf.byteLength) as ArrayBuffer;
+      };
+
+      const postUpload = async (arrayBuf: ArrayBuffer, label: string) => {
+        const fd = new FormData();
+        fd.append("month",   FIXTURE_MONTH19);
+        fd.append("segment", FIXTURE_SEGMENT19);
+        fd.append("file",
+          new Blob([arrayBuf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+          `${label}.xlsx`,
+        );
+        const resp = await fetch(`${API_BASE}/api/monitoring/plant-plan`, { method: "POST", body: fd });
+        if (!resp.ok) {
+          const txt = await resp.text().catch(() => "");
+          throw new Error(`${label} POST failed HTTP ${resp.status}: ${txt.slice(0, 120)}`);
+        }
+        return (await resp.json() as { id: number; itemCount: number }).id;
+      };
+
+      let uploadId1: number | null = null;
+      let uploadId2: number | null = null;
+      try {
+        // Upload 1 — original plan
+        const data1 = buildWorkbook(1000, 120, 5.0, 500, 110, 3.0);
+        // Upload 2 — corrected re-upload (all figures changed so any aggregation is detectable)
+        const data2 = buildWorkbook( 300,  60, 2.0, 200,  40, 1.5);
+
+        uploadId1 = await postUpload(data1, "nc19-upload1");
+        uploadId2 = await postUpload(data2, "nc19-upload2");
+
+        newChecks.push({
+          name: `NC19a · re-upload same month · both uploads posted (id1=${uploadId1}, id2=${uploadId2})`,
+          expected: 1, actual: 1, pass: true, tolerance: "both POSTs must succeed",
+        });
+
+        interface MachineTotals19 { machineId: string; pcs: number; kg: number; hrs: number; itemCount: number }
+        const summaryData19 = await fetchJson<{
+          upload: { id: number } | null;
+          machineTotals: MachineTotals19[];
+          uploadCount: number;
+        }>(`${API_BASE}/api/monitoring/plant-plan/machine-summary?month=${FIXTURE_MONTH19}&segment=${encodeURIComponent(FIXTURE_SEGMENT19)}`);
+
+        const totals19 = summaryData19.machineTotals ?? [];
+        const mc01 = totals19.find((t) => t.machineId === "MC-01");
+        const mc02 = totals19.find((t) => t.machineId === "MC-02");
+
+        // Expected from upload2 only — upload1+upload2 doubled values shown for reference:
+        //   MC-01  pcs: upload2=300  (doubled→1300),  kg: upload2=60  (doubled→180),  hrs: upload2=2.0 (doubled→7.0)
+        //   MC-02  pcs: upload2=200  (doubled→700),   kg: upload2=40  (doubled→150),  hrs: upload2=1.5 (doubled→4.5)
+
+        const activeUploadId = (summaryData19.upload as { id: number } | null)?.id ?? null;
+        newChecks.push({
+          name: `NC19b · machine-summary · active upload is the newest (id=${uploadId2}) not the first (id=${uploadId1})`,
+          expected: uploadId2 ?? -1, actual: activeUploadId ?? -1,
+          pass: activeUploadId === uploadId2,
+          tolerance: "upload field must reference the second (newest) upload",
+        });
+
+        const mc01Ok = !!mc01 && mc01.pcs === 300 && mc01.kg === 60 && Math.abs(mc01.hrs - 2.0) < 0.01 && mc01.itemCount === 1;
+        newChecks.push({
+          name: `NC19c · machine-summary · MC-01 pcs=300 kg=60 hrs=2.0 itemCount=1 (got pcs=${mc01?.pcs ?? "n/a"} kg=${mc01?.kg ?? "n/a"} hrs=${mc01?.hrs ?? "n/a"} items=${mc01?.itemCount ?? "n/a"}) — no doubling`,
+          expected: 1, actual: mc01Ok ? 1 : 0, pass: mc01Ok,
+          tolerance: "must match upload2 only (1300/180/7.0/2 would indicate doubling)",
+        });
+
+        const mc02Ok = !!mc02 && mc02.pcs === 200 && mc02.kg === 40 && Math.abs(mc02.hrs - 1.5) < 0.01 && mc02.itemCount === 1;
+        newChecks.push({
+          name: `NC19d · machine-summary · MC-02 pcs=200 kg=40 hrs=1.5 itemCount=1 (got pcs=${mc02?.pcs ?? "n/a"} kg=${mc02?.kg ?? "n/a"} hrs=${mc02?.hrs ?? "n/a"} items=${mc02?.itemCount ?? "n/a"}) — no doubling`,
+          expected: 1, actual: mc02Ok ? 1 : 0, pass: mc02Ok,
+          tolerance: "must match upload2 only (700/150/4.5/2 would indicate doubling)",
+        });
+
+        // uploadCount tells us how many uploads exist; the endpoint may surface > 1
+        // but must use only the newest for totals (verified above).
+        newChecks.push({
+          name: `NC19e · machine-summary · uploadCount reflects both uploads (${summaryData19.uploadCount ?? "n/a"} ≥ 2)`,
+          expected: 1,
+          actual: (summaryData19.uploadCount ?? 0) >= 2 ? 1 : 0,
+          pass: (summaryData19.uploadCount ?? 0) >= 2,
+          tolerance: "both uploads must be persisted; deduplication must be at query time (latest only)",
+        });
+      } finally {
+        // Always clean up both fixture uploads regardless of assertion outcome.
+        const cleanups = [uploadId1, uploadId2].filter((id): id is number => id !== null);
+        await Promise.all(cleanups.map((id) =>
+          fetch(`${API_BASE}/api/monitoring/plant-plan/${id}`, { method: "DELETE" }).catch(() => {}),
+        ));
+      }
+    }
+
   } catch (err) {
     console.error(`\n❌  New permanent checks error: ${err instanceof Error ? err.message : String(err)}`);
     anyFail = true;
