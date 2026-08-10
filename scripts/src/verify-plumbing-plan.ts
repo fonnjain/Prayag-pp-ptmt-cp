@@ -1347,6 +1347,128 @@ async function main(): Promise<void> {
       }
     }
 
+    // NC17n: Double-comma separator ("MC-10,,MC-11") must NOT create a phantom empty-string
+    // bucket.  The split regex /[,/]+/ collapses consecutive commas, and the subsequent
+    // .filter(Boolean) removes any empty tokens.  This fixture confirms both behaviours
+    // end-to-end: exactly two canonical IDs (MC-10, MC-11) appear in machine-summary, and
+    // no machineId === "" is present.
+    //
+    // Fixture items:
+    //   Row 4: PIPE    item — "MC-10"         (single),     300 pcs, matKg=60,  hrs=2.0
+    //   Row 5: FITTING item — "MC-10,,MC-11"  (dbl-comma),  400 pcs, matKg=90,  hrs=3.5
+    //
+    // Expected machine-summary after aggregation:
+    //   MC-10 : pcs = 300 + 400 = 700,  kg = 60 + 90 = 150,  hrs = 2.0 + 3.5 = 5.5
+    //   MC-11 : pcs = 400,               kg = 90,              hrs = 3.5
+    //   ""    : must NOT exist
+    {
+      const XLSXn = await import("xlsx");
+      const FIXTURE_MONTH_N   = "2099-06";   // safe far-future — never real data
+      const FIXTURE_SEGMENT_N = "Plumbing";
+
+      const wsDataN = [
+        [],
+        [],
+        [],
+        ["Type","Material","Item Code","Qty (pcs)","Wt/pc (kg)","Machine(s)","Machine Hrs","Prod Wt (kg)","Material Req (kg)","Rate (kg/hr)","Rate Tier","Compound Cost (Rs)"],
+        ["Pipe",   "CPVC-25mm","ITEM-N01", 300, 0.15, "MC-10",        2.0, 45,  60, 25, "seeded", 3000],
+        ["Fitting","SWR-4in",  "ITEM-N02", 400, 0.20, "MC-10,,MC-11", 3.5, 80,  90, 22, "seeded", 4000],
+      ];
+      const wsN = XLSXn.utils.aoa_to_sheet(wsDataN);
+      const wbN = XLSXn.utils.book_new();
+      XLSXn.utils.book_append_sheet(wbN, wsN, "5. Item Assignment");
+      const bufN = Buffer.from(XLSXn.write(wbN, { type: "buffer", bookType: "xlsx" }));
+
+      const fdN = new FormData();
+      fdN.append("month",   FIXTURE_MONTH_N);
+      fdN.append("segment", FIXTURE_SEGMENT_N);
+      fdN.append("file",
+        new Blob([bufN], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        "fixture-double-comma-machines.xlsx",
+      );
+
+      let uploadIdN: number | null = null;
+      try {
+        const uploadRespN = await fetch(`${API_BASE}/api/monitoring/plant-plan`, { method: "POST", body: fdN });
+        if (!uploadRespN.ok) {
+          const txt = await uploadRespN.text().catch(() => "");
+          newChecks.push({
+            name: "NC17n · double-comma upload · POST succeeds",
+            expected: 1, actual: 0, pass: false,
+            tolerance: `HTTP ${uploadRespN.status}: ${txt.slice(0, 120)}`,
+          });
+        } else {
+          const uploadBodyN = await uploadRespN.json() as { id: number; itemCount: number };
+          uploadIdN = uploadBodyN.id;
+          newChecks.push({
+            name: `NC17n · double-comma upload · POST 201, itemCount=2 (got ${uploadBodyN.itemCount})`,
+            expected: 2, actual: uploadBodyN.itemCount,
+            pass: uploadBodyN.itemCount === 2, tolerance: "exact",
+          });
+
+          type MachineTotalsN = { machineId: string; pcs: number; kg: number; hrs: number; itemCount: number };
+          const summaryDataN = await fetchJson<{ upload: unknown; machineTotals: MachineTotalsN[] }>(
+            `${API_BASE}/api/monitoring/plant-plan/machine-summary?month=${FIXTURE_MONTH_N}&segment=${encodeURIComponent(FIXTURE_SEGMENT_N)}`,
+          );
+          const totalsN = summaryDataN.machineTotals ?? [];
+          const mc10 = totalsN.find((m) => m.machineId === "MC-10");
+          const mc11 = totalsN.find((m) => m.machineId === "MC-11");
+
+          // NC17n: MC-10 receives single-item (300/60/2.0) + double-comma item (400/90/3.5) = 700/150/5.5
+          newChecks.push({
+            name: `NC17n · double-comma · MC-10 pcs=700 kg=150 hrs=5.5 (got pcs=${mc10?.pcs ?? "n/a"} kg=${mc10?.kg ?? "n/a"} hrs=${mc10?.hrs ?? "n/a"})`,
+            expected: 1,
+            actual: (mc10?.pcs === 700 && mc10?.kg === 150 && Math.abs((mc10?.hrs ?? 0) - 5.5) < 0.01) ? 1 : 0,
+            pass: !!mc10 && mc10.pcs === 700 && mc10.kg === 150 && Math.abs(mc10.hrs - 5.5) < 0.01,
+            tolerance: `double-comma regex collapses to MC-10; full attribution; got ${mc10?.pcs}/${mc10?.kg}/${mc10?.hrs}`,
+          });
+
+          // NC17n: MC-11 receives only the double-comma item (400/90/3.5)
+          newChecks.push({
+            name: `NC17n · double-comma · MC-11 pcs=400 kg=90 hrs=3.5 (got pcs=${mc11?.pcs ?? "n/a"} kg=${mc11?.kg ?? "n/a"} hrs=${mc11?.hrs ?? "n/a"})`,
+            expected: 1,
+            actual: (mc11?.pcs === 400 && mc11?.kg === 90 && Math.abs((mc11?.hrs ?? 0) - 3.5) < 0.01) ? 1 : 0,
+            pass: !!mc11 && mc11.pcs === 400 && mc11.kg === 90 && Math.abs(mc11.hrs - 3.5) < 0.01,
+            tolerance: `"MC-10,,MC-11" splits on /[,/]+/ → MC-11 exact; got ${mc11?.pcs}/${mc11?.kg}/${mc11?.hrs}`,
+          });
+
+          // Exact-bucket-set guard: only MC-10 and MC-11 may appear — no phantom empty-string
+          // bucket from the double-comma, and no other spurious tokens.
+          const EXPECTED_IDS_N = new Set(["MC-10", "MC-11"]);
+          const actualIdsN = new Set(totalsN.map((m) => m.machineId));
+          const unexpectedN = [...actualIdsN].filter((id) => !EXPECTED_IDS_N.has(id));
+          const missingN    = [...EXPECTED_IDS_N].filter((id) => !actualIdsN.has(id));
+          const exactSetOkN = unexpectedN.length === 0 && missingN.length === 0;
+          newChecks.push({
+            name: `NC17n · exact-bucket-set · only MC-10/MC-11 present (unexpected=[${unexpectedN.join(",")}] missing=[${missingN.join(",")}])`,
+            expected: 1, actual: exactSetOkN ? 1 : 0,
+            pass: exactSetOkN,
+            tolerance: `"MC-10,,MC-11" must yield exactly 2 canonical IDs — no empty-string phantom from double-comma`,
+          });
+
+          // Empty-string guard: the critical regression check — no machineId may be "".
+          const emptyBucket = totalsN.find((m) => m.machineId === "");
+          newChecks.push({
+            name: `NC17n · empty-string guard · no "" machine bucket exists (found: ${emptyBucket ? `pcs=${emptyBucket.pcs}` : "none"})`,
+            expected: 0,
+            actual: emptyBucket ? 1 : 0,
+            pass: !emptyBucket,
+            tolerance: `split(/[,/]+/).filter(Boolean) must eliminate the empty token between "MC-10,,MC-11"`,
+          });
+        }
+      } catch (errN) {
+        newChecks.push({
+          name: "NC17n · double-comma upload · block error (unexpected exception)",
+          expected: 1, actual: 0, pass: false,
+          tolerance: errN instanceof Error ? errN.message : String(errN),
+        });
+      } finally {
+        if (uploadIdN !== null) {
+          await fetch(`${API_BASE}/api/monitoring/plant-plan/${uploadIdN}`, { method: "DELETE" }).catch(() => {});
+        }
+      }
+    }
+
     // NC18: Upload a workbook with no recognised sheets → HTTP 400, no record left behind.
     // Builds a workbook containing only an unrecognised sheet so the empty-items guard fires.
     {
