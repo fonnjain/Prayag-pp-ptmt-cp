@@ -852,6 +852,104 @@ async function main(): Promise<void> {
       });
     }
 
+    // NC17: Consolidated-plan upload → machine-summary machineHrs round-trip
+    // Builds a minimal "5. Item Assignment" workbook in memory (FORMAT B), uploads it
+    // to a far-future month so it never collides with real data, asserts that the
+    // machine-summary endpoint returns the expected pcs, kg, and hrs for each machine,
+    // then deletes the test upload.
+    {
+      const XLSX = await import("xlsx");
+      const FIXTURE_MONTH   = "2099-01";   // safe far-future — never real data
+      const FIXTURE_SEGMENT = "Plumbing";
+
+      // Fixture items:
+      //   Row 0-2  : blank preamble (parser skips 0-indexed rows 0..3 as pre-header)
+      //   Row 3    : header row (0-indexed) — required by parseConsolidatedItemSheet
+      //   Row 4    : PIPE  item — MC-01, 1000 pcs, matKg=120, hrs=5.5
+      //   Row 5    : FITTING item — MC-02, 500 pcs, matKg=110, hrs=3.0
+      //
+      // Column layout (cols 0-11):
+      //   Type | Material | Item Code | Qty(pcs) | Wt/pc(kg) | Machine(s) |
+      //   Machine Hrs | Prod Wt(kg) | Material Req(kg) | Rate(kg/hr) | Rate Tier | Compound Cost(Rs)
+      const wsData = [
+        [],
+        [],
+        [],
+        ["Type","Material","Item Code","Qty (pcs)","Wt/pc (kg)","Machine(s)","Machine Hrs","Prod Wt (kg)","Material Req (kg)","Rate (kg/hr)","Rate Tier","Compound Cost (Rs)"],
+        ["Pipe","HDP-20mm","ITEM-F01",1000,0.1,"MC-01",5.5,100,120,20,"seeded",5000],
+        ["Fitting","SWR-2in","ITEM-F02",500,0.2,"MC-02",3.0,100,110,30,"mat-avg",2000],
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "5. Item Assignment");
+      const buf = Buffer.from(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }));
+
+      // POST the fixture
+      const fd = new FormData();
+      fd.append("month",   FIXTURE_MONTH);
+      fd.append("segment", FIXTURE_SEGMENT);
+      fd.append("file",
+        new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        "fixture-consolidated-plan.xlsx",
+      );
+
+      let uploadId: number | null = null;
+      try {
+        const uploadResp = await fetch(`${API_BASE}/api/monitoring/plant-plan`, { method: "POST", body: fd });
+        if (!uploadResp.ok) {
+          const txt = await uploadResp.text().catch(() => "");
+          newChecks.push({
+            name: "NC17 · plant-plan upload (consolidated) · POST succeeds",
+            expected: 1, actual: 0, pass: false,
+            tolerance: `HTTP ${uploadResp.status}: ${txt.slice(0, 120)}`,
+          });
+        } else {
+          const uploadBody = await uploadResp.json() as { id: number; itemCount: number };
+          uploadId = uploadBody.id;
+          newChecks.push({
+            name: `NC17a · plant-plan upload (consolidated) · POST 201, itemCount=2 (got ${uploadBody.itemCount})`,
+            expected: 2, actual: uploadBody.itemCount,
+            pass: uploadBody.itemCount === 2, tolerance: "exact",
+          });
+
+          // GET machine-summary
+          type MachineTotals = { machineId: string; pcs: number; kg: number; hrs: number; itemCount: number };
+          const summaryData = await fetchJson<{ upload: unknown; machineTotals: MachineTotals[] }>(
+            `${API_BASE}/api/monitoring/plant-plan/machine-summary?month=${FIXTURE_MONTH}&segment=${encodeURIComponent(FIXTURE_SEGMENT)}`,
+          );
+          const totals = summaryData.machineTotals ?? [];
+          const mc01 = totals.find((m) => m.machineId === "MC-01");
+          const mc02 = totals.find((m) => m.machineId === "MC-02");
+          const anyHrs = totals.some((m) => m.hrs > 0);
+
+          newChecks.push({
+            name: `NC17b · machine-summary · at least one machine has hrs > 0 (got ${totals.length} machines)`,
+            expected: 1, actual: anyHrs ? 1 : 0,
+            pass: anyHrs, tolerance: "> 0",
+          });
+          newChecks.push({
+            name: `NC17c · machine-summary · MC-01 pcs=1000 kg=120 hrs=5.5 (got pcs=${mc01?.pcs ?? "n/a"} kg=${mc01?.kg ?? "n/a"} hrs=${mc01?.hrs ?? "n/a"})`,
+            expected: 1,
+            actual: (mc01?.pcs === 1000 && mc01?.kg === 120 && Math.abs((mc01?.hrs ?? 0) - 5.5) < 0.01) ? 1 : 0,
+            pass: !!mc01 && mc01.pcs === 1000 && mc01.kg === 120 && Math.abs(mc01.hrs - 5.5) < 0.01,
+            tolerance: "pcs/kg/hrs exact from fixture",
+          });
+          newChecks.push({
+            name: `NC17d · machine-summary · MC-02 pcs=500 kg=110 hrs=3.0 (got pcs=${mc02?.pcs ?? "n/a"} kg=${mc02?.kg ?? "n/a"} hrs=${mc02?.hrs ?? "n/a"})`,
+            expected: 1,
+            actual: (mc02?.pcs === 500 && mc02?.kg === 110 && Math.abs((mc02?.hrs ?? 0) - 3.0) < 0.01) ? 1 : 0,
+            pass: !!mc02 && mc02.pcs === 500 && mc02.kg === 110 && Math.abs(mc02.hrs - 3.0) < 0.01,
+            tolerance: "pcs/kg/hrs exact from fixture",
+          });
+        }
+      } finally {
+        // Always clean up the fixture upload regardless of assertion outcome.
+        if (uploadId !== null) {
+          await fetch(`${API_BASE}/api/monitoring/plant-plan/${uploadId}`, { method: "DELETE" }).catch(() => {});
+        }
+      }
+    }
+
   } catch (err) {
     console.error(`\n❌  New permanent checks error: ${err instanceof Error ? err.message : String(err)}`);
     anyFail = true;
