@@ -950,6 +950,63 @@ async function main(): Promise<void> {
       }
     }
 
+    // NC18: Upload a workbook with no recognised sheets → HTTP 400, no record left behind.
+    // Builds a workbook containing only an unrecognised sheet so the empty-items guard fires.
+    {
+      const XLSX18 = await import("xlsx");
+      const FIXTURE_MONTH18   = "2099-02";   // safe far-future — never real data
+      const FIXTURE_SEGMENT18 = "Plumbing";
+
+      // Sheet named "Unrelated Data" — not "5. Item Assignment", "Pipe Plan", or "Fitting Plan"
+      const ws18 = XLSX18.utils.aoa_to_sheet([["Col A", "Col B"], [1, 2]]);
+      const wb18 = XLSX18.utils.book_new();
+      XLSX18.utils.book_append_sheet(wb18, ws18, "Unrelated Data");
+      const buf18 = Buffer.from(XLSX18.write(wb18, { type: "buffer", bookType: "xlsx" }));
+
+      const fd18 = new FormData();
+      fd18.append("month",   FIXTURE_MONTH18);
+      fd18.append("segment", FIXTURE_SEGMENT18);
+      fd18.append("file",
+        new Blob([buf18], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        "fixture-unrecognised-sheets.xlsx",
+      );
+
+      const uploadResp18 = await fetch(`${API_BASE}/api/monitoring/plant-plan`, { method: "POST", body: fd18 });
+      const status18     = uploadResp18.status;
+      const body18       = await uploadResp18.text().catch(() => "");
+
+      // Must be 400
+      newChecks.push({
+        name: `NC18a · plant-plan upload (no recognised sheets) · HTTP 400 (got ${status18})`,
+        expected: 400, actual: status18,
+        pass: status18 === 400, tolerance: "exact",
+      });
+
+      // Error message must mention the supported sheet names
+      const mentionsConsolidated = body18.includes("5. Item Assignment");
+      const mentionsLegacy       = body18.includes("Pipe Plan") || body18.includes("Fitting Plan");
+      newChecks.push({
+        name: `NC18b · plant-plan upload (no recognised sheets) · error body names supported sheets`,
+        expected: 1, actual: (mentionsConsolidated && mentionsLegacy) ? 1 : 0,
+        pass: mentionsConsolidated && mentionsLegacy,
+        tolerance: `body must mention "5. Item Assignment" and "Pipe Plan"/"Fitting Plan"`,
+      });
+
+      // No upload record must have been created for the fixture month
+      if (status18 === 400) {
+        const listResp18 = await fetch(
+          `${API_BASE}/api/monitoring/plant-plan?month=${FIXTURE_MONTH18}&segment=${encodeURIComponent(FIXTURE_SEGMENT18)}`,
+        );
+        const list18 = listResp18.ok ? (await listResp18.json() as unknown[]) : null;
+        const noRecord = Array.isArray(list18) && list18.length === 0;
+        newChecks.push({
+          name: `NC18c · plant-plan upload (no recognised sheets) · no upload record persisted after 400`,
+          expected: 0, actual: Array.isArray(list18) ? list18.length : -1,
+          pass: noRecord, tolerance: "exact — 0 records for fixture month",
+        });
+      }
+    }
+
   } catch (err) {
     console.error(`\n❌  New permanent checks error: ${err instanceof Error ? err.message : String(err)}`);
     anyFail = true;
