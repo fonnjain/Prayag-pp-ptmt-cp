@@ -865,8 +865,15 @@ async function main(): Promise<void> {
       // Fixture items:
       //   Row 0-2  : blank preamble (parser skips 0-indexed rows 0..3 as pre-header)
       //   Row 3    : header row (0-indexed) — required by parseConsolidatedItemSheet
-      //   Row 4    : PIPE  item — MC-01, 1000 pcs, matKg=120, hrs=5.5
-      //   Row 5    : FITTING item — MC-02, 500 pcs, matKg=110, hrs=3.0
+      //   Row 4    : PIPE  item — MC-01 only,      1000 pcs, matKg=120, hrs=5.5
+      //   Row 5    : FITTING item — MC-02 only,     500 pcs, matKg=110, hrs=3.0
+      //   Row 6    : FITTING item — "MC-01,MC-02",  200 pcs, matKg=80,  hrs=2.0
+      //              ↑ multi-machine item: BOTH machines should receive the full
+      //                200 pcs / 80 kg / 2.0 hrs (not split 50/50 between them).
+      //
+      // Expected machine-summary totals after the aggregation loop:
+      //   MC-01 : pcs = 1000 + 200 = 1200,  kg = 120 + 80 = 200,  hrs = 5.5 + 2.0 = 7.5
+      //   MC-02 : pcs =  500 + 200 =  700,  kg = 110 + 80 = 190,  hrs = 3.0 + 2.0 = 5.0
       //
       // Column layout (cols 0-11):
       //   Type | Material | Item Code | Qty(pcs) | Wt/pc(kg) | Machine(s) |
@@ -876,8 +883,9 @@ async function main(): Promise<void> {
         [],
         [],
         ["Type","Material","Item Code","Qty (pcs)","Wt/pc (kg)","Machine(s)","Machine Hrs","Prod Wt (kg)","Material Req (kg)","Rate (kg/hr)","Rate Tier","Compound Cost (Rs)"],
-        ["Pipe","HDP-20mm","ITEM-F01",1000,0.1,"MC-01",5.5,100,120,20,"seeded",5000],
-        ["Fitting","SWR-2in","ITEM-F02",500,0.2,"MC-02",3.0,100,110,30,"mat-avg",2000],
+        ["Pipe",   "HDP-20mm","ITEM-F01",1000,0.1,"MC-01",       5.5,100,120,20,"seeded",  5000],
+        ["Fitting","SWR-2in", "ITEM-F02", 500,0.2,"MC-02",       3.0,100,110,30,"mat-avg", 2000],
+        ["Fitting","SWR-3in", "ITEM-F03", 200,0.4,"MC-01,MC-02", 2.0, 80, 80,20,"seeded",  1000],
       ];
       const ws = XLSX.utils.aoa_to_sheet(wsData);
       const wb = XLSX.utils.book_new();
@@ -907,9 +915,9 @@ async function main(): Promise<void> {
           const uploadBody = await uploadResp.json() as { id: number; itemCount: number };
           uploadId = uploadBody.id;
           newChecks.push({
-            name: `NC17a · plant-plan upload (consolidated) · POST 201, itemCount=2 (got ${uploadBody.itemCount})`,
-            expected: 2, actual: uploadBody.itemCount,
-            pass: uploadBody.itemCount === 2, tolerance: "exact",
+            name: `NC17a · plant-plan upload (consolidated) · POST 201, itemCount=3 (got ${uploadBody.itemCount})`,
+            expected: 3, actual: uploadBody.itemCount,
+            pass: uploadBody.itemCount === 3, tolerance: "exact",
           });
 
           // GET machine-summary
@@ -927,19 +935,44 @@ async function main(): Promise<void> {
             expected: 1, actual: anyHrs ? 1 : 0,
             pass: anyHrs, tolerance: "> 0",
           });
+
+          // NC17c/d: totals include both single-machine items AND the shared multi-machine item
+          // MC-01: ITEM-F01 (1000 pcs / 120 kg / 5.5 hrs) + ITEM-F03 shared (200 pcs / 80 kg / 2.0 hrs) = 1200 / 200 / 7.5
+          // MC-02: ITEM-F02 ( 500 pcs / 110 kg / 3.0 hrs) + ITEM-F03 shared (200 pcs / 80 kg / 2.0 hrs) =  700 / 190 / 5.0
           newChecks.push({
-            name: `NC17c · machine-summary · MC-01 pcs=1000 kg=120 hrs=5.5 (got pcs=${mc01?.pcs ?? "n/a"} kg=${mc01?.kg ?? "n/a"} hrs=${mc01?.hrs ?? "n/a"})`,
+            name: `NC17c · machine-summary · MC-01 pcs=1200 kg=200 hrs=7.5 (got pcs=${mc01?.pcs ?? "n/a"} kg=${mc01?.kg ?? "n/a"} hrs=${mc01?.hrs ?? "n/a"})`,
             expected: 1,
-            actual: (mc01?.pcs === 1000 && mc01?.kg === 120 && Math.abs((mc01?.hrs ?? 0) - 5.5) < 0.01) ? 1 : 0,
-            pass: !!mc01 && mc01.pcs === 1000 && mc01.kg === 120 && Math.abs(mc01.hrs - 5.5) < 0.01,
-            tolerance: "pcs/kg/hrs exact from fixture",
+            actual: (mc01?.pcs === 1200 && mc01?.kg === 200 && Math.abs((mc01?.hrs ?? 0) - 7.5) < 0.01) ? 1 : 0,
+            pass: !!mc01 && mc01.pcs === 1200 && mc01.kg === 200 && Math.abs(mc01.hrs - 7.5) < 0.01,
+            tolerance: "pcs/kg/hrs exact from fixture (single-machine + multi-machine item)",
           });
           newChecks.push({
-            name: `NC17d · machine-summary · MC-02 pcs=500 kg=110 hrs=3.0 (got pcs=${mc02?.pcs ?? "n/a"} kg=${mc02?.kg ?? "n/a"} hrs=${mc02?.hrs ?? "n/a"})`,
+            name: `NC17d · machine-summary · MC-02 pcs=700 kg=190 hrs=5.0 (got pcs=${mc02?.pcs ?? "n/a"} kg=${mc02?.kg ?? "n/a"} hrs=${mc02?.hrs ?? "n/a"})`,
             expected: 1,
-            actual: (mc02?.pcs === 500 && mc02?.kg === 110 && Math.abs((mc02?.hrs ?? 0) - 3.0) < 0.01) ? 1 : 0,
-            pass: !!mc02 && mc02.pcs === 500 && mc02.kg === 110 && Math.abs(mc02.hrs - 3.0) < 0.01,
-            tolerance: "pcs/kg/hrs exact from fixture",
+            actual: (mc02?.pcs === 700 && mc02?.kg === 190 && Math.abs((mc02?.hrs ?? 0) - 5.0) < 0.01) ? 1 : 0,
+            pass: !!mc02 && mc02.pcs === 700 && mc02.kg === 190 && Math.abs(mc02.hrs - 5.0) < 0.01,
+            tolerance: "pcs/kg/hrs exact from fixture (single-machine + multi-machine item)",
+          });
+
+          // NC17e/f: explicit multi-machine split assertions.
+          // ITEM-F03 is assigned to "MC-01,MC-02" (200 pcs / 80 kg / 2.0 hrs).
+          // The aggregation loop must credit the FULL amounts to EACH machine —
+          // not split 50/50 between them.  We verify this by checking that both
+          // machines received at least 200 pcs more than their single-machine
+          // baseline (MC-01 baseline=1000, MC-02 baseline=500).
+          const mc01MultiOk = !!mc01 && mc01.pcs >= 1200 && mc01.kg >= 200 && mc01.hrs >= 7.5 - 0.01;
+          const mc02MultiOk = !!mc02 && mc02.pcs >= 700  && mc02.kg >= 190 && mc02.hrs >= 5.0 - 0.01;
+          newChecks.push({
+            name: `NC17e · multi-machine split · MC-01 receives full 200 pcs/80 kg/2.0 hrs from "MC-01,MC-02" item (pcs=${mc01?.pcs ?? "n/a"} ≥ 1200)`,
+            expected: 1, actual: mc01MultiOk ? 1 : 0,
+            pass: mc01MultiOk,
+            tolerance: "full attribution to each listed machine, not split",
+          });
+          newChecks.push({
+            name: `NC17f · multi-machine split · MC-02 receives full 200 pcs/80 kg/2.0 hrs from "MC-01,MC-02" item (pcs=${mc02?.pcs ?? "n/a"} ≥ 700)`,
+            expected: 1, actual: mc02MultiOk ? 1 : 0,
+            pass: mc02MultiOk,
+            tolerance: "full attribution to each listed machine, not split",
           });
         }
       } finally {
