@@ -321,10 +321,18 @@ router.get("/plant-plan/machine-summary", async (req, res): Promise<void> => {
     .orderBy(desc(plantPlanUploadsTable.uploadedAt))
     .limit(1);
 
+  // Count total uploads for this month+segment (to surface superseded count)
+  const allUploadsForMonth = await db
+    .select({ id: plantPlanUploadsTable.id })
+    .from(plantPlanUploadsTable)
+    .where(and(eq(plantPlanUploadsTable.month, month), eq(plantPlanUploadsTable.segment, segment)));
+
   if (!latestUpload) {
-    res.json({ upload: null, machineTotals: [] });
+    res.json({ upload: null, machineTotals: [], uploadCount: 0 });
     return;
   }
+
+  const uploadCount = allUploadsForMonth.length;
 
   const items = await db
     .select()
@@ -357,7 +365,7 @@ router.get("/plant-plan/machine-summary", async (req, res): Promise<void> => {
     .map(([machineId, t]) => ({ machineId, ...t }))
     .sort((a, b) => a.machineId.localeCompare(b.machineId, undefined, { numeric: true }));
 
-  res.json({ upload: latestUpload, machineTotals });
+  res.json({ upload: latestUpload, machineTotals, uploadCount });
 });
 
 // ─── GET /monitoring/plant-plan/:id/items ────────────────────────────────────

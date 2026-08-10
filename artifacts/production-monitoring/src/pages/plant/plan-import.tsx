@@ -130,7 +130,7 @@ function SummaryTable({ rows }: { rows: SummaryRow[] }) {
 
 // ─── UploadCard ───────────────────────────────────────────────────────────────
 
-function UploadCard({ record, onDelete }: { record: UploadRecord; onDelete: () => void }) {
+function UploadCard({ record, onDelete, isLatest }: { record: UploadRecord; onDelete: () => void; isLatest?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const summary = record.summaryJson ?? [];
@@ -167,6 +167,11 @@ function UploadCard({ record, onDelete }: { record: UploadRecord; onDelete: () =
         <div className="flex items-center gap-2 shrink-0 ml-3">
           <Badge variant="outline" className="text-xs font-mono">{record.month}</Badge>
           <Badge variant="secondary" className="text-xs">{record.segment}</Badge>
+          {isLatest && (
+            <Badge className="text-xs gap-1 bg-indigo-100 text-indigo-700 hover:bg-indigo-100 border-0">
+              Latest
+            </Badge>
+          )}
           {totalShortfall > 0 ? (
             <Badge variant="destructive" className="text-xs gap-1">
               <AlertCircle className="h-3 w-3" /> {fmt(totalShortfall)} shortfall
@@ -434,10 +439,11 @@ export default function PlanImport({ month }: { month: string }) {
           )}
           {uploads !== null && uploads.length > 0 && (
             <div className="space-y-2">
-              {uploads.map((u) => (
+              {uploads.map((u, idx) => (
                 <UploadCard
                   key={u.id}
                   record={u}
+                  isLatest={idx === 0}
                   onDelete={() => setUploads((prev) => prev?.filter((r) => r.id !== u.id) ?? [])}
                 />
               ))}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { RefreshCw, FileSpreadsheet, ArrowRight } from "lucide-react";
 import { Link } from "wouter";
 
@@ -83,6 +84,7 @@ interface MachineTotal {
 interface MachineSummaryResponse {
   upload: ImportedUpload | null;
   machineTotals: MachineTotal[];
+  uploadCount: number;
 }
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
@@ -201,6 +203,8 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
   const importedUpload  = machineSummary?.upload ?? null;
   const machineTotals   = machineSummary?.machineTotals ?? [];
   const importHasHours  = machineTotals.some(t => t.hrs > 0);
+  const uploadCount     = machineSummary?.uploadCount ?? 0;
+  const supersededCount = uploadCount > 1 ? uploadCount - 1 : 0;
   const totalImportPcs  = machineTotals.reduce((s, t) => s + t.pcs, 0);
   const totalImportKg   = machineTotals.reduce((s, t) => s + t.kg, 0);
   const totalImportHrs  = machineTotals.reduce((s, t) => s + t.hrs, 0);
@@ -242,6 +246,11 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
                   <CardTitle className="text-base flex items-center gap-2">
                     <FileSpreadsheet className="h-4 w-4 text-indigo-500" />
                     Imported Plant Plan — Machine Totals
+                    {supersededCount > 0 && (
+                      <Badge variant="secondary" className="text-xs font-normal">
+                        {supersededCount} older upload{supersededCount > 1 ? "s" : ""} superseded
+                      </Badge>
+                    )}
                   </CardTitle>
                   <p className="text-xs text-muted-foreground mt-1">
                     From <span className="font-medium">{importedUpload.filename}</span>
