@@ -23,5 +23,6 @@ export const plantPlanItemsTable = pgTable("plant_plan_items", {
   feasibleKg:   real("feasible_kg").notNull().default(0),
   shortfallKg:  real("shortfall_kg").notNull().default(0),
   machines:     text("machines"),
+  machineHrs:   real("machine_hrs").notNull().default(0),
   note:         text("note"),
 });

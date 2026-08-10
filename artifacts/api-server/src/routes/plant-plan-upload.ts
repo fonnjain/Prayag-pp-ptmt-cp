@@ -68,6 +68,7 @@ interface ItemRow {
   feasibleKg: number;
   shortfallKg: number;
   machines: string;
+  machineHrs: number;
   note: string;
 }
 
@@ -90,6 +91,7 @@ function parseItemSheet(ws: XLSX.WorkSheet, itemType: "PIPE" | "FITTING"): ItemR
       feasibleKg:   num(cell(6)),
       shortfallKg:  num(cell(7)),
       machines:     str(cell(8)),
+      machineHrs:   0,
       note:         str(cell(9)),
     });
   }
@@ -136,8 +138,9 @@ function parseConsolidatedItemSheet(ws: XLSX.WorkSheet): ItemRow[] {
     const code    = str(cell(2));
     if (!code || !rawType) continue;
     const itemType = rawType.toUpperCase().startsWith("FIT") ? "FITTING" : "PIPE";
-    const qty  = num(cell(3));  // Qty (pcs)
-    const matKg = num(cell(8)); // Material Req (kg)
+    const qty    = num(cell(3));  // Qty (pcs)
+    const matKg  = num(cell(8)); // Material Req (kg)
+    const machHrs = num(cell(6)); // Machine Hrs
     rows.push({
       itemType,
       itemCode:     code,
@@ -149,6 +152,7 @@ function parseConsolidatedItemSheet(ws: XLSX.WorkSheet): ItemRow[] {
       feasibleKg:   matKg,
       shortfallKg:  0,
       machines:     str(cell(5)),
+      machineHrs:   machHrs,
       note:         str(cell(10)), // Rate Tier (e.g. "seeded", "mat-avg ⚠")
     });
   }
@@ -297,6 +301,63 @@ router.get("/plant-plan", async (req, res): Promise<void> => {
     .orderBy(desc(plantPlanUploadsTable.uploadedAt));
 
   res.json(rows);
+});
+
+// ─── GET /monitoring/plant-plan/machine-summary ──────────────────────────────
+// Returns machine-level totals (pcs, kg, hrs) from the latest upload for a month+segment.
+// Also handles multi-machine items by attributing to each machine listed.
+
+router.get("/plant-plan/machine-summary", async (req, res): Promise<void> => {
+  const month   = str(req.query["month"]);
+  const segment = str(req.query["segment"]) || "Plumbing";
+
+  if (!month) { res.status(400).json({ error: "month is required" }); return; }
+
+  // Latest upload for this month+segment
+  const [latestUpload] = await db
+    .select()
+    .from(plantPlanUploadsTable)
+    .where(and(eq(plantPlanUploadsTable.month, month), eq(plantPlanUploadsTable.segment, segment)))
+    .orderBy(desc(plantPlanUploadsTable.uploadedAt))
+    .limit(1);
+
+  if (!latestUpload) {
+    res.json({ upload: null, machineTotals: [] });
+    return;
+  }
+
+  const items = await db
+    .select()
+    .from(plantPlanItemsTable)
+    .where(eq(plantPlanItemsTable.uploadId, latestUpload.id));
+
+  // Aggregate by machine — an item may be assigned to multiple machines (comma-separated).
+  // pcs and kg are attributed in full to each listed machine (the plan is not split).
+  // hrs are stored per-item total and attributed to each machine similarly.
+  const totals = new Map<string, { pcs: number; kg: number; hrs: number; itemCount: number }>();
+
+  for (const item of items) {
+    const machineList = (item.machines ?? "")
+      .split(/[,/]+/)
+      .map((m: string) => m.trim())
+      .filter(Boolean);
+    if (machineList.length === 0) machineList.push("Unassigned");
+
+    for (const machineId of machineList) {
+      if (!totals.has(machineId)) totals.set(machineId, { pcs: 0, kg: 0, hrs: 0, itemCount: 0 });
+      const t = totals.get(machineId)!;
+      t.pcs += item.feasiblePcs ?? 0;
+      t.kg  += item.feasibleKg  ?? 0;
+      t.hrs += item.machineHrs ?? 0;
+      t.itemCount += 1;
+    }
+  }
+
+  const machineTotals = [...totals.entries()]
+    .map(([machineId, t]) => ({ machineId, ...t }))
+    .sort((a, b) => a.machineId.localeCompare(b.machineId, undefined, { numeric: true }));
+
+  res.json({ upload: latestUpload, machineTotals });
 });
 
 // ─── GET /monitoring/plant-plan/:id/items ────────────────────────────────────
