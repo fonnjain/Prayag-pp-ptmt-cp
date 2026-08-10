@@ -456,10 +456,20 @@ async function buildCorrectiveDetailExcel(
   // fallback for runs recorded before categoriesJson existed — it can disagree
   // with the engine (Plumbing suggested capacities are 0 there).
   const engineCats = Array.isArray(run.categoriesJson)
-    ? (run.categoriesJson as Array<{ category: string; capPerDay?: number; feasible?: number }>)
+    ? (run.categoriesJson as Array<{
+        category: string;
+        capPerDay?: number;
+        feasible?: number;
+        feasibleAtRunRate?: number;
+        runRateDivergenceFlag?: boolean;
+        capacityMethod?: string;
+        capacityDays?: number | null;
+      }>)
     : [];
-  const engineCapMap  = new Map(engineCats.map(c => [c.category, Math.round(c.capPerDay ?? 0)]));
-  const engineFeasMap = new Map(engineCats.map(c => [c.category, Math.round(c.feasible ?? 0)]));
+  const engineCapMap       = new Map(engineCats.map(c => [c.category, Math.round(c.capPerDay ?? 0)]));
+  const engineFeasMap      = new Map(engineCats.map(c => [c.category, Math.round(c.feasible ?? 0)]));
+  const engineRunRateMap   = new Map(engineCats.map(c => [c.category, Math.round(c.feasibleAtRunRate ?? 0)]));
+  const engineDivergMap    = new Map(engineCats.map(c => [c.category, c.runRateDivergenceFlag ?? false]));
   const dbCapMap = new Map(catCapRows.map(r => [r.category, r.overrideCapacity ?? r.suggestedCapacity]));
   const hasEngineCats = engineCats.length > 0;
   const getCap = (cat: string): number =>
@@ -467,6 +477,9 @@ async function buildCorrectiveDetailExcel(
   const wdr       = run.workingDaysRemaining ?? (4 - run.weekClosed) * (run.workingDaysPerWeek ?? 6);
   const getFeasible = (cat: string): number =>
     hasEngineCats ? (engineFeasMap.get(cat) ?? 0) : Math.round(getCap(cat) * wdr);
+  const getRunRateFeasible = (cat: string): number | null =>
+    hasEngineCats ? (engineRunRateMap.get(cat) ?? null) : null;
+  const isDivergent = (cat: string): boolean => engineDivergMap.get(cat) ?? false;
   const asOfLabel = run.asOfDate ?? `After W${run.weekClosed}`;
 
   // ── Summary sheet — per-category plan/produced/remaining/feasible/shortfall ──
@@ -496,7 +509,9 @@ async function buildCorrectiveDetailExcel(
     sumSh.addRow([]);
   }
 
-  const catHdrRow = sumSh.addRow(["Category", "Plan (Revised)", "Produced", "Remaining", "Cap/Day", "Feasible", "Shortfall"]);
+  for (let c = 8; c <= 10; c++) sumSh.getColumn(c).width = 20;
+
+  const catHdrRow = sumSh.addRow(["Category", "Plan (Revised)", "Produced", "Remaining", "Cap/Day", "Feasible (capacity)", "Shortfall", "Feasible (run-rate)", "⚠ Divergence?"]);
   catHdrRow.font = { bold: true };
   catHdrRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2E8F0" } };
 
@@ -507,10 +522,20 @@ async function buildCorrectiveDetailExcel(
     const remaining = catItems.reduce((s, i) => s + Math.round(i.remainingToProduce), 0);
     const cap       = getCap(cat);
     const feasible  = getFeasible(cat);
+    const runRate   = getRunRateFeasible(cat);
+    const divergent = isDivergent(cat);
     const shortfall = Math.max(remaining - feasible, 0);
     grandPlan  += plan;  grandProd   += produced;  grandRem  += remaining;
     grandFeas  += feasible; grandShort += shortfall;
-    sumSh.addRow([cat, plan, produced, remaining, cap, feasible, shortfall]);
+    const dataRow = sumSh.addRow([
+      cat, plan, produced, remaining, cap, feasible, shortfall,
+      runRate !== null && runRate > 0 ? runRate : "",
+      divergent ? "RUN_RATE_DIVERGENCE" : "",
+    ]);
+    if (divergent) {
+      dataRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
+      dataRow.getCell(9).font = { bold: true, color: { argb: "FF92400E" } };
+    }
   }
   const detTotalRow = sumSh.addRow(["TOTAL", grandPlan, grandProd, grandRem, "", grandFeas, grandShort]);
   detTotalRow.font = { bold: true };
@@ -987,7 +1012,12 @@ function buildCorrectivePdfHtml(
     // the same values the engine computed (never re-derived from the DB
     // capacity table, which showed 0 for Plumbing and caused the Cap/Day=0
     // export regression).
-    const cats = (run.categoriesJson as Array<{ category: string; plan: number; produced: number; remaining: number; capPerDay: number; feasible: number; shortfall: number; capacityMethod?: string; capacityDays?: number | null }> | null) ?? null;
+    const cats = (run.categoriesJson as Array<{
+      category: string; plan: number; produced: number; remaining: number;
+      capPerDay: number; feasible: number; shortfall: number;
+      capacityMethod?: string; capacityDays?: number | null;
+      feasibleAtRunRate?: number; runRateDivergenceFlag?: boolean;
+    }> | null) ?? null;
     if (!cats || cats.length === 0) {
       // Legacy run: categoriesJson was not persisted (saved before per-run capacity tracking).
       // Show an explicit note so the reader knows capacity data is unavailable — not that it is zero.
@@ -1000,24 +1030,37 @@ function buildCorrectivePdfHtml(
   </p>`;
     }
     const wdr = run.workingDaysRemaining;
-    const rows = cats.map(c => `
-      <tr>
+    const divergentCats = cats.filter(c => c.runRateDivergenceFlag);
+    const rows = cats.map(c => {
+      const divergent = c.runRateDivergenceFlag ?? false;
+      const hasRunRate = c.feasibleAtRunRate !== undefined && c.feasibleAtRunRate > 0;
+      return `
+      <tr style="${divergent ? "background:#fef3c7" : ""}">
         <td>${h(c.category)}</td>
         <td style="text-align:right">${fmtN(c.plan)}</td>
         <td style="text-align:right">${fmtN(c.produced)}</td>
         <td style="text-align:right">${fmtN(c.remaining)}</td>
         <td style="text-align:right;font-weight:bold">${fmtN(c.capPerDay)}</td>
         <td style="text-align:center;color:#6b7280">${h(c.capacityMethod ?? "—")}${c.capacityDays ? ` (${c.capacityDays}d)` : ""}</td>
-        <td style="text-align:right">${fmtN(c.feasible)}</td>
+        <td style="text-align:right;color:#1d4ed8">${fmtN(c.feasible)}</td>
+        <td style="text-align:right;color:${hasRunRate ? (divergent ? "#c2410c" : "#4338ca") : "#9ca3af"}">${hasRunRate ? fmtN(c.feasibleAtRunRate!) : "—"}</td>
         <td style="text-align:right;color:${c.shortfall > 0 ? "#b91c1c" : "#166534"};font-weight:bold">${fmtN(c.shortfall)}</td>
-      </tr>`).join("");
+        <td style="text-align:center">${divergent ? '<span style="background:#fbbf24;color:#78350f;padding:1px 5px;border-radius:3px;font-size:8px;font-weight:bold">⚠ RUN-RATE DIVERGENCE</span>' : '<span style="color:#9ca3af;font-size:8px">✓</span>'}</td>
+      </tr>`;
+    }).join("");
+    const divergenceNote = divergentCats.length > 0
+      ? `<p style="font-size:8px;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;padding:5px 8px;margin-bottom:6px"><strong>⚠ ${divergentCats.length} categor${divergentCats.length === 1 ? "y" : "ies"} flagged for run-rate divergence</strong>: ${divergentCats.map(c => h(c.category)).join(", ")}. Capacity projection is &gt;50% above demonstrated run-rate — treat feasible (capacity) as optimistic ceiling.</p>`
+      : "";
     return `
   <h2>Category Capacity &amp; Feasibility${wdr !== null && wdr !== undefined ? ` — ${wdr} working days remaining` : ""}</h2>
+  ${divergenceNote}
   <table style="margin-bottom:12px">
     <thead><tr>
       <th>Category</th><th style="text-align:right">Plan (Rev)</th><th style="text-align:right">Produced</th>
       <th style="text-align:right">Remaining</th><th style="text-align:right">Cap/Day</th><th style="text-align:center">Method</th>
-      <th style="text-align:right">Feasible</th><th style="text-align:right">Shortfall</th>
+      <th style="text-align:right;color:#1d4ed8">Feasible (capacity)</th>
+      <th style="text-align:right;color:#4338ca">Feasible (run-rate)</th>
+      <th style="text-align:right">Shortfall</th><th style="text-align:center">Divergence</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;

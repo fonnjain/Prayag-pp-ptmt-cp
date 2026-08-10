@@ -550,6 +550,155 @@ function RevisedReleaseTable({
   );
 }
 
+// ─── Category Feasibility Table ───────────────────────────────────────────────
+
+interface EngineCategoryResult {
+  category: string;
+  plan: number;
+  produced: number;
+  remaining: number;
+  capPerDay: number;
+  capacityMethod?: string;
+  capacityDays?: number | null;
+  feasible: number;
+  shortfall: number;
+  daysRun?: number;
+  elapsedWorkingDays?: number;
+  feasibleAtRunRate?: number;
+  runRateDivergenceFlag?: boolean;
+  flags?: string[];
+}
+
+function CategoryFeasibilityTable({
+  result,
+}: {
+  result: CorrectiveReplanResult;
+}) {
+  const cats = (result.categories as unknown as EngineCategoryResult[]) ?? [];
+  const CATEGORY_ORDER =
+    result.segment === "Plumbing" ? PLUMBING_CATEGORY_ORDER : PTMT_CATEGORY_ORDER;
+
+  if (!cats || cats.length === 0) {
+    return (
+      <p className="text-sm text-gray-400 py-4">
+        No category data available for this run.
+      </p>
+    );
+  }
+
+  const ordered = [...cats].sort((a, b) => {
+    const ai = CATEGORY_ORDER.indexOf(a.category);
+    const bi = CATEGORY_ORDER.indexOf(b.category);
+    if (ai >= 0 && bi >= 0) return ai - bi;
+    if (ai >= 0) return -1;
+    if (bi >= 0) return 1;
+    return a.category.localeCompare(b.category);
+  });
+
+  const divergentCount = ordered.filter((c) => c.runRateDivergenceFlag).length;
+
+  return (
+    <div className="space-y-3">
+      {divergentCount > 0 && (
+        <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-800">
+          <span className="font-semibold">⚠ {divergentCount} categor{divergentCount === 1 ? "y" : "ies"} flagged for run-rate divergence</span>
+          {" "}— capacity-based projection is &gt;50% more optimistic than the demonstrated run-rate.
+          These categories are unlikely to achieve the capacity-based feasible figure.
+        </div>
+      )}
+
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full text-xs min-w-[900px]">
+          <thead>
+            <tr className="bg-gray-50 border-b text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+              <th className="px-2 py-2 text-left">Category</th>
+              <th className="px-2 py-2 text-right">Revised Plan</th>
+              <th className="px-2 py-2 text-right">Produced</th>
+              <th className="px-2 py-2 text-right">Remaining</th>
+              <th className="px-2 py-2 text-right">Cap/Day</th>
+              <th className="px-2 py-2 text-center">Method</th>
+              <th className="px-2 py-2 text-right text-blue-700">Feasible (capacity)</th>
+              <th className="px-2 py-2 text-right text-indigo-700">Feasible (run-rate)</th>
+              <th className="px-2 py-2 text-right">Shortfall</th>
+              <th className="px-2 py-2 text-center">Divergence</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {ordered.map((cat) => {
+              const isDivergent = cat.runRateDivergenceFlag ?? false;
+              const hasRunRate = cat.feasibleAtRunRate !== undefined && cat.feasibleAtRunRate > 0;
+              return (
+                <tr
+                  key={cat.category}
+                  className={cn(
+                    "hover:bg-gray-50 transition-colors",
+                    isDivergent && "bg-amber-50/60",
+                  )}
+                >
+                  <td className="px-2 py-1.5 font-medium text-gray-800">
+                    {cat.category}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">
+                    {fmtPcs(cat.plan)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-green-700">
+                    {fmtPcs(cat.produced)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-bold">
+                    {fmtPcs(cat.remaining)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">
+                    {fmtPcs(cat.capPerDay)}
+                  </td>
+                  <td className="px-2 py-1.5 text-center text-gray-500">
+                    {cat.capacityMethod ?? "—"}
+                    {cat.capacityDays != null ? (
+                      <span className="ml-1 text-gray-400">({cat.capacityDays}d)</span>
+                    ) : null}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-blue-700 font-medium">
+                    {fmtPcs(cat.feasible)}
+                  </td>
+                  <td className={cn(
+                    "px-2 py-1.5 text-right tabular-nums font-medium",
+                    !hasRunRate ? "text-gray-400" :
+                    isDivergent ? "text-orange-700" : "text-indigo-700",
+                  )}>
+                    {hasRunRate ? fmtPcs(cat.feasibleAtRunRate!) : "—"}
+                  </td>
+                  <td className={cn(
+                    "px-2 py-1.5 text-right tabular-nums",
+                    cat.shortfall > 0 ? "text-red-700 font-bold" : "text-gray-400",
+                  )}>
+                    {cat.shortfall > 0 ? fmtPcs(cat.shortfall) : "—"}
+                  </td>
+                  <td className="px-2 py-1.5 text-center">
+                    {isDivergent ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-300">
+                        ⚠ Run-rate divergence
+                      </span>
+                    ) : hasRunRate ? (
+                      <span className="text-gray-400 text-[10px]">✓ aligned</span>
+                    ) : (
+                      <span className="text-gray-300 text-[10px]">no data</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="text-[10px] text-gray-400">
+        <strong>Feasible (capacity)</strong>: Cap/Day × working days remaining — theoretical ceiling.{" "}
+        <strong>Feasible (run-rate)</strong>: (produced ÷ days elapsed) × days remaining — based on demonstrated output.{" "}
+        Categories flagged <span className="text-amber-700 font-medium">⚠ Run-rate divergence</span> have capacity projection &gt;50% above run-rate.
+      </p>
+    </div>
+  );
+}
+
 // ─── Category Rollup ──────────────────────────────────────────────────────────
 
 function CategoryRollup({ result }: { result: CorrectiveReplanResult }) {
@@ -728,7 +877,7 @@ export default function CorrectivePage() {
   const [asOfDate, setAsOfDate] = useState(() => now.toISOString().slice(0, 10));
   const [runResult, setRunResult] = useState<CorrectiveReplanResult | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<"table" | "chart" | "actions">("table");
+  const [activeTab, setActiveTab] = useState<"table" | "capacity" | "chart" | "actions">("table");
 
   const replan = useRunCorrectiveReplan();
   const { data: historicRun, isLoading: loadingHistoric } = useGetCorrectiveRun(
@@ -937,25 +1086,48 @@ export default function CorrectivePage() {
                 <Card>
                   <CardHeader className="pb-2">
                     <div className="flex items-center gap-3">
-                      {(["table", "chart", "actions"] as const).map(tab => (
-                        <button
-                          key={tab}
-                          onClick={() => setActiveTab(tab)}
-                          className={cn(
-                            "px-3 py-1 rounded text-xs font-medium border transition-colors",
-                            activeTab === tab
-                              ? "bg-indigo-600 text-white border-indigo-600"
-                              : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50",
-                          )}
-                        >
-                          {tab === "table" ? "Revised Release" : tab === "chart" ? "Capacity Chart" : "Corrective Actions"}
-                        </button>
-                      ))}
+                      {(["table", "capacity", "chart", "actions"] as const).map(tab => {
+                        const divergentCount = tab === "capacity"
+                          ? ((displayResult.categories as unknown as EngineCategoryResult[]) ?? []).filter(c => c.runRateDivergenceFlag).length
+                          : 0;
+                        return (
+                          <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={cn(
+                              "px-3 py-1 rounded text-xs font-medium border transition-colors relative",
+                              activeTab === tab
+                                ? "bg-indigo-600 text-white border-indigo-600"
+                                : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50",
+                            )}
+                          >
+                            {tab === "table" ? "Revised Release"
+                              : tab === "capacity" ? (
+                                <span className="flex items-center gap-1">
+                                  Category Capacity
+                                  {divergentCount > 0 && (
+                                    <span className={cn(
+                                      "inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold",
+                                      activeTab === tab ? "bg-amber-300 text-amber-900" : "bg-amber-500 text-white",
+                                    )}>
+                                      {divergentCount}
+                                    </span>
+                                  )}
+                                </span>
+                              )
+                              : tab === "chart" ? "Capacity Chart"
+                              : "Corrective Actions"}
+                          </button>
+                        );
+                      })}
                     </div>
                   </CardHeader>
                   <CardContent>
                     {activeTab === "table" && (
                       <RevisedReleaseTable items={displayResult.items} weekClosed={displayResult.weekClosed} segment={displayResult.segment ?? segment} />
+                    )}
+                    {activeTab === "capacity" && (
+                      <CategoryFeasibilityTable result={displayResult} />
                     )}
                     {activeTab === "chart" && (
                       <div className="space-y-6">
