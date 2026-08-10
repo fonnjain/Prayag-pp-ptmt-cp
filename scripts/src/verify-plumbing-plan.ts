@@ -1216,6 +1216,137 @@ async function main(): Promise<void> {
       }
     }
 
+    // NC17l/m: Mixed comma-and-slash separator ("MC-07,MC-08/MC-09") splits into exactly
+    // three canonical IDs with no phantom entries. The regex /[,/]+/ collapses consecutive
+    // or combined delimiters, so "MC-07,MC-08/MC-09" must yield MC-07, MC-08, and MC-09.
+    //
+    // Fixture items:
+    //   Row 4: PIPE   item — "MC-07" (single),              300 pcs, matKg=60,  hrs=2.0
+    //   Row 5: FITTING item — "MC-07,MC-08/MC-09" (mixed),  400 pcs, matKg=90,  hrs=3.5
+    //
+    // Expected machine-summary after aggregation:
+    //   MC-07 : pcs = 300 + 400 = 700,  kg = 60 + 90 = 150,  hrs = 2.0 + 3.5 = 5.5
+    //   MC-08 : pcs = 400,               kg = 90,              hrs = 3.5
+    //   MC-09 : pcs = 400,               kg = 90,              hrs = 3.5
+    //
+    // Phantom-ID check: no machineId may contain a leading/trailing space.
+    {
+      const XLSXl = await import("xlsx");
+      const FIXTURE_MONTH_L   = "2099-05";   // safe far-future — never real data
+      const FIXTURE_SEGMENT_L = "Plumbing";
+
+      const wsDataL = [
+        [],
+        [],
+        [],
+        ["Type","Material","Item Code","Qty (pcs)","Wt/pc (kg)","Machine(s)","Machine Hrs","Prod Wt (kg)","Material Req (kg)","Rate (kg/hr)","Rate Tier","Compound Cost (Rs)"],
+        ["Pipe",   "CPVC-25mm","ITEM-L01", 300, 0.15, "MC-07",              2.0, 45,  60, 25, "seeded", 3000],
+        ["Fitting","SWR-4in",  "ITEM-L02", 400, 0.20, "MC-07,MC-08/MC-09", 3.5, 80,  90, 22, "seeded", 4000],
+      ];
+      const wsL = XLSXl.utils.aoa_to_sheet(wsDataL);
+      const wbL = XLSXl.utils.book_new();
+      XLSXl.utils.book_append_sheet(wbL, wsL, "5. Item Assignment");
+      const bufL = Buffer.from(XLSXl.write(wbL, { type: "buffer", bookType: "xlsx" }));
+
+      const fdL = new FormData();
+      fdL.append("month",   FIXTURE_MONTH_L);
+      fdL.append("segment", FIXTURE_SEGMENT_L);
+      fdL.append("file",
+        new Blob([bufL], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        "fixture-mixed-sep-machines.xlsx",
+      );
+
+      let uploadIdL: number | null = null;
+      try {
+        const uploadRespL = await fetch(`${API_BASE}/api/monitoring/plant-plan`, { method: "POST", body: fdL });
+        if (!uploadRespL.ok) {
+          const txt = await uploadRespL.text().catch(() => "");
+          newChecks.push({
+            name: "NC17l · mixed-sep upload · POST succeeds",
+            expected: 1, actual: 0, pass: false,
+            tolerance: `HTTP ${uploadRespL.status}: ${txt.slice(0, 120)}`,
+          });
+        } else {
+          const uploadBodyL = await uploadRespL.json() as { id: number; itemCount: number };
+          uploadIdL = uploadBodyL.id;
+          newChecks.push({
+            name: `NC17l · mixed-sep upload · POST 201, itemCount=2 (got ${uploadBodyL.itemCount})`,
+            expected: 2, actual: uploadBodyL.itemCount,
+            pass: uploadBodyL.itemCount === 2, tolerance: "exact",
+          });
+
+          type MachineTotalsL = { machineId: string; pcs: number; kg: number; hrs: number; itemCount: number };
+          const summaryDataL = await fetchJson<{ upload: unknown; machineTotals: MachineTotalsL[] }>(
+            `${API_BASE}/api/monitoring/plant-plan/machine-summary?month=${FIXTURE_MONTH_L}&segment=${encodeURIComponent(FIXTURE_SEGMENT_L)}`,
+          );
+          const totalsL = summaryDataL.machineTotals ?? [];
+          const mc07 = totalsL.find((m) => m.machineId === "MC-07");
+          const mc08 = totalsL.find((m) => m.machineId === "MC-08");
+          const mc09 = totalsL.find((m) => m.machineId === "MC-09");
+
+          // NC17l: MC-07 receives single-item (300/60/2.0) + mixed-sep item (400/90/3.5) = 700/150/5.5
+          newChecks.push({
+            name: `NC17l · mixed-sep · MC-07 pcs=700 kg=150 hrs=5.5 (got pcs=${mc07?.pcs ?? "n/a"} kg=${mc07?.kg ?? "n/a"} hrs=${mc07?.hrs ?? "n/a"})`,
+            expected: 1,
+            actual: (mc07?.pcs === 700 && mc07?.kg === 150 && Math.abs((mc07?.hrs ?? 0) - 5.5) < 0.01) ? 1 : 0,
+            pass: !!mc07 && mc07.pcs === 700 && mc07.kg === 150 && Math.abs(mc07.hrs - 5.5) < 0.01,
+            tolerance: `comma+slash regex collapses to MC-07; full attribution; got ${mc07?.pcs}/${mc07?.kg}/${mc07?.hrs}`,
+          });
+
+          // NC17m: MC-08 receives only the mixed-sep item (400/90/3.5)
+          newChecks.push({
+            name: `NC17m · mixed-sep · MC-08 pcs=400 kg=90 hrs=3.5 (got pcs=${mc08?.pcs ?? "n/a"} kg=${mc08?.kg ?? "n/a"} hrs=${mc08?.hrs ?? "n/a"})`,
+            expected: 1,
+            actual: (mc08?.pcs === 400 && mc08?.kg === 90 && Math.abs((mc08?.hrs ?? 0) - 3.5) < 0.01) ? 1 : 0,
+            pass: !!mc08 && mc08.pcs === 400 && mc08.kg === 90 && Math.abs(mc08.hrs - 3.5) < 0.01,
+            tolerance: `"MC-07,MC-08/MC-09" splits on /[,/]+/ → MC-08 exact; got ${mc08?.pcs}/${mc08?.kg}/${mc08?.hrs}`,
+          });
+
+          // NC17m: MC-09 receives only the mixed-sep item (400/90/3.5)
+          newChecks.push({
+            name: `NC17m · mixed-sep · MC-09 pcs=400 kg=90 hrs=3.5 (got pcs=${mc09?.pcs ?? "n/a"} kg=${mc09?.kg ?? "n/a"} hrs=${mc09?.hrs ?? "n/a"})`,
+            expected: 1,
+            actual: (mc09?.pcs === 400 && mc09?.kg === 90 && Math.abs((mc09?.hrs ?? 0) - 3.5) < 0.01) ? 1 : 0,
+            pass: !!mc09 && mc09.pcs === 400 && mc09.kg === 90 && Math.abs(mc09.hrs - 3.5) < 0.01,
+            tolerance: `"MC-07,MC-08/MC-09" splits on /[,/]+/ → MC-09 exact; got ${mc09?.pcs}/${mc09?.kg}/${mc09?.hrs}`,
+          });
+
+          // Exact-bucket-set guard: only MC-07, MC-08, MC-09 may appear — no phantom,
+          // duplicate, or malformed tokens from the mixed separator string.
+          const EXPECTED_IDS_L = new Set(["MC-07", "MC-08", "MC-09"]);
+          const actualIdsL = new Set(totalsL.map((m) => m.machineId));
+          const unexpectedL = [...actualIdsL].filter((id) => !EXPECTED_IDS_L.has(id));
+          const missingL    = [...EXPECTED_IDS_L].filter((id) => !actualIdsL.has(id));
+          const exactSetOkL = unexpectedL.length === 0 && missingL.length === 0;
+          newChecks.push({
+            name: `NC17m · exact-bucket-set · only MC-07/MC-08/MC-09 present (unexpected=[${unexpectedL.join(",")}] missing=[${missingL.join(",")}])`,
+            expected: 1, actual: exactSetOkL ? 1 : 0,
+            pass: exactSetOkL,
+            tolerance: `"MC-07,MC-08/MC-09" must yield exactly 3 canonical IDs — no phantom tokens, no duplicates`,
+          });
+
+          // Phantom-ID guard: no machineId in the summary may have leading or trailing whitespace.
+          const phantomIdsL = totalsL.filter((m) => m.machineId !== m.machineId.trim());
+          newChecks.push({
+            name: `NC17m · phantom-ID guard · no machine bucket has leading/trailing spaces (found ${phantomIdsL.length} phantom IDs: ${phantomIdsL.map((m) => JSON.stringify(m.machineId)).join(", ") || "none"})`,
+            expected: 0, actual: phantomIdsL.length,
+            pass: phantomIdsL.length === 0,
+            tolerance: "split(/[,/]+/).map(trim()) must eliminate all space-padded keys from mixed separators",
+          });
+        }
+      } catch (errL) {
+        newChecks.push({
+          name: "NC17l · mixed-sep upload · block error (unexpected exception)",
+          expected: 1, actual: 0, pass: false,
+          tolerance: errL instanceof Error ? errL.message : String(errL),
+        });
+      } finally {
+        if (uploadIdL !== null) {
+          await fetch(`${API_BASE}/api/monitoring/plant-plan/${uploadIdL}`, { method: "DELETE" }).catch(() => {});
+        }
+      }
+    }
+
     // NC18: Upload a workbook with no recognised sheets → HTTP 400, no record left behind.
     // Builds a workbook containing only an unrecognised sheet so the empty-items guard fires.
     {
