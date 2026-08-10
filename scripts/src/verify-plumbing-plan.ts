@@ -1023,6 +1023,92 @@ async function main(): Promise<void> {
       }
     }
 
+    // NC17g/h: Slash-separated machine list ("MC-03/MC-04") splits correctly.
+    // Covers the `/` branch of the /[,/]+/ regex in the aggregation loop.
+    // Fixture items:
+    //   Row 4: PIPE  item — MC-03 only,       300 pcs, matKg=60, hrs=2.0
+    //   Row 5: FITTING item — "MC-03/MC-04",  400 pcs, matKg=90, hrs=3.5
+    //
+    // Expected machine-summary after aggregation:
+    //   MC-03 : pcs = 300 + 400 = 700,  kg = 60 + 90 = 150,  hrs = 2.0 + 3.5 = 5.5
+    //   MC-04 : pcs = 400,               kg = 90,              hrs = 3.5
+    {
+      const XLSXg = await import("xlsx");
+      const FIXTURE_MONTH_G   = "2099-03";   // safe far-future — never real data
+      const FIXTURE_SEGMENT_G = "Plumbing";
+
+      const wsDataG = [
+        [],
+        [],
+        [],
+        ["Type","Material","Item Code","Qty (pcs)","Wt/pc (kg)","Machine(s)","Machine Hrs","Prod Wt (kg)","Material Req (kg)","Rate (kg/hr)","Rate Tier","Compound Cost (Rs)"],
+        ["Pipe",   "CPVC-25mm","ITEM-G01", 300, 0.15, "MC-03",       2.0, 45,  60, 25, "seeded", 3000],
+        ["Fitting","SWR-4in",  "ITEM-G02", 400, 0.20, "MC-03/MC-04", 3.5, 80,  90, 22, "seeded", 4000],
+      ];
+      const wsG = XLSXg.utils.aoa_to_sheet(wsDataG);
+      const wbG = XLSXg.utils.book_new();
+      XLSXg.utils.book_append_sheet(wbG, wsG, "5. Item Assignment");
+      const bufG = Buffer.from(XLSXg.write(wbG, { type: "buffer", bookType: "xlsx" }));
+
+      const fdG = new FormData();
+      fdG.append("month",   FIXTURE_MONTH_G);
+      fdG.append("segment", FIXTURE_SEGMENT_G);
+      fdG.append("file",
+        new Blob([bufG], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        "fixture-slash-machines.xlsx",
+      );
+
+      let uploadIdG: number | null = null;
+      try {
+        const uploadRespG = await fetch(`${API_BASE}/api/monitoring/plant-plan`, { method: "POST", body: fdG });
+        if (!uploadRespG.ok) {
+          const txt = await uploadRespG.text().catch(() => "");
+          newChecks.push({
+            name: "NC17g · slash-machine upload · POST succeeds",
+            expected: 1, actual: 0, pass: false,
+            tolerance: `HTTP ${uploadRespG.status}: ${txt.slice(0, 120)}`,
+          });
+        } else {
+          const uploadBodyG = await uploadRespG.json() as { id: number; itemCount: number };
+          uploadIdG = uploadBodyG.id;
+          newChecks.push({
+            name: `NC17g · slash-machine upload · POST 201, itemCount=2 (got ${uploadBodyG.itemCount})`,
+            expected: 2, actual: uploadBodyG.itemCount,
+            pass: uploadBodyG.itemCount === 2, tolerance: "exact",
+          });
+
+          type MachineTotalsG = { machineId: string; pcs: number; kg: number; hrs: number; itemCount: number };
+          const summaryDataG = await fetchJson<{ upload: unknown; machineTotals: MachineTotalsG[] }>(
+            `${API_BASE}/api/monitoring/plant-plan/machine-summary?month=${FIXTURE_MONTH_G}&segment=${encodeURIComponent(FIXTURE_SEGMENT_G)}`,
+          );
+          const totalsG = summaryDataG.machineTotals ?? [];
+          const mc03 = totalsG.find((m) => m.machineId === "MC-03");
+          const mc04 = totalsG.find((m) => m.machineId === "MC-04");
+
+          // MC-03: single item (300 pcs/60 kg/2.0 hrs) + slash-shared item (400 pcs/90 kg/3.5 hrs) = 700/150/5.5
+          newChecks.push({
+            name: `NC17h · slash-machine · MC-03 pcs=700 kg=150 hrs=5.5 (got pcs=${mc03?.pcs ?? "n/a"} kg=${mc03?.kg ?? "n/a"} hrs=${mc03?.hrs ?? "n/a"})`,
+            expected: 1,
+            actual: (mc03?.pcs === 700 && mc03?.kg === 150 && Math.abs((mc03?.hrs ?? 0) - 5.5) < 0.01) ? 1 : 0,
+            pass: !!mc03 && mc03.pcs === 700 && mc03.kg === 150 && Math.abs(mc03.hrs - 5.5) < 0.01,
+            tolerance: `full attribution via slash separator: pcs/kg/hrs exact (got ${mc03?.pcs}/${mc03?.kg}/${mc03?.hrs})`,
+          });
+          // MC-04: receives only the slash-shared item (400 pcs/90 kg/3.5 hrs)
+          newChecks.push({
+            name: `NC17i · slash-machine · MC-04 pcs=400 kg=90 hrs=3.5 (got pcs=${mc04?.pcs ?? "n/a"} kg=${mc04?.kg ?? "n/a"} hrs=${mc04?.hrs ?? "n/a"})`,
+            expected: 1,
+            actual: (mc04?.pcs === 400 && mc04?.kg === 90 && Math.abs((mc04?.hrs ?? 0) - 3.5) < 0.01) ? 1 : 0,
+            pass: !!mc04 && mc04.pcs === 400 && mc04.kg === 90 && Math.abs(mc04.hrs - 3.5) < 0.01,
+            tolerance: `MC-04 receives full slash-separated item attribution (got ${mc04?.pcs}/${mc04?.kg}/${mc04?.hrs})`,
+          });
+        }
+      } finally {
+        if (uploadIdG !== null) {
+          await fetch(`${API_BASE}/api/monitoring/plant-plan/${uploadIdG}`, { method: "DELETE" }).catch(() => {});
+        }
+      }
+    }
+
     // NC18: Upload a workbook with no recognised sheets → HTTP 400, no record left behind.
     // Builds a workbook containing only an unrecognised sheet so the empty-items guard fires.
     {
