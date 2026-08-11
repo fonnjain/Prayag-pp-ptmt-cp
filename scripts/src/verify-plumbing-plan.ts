@@ -624,6 +624,52 @@ async function main(): Promise<void> {
       tolerance: "boolean field and flags array must always be in sync",
     });
 
+    // ── NC20: Baseline-currency guard (uses Aug-2026 which has plan run #21) ──
+    // Fetch a separate Aug corrective (dryRun) so the July corrective in ptmtReplan
+    // is not disturbed and these checks target the known-correct Aug baseline.
+    const ptmtAugReplan = await fetchJson<Record<string, unknown>>(`${API_BASE}/api/corrective/replan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ month: PTMT_PLAN_MONTH, segment: "PTMT", weekClosed: 0, dryRun: true }),
+    });
+
+    // NC20a: response carries a non-null baselinePlanRunId (plan run #21 for Aug-2026)
+    const ptmtBaselineRunId = ptmtAugReplan?.["baselinePlanRunId"];
+    newChecks.push({
+      name: "NC20a · PTMT Aug corrective · baselinePlanRunId is set (auto-select found finalized plan run #21)",
+      expected: 1, actual: ptmtBaselineRunId != null ? 1 : 0,
+      pass: ptmtBaselineRunId != null,
+      tolerance: "must not be null — plan run #21 (Aug-2026) must exist and be finalized",
+    });
+
+    // NC20b: originalMonthTotal ≈ 617,710 (the corrected plan; not the old stale 684,492)
+    const ptmtOrigTotal = Number(ptmtAugReplan?.["originalMonthTotal"] ?? 0);
+    const ptmtOrigOk = Math.abs(ptmtOrigTotal - 617710) <= 500;
+    newChecks.push({
+      name: `NC20b · PTMT Aug corrective · originalMonthTotal ≈ 617,710 (actual ${Math.round(ptmtOrigTotal).toLocaleString()})`,
+      expected: 617710, actual: Math.round(ptmtOrigTotal),
+      pass: ptmtOrigOk, tolerance: "±500 pcs — must cite post-fix plan run, not stale 684,492",
+    });
+
+    // NC20c: dailyCapacity must NOT equal the old circular magic number 21,335
+    const ptmtDailyCap = Number(ptmtAugReplan?.["dailyCapacity"] ?? 0);
+    const ptmtCapNotMagic = Math.abs(ptmtDailyCap - 21335) > 200;
+    newChecks.push({
+      name: `NC20c · PTMT Aug corrective · dailyCapacity (${Math.round(ptmtDailyCap)}) is not stale 21,335 fallback`,
+      expected: 1, actual: ptmtCapNotMagic ? 1 : 0,
+      pass: ptmtCapNotMagic,
+      tolerance: "must differ from 21,335 by >200 — capacity now from p90/mean of Aug actuals",
+    });
+
+    // NC20d: no BASELINE_INTEGRITY_ERROR (frozen items and plan run header are consistent)
+    const ptmtAugWarnings = (ptmtAugReplan?.["warnings"] as Array<{ code: string }>) ?? [];
+    const hasIntegrityErr = ptmtAugWarnings.some(w => w.code === "BASELINE_INTEGRITY_ERROR");
+    newChecks.push({
+      name: "NC20d · PTMT Aug corrective · no BASELINE_INTEGRITY_ERROR (frozen items agree with plan run header)",
+      expected: 0, actual: hasIntegrityErr ? 1 : 0, pass: !hasIntegrityErr,
+      tolerance: "engine: sum(frozenItems.maxProduction) ≈ planRun.grandMaxTotal (±100 pcs)",
+    });
+
     // NC8: PTMT weekly release — plant W1+W2+W3+W4 ≈ plan total (within 0.5%) per category
     const ptmtPlanItems = await fetchJson<Array<Record<string, unknown>>>(`${API_BASE}/api/plan?month=${PTMT_PLAN_MONTH}&segment=PTMT`);
     const ptmtCatMap = new Map<string, { w1: number; w2: number; w3: number; w4: number; plan: number }>();

@@ -1,0 +1,109 @@
+# Replit Prompt — PTMT corrective stale baseline: code-level diagnosis
+
+I have read the repo (`fonnjain/Prayag-pp-ptmt-cp`). **The baseline-resolution logic is correct — the data behind it is stale.** Please act on the specific findings below rather than re-examining the resolution code.
+
+Three consecutive PTMT corrective exports are byte-identical, all showing `Original Month Total = 684,492` (the pre-stock-join-fix plan). The corrected August PTMT plan is **617,710**.
+
+---
+
+## What the code actually does (verified)
+
+`artifacts/api-server/src/routes/corrective.ts` (~lines 110–142) resolves the baseline:
+
+- explicit `planRunId` → that frozen run (validated: exists, matches month+segment, is finalized)
+- `planRunId === null` → force live rebuild
+- `planRunId === undefined` → **latest FINALIZED plan run for month+segment**, ordered `id DESC`; if none, stays `undefined`
+
+`artifacts/api-server/src/lib/corrective-engine.ts` (~line 360):
+
+```ts
+input.planRunId != null
+  ? loadFrozenBaselineItems(input.planRunId, month, segment)
+  : buildPlanItems(month, segment)   // live rebuild
+```
+
+and (~line 874):
+
+```ts
+const originalMonthTotal = round(originalItems.reduce((s, i) => s + i.maxProduction, 0));
+```
+
+So `originalMonthTotal` is whatever `originalItems` contains — a frozen run **or** a live rebuild.
+
+---
+
+## STEP 1 — Determine which of two cases applies
+
+Run: `GET /api/plan/runs?segment=PTMT&month=2026-08` and report the result.
+
+**Case (a): finalized runs exist.** The corrective is correctly citing the latest one, but that run was frozen **before** the stock-join fix, so it holds the buggy 684,492.
+→ **Fix:** create a **new finalized plan run** from the corrected engine (must total 617,710). The corrective will pick it up automatically via `ORDER BY id DESC`. Do not edit the old run — immutability is correct; supersede it.
+
+**Case (b): no finalized runs exist.** The engine falls through to `buildPlanItems(month, segment)` — a live rebuild. If that still returns 684,492, then **the stock-join fix is not in the deployed plan-build path.**
+→ **Fix:** this is a deployment problem, not a corrective one. Deploy/publish the plan-build fix and verify the deployed app returns 617,710.
+
+Report which case it is, with the evidence.
+
+---
+
+## STEP 2 — Add the baseline-currency guard (this gap let three exports ship on a superseded plan)
+
+The route validates an **explicitly passed** `planRunId` thoroughly. But on the auto-select path (`planRunId === undefined`) nothing checks that the chosen run reflects the current engine.
+
+Add an assertion/warning: **a corrective run's `originalMonthTotal` must match the current plan-build output for that month+segment** (within a small tolerance). On mismatch, fail loudly naming both values and the plan-run id — do not silently produce a corrective built on a superseded baseline.
+
+Also surface the cited **plan-run id and its total** in the export header and the API response, so any file can be traced to its baseline.
+
+---
+
+## STEP 3 — Remove the stale `dailyCapacity` fallback
+
+`corrective-engine.ts` (~line 352):
+
+```ts
+const dailyCapacity = input.dailyCapacity ?? 21335;
+```
+
+**21,335 is the old circular PTMT figure** (plan ÷ 27 days) that was replaced in July by per-category p90. It is only a fallback, but any path that hits it silently reverts capacity to a number known to be wrong.
+
+Replace it with the per-category capacity ladder (p90 when ≥5 production days, mean when 1–4, zero + `NO_DEMONSTRATED_CAPACITY` only when there is genuinely no production), or make the fallback a loud error rather than a magic number.
+
+---
+
+## STEP 4 — Confirm export freshness
+
+Verify the export is regenerated rather than served from a persisted/cached run. The run-dedupe fingerprint was changed recently — confirm it invalidates when the underlying plan run changes. Three byte-identical exports suggest either no re-run occurred or a cache returned the prior result.
+
+---
+
+## STEP 5 (still open) — report both feasibility projections
+
+Capacity is measured **per production day** then multiplied by **every remaining working day**, assuming each category runs daily. PTMT produced **124,409 over 7 elapsed working days = 17,773/day actual**, against a modelled **30,897/day** — about **1.7× optimistic**. The 101,664 shortfall is therefore understated; at demonstrated run-rate it is nearer **240,000**.
+
+Do not silently change the method. Report **both** per category — `feasible_at_capacity` (current) and `feasible_at_run_rate` (produced ÷ elapsed working days × remaining working days) — plus the **days-run vs days-elapsed** ratio, flagging divergence over ~50%.
+
+---
+
+## STEP 6 (still open) — Standard export Min column
+
+In the Standard (schema-compatible) export, Min ≈ Max (Cocks Standard 475,441 / 476,864; total 684,551 / 698,452), whereas the plan export shows Min far below Max (August: 464,939 vs 684,492). Since this file exists to be consumed by a downstream app with the plan's schema, confirm whether that is intentional for the corrective context or the Min formula is not applied on this path.
+
+---
+
+## What is working — do not change
+
+- Baseline resolution logic in `routes/corrective.ts` (validation of explicit ids is thorough and correct)
+- Immutability of plan runs (supersede, never edit)
+- August capacity now recomputed from production (values moved off July goldens: Cocks Standard 17,449→16,073, Cabinet 147→74, Faucets 2,431→2,886, Accessorise 2,940→3,609, Ball Cock 6,567→6,048, Cistern 1,050→973, Cocks Premium 1,242→1,234)
+- `Feasible = Cap/Day × workingDaysRemaining` holds exactly for all seven categories
+
+---
+
+## Report
+
+- Which case (a or b), with the `/api/plan/runs` output.
+- A fresh corrective export with `Original Month Total = 617,710`.
+- Confirmation the `21335` fallback is gone.
+- Both feasibility projections with days-run ratios.
+- Answer on the Standard export Min column.
+- New suite count and pass/fail including the baseline-currency guard.

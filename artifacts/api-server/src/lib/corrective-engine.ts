@@ -103,6 +103,14 @@ export interface CorrectiveReplanInput {
    */
   planRunId?: number;
   /**
+   * Grand-max total stored on the auto-selected plan run (planRun.grandMaxTotal).
+   * When provided the engine asserts that the frozen baseline items sum to this
+   * total (±100 pcs). A material mismatch means the plan run's items were not
+   * written consistently with its header — a BASELINE_INTEGRITY_ERROR warning
+   * is emitted rather than silently producing a corrective on corrupted data.
+   */
+  planRunGrandMax?: number;
+  /**
    * When true, run the full engine but skip persisting the run + items to the
    * DB. Used by the regression/validate suite so repeated verification runs
    * don't pile duplicate corrective_plan_runs rows into the run history.
@@ -350,7 +358,10 @@ async function loadFrozenBaselineItems(
 export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise<CorrectiveReplanResult> {
   const { month } = input;
   const segment = input.segment ?? "PTMT";
-  const dailyCapacity = input.dailyCapacity ?? 21335;
+  // 21335 was the old circular PTMT fallback (plan ÷ 27 days). Removed: any path
+  // that needs a global capacity figure should use the per-category p90/mean ladder
+  // or the seeded DB table. Zero here means the || fallback below has no effect.
+  const dailyCapacity = input.dailyCapacity ?? 0;
   const workingDaysPerWeek = input.workingDaysPerWeek ?? 6;
 
   logger.info({ month, weekClosed: input.weekClosed, asOfDate: input.asOfDate, segment }, "corrective-engine: starting replan");
@@ -656,9 +667,14 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     catCapMap.get(category)?.workingDaysPerWeek ?? workingDaysPerWeek;
 
   const globalWorkingDays = catCapRows[0]?.workingDaysPerWeek ?? workingDaysPerWeek;
-  const totalDailyApplied = segment === "Plumbing"
-    ? [...new Set(originalItems.map(i => i.category))].reduce((s, cat) => s + getCapPerDay(cat), 0) || dailyCapacity
-    : catCapRows.reduce((s, r) => s + (r.overrideCapacity ?? r.suggestedCapacity), 0) || dailyCapacity;
+  const computedDailyApplied = segment === "Plumbing"
+    ? [...new Set(originalItems.map(i => i.category))].reduce((s, cat) => s + getCapPerDay(cat), 0)
+    : catCapRows.reduce((s, r) => s + (r.overrideCapacity ?? r.suggestedCapacity), 0);
+  // If per-category computation yields 0, use any explicit caller-supplied value.
+  // The old 21335 magic number has been removed; if dailyCapacity is 0 here
+  // (no actuals yet, no seeded DB rows) a NO_TOTAL_CAPACITY warning is emitted
+  // and weekCapacity becomes 0 — load factors show 0 rather than a fictitious figure.
+  const totalDailyApplied = computedDailyApplied > 0 ? computedDailyApplied : dailyCapacity;
   const weekCapacity = globalWorkingDays * totalDailyApplied;
 
   // ── Re-score urgency and assign to remaining weeks ────────────────────────
@@ -877,8 +893,34 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     items.filter(i => i.status === "unfulfillable").reduce((s, i) => s + i.remainingToProduce, 0)
   );
 
+  // ── Baseline integrity guard ──────────────────────────────────────────────
+  // When the caller supplies the plan run's stored grandMaxTotal, assert that
+  // the frozen items we loaded sum to the same value. A mismatch means the
+  // plan run header and its item rows are inconsistent — emit a loud warning
+  // (never silently produce a corrective on corrupted baseline data).
+  if (input.planRunGrandMax != null) {
+    const delta = Math.abs(originalMonthTotal - input.planRunGrandMax);
+    if (delta > 100) {
+      logger.warn(
+        { segment, month, planRunId: input.planRunId, frozenItemsTotal: originalMonthTotal, planRunGrandMax: input.planRunGrandMax, delta },
+        "corrective-engine: BASELINE_INTEGRITY_ERROR — frozen items total diverges from plan run grandMaxTotal",
+      );
+    }
+  }
+
+  // ── NO_TOTAL_CAPACITY guard ───────────────────────────────────────────────
+  const noCapWarnings: CorrectiveWarning[] = [];
+  if (totalDailyApplied === 0 && originalItems.length > 0) {
+    noCapWarnings.push({
+      code: "NO_TOTAL_CAPACITY",
+      severity: "high",
+      message: `No capacity data available (actuals not yet observed and no seeded DB values) — load factors and feasibility projections cannot be computed. Re-run after at least one production day is recorded.`,
+    });
+    logger.warn({ segment, month }, "corrective-engine: NO_TOTAL_CAPACITY — totalDailyApplied=0, feasibility figures will be 0");
+  }
+
   // ── Warnings ──────────────────────────────────────────────────────────────
-  const warnings: CorrectiveWarning[] = [...capacityWarnings];
+  const warnings: CorrectiveWarning[] = [...capacityWarnings, ...noCapWarnings];
 
   if (weekClosed > 0) {
     for (let w = 1; w <= weekClosed; w++) {

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable, planRunsTable } from "@workspace/db";
-import { eq, desc, and } from "drizzle-orm";
+import { db, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable, planRunsTable, planRunResultsTable } from "@workspace/db";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { runCorrectiveReplan, type CorrectiveItemResult } from "../lib/corrective-engine";
 import { exportPlanExcel, ITEM_COLUMNS, addLegendSheet, RED_FILL, GREEN_FILL } from "../lib/excel-export";
 import { summarizePlan, type CalcPlanItem } from "../lib/calc";
@@ -109,6 +109,7 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
   //   explicit number → that frozen run; explicit null → force live rebuild;
   //   undefined → latest FINALIZED plan run for this month+segment, else live.
   let resolvedPlanRunId: number | undefined;
+  let resolvedPlanRunGrandMax: number | undefined;
   if (typeof planRunId === "number") {
     // Explicit baseline must exist, match month+segment, and be finalized —
     // a draft is not "as issued". Reject with a client error, not a 500.
@@ -128,7 +129,7 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
     resolvedPlanRunId = planRunId;
   } else if (planRunId === undefined) {
     const [latest] = await db
-      .select({ id: planRunsTable.id })
+      .select()
       .from(planRunsTable)
       .where(and(
         eq(planRunsTable.month, month),
@@ -138,10 +139,21 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
       .orderBy(desc(planRunsTable.id))
       .limit(1);
     resolvedPlanRunId = latest?.id;
+    // Carry the plan run's stored grand total so the engine can assert integrity
+    // of the frozen items it loads against the plan run header.
+    // grandMaxTotal is not a column on planRunsTable — it is computed from
+    // planRunResultsTable (sum of productionPlan for all items in this run).
+    if (latest?.id != null) {
+      const [agg] = await db
+        .select({ total: sql<number>`coalesce(sum(${planRunResultsTable.productionPlan}), 0)` })
+        .from(planRunResultsTable)
+        .where(eq(planRunResultsTable.runId, latest.id));
+      resolvedPlanRunGrandMax = agg?.total != null ? Math.round(Number(agg.total)) : undefined;
+    }
   }
 
   try {
-    const result = await runCorrectiveReplan({ month, weekClosed: effectiveWeekClosed, asOfDate: effectiveAsOfDate, segment: seg, dailyCapacity, workingDaysPerWeek, planRunId: resolvedPlanRunId, dryRun: dryRun === true });
+    const result = await runCorrectiveReplan({ month, weekClosed: effectiveWeekClosed, asOfDate: effectiveAsOfDate, segment: seg, dailyCapacity, workingDaysPerWeek, planRunId: resolvedPlanRunId, planRunGrandMax: resolvedPlanRunGrandMax, dryRun: dryRun === true });
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "corrective/replan failed");
@@ -389,6 +401,14 @@ async function buildCorrectiveStandardExcel(
   sumSh.spliceRows(1, 0, []);
   sumSh.getRow(1).values = [`${segment} Corrective Plan — ${run.month} (Revised)`];
 
+  // Min column semantics note: in the Standard corrective export Min = the
+  // original (baseline) plan quantity for each item; Max = the revised quantity.
+  // This differs from the main Production Plan where Min uses the buffer formula.
+  // Min > Max for an item means it was deferred/unfulfillable in the corrective.
+  const noteRow = sumSh.addRow([`NOTE — Min column: baseline plan quantity (not buffer-formula minimum). Baseline plan run: ${run.planRunId != null ? `#${run.planRunId}` : "live rebuild"}. Max column: corrective-revised quantity.`]);
+  noteRow.font = { italic: true, color: { argb: "FF64748B" } };
+  noteRow.getCell(1).alignment = { wrapText: true };
+
   let grandMin = 0, grandMax = 0;
   for (const [cat, catItems] of byCategory) {
     const minTotal = catItems.reduce((s, i) => s + Math.round(i.originalPlan), 0);
@@ -488,6 +508,9 @@ async function buildCorrectiveDetailExcel(
   sumSh.addRow(["Working Days Remaining", wdr]);
   sumSh.addRow(["Original Month Total",   Math.round(run.originalMonthTotal)]);
   sumSh.addRow(["Revised Month Total",    Math.round(run.revisedMonthTotal)]);
+  // Baseline traceability: show which plan run this corrective is built on
+  // so any export file can be traced back to its issued baseline.
+  sumSh.addRow(["Baseline Plan Run",      run.planRunId != null ? `#${run.planRunId}  (total ${Math.round(run.originalMonthTotal).toLocaleString()} pcs)` : "Live rebuild (no frozen run)"]);
   sumSh.addRow([]);
   sumSh.getRow(1).font = { bold: true };
   sumSh.getRow(2).font = { bold: true };
@@ -997,7 +1020,7 @@ function buildCorrectivePdfHtml(
 </head>
 <body>
   <h1>${h(segLabel)} Corrective Re-Plan — ${h(run.month)} — Week ${run.weekClosed} closed</h1>
-  <p style="font-size:8px;color:#6b7280;margin:0 0 10px">Generated: ${new Date().toLocaleString("en-IN")} &nbsp;|&nbsp; Run #${run.id}</p>
+  <p style="font-size:8px;color:#6b7280;margin:0 0 10px">Generated: ${new Date().toLocaleString("en-IN")} &nbsp;|&nbsp; Run #${run.id} &nbsp;|&nbsp; Baseline: ${run.planRunId != null ? `Plan Run #${run.planRunId} (${fmtN(run.originalMonthTotal)} pcs)` : "Live rebuild"}</p>
 
   <div class="kpi-row">
     <div class="kpi"><div class="label">Original Plan</div><div class="val">${fmtN(run.originalMonthTotal)} pcs</div></div>
