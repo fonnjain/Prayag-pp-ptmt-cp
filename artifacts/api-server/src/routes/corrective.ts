@@ -530,16 +530,19 @@ async function buildCorrectiveDetailExcel(
         category: string;
         capPerDay?: number;
         feasible?: number;
+        shortfall?: number;
         feasibleAtRunRate?: number;
         runRateDivergenceFlag?: boolean;
         capacityMethod?: string;
         capacityDays?: number | null;
+        flags?: string[];
       }>)
     : [];
   const engineCapMap       = new Map(engineCats.map(c => [c.category, Math.round(c.capPerDay ?? 0)]));
   const engineFeasMap      = new Map(engineCats.map(c => [c.category, Math.round(c.feasible ?? 0)]));
   const engineRunRateMap   = new Map(engineCats.map(c => [c.category, Math.round(c.feasibleAtRunRate ?? 0)]));
   const engineDivergMap    = new Map(engineCats.map(c => [c.category, c.runRateDivergenceFlag ?? false]));
+  const engineFlagsMap     = new Map(engineCats.map(c => [c.category, c.flags ?? [] as string[]]));
   const dbCapMap = new Map(catCapRows.map(r => [r.category, r.overrideCapacity ?? r.suggestedCapacity]));
   const hasEngineCats = engineCats.length > 0;
   const getCap = (cat: string): number =>
@@ -558,9 +561,18 @@ async function buildCorrectiveDetailExcel(
   sumSh.addRow(["Working Days Remaining", wdr]);
   sumSh.addRow(["Original Month Total",   grandOrigComputed]);
   sumSh.addRow(["Revised Month Total",    grandPlanComputed]);
-  // Baseline traceability — cite grandOrigComputed (same rounding path as table TOTAL rows)
-  // so the header and baseline citation are always consistent with the category table.
-  sumSh.addRow(["Baseline Plan Run",      run.planRunId != null ? `#${run.planRunId}  (total ${grandOrigComputed.toLocaleString()} pcs)` : "Live rebuild (no frozen run)"]);
+  // Baseline traceability — show BOTH the frozen run's stored total (run.originalMonthTotal,
+  // 32-bit real) and the item-level sum (grandOrigComputed) so readers can cross-check.
+  // The two values differ by 0–100 pcs due to real→float rounding in the DB. If they
+  // disagree by more, a data issue exists in the corrective run itself.
+  if (run.planRunId != null) {
+    const runTotal = Math.round(run.originalMonthTotal);
+    const mismatch = runTotal !== grandOrigComputed ? "  ⚠ MISMATCH" : "";
+    sumSh.addRow(["Baseline Plan Run",
+      `#${run.planRunId}  (run total ${runTotal.toLocaleString()} pcs; items ${grandOrigComputed.toLocaleString()} pcs${mismatch})`]);
+  } else {
+    sumSh.addRow(["Baseline Plan Run", "Live rebuild (no frozen run)"]);
+  }
   sumSh.addRow([]);
   sumSh.getRow(1).font = { bold: true };
   sumSh.getRow(2).font = { bold: true };
@@ -613,26 +625,57 @@ async function buildCorrectiveDetailExcel(
   const detTotalRow = sumSh.addRow(["TOTAL", grandPlan, grandProd, grandRem, "", grandFeas, grandShort]);
   detTotalRow.font = { bold: true };
 
-  // Reconciliation note — two shortfall figures exist in this file and they legitimately differ:
-  //   Summary "Shortfall" = max(category remaining − capacity-feasible, 0) per category.
-  //   Summing UNFULFILLABLE items' remainingToProduce gives a different total because:
-  //   (a) a category whose feasible ≥ remaining shows shortfall = 0 even if individual items
-  //       carry remaining > 0 (they will be absorbed within available capacity);
-  //   (b) items are flagged UNFULFILLABLE when plan > 0 at a category level, but their own
-  //       remaining may be 0 if already produced.
-  //   → Use Summary Shortfall for capacity gap analysis and factory scheduling decisions.
-  //   → Use per-item Remaining To Produce (item sheets) for line-level production scheduling.
+  // ZERO_CAP_WITH_PRODUCTION — critical engine warning: category produced pcs but Cap/Day = 0.
+  // Surfaced here on the Summary (not on item rows) because it is category-level and severity: critical.
+  const zeroCaps = engineCats.filter(c => (c.flags ?? []).includes("ZERO_CAP_WITH_PRODUCTION"));
+  if (zeroCaps.length > 0) {
+    sumSh.addRow([]);
+    const zcHdr = sumSh.addRow(["⚠ CRITICAL — ZERO_CAP_WITH_PRODUCTION"]);
+    zcHdr.font = { bold: true, color: { argb: "FF991B1B" } };
+    for (const c of zeroCaps) {
+      const r = sumSh.addRow([
+        `${c.category}: recorded production but Cap/Day resolved to 0 (method=${c.capacityMethod ?? "?"}) — capacity derivation bug`,
+      ]);
+      r.font = { color: { argb: "FF991B1B" } };
+    }
+  }
+
+  // Reconciliation note — "Shortfall" above and "sum of UNFULFILLABLE items' Remaining To Produce"
+  // (on the item sheets) answer different questions and legitimately disagree:
+  //
+  //   Shortfall = max(total category remaining − total capacity feasible, 0)
+  //             measures whether enough aggregate capacity exists across all remaining working days.
+  //
+  //   UNFULFILLABLE items' remaining = sum of remainingToProduce for items the algorithm could not
+  //             fit into any single week's bucket.
+  //
+  //   The two differ because the scheduler places WHOLE ITEMS into WEEKLY BUCKETS (greedy, urgency-
+  //   ordered, no splitting). This is stricter than the aggregate capacity check:
+  //
+  //     Positive gap (sum > shortfall) — A large item can't fit any week's bucket even though
+  //       total feasible covers it if you could split it freely across days (shortfall may even be 0).
+  //       The item is UNFULFILLABLE by scheduling rules despite no overall capacity gap.
+  //       Seen in Aug-26: CPVC Pipe +9,647 pcs (3 items), SWR Pipe +9,638 pcs (1 item).
+  //
+  //     Negative gap (sum < shortfall) — The category is capacity-constrained, but schedulable
+  //       items also consume feasible capacity, so their remaining absorbs part of the shortfall
+  //       that would otherwise show up in the UNFULFILLABLE sum.
+  //       Seen in Aug-26: UPVC Fitting −14 pcs, AGRI Fitting −8 pcs.
+  //
+  //   Use Summary Shortfall for capacity gap analysis and resource allocation.
+  //   Use per-item Remaining To Produce (item sheets) for line-level production scheduling.
   sumSh.addRow([]);
   const reconcileNote = sumSh.addRow([
-    "ℹ Shortfall (above) = max(category remaining − capacity feasible, 0). " +
-    "Summing UNFULFILLABLE items' remaining gives a different figure: a category whose " +
-    "feasible ≥ remaining shows Shortfall = 0 even if individual items are flagged " +
-    "UNFULFILLABLE (they fit within available capacity). " +
-    "Use Shortfall for capacity gap analysis; use per-item 'Remaining To Produce' for scheduling.",
+    "ℹ Shortfall (above) = max(category remaining − feasible, 0): aggregate capacity gap. " +
+    "UNFULFILLABLE items' 'Remaining To Produce' (item sheets) can differ — the scheduler places " +
+    "whole items into weekly buckets (no splitting), so a large item may be UNFULFILLABLE even " +
+    "when total feasible > its remaining (positive gap), or scheduled items can absorb part of " +
+    "the shortfall (negative gap). Use Shortfall for capacity planning; use item Remaining for " +
+    "factory scheduling.",
   ]);
   reconcileNote.font = { italic: true, size: 9, color: { argb: "FF475569" } };
   reconcileNote.getCell(1).alignment = { wrapText: true };
-  sumSh.getRow(sumSh.rowCount).height = 48;
+  sumSh.getRow(sumSh.rowCount).height = 60;
 
   // ── Per-category sheets — ITEM_COLUMNS + CORRECTIVE_EXTRA_COLUMNS ──
   // Cap/Day, Feasible and Shortfall are CATEGORY-LEVEL figures — stamping the same
@@ -650,32 +693,26 @@ async function buildCorrectiveDetailExcel(
     const feasible  = getFeasible(category);
     const catRem    = catItems.reduce((s, i) => s + Math.round(i.remainingToProduce), 0);
     const shortfall = Math.max(catRem - feasible, 0);
-
-    // One capacity KPI row per category — consumers must not sum this row with item rows
-    const kpiRow = sheet.addRow({
-      itemCode:  `◆ ${category} — ${catItems.length} items`,
-      capPerDay,
-      feasible,
-      shortfall,
-    });
-    kpiRow.font = { bold: true, color: { argb: "FF1E40AF" } };
-    kpiRow.eachCell({ includeEmpty: false }, (cell) => {
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDBEAFE" } };
-    });
+    // NOT_STARTED is a CATEGORY-level engine flag (produced=0 across the whole category).
+    // Per-item "produced=0" is NOT the same signal — in Aug-26 it fires on 420/3636 PTMT
+    // items (12%) and 327/1120 Plumbing items (29%), including 216 in Cocks Standard which
+    // produced 169,742 pcs across 9/9 days. Read the flag from the engine's categoriesJson.
+    const catEngineFlags = engineFlagsMap.get(category) ?? [];
+    const catNotStarted  = catEngineFlags.includes("NOT_STARTED");
+    const catNoDemCap    = catEngineFlags.includes("NO_DEMONSTRATED_CAPACITY");
 
     for (const item of catItems) {
       const spill = (item.newWeek !== null && item.originalWeek !== null && item.newWeek > item.originalWeek)
         ? `W${item.originalWeek}` : "—";
 
-      // Build all applicable status flags — STATUS_FLAG maps the primary status; add
-      // NOT_STARTED and NO_DEMONSTRATED_CAPACITY when the item-level data indicates them
-      // (engine computes these at category level in categoriesJson but they are also
-      // derivable per-item from produced=0 and capPerDay=0 respectively).
+      // Per-item status flags:
+      //   - base status (on-plan / carried-over / demand-spike / unfulfillable etc.)
+      //   - NO_DEMONSTRATED_CAPACITY: capPerDay is category-level, so per-item equivalence holds
+      //   - NOT_STARTED is category-level only; use ITEM_NOT_STARTED as the per-SKU signal name
+      //     if a per-item signal is ever needed, to distinguish from the category flag.
       const flags: string[] = [];
       const baseFlag = STATUS_FLAG[item.status];
       if (baseFlag) flags.push(baseFlag);
-      if (Math.round(Number(item.producedToDate)) === 0 && Math.round(Number(item.planRev)) > 0)
-        flags.push("NOT_STARTED");
       if (capPerDay === 0 && Math.round(Number(item.planRev)) > 0)
         flags.push("NO_DEMONSTRATED_CAPACITY");
 
@@ -693,8 +730,8 @@ async function buildCorrectiveDetailExcel(
         producedToDate:    Math.round(item.producedToDate),
         remainingToProduce: Math.round(item.remainingToProduce),
         // capPerDay / feasible / shortfall intentionally omitted — category-level values
-        // are shown in the KPI row above; putting them on every item row causes column
-        // aggregation to be off by ~N×.
+        // are shown in the KPI row below items; putting them on every item row causes
+        // column aggregation to be ~N× too large.
         revisedWeek:  item.newWeek !== null ? `W${item.newWeek}` : "—",
         spillFromWeek: spill,
         statusFlags: flags.length > 0 ? flags.join(" | ") : "—",
@@ -707,8 +744,27 @@ async function buildCorrectiveDetailExcel(
       sfCell.font  = { color: { argb: "FFFFFFFF" } };
     }
 
-    // AGRI note goes BELOW all item rows, separated by a blank row, so it is never
-    // counted as an item by downstream consumers iterating from row 2 until blank.
+    // KPI row goes BELOW all item rows (blank separator first) so consumers iterating
+    // from row 2 until blank count exactly catItems.length items and stop before the KPI.
+    // Cap/Day, Feasible, Shortfall are category-level; the KPI row is the only correct
+    // place to show them. NOT_STARTED and NO_DEMONSTRATED_CAPACITY are also category-level.
+    sheet.addRow([]);
+    const kpiFlagParts: string[] = [];
+    if (catNotStarted)  kpiFlagParts.push("NOT_STARTED");
+    if (catNoDemCap)    kpiFlagParts.push("NO_DEMONSTRATED_CAPACITY");
+    const kpiRow = sheet.addRow({
+      itemCode:   `◆ ${category} — ${catItems.length} items`,
+      capPerDay,
+      feasible,
+      shortfall,
+      statusFlags: kpiFlagParts.length > 0 ? kpiFlagParts.join(" | ") : "",
+    });
+    kpiRow.font = { bold: true, color: { argb: "FF1E40AF" } };
+    kpiRow.eachCell({ includeEmpty: false }, (cell) => {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDBEAFE" } };
+    });
+
+    // AGRI note after KPI row (already below items), separated by a blank row.
     if (category.startsWith("AGRI")) {
       sheet.addRow([]);
       const noteRow = sheet.addRow([
