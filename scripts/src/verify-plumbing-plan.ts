@@ -228,6 +228,22 @@ async function main(): Promise<void> {
     }
   } catch { /* healthz unreachable — non-fatal; checks still run */ }
 
+  // Gate production-strict checks on the database the API actually reports, not
+  // on the URL string.  A .replit.app deployment can point at a dev database
+  // (staging, restored snapshot, etc.) and would wrongly trigger strict
+  // assertions if we only check the URL.  Conversely, a custom-domain prod URL
+  // would wrongly skip them.  The authoritative signal is the dbHostname field
+  // in /healthz: if it differs from the local runner's database (dbLabel), the
+  // API is querying a different DB — production mode applies.
+  // Edge: if healthz is unavailable we cannot distinguish → conservatively false
+  // (skip strict rather than spuriously fail).
+  const isProductionApi =
+    apiDbHostname !== "(healthz unavailable)" &&
+    apiDbHostname !== "(not reported)" &&
+    apiDbHostname !== dbLabel;
+
+  const suiteMode = isProductionApi ? "PRODUCTION  (strict id/sequence assertions active)" : "development (strict assertions skipped; structural checks only)";
+
   console.log("=".repeat(60));
   console.log("  PTMT Production Plan — Regression Test Suite");
   console.log(`  Plumbing month : ${PLUMBING_MONTH}`);
@@ -236,6 +252,7 @@ async function main(): Promise<void> {
   console.log(`  Local DATABASE_URL (NOT the DB under test) : ${dbLabel}`);
   console.log(`  API database   : ${apiDbHostname}`);
   console.log(`  Deployed commit: ${apiCommitSha}`);
+  console.log(`  Suite mode     : ${suiteMode}`);
   console.log("=".repeat(60));
 
   let anyFail = false;
@@ -721,7 +738,7 @@ async function main(): Promise<void> {
     // run has a different id, so the equality would always fail without signalling a
     // real regression. The structural check NC20e (always-on) catches mis-selection
     // regardless of environment by comparing against the actual highest finalized id.
-    const isProductionApi = API_BASE.startsWith("https://") && API_BASE.includes(".replit.app");
+    // isProductionApi is derived at startup from apiDbHostname vs dbLabel (see header).
     newChecks.push(isProductionApi ? {
       name: `NC20a · PTMT Aug corrective · baselinePlanRunId === 20 (actual ${ptmtBaselineRunId}) [production]`,
       expected: 20, actual: ptmtBaselineRunId,
