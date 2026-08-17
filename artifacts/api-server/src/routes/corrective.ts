@@ -460,12 +460,6 @@ async function buildCorrectiveStandardExcel(
     sheet.columns = ITEM_COLUMNS;
     sheet.getRow(1).font = { bold: true };
 
-    if (category.startsWith("AGRI")) {
-      const noteRow = sheet.addRow(["AGRI is computed from the STOCK and BUFFER columns by header name; the source sheet's AGRI formula transposes these two, so AGRI figures intentionally differ from the source sheet."]);
-      noteRow.font = { italic: true, color: { argb: "FF7F7F7F" } };
-      noteRow.getCell(1).alignment = { wrapText: true };
-    }
-
     for (const item of catItems) {
       const row = sheet.addRow({
         itemCode: item.itemCode,
@@ -481,6 +475,19 @@ async function buildCorrectiveStandardExcel(
       });
       row.getCell("maxProduction").fill = item.planRev > 0 ? RED_FILL : GREEN_FILL;
       row.getCell("minProduction").fill = item.originalPlan > 0 ? RED_FILL : GREEN_FILL;
+    }
+
+    // AGRI note goes BELOW all item rows (blank separator first) so downstream
+    // consumers iterating rows until blank do not count it as an item.
+    if (category.startsWith("AGRI")) {
+      sheet.addRow([]);
+      const noteRow = sheet.addRow([
+        "ℹ AGRI: STOCK and BUFFER columns are read by header name. " +
+        "The source sheet's AGRI formula swaps these two columns, so AGRI figures " +
+        "intentionally differ from the source sheet totals.",
+      ]);
+      noteRow.font = { italic: true, color: { argb: "FF7F7F7F" } };
+      noteRow.getCell(1).alignment = { wrapText: true };
     }
   }
 
@@ -508,6 +515,10 @@ async function buildCorrectiveDetailExcel(
   // Month Total" header cell and the TOTAL row in the category table agree
   // exactly (same rounding path as the per-category loop below).
   const grandPlanComputed = items.reduce((s, i) => s + Math.round(i.planRev), 0);
+  // grandOrigComputed uses item-level Math.round (same rounding path as the per-category
+  // TOTAL rows) so the "Original Month Total" header always agrees with the table TOTAL.
+  // run.originalMonthTotal is stored as a 32-bit real and diverges by up to ~100 pcs.
+  const grandOrigComputed = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
 
   // Prefer the engine's persisted per-category results (categoriesJson): these
   // are the exact Cap/Day + feasible values the replan computed (p90/mean from
@@ -545,11 +556,11 @@ async function buildCorrectiveDetailExcel(
   const sumSh = wb.addWorksheet("Summary");
   sumSh.addRow(["As-of",                  asOfLabel]);
   sumSh.addRow(["Working Days Remaining", wdr]);
-  sumSh.addRow(["Original Month Total",   Math.round(run.originalMonthTotal)]);
+  sumSh.addRow(["Original Month Total",   grandOrigComputed]);
   sumSh.addRow(["Revised Month Total",    grandPlanComputed]);
-  // Baseline traceability: show which plan run this corrective is built on
-  // so any export file can be traced back to its issued baseline.
-  sumSh.addRow(["Baseline Plan Run",      run.planRunId != null ? `#${run.planRunId}  (total ${Math.round(run.originalMonthTotal).toLocaleString()} pcs)` : "Live rebuild (no frozen run)"]);
+  // Baseline traceability — cite grandOrigComputed (same rounding path as table TOTAL rows)
+  // so the header and baseline citation are always consistent with the category table.
+  sumSh.addRow(["Baseline Plan Run",      run.planRunId != null ? `#${run.planRunId}  (total ${grandOrigComputed.toLocaleString()} pcs)` : "Live rebuild (no frozen run)"]);
   sumSh.addRow([]);
   sumSh.getRow(1).font = { bold: true };
   sumSh.getRow(2).font = { bold: true };
@@ -602,7 +613,32 @@ async function buildCorrectiveDetailExcel(
   const detTotalRow = sumSh.addRow(["TOTAL", grandPlan, grandProd, grandRem, "", grandFeas, grandShort]);
   detTotalRow.font = { bold: true };
 
+  // Reconciliation note — two shortfall figures exist in this file and they legitimately differ:
+  //   Summary "Shortfall" = max(category remaining − capacity-feasible, 0) per category.
+  //   Summing UNFULFILLABLE items' remainingToProduce gives a different total because:
+  //   (a) a category whose feasible ≥ remaining shows shortfall = 0 even if individual items
+  //       carry remaining > 0 (they will be absorbed within available capacity);
+  //   (b) items are flagged UNFULFILLABLE when plan > 0 at a category level, but their own
+  //       remaining may be 0 if already produced.
+  //   → Use Summary Shortfall for capacity gap analysis and factory scheduling decisions.
+  //   → Use per-item Remaining To Produce (item sheets) for line-level production scheduling.
+  sumSh.addRow([]);
+  const reconcileNote = sumSh.addRow([
+    "ℹ Shortfall (above) = max(category remaining − capacity feasible, 0). " +
+    "Summing UNFULFILLABLE items' remaining gives a different figure: a category whose " +
+    "feasible ≥ remaining shows Shortfall = 0 even if individual items are flagged " +
+    "UNFULFILLABLE (they fit within available capacity). " +
+    "Use Shortfall for capacity gap analysis; use per-item 'Remaining To Produce' for scheduling.",
+  ]);
+  reconcileNote.font = { italic: true, size: 9, color: { argb: "FF475569" } };
+  reconcileNote.getCell(1).alignment = { wrapText: true };
+  sumSh.getRow(sumSh.rowCount).height = 48;
+
   // ── Per-category sheets — ITEM_COLUMNS + CORRECTIVE_EXTRA_COLUMNS ──
+  // Cap/Day, Feasible and Shortfall are CATEGORY-LEVEL figures — stamping the same
+  // value on every item row causes column sums to be ~N× too large for any downstream
+  // consumer aggregating those columns. Instead we add one styled "capacity KPI" row
+  // per category sheet and leave those columns blank on individual item rows.
   const allCols: Partial<ExcelJS.Column>[] = [...ITEM_COLUMNS, ...CORRECTIVE_EXTRA_COLUMNS];
 
   for (const [category, catItems] of byCategory) {
@@ -610,20 +646,39 @@ async function buildCorrectiveDetailExcel(
     sheet.columns = allCols;
     sheet.getRow(1).font = { bold: true };
 
-    if (category.startsWith("AGRI")) {
-      const noteRow = sheet.addRow(["AGRI is computed from the STOCK and BUFFER columns by header name; the source sheet's AGRI formula transposes these two, so AGRI figures intentionally differ from the source sheet."]);
-      noteRow.font = { italic: true, color: { argb: "FF7F7F7F" } };
-      noteRow.getCell(1).alignment = { wrapText: true };
-    }
-
     const capPerDay = getCap(category);
     const feasible  = getFeasible(category);
     const catRem    = catItems.reduce((s, i) => s + Math.round(i.remainingToProduce), 0);
     const shortfall = Math.max(catRem - feasible, 0);
 
+    // One capacity KPI row per category — consumers must not sum this row with item rows
+    const kpiRow = sheet.addRow({
+      itemCode:  `◆ ${category} — ${catItems.length} items`,
+      capPerDay,
+      feasible,
+      shortfall,
+    });
+    kpiRow.font = { bold: true, color: { argb: "FF1E40AF" } };
+    kpiRow.eachCell({ includeEmpty: false }, (cell) => {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDBEAFE" } };
+    });
+
     for (const item of catItems) {
       const spill = (item.newWeek !== null && item.originalWeek !== null && item.newWeek > item.originalWeek)
         ? `W${item.originalWeek}` : "—";
+
+      // Build all applicable status flags — STATUS_FLAG maps the primary status; add
+      // NOT_STARTED and NO_DEMONSTRATED_CAPACITY when the item-level data indicates them
+      // (engine computes these at category level in categoriesJson but they are also
+      // derivable per-item from produced=0 and capPerDay=0 respectively).
+      const flags: string[] = [];
+      const baseFlag = STATUS_FLAG[item.status];
+      if (baseFlag) flags.push(baseFlag);
+      if (Math.round(Number(item.producedToDate)) === 0 && Math.round(Number(item.planRev)) > 0)
+        flags.push("NOT_STARTED");
+      if (capPerDay === 0 && Math.round(Number(item.planRev)) > 0)
+        flags.push("NO_DEMONSTRATED_CAPACITY");
+
       const row = sheet.addRow({
         itemCode: item.itemCode,
         colour: item.colour,
@@ -637,12 +692,12 @@ async function buildCorrectiveDetailExcel(
         order: 0,
         producedToDate:    Math.round(item.producedToDate),
         remainingToProduce: Math.round(item.remainingToProduce),
-        capPerDay,
-        feasible,
-        shortfall,
+        // capPerDay / feasible / shortfall intentionally omitted — category-level values
+        // are shown in the KPI row above; putting them on every item row causes column
+        // aggregation to be off by ~N×.
         revisedWeek:  item.newWeek !== null ? `W${item.newWeek}` : "—",
         spillFromWeek: spill,
-        statusFlags:  STATUS_FLAG[item.status] ?? item.status,
+        statusFlags: flags.length > 0 ? flags.join(" | ") : "—",
       });
       row.getCell("maxProduction").fill = item.planRev > 0 ? RED_FILL : GREEN_FILL;
       row.getCell("minProduction").fill = item.originalPlan > 0 ? RED_FILL : GREEN_FILL;
@@ -650,6 +705,19 @@ async function buildCorrectiveDetailExcel(
       const sfCell = row.getCell("statusFlags");
       sfCell.fill  = { type: "pattern", pattern: "solid", fgColor: { argb: statusColor } };
       sfCell.font  = { color: { argb: "FFFFFFFF" } };
+    }
+
+    // AGRI note goes BELOW all item rows, separated by a blank row, so it is never
+    // counted as an item by downstream consumers iterating from row 2 until blank.
+    if (category.startsWith("AGRI")) {
+      sheet.addRow([]);
+      const noteRow = sheet.addRow([
+        "ℹ AGRI: STOCK and BUFFER columns are read by header name. " +
+        "The source sheet's AGRI formula swaps these two columns, so AGRI figures " +
+        "intentionally differ from the source sheet totals.",
+      ]);
+      noteRow.font = { italic: true, color: { argb: "FF7F7F7F" } };
+      noteRow.getCell(1).alignment = { wrapText: true };
     }
   }
 
