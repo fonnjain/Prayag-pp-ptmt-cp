@@ -64,7 +64,8 @@ on their own basis. A reader who sees two of them must not treat the gap as drif
 | Value | Basis | Where used |
 |-------|-------|-----------|
 | **617,750 pcs** | `grandOrigComputed` — item-level `Σ Math.round(originalPlan)` across 3,636 corrective items | "Original Month Total" header in Detail Export; Summary sheet row; category TOTAL reconciliation |
-| **617,711 pcs** | `run.originalMonthTotal` — stored 32-bit real on corrective run #20, rounded to INTEGER | NC20b regression assertion; `frozenPlanGrandMax` (§A3) for the corrective run that cites plan run #20 |
+| **617,711 pcs** | `run.originalMonthTotal` (`corrective_plan_runs`) — stored 32-bit real on corrective run #20, rounded to INTEGER | NC20b regression assertion |
+| **617,711 pcs** | `frozenPlanGrandMax` (`plan_run_results`) — Σ `productionPlan` for plan run #20 items, captured at corrective run creation; see §A3 | MISMATCH cross-check baseline (§A4); same numeric value as `run.originalMonthTotal` for Aug 2026 but sourced from a different table — the distinction is what makes the cross-check real |
 | **617,710 pcs** | Same basis as 617,711 but from the dev corrective run (#21 in dev sequence) | Dev-only reference golden; used as the ±200 baseline for dev NC20b |
 
 **Why the 39-pcs gap (617,750 − 617,711):** 3,636 items × average 0.01 pcs rounding
