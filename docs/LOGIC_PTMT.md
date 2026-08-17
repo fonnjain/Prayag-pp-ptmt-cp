@@ -65,16 +65,18 @@ on their own basis. A reader who sees two of them must not treat the gap as drif
 |-------|-------|-----------|
 | **617,750 pcs** | `grandOrigComputed` — item-level `Σ Math.round(originalPlan)` across 3,636 corrective items | "Original Month Total" header in Detail Export; Summary sheet row; category TOTAL reconciliation |
 | **617,711 pcs** | `run.originalMonthTotal` (`corrective_plan_runs`) — stored 32-bit real on corrective run #20, rounded to INTEGER | NC20b regression assertion |
-| **617,711 pcs** | `frozenPlanGrandMax` (`plan_run_results`) — Σ `productionPlan` for plan run #20 items, captured at corrective run creation; see §A3 | MISMATCH cross-check baseline (§A4); same numeric value as `run.originalMonthTotal` for Aug 2026 but sourced from a different table — the distinction is what makes the cross-check real |
-| **617,710 pcs** | Same basis as 617,711 but from the dev corrective run (#21 in dev sequence) | Dev-only reference golden; used as the ±200 baseline for dev NC20b |
+| **617,710 pcs** | `frozenPlanGrandMax` (`plan_run_results`) — Σ `productionPlan` for plan run #20 items, captured at corrective run creation; see §A3 | MISMATCH cross-check baseline (§A4); sourced from a different table than `run.originalMonthTotal` — the distinction is what makes the cross-check real |
 
 **Why the 39-pcs gap (617,750 − 617,711):** 3,636 items × average 0.01 pcs rounding
 error per item ≈ 36 pcs expected; 39 pcs is within the normal 0–100 pcs band
 documented in §A2.
 
-**Why the 1-pcs gap (617,711 − 617,710):** Two independent float64 accumulations
-of the same float32 DB values, starting from a different corrective run snapshot
-(dev vs production item rows written at slightly different times/ordering).
+**Why the 1-pcs gap (617,711 − 617,710):** `run.originalMonthTotal` (stored real,
+accumulated once on write) and `frozenPlanGrandMax` (Σ productionPlan from
+`plan_run_results`, a separate float64 accumulation over the same float32 source
+values) diverge by 1 pcs. Both are measured from production corrective run #20.
+The ±200 MISMATCH tolerance absorbs this gap; the cross-check remains real because
+the sources are independent.
 
 **Key rule:** the ±200 tolerance on the MISMATCH marker (§A4) is wide enough to
 absorb the §A2 rounding gap (≤100 pcs) and still flag genuine data drift.
@@ -93,7 +95,19 @@ indicates a genuine change in the frozen plan run items.
 ### §B2 — NC21b: Plumbing August corrective baseline item-sum
 
 Asserted value: **2,331,647 ±200 pcs** (production API).
-Basis: `run.originalMonthTotal` on corrective run #21 (production sequence).
+Basis: `run.originalMonthTotal` (stored 32-bit real, rounded to INTEGER) on the
+Plumbing/2026-08 corrective run citing plan run #21.
+
+Three distinct values — same pattern as §A7:
+
+| Value | Basis |
+|-------|-------|
+| **2,331,647 pcs** | `run.originalMonthTotal` — stored real, rounded to INTEGER |
+| **2,331,648 pcs** | `frozenPlanGrandMax` (`plan_run_results`) — Σ `productionPlan` for plan run #21 items, first measured on corrective run #16 |
+
+**Why the 1-pcs gap (2,331,648 − 2,331,647):** same cause as §A7 — two independent
+float64 accumulations of the same float32 source values. Both are within the ±200
+MISMATCH tolerance; the cross-check remains real because the sources are independent.
 
 ### §B3 — NC20e / NC21e: Structural baseline integrity
 

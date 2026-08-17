@@ -386,6 +386,8 @@ async function buildCorrectiveExcel(run: typeof correctivePlanRunsTable.$inferSe
   ];
   const weekStats = (run.weekStatsJson as Array<{ weekLabel: string; released: number; capacity: number; produced: number; lag: number; loadFactor: number }>) ?? [];
   const summaryRows = [
+    ["Run ID", `Run #${run.id}`],
+    ["Run Date", new Date(run.createdAt).toLocaleString("en-IN")],
     ["Segment", segmentLabel],
     ["Month", run.month],
     ["Week Closed", `W${run.weekClosed}`],
@@ -395,7 +397,6 @@ async function buildCorrectiveExcel(run: typeof correctivePlanRunsTable.$inferSe
     ["Original Month Total (pcs)", grandMinComputed.toLocaleString()],
     ["Revised Month Total (pcs)", grandMaxComputed.toLocaleString()],
     ["Unfulfillable This Month (pcs)", Math.round(run.unfulfillableQty).toLocaleString()],
-    ["Run Date", new Date(run.createdAt).toLocaleString("en-IN")],
     ...weekStats.map(ws => [
       `${ws.weekLabel}: Load Factor`,
       `${ws.loadFactor.toFixed(2)}× (${Math.round(ws.released).toLocaleString()} vs cap ${Math.round(ws.capacity).toLocaleString()})`,
@@ -513,6 +514,11 @@ async function buildCorrectiveStandardExcel(
   sumSh.addRow([`${segment} Corrective Plan — ${run.month} (Revised)`]);
   sumSh.spliceRows(1, 0, []);
   sumSh.getRow(1).values = [`${segment} Corrective Plan — ${run.month} (Revised)`];
+
+  // Run provenance — id and created-at so a re-exported run is distinguishable
+  // from a freshly-generated one without opening the PDF.
+  const provRow = sumSh.addRow([`Run #${run.id}  ·  ${new Date(run.createdAt).toLocaleString("en-IN")}`]);
+  provRow.font = { italic: true, color: { argb: "FF334155" } };
 
   // Min column semantics note: in the Standard corrective export Min = the
   // original (baseline) plan quantity for each item; Max = the revised quantity.
@@ -666,6 +672,10 @@ async function buildCorrectiveDetailExcel(
   } else {
     sumSh.addRow(["Baseline Plan Run", "Live rebuild (no frozen run)"]);
   }
+  // Run provenance — id and created-at distinguish a re-exported run from a
+  // freshly-generated one (the PDF already carries Run #; the Excel now matches).
+  sumSh.addRow(["Run ID", `Run #${run.id}`]);
+  sumSh.addRow(["Run Date", new Date(run.createdAt).toLocaleString("en-IN")]);
   sumSh.addRow([]);
   sumSh.getRow(1).font = { bold: true };
   sumSh.getRow(2).font = { bold: true };
