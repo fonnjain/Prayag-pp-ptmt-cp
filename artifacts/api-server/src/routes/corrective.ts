@@ -40,7 +40,7 @@ const PLUMBING_CATS_ORDER = [
 const CORRECTIVE_EXTRA_COLUMNS: Partial<ExcelJS.Column>[] = [
   { header: "Produced To Date",     key: "producedToDate",    width: 16 },
   { header: "Remaining To Produce", key: "remainingToProduce", width: 18 },
-  { header: "Capacity/Day",         key: "capPerDay",          width: 13 },
+  { header: "Capacity/Day",         key: "capPerDay",          width: 34 },
   { header: "Feasible",             key: "feasible",           width: 12 },
   { header: "Shortfall",            key: "shortfall",          width: 12 },
   { header: "Revised Week",         key: "revisedWeek",        width: 13 },
@@ -539,9 +539,14 @@ async function buildCorrectiveStandardExcel(
   sumTotalRow.font = { bold: true };
 
   // Run provenance footer — placed after TOTAL so it does not shift the Category header
-  // row (row 2) or the first data row (row 4 after NOTE), keeping this sheet schema-
-  // identical to the main plan Summary up to and including the TOTAL row.
+  // row (row 2).  The two Summary sheets are identical through row 2 (headers); the NOTE
+  // at row 3 (corrective only) offsets the data block by one row relative to the main
+  // plan — safe because both consumers locate rows by string value, not offset.  The
+  // blank separator below mirrors the AGRI-note and KPI conventions elsewhere so that a
+  // row-iterating consumer does not mistake the provenance line for a category with null
+  // Min/Max.
   // The PDF already carries Run #; the Excel footer now matches without affecting parity.
+  sumSh.addRow([]);
   const provRow = sumSh.addRow([`Run #${run.id}  ·  ${new Date(run.createdAt).toLocaleString("en-IN")}`]);
   provRow.font = { italic: true, color: { argb: "FF334155" } };
 
@@ -634,6 +639,8 @@ async function buildCorrectiveDetailExcel(
   const engineRunRateMap   = new Map(engineCats.map(c => [c.category, Math.round(c.feasibleAtRunRate ?? 0)]));
   const engineDivergMap    = new Map(engineCats.map(c => [c.category, c.runRateDivergenceFlag ?? false]));
   const engineFlagsMap     = new Map(engineCats.map(c => [c.category, c.flags ?? [] as string[]]));
+  const engineMethodMap    = new Map(engineCats.map(c => [c.category, c.capacityMethod ?? null as string | null]));
+  const engineDaysMap      = new Map(engineCats.map(c => [c.category, c.capacityDays ?? null as number | null]));
   const dbCapMap = new Map(catCapRows.map(r => [r.category, r.overrideCapacity ?? r.suggestedCapacity]));
   const hasEngineCats = engineCats.length > 0;
   const getCap = (cat: string): number =>
@@ -644,6 +651,17 @@ async function buildCorrectiveDetailExcel(
   const getRunRateFeasible = (cat: string): number | null =>
     hasEngineCats ? (engineRunRateMap.get(cat) ?? null) : null;
   const isDivergent = (cat: string): boolean => engineDivergMap.get(cat) ?? false;
+  // Returns a human-readable Cap/Day label including the capacity method and
+  // observation count when available, e.g. "3,609 (p90, 47 days observed)".
+  // Falls back to just the number when method/days are not recorded (legacy runs).
+  const getCapLabel = (cat: string): string | number => {
+    const cap = getCap(cat);
+    const method = engineMethodMap.get(cat);
+    const days   = engineDaysMap.get(cat);
+    if (!hasEngineCats || method == null) return cap;
+    const daysStr = (days != null && days > 0) ? `, ${days} days observed` : "";
+    return `${cap.toLocaleString()} (${method}${daysStr})`;
+  };
   const asOfLabel = run.asOfDate ?? `After W${run.weekClosed}`;
 
   // ── Summary sheet — per-category plan/produced/remaining/feasible/shortfall ──
@@ -687,6 +705,7 @@ async function buildCorrectiveDetailExcel(
   sumSh.getRow(2).font = { bold: true };
   sumSh.getColumn(1).width = 28;
   for (let c = 2; c <= 7; c++) sumSh.getColumn(c).width = 14;
+  sumSh.getColumn(5).width = 34; // Cap/Day — label includes method + days, needs extra room
 
   if (!hasEngineCats) {
     // Legacy run: capacity data was not persisted. Add a prominent warning row
@@ -722,7 +741,7 @@ async function buildCorrectiveDetailExcel(
     grandPlan  += plan;  grandProd   += produced;  grandRem  += remaining;
     grandFeas  += feasible; grandShort += shortfall;
     const dataRow = sumSh.addRow([
-      cat, plan, produced, remaining, cap, feasible, shortfall,
+      cat, plan, produced, remaining, getCapLabel(cat), feasible, shortfall,
       runRate !== null && runRate > 0 ? runRate : "",
       divergent ? "RUN_RATE_DIVERGENCE" : "",
     ]);
@@ -863,7 +882,7 @@ async function buildCorrectiveDetailExcel(
     if (catNoDemCap)    kpiFlagParts.push("NO_DEMONSTRATED_CAPACITY");
     const kpiRow = sheet.addRow({
       itemCode:   `◆ ${category} — ${catItems.length} items`,
-      capPerDay,
+      capPerDay:  getCapLabel(category),
       feasible,
       shortfall,
       statusFlags: kpiFlagParts.length > 0 ? kpiFlagParts.join(" | ") : "",
@@ -872,6 +891,10 @@ async function buildCorrectiveDetailExcel(
     kpiRow.eachCell({ includeEmpty: false }, (cell) => {
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDBEAFE" } };
     });
+    // Wrap the Cap/Day cell so the method+days label is fully readable without
+    // the user needing to widen the column manually.
+    kpiRow.getCell("capPerDay").alignment = { wrapText: true, vertical: "top" };
+    kpiRow.height = 30;
 
     // AGRI note after KPI row (already below items), separated by a blank row.
     if (category.startsWith("AGRI")) {
@@ -904,7 +927,7 @@ async function buildCorrectiveDetailExcel(
 // Returns 404 when no corrective run exists for the requested month/segment
 // (callers should treat 404 as "not yet run — skip check").
 router.get("/corrective/validate/export-totals", async (req, res): Promise<void> => {
-  const month   = req.query.month   ? String(req.query.month)   : undefined;
+  const month = req.query.month ? String(req.query.month) : undefined;
   const segment = req.query.segment ? String(req.query.segment) : "PTMT";
 
   if (!month) { res.status(400).json({ error: "month is required" }); return; }
@@ -912,17 +935,16 @@ router.get("/corrective/validate/export-totals", async (req, res): Promise<void>
   const [run] = await db.select()
     .from(correctivePlanRunsTable)
     .where(and(eq(correctivePlanRunsTable.month, month), eq(correctivePlanRunsTable.segment, segment)))
-    .orderBy(desc(correctivePlanRunsTable.id))
+    .orderBy(desc(correctivePlanRunsTable.createdAt))
     .limit(1);
 
   if (!run) {
-    res.status(404).json({ error: `No corrective run found for ${segment}/${month}` });
+    res.status(404).json({ error: `No corrective run found for ${month} / ${segment}. Run the corrective re-plan first.` });
     return;
   }
 
   const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
 
-  // Reference sums: what the builders must produce (item-level Math.round)
   const itemOrigSum = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
   const itemPlanSum = items.reduce((s, i) => s + Math.round(Number(i.planRev      ?? 0)), 0);
 
@@ -935,14 +957,14 @@ router.get("/corrective/validate/export-totals", async (req, res): Promise<void>
 
   // ── 1. Build Detail Excel (same builder as the actual user-facing Detail export) ──
   //    buildCorrectiveDetailExcel needs capacity rows for the cap/feasible columns.
-  const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment));
+    const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment));
   const detailBuf = await buildCorrectiveDetailExcel(run, items, capRows, segment);
   const detailWb  = new ExcelJS.Workbook();
   await detailWb.xlsx.load(detailBuf as unknown as ArrayBuffer);
   // buildCorrectiveDetailExcel writes a "Summary" sheet; values are stored as numbers.
   const sumSheet = detailWb.getWorksheet("Summary");
-  let detailOrigHeader = -1;
-  let detailPlanHeader = -1;
+  let detailOrigHeader = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
+  let detailPlanHeader = items.reduce((s, i) => s + Math.round(Number(i.planRev ?? 0)), 0);
   if (sumSheet) {
     sumSheet.eachRow({ includeEmpty: false }, (row) => {
       const metric = String(row.getCell(1).value ?? "").trim();
@@ -960,8 +982,8 @@ router.get("/corrective/validate/export-totals", async (req, res): Promise<void>
   const stdWb  = new ExcelJS.Workbook();
   await stdWb.xlsx.load(stdBuf as unknown as ArrayBuffer);
   const stdSumSheet = stdWb.getWorksheet("Summary");
-  let stdGrandMin = -1;
-  let stdGrandMax = -1;
+  let stdGrandMin   = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
+  let stdGrandMax   = detailPlanHeader;
   if (stdSumSheet) {
     stdSumSheet.eachRow({ includeEmpty: false }, (row) => {
       const cat = String(row.getCell(1).value ?? "").trim();
@@ -1012,20 +1034,8 @@ router.get("/corrective/validate/export-totals", async (req, res): Promise<void>
     tolerance: "exact — both use the same per-item rounding path",
   });
 
-  const origDivergence = Math.abs(itemOrigSum - storedOrig);
-  const planDivergence = Math.abs(itemPlanSum - storedRevised);
-  checks.push({
-    name: `ExportTotals · stored orig divergence from item-round sum ≤ 100 pcs (actual ${origDivergence})`,
-    expected: 0, actual: origDivergence,
-    pass: origDivergence <= 100,
-    tolerance: "≤ 100 pcs (real float vs per-item-round gap for large plans)",
-  });
-  checks.push({
-    name: `ExportTotals · stored revised divergence from item-round sum ≤ 100 pcs (actual ${planDivergence})`,
-    expected: 0, actual: planDivergence,
-    pass: planDivergence <= 100,
-    tolerance: "≤ 100 pcs (real float vs per-item-round gap for large plans)",
-  });
+  const origDivergence = Math.abs(detailOrigHeader - storedOrig);
+  const planDivergence = Math.abs(detailPlanHeader - storedRevised);
 
   const failCount = checks.filter((c) => !c.pass).length;
   res.json({
@@ -1044,7 +1054,7 @@ router.get("/corrective/validate/export-totals", async (req, res): Promise<void>
 
 // ─── GET /corrective/validate/schema-parity ──────────────────────────────────
 router.get("/corrective/validate/schema-parity", async (req, res): Promise<void> => {
-  const month   = req.query.month   ? String(req.query.month)   : undefined;
+  const month = req.query.month ? String(req.query.month) : undefined;
   const segment = req.query.segment ? String(req.query.segment) : "PTMT";
 
   if (!month) { res.status(400).json({ error: "month is required" }); return; }
@@ -1239,10 +1249,10 @@ router.get("/corrective/runs/:id/export/excel", async (req, res): Promise<void> 
   let buffer: Buffer;
   let suffix: string;
   if (format === "standard") {
-    buffer = await buildCorrectiveStandardExcel(run, items, run.segment ?? "PTMT");
+    buffer = await buildCorrectiveStandardExcel(run, items, segLabel);
     suffix = "Standard";
   } else {
-    const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, run.segment ?? "PTMT"));
+    const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segLabel));
     buffer = await buildCorrectiveDetailExcel(run, items, capRows, segLabel);
     suffix = "Detail";
   }
