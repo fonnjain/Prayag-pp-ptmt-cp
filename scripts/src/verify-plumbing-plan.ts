@@ -204,11 +204,22 @@ function runAsOfDateUnitTests(): boolean {
 }
 
 async function main(): Promise<void> {
+  // Identify the database host so environment-sensitive results are traceable.
+  // Strips credentials; prints only the hostname (e.g. ep-xxx.neon.tech) or
+  // "(not set)" when DATABASE_URL is absent.
+  const rawDbUrl = process.env["DATABASE_URL"] ?? "";
+  let dbLabel = "(not set)";
+  if (rawDbUrl) {
+    try { dbLabel = new URL(rawDbUrl).hostname; }
+    catch { dbLabel = rawDbUrl.replace(/:[^@]*@/, ":***@").slice(0, 80); }
+  }
+
   console.log("=".repeat(60));
   console.log("  PTMT Production Plan — Regression Test Suite");
   console.log(`  Plumbing month : ${PLUMBING_MONTH}`);
   console.log(`  PTMT month     : ${PTMT_MONTH}`);
   console.log(`  API base       : ${API_BASE}`);
+  console.log(`  Database       : ${dbLabel}`);
   console.log("=".repeat(60));
 
   let anyFail = false;
@@ -684,22 +695,26 @@ async function main(): Promise<void> {
       body: JSON.stringify({ month: PTMT_PLAN_MONTH, segment: "PTMT", weekClosed: 0, dryRun: true }),
     });
 
-    // NC20a: response carries a non-null baselinePlanRunId (plan run #21 for Aug-2026)
-    const ptmtBaselineRunId = ptmtAugReplan?.["baselinePlanRunId"];
+    // NC20a: response cites plan run #20 exactly — not just non-null.
+    // plan_runs.id is a single serial shared across segments; production's sequence is
+    // gapless 18→19→20→21, so #20 = PTMT Aug-2026. Any other value means PTMT picked up
+    // the wrong baseline (e.g. a dev-only run), which this check would previously pass.
+    const ptmtBaselineRunId = Number(ptmtAugReplan?.["baselinePlanRunId"] ?? 0);
     newChecks.push({
-      name: "NC20a · PTMT Aug corrective · baselinePlanRunId is set (auto-select found finalized plan run #21)",
-      expected: 1, actual: ptmtBaselineRunId != null ? 1 : 0,
-      pass: ptmtBaselineRunId != null,
-      tolerance: "must not be null — plan run #21 (Aug-2026) must exist and be finalized",
+      name: `NC20a · PTMT Aug corrective · baselinePlanRunId === 20 (actual ${ptmtBaselineRunId})`,
+      expected: 20, actual: ptmtBaselineRunId,
+      pass: ptmtBaselineRunId === 20,
+      tolerance: "must be exactly 20 — the production PTMT Aug-2026 plan run (gapless 18→19→20→21)",
     });
 
-    // NC20b: originalMonthTotal ≈ 617,710 (the corrected plan; not the old stale 684,492)
+    // NC20b: originalMonthTotal ≈ 617,711 — tolerance tightened to ±200 so the
+    // 39-pcs grandOrigComputed rounding gap cannot hide behind the old ±500 band.
     const ptmtOrigTotal = Number(ptmtAugReplan?.["originalMonthTotal"] ?? 0);
-    const ptmtOrigOk = Math.abs(ptmtOrigTotal - 617710) <= 500;
+    const ptmtOrigOk = Math.abs(ptmtOrigTotal - 617711) <= 200;
     newChecks.push({
-      name: `NC20b · PTMT Aug corrective · originalMonthTotal ≈ 617,710 (actual ${Math.round(ptmtOrigTotal).toLocaleString()})`,
-      expected: 617710, actual: Math.round(ptmtOrigTotal),
-      pass: ptmtOrigOk, tolerance: "±500 pcs — must cite post-fix plan run, not stale 684,492",
+      name: `NC20b · PTMT Aug corrective · originalMonthTotal ≈ 617,711 (actual ${Math.round(ptmtOrigTotal).toLocaleString()})`,
+      expected: 617711, actual: Math.round(ptmtOrigTotal),
+      pass: ptmtOrigOk, tolerance: "±200 pcs — must cite plan run #20; old stale baseline was 684,492",
     });
 
     // NC20c: dailyCapacity must NOT equal the old circular magic number 21,335
@@ -729,19 +744,24 @@ async function main(): Promise<void> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ month: "2026-08", segment: "Plumbing", asOfDate: "2026-08-11", dryRun: true }),
     });
-    const plumbBaselineId = plumbAugReplan?.["baselinePlanRunId"];
+    // NC21a: must be exactly run #21 — not just non-null.
+    // #21 is the production Plumbing Aug-2026 baseline (gapless sequence 18→19→20→21).
+    // #44 was a dev-only run; the old check passed on any baseline, certifying nothing.
+    const plumbBaselineId = Number(plumbAugReplan?.["baselinePlanRunId"] ?? 0);
     newChecks.push({
-      name: "NC21a · Plumbing Aug corrective · baselinePlanRunId non-null (plan run #44)",
-      expected: 1, actual: plumbBaselineId != null ? 1 : 0,
-      pass: plumbBaselineId != null,
-      tolerance: "plan run #44 (Aug-2026 Plumbing, 1120 items) must be finalized",
+      name: `NC21a · Plumbing Aug corrective · baselinePlanRunId === 21 (actual ${plumbBaselineId})`,
+      expected: 21, actual: plumbBaselineId,
+      pass: plumbBaselineId === 21,
+      tolerance: "must be exactly 21 — production Plumbing Aug-2026 plan run (gapless 18→19→20→21)",
     });
+    // NC21b: production Plumbing baseline total is 2,331,647 — tolerance tightened to ±200
+    // so the 103-pcs grandOrigComputed gap cannot hide behind the old ±5,000 band.
     const plumbOrigTotal = Number(plumbAugReplan?.["originalMonthTotal"] ?? 0);
     newChecks.push({
-      name: `NC21b · Plumbing Aug corrective · originalMonthTotal ≈ 2,447,633 (actual ${Math.round(plumbOrigTotal).toLocaleString()})`,
-      expected: 2447633, actual: Math.round(plumbOrigTotal),
-      pass: Math.abs(plumbOrigTotal - 2447633) <= 5000,
-      tolerance: "±5,000 pcs (1120-item baseline; rounding tolerant)",
+      name: `NC21b · Plumbing Aug corrective · originalMonthTotal ≈ 2,331,647 (actual ${Math.round(plumbOrigTotal).toLocaleString()})`,
+      expected: 2331647, actual: Math.round(plumbOrigTotal),
+      pass: Math.abs(plumbOrigTotal - 2331647) <= 200,
+      tolerance: "±200 pcs — production plan run #21; dev-only run #44 had 2,447,633",
     });
     const plumbCats = (plumbAugReplan?.["categories"] as unknown[]) ?? [];
     newChecks.push({
@@ -791,17 +811,18 @@ async function main(): Promise<void> {
     });
     if (!unrecognisedSegRejectsLoudly) anyFail = true;
 
-    // NC22b: plan run #44 (created via "Plumbing" title-case) has 1,120 items
-    //        — confirms the casing-normalised path built a real plan, not a silent zero
+    // NC22b: production plan run #21 (Aug-26 Plumbing) has 1,120 items.
+    // Previously looked up dev-only run #44; #21 is the production baseline whose
+    // item count the corrective export now asserts against.
     const plumbRunsAug = await fetchJson<Array<Record<string, unknown>>>(`${API_BASE}/api/plan/runs?month=2026-08&segment=Plumbing`);
-    const run44 = (plumbRunsAug ?? []).find((r) => Number(r["id"]) === 44);
-    const run44ItemCount = Number(run44?.["itemCount"] ?? 0);
+    const run21 = (plumbRunsAug ?? []).find((r) => Number(r["id"]) === 21);
+    const run21ItemCount = Number(run21?.["itemCount"] ?? 0);
     newChecks.push({
-      name: `NC22b · plan run #44 (Aug-26 Plumbing, normalised casing) has 1,120 items (actual ${run44ItemCount})`,
-      expected: 1120, actual: run44ItemCount, pass: run44ItemCount === 1120,
-      tolerance: "run created with segment='Plumbing' (title-case); zero items would indicate a casing regression",
+      name: `NC22b · plan run #21 (Aug-26 Plumbing, production baseline) has 1,120 items (actual ${run21ItemCount})`,
+      expected: 1120, actual: run21ItemCount, pass: run21ItemCount === 1120,
+      tolerance: "production run #21 created with segment='Plumbing'; zero = run absent from this environment",
     });
-    if (run44ItemCount !== 1120) anyFail = true;
+    if (run21ItemCount !== 1120) anyFail = true;
 
     // NC22c: creating a plan run without the required uploads fails loudly (422).
     //        PTMT can always fall back to the Combined sales tab for any month, so testing
@@ -1851,6 +1872,77 @@ async function main(): Promise<void> {
       }
     }
 
+    // NC23: Corrective export header / TOTAL row consistency for both segments.
+    // Calls GET /corrective/validate/export-totals for the latest persisted corrective
+    // run in each segment and verifies:
+    //   (a) Detail "Original Month Total" header == Standard TOTAL Min (same item-level Math.round path)
+    //   (b) Detail "Revised Month Total" header  == Standard TOTAL Max (same item-level Math.round path)
+    // A regression — e.g. someone reverts the header to run.revisedMonthTotal (stored as a
+    // 32-bit real) — would cause these to diverge by up to ~100 pcs and fail check (b).
+    console.log("\n⏳  NC23: running corrective export header/TOTAL consistency checks (both segments) …");
+    type NC23Check = { name: string; expected: number; actual: number; pass: boolean; tolerance?: string };
+    for (const { seg, month: nc23Month } of [
+      { seg: "Plumbing", month: PLUMBING_MONTH },
+      { seg: "PTMT",     month: PTMT_PLAN_MONTH },
+    ]) {
+      let nc23Res: Record<string, unknown> | null = null;
+      try {
+        const url = `${API_BASE}/api/corrective/validate/export-totals?month=${encodeURIComponent(nc23Month)}&segment=${encodeURIComponent(seg)}`;
+        const resp = await fetch(url);
+        if (resp.status === 404) {
+          // No corrective run exists yet for this segment/month — skip with a pass (not a bug).
+          newChecks.push({
+            name: `NC23 · ${seg}/${nc23Month} · no corrective run exists yet (skipped)`,
+            expected: 1, actual: 1, pass: true,
+            tolerance: "skip — run the corrective re-plan first to enable this check",
+          });
+          continue;
+        }
+        if (!resp.ok) {
+          const body = await resp.text().catch(() => "");
+          newChecks.push({
+            name: `NC23 · ${seg}/${nc23Month} · export-totals endpoint HTTP ${resp.status}`,
+            expected: 200, actual: resp.status, pass: false,
+            tolerance: body.slice(0, 120),
+          });
+          continue;
+        }
+        nc23Res = await resp.json() as Record<string, unknown>;
+      } catch (err) {
+        newChecks.push({
+          name: `NC23 · ${seg}/${nc23Month} · export-totals endpoint reachable`,
+          expected: 1, actual: 0, pass: false,
+          tolerance: err instanceof Error ? err.message : String(err),
+        });
+        continue;
+      }
+
+      const nc23Checks = (nc23Res["checks"] as NC23Check[] | undefined) ?? [];
+      if (nc23Checks.length === 0) {
+        newChecks.push({
+          name: `NC23 · ${seg}/${nc23Month} · endpoint returned non-empty checks array`,
+          expected: 1, actual: 0, pass: false,
+          tolerance: "endpoint returned empty checks — no assertions could be evaluated",
+        });
+        continue;
+      }
+
+      for (const c of nc23Checks) {
+        newChecks.push({
+          name: `NC23 · ${seg}/${nc23Month} · ${c.name}`,
+          expected: c.expected, actual: c.actual,
+          pass: c.pass, tolerance: c.tolerance,
+        });
+      }
+
+      // Surface a summary line showing the divergence from stored real fields
+      const origDiv = Number(nc23Res["origDivergence"] ?? 0);
+      const planDiv = Number(nc23Res["planDivergence"] ?? 0);
+      console.log(`  NC23 ${seg}/${nc23Month}: run #${nc23Res["runId"]}, ${nc23Res["itemCount"]} items` +
+        ` | orig divergence from stored real: ${origDiv} pcs` +
+        ` | plan divergence from stored real: ${planDiv} pcs`);
+    }
+
   } catch (err) {
     console.error(`\n❌  New permanent checks error: ${err instanceof Error ? err.message : String(err)}`);
     anyFail = true;
@@ -1862,6 +1954,122 @@ async function main(): Promise<void> {
     console.error(`\n❌  New checks: ${newChecks.filter((c) => !c.pass).length} check(s) FAILED`);
   } else {
     console.log(`\n✅  New checks: all ${newChecks.length} PASSED`);
+  }
+
+  // ── 6b. Corrective export item-count check (AGRI extra-row regression guard) ──
+  // Catches any future recurrence of the AGRI explanatory note being placed BEFORE
+  // item rows (was: note row counted as item → 1,123 instead of 1,120).
+  // Downloads the Standard corrective Excel for the latest Plumbing Aug-2026 run,
+  // counts data rows per category sheet (skipping header row 1, fully blank rows,
+  // and note rows that start with "ℹ"), and asserts exact golden values.
+  console.log("\n⏳  Running corrective-export item-count check (AGRI extra-row guard, 2026-08) …");
+  const agriCountChecks: CheckResult[] = [];
+  const CORR_CHECK_MONTH   = "2026-08";
+  const CORR_CHECK_SEGMENT = "Plumbing";
+
+  // Golden per-category item counts — must exactly match the 1,120-item plan run.
+  const EXPECTED_CAT_COUNTS: Record<string, number> = {
+    "CPVC Pipe":   40,  "CPVC Fitting": 244, "CPVC Solvent":  9,
+    "UPVC Pipe":   52,  "UPVC Fitting": 242, "UPVC Solvent": 30,
+    "SWR Pipe":   160,  "SWR Fitting":  134, "SWR Solvent":   3,
+    "AGRI Pipe":  123,  "AGRI Fitting":  82, "AGRI Solvent":  1,
+  };
+  const EXPECTED_TOTAL_ITEMS = 1120;
+
+  try {
+    // Step 1: get the latest Plumbing/Aug-2026 corrective run (API returns DESC order).
+    type CorrRunListEntry = { id: number; month: string; segment: string; createdAt: string };
+    const corrRuns = await fetchJson<CorrRunListEntry[]>(
+      `${API_BASE}/api/corrective/runs?segment=${encodeURIComponent(CORR_CHECK_SEGMENT)}&month=${encodeURIComponent(CORR_CHECK_MONTH)}`,
+    );
+    if (!corrRuns || corrRuns.length === 0) {
+      agriCountChecks.push({
+        name: `AGRI · latest ${CORR_CHECK_SEGMENT}/${CORR_CHECK_MONTH} corrective run found`,
+        expected: 1, actual: 0, pass: false,
+        tolerance: `POST /corrective/replan month=${CORR_CHECK_MONTH} segment=${CORR_CHECK_SEGMENT} to create a run first`,
+      });
+    } else {
+      const latestRun = corrRuns[0]!; // first = newest (DESC)
+      agriCountChecks.push({
+        name: `AGRI · latest ${CORR_CHECK_SEGMENT}/${CORR_CHECK_MONTH} corrective run found (id=${latestRun.id})`,
+        expected: 1, actual: 1, pass: true,
+      });
+
+      // Step 2: download Standard Excel for that run.
+      const xlResp = await fetch(
+        `${API_BASE}/api/corrective/runs/${latestRun.id}/export/excel?format=standard`,
+      );
+      if (!xlResp.ok) {
+        agriCountChecks.push({
+          name: `AGRI · standard Excel download HTTP 200 (got ${xlResp.status})`,
+          expected: 200, actual: xlResp.status, pass: false,
+        });
+      } else {
+        const xlBuf = Buffer.from(await xlResp.arrayBuffer());
+
+        // Step 3: parse with ExcelJS and count data rows per category sheet.
+        // The standard format has:
+        //   Row 1         — header row (bold, ITEM_COLUMNS)
+        //   Row 2+        — item data rows
+        //   [AGRI only]   — blank separator row, then note row starting with "ℹ"
+        // Non-category sheets (Summary, Legend) are skipped by name.
+        const ExcelJSMod = await import("exceljs");
+        const xlWb = new ExcelJSMod.default.Workbook();
+        await xlWb.xlsx.load(xlBuf as unknown as ArrayBuffer);
+
+        const NON_CATEGORY_SHEETS = new Set(["Summary", "Legend", "Warnings", "Corrective Summary", "Revised Release"]);
+        const catCounts: Record<string, number> = {};
+
+        for (const sheet of xlWb.worksheets) {
+          if (NON_CATEGORY_SHEETS.has(sheet.name)) continue;
+          let dataRows = 0;
+          sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+            if (rowNumber === 1) return; // skip header row
+            const firstCell = row.getCell(1);
+            const cellText = firstCell.value != null ? String(firstCell.value).trim() : "";
+            if (!cellText) return;           // effectively blank
+            if (cellText.startsWith("ℹ")) return; // AGRI explanatory note — must NOT be counted
+            if (cellText.startsWith("◆")) return; // KPI row (detail format guard, not present in standard)
+            dataRows++;
+          });
+          catCounts[sheet.name] = dataRows;
+        }
+
+        // Step 4: per-category exact assertions.
+        let totalActual = 0;
+        for (const [cat, expected] of Object.entries(EXPECTED_CAT_COUNTS)) {
+          const actual = catCounts[cat] ?? 0;
+          totalActual += actual;
+          agriCountChecks.push({
+            name: `AGRI · ${cat} item count = ${expected} (actual ${actual})`,
+            expected, actual, pass: actual === expected,
+            tolerance: "exact — header/blank/ℹ-note rows excluded",
+          });
+        }
+
+        // Step 5: grand-total assertion — the primary AGRI regression guard.
+        agriCountChecks.push({
+          name: `AGRI · total item count across 12 category sheets = ${EXPECTED_TOTAL_ITEMS} (actual ${totalActual})`,
+          expected: EXPECTED_TOTAL_ITEMS, actual: totalActual,
+          pass: totalActual === EXPECTED_TOTAL_ITEMS,
+          tolerance: "exact — was 1,123 when AGRI note placed before item rows; must be 1,120",
+        });
+      }
+    }
+  } catch (err) {
+    agriCountChecks.push({
+      name: "AGRI · corrective export item-count check (unexpected error)",
+      expected: 1, actual: 0, pass: false,
+      tolerance: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  printSection(`Corrective export item-count (${CORR_CHECK_SEGMENT}/${CORR_CHECK_MONTH}, AGRI regression guard)`, agriCountChecks);
+  if (agriCountChecks.some((c) => !c.pass)) {
+    anyFail = true;
+    console.error(`\n❌  Corrective item-count: ${agriCountChecks.filter((c) => !c.pass).length} check(s) FAILED`);
+  } else {
+    console.log(`\n✅  Corrective item-count: all ${agriCountChecks.length} PASSED`);
   }
 
   // ── 7. Workbook resolution & actuals-freshness guards ───────────────────

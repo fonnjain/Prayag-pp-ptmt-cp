@@ -228,11 +228,10 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
 
   const [run] = await db.select()
     .from(correctivePlanRunsTable)
-    .where(eq(correctivePlanRunsTable.id, id))
-    .limit(1);
+    .where(eq(correctivePlanRunsTable.id, id));
 
   if (!run) {
-    res.status(404).json({ error: `No corrective run found with id ${id}.` });
+    res.status(404).json({ error: `No corrective run found for id ${id}.` });
     return;
   }
 
@@ -807,6 +806,8 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
   type CheckResult = { name: string; expected: number; actual: number; pass: boolean; tolerance?: string };
   const checks: CheckResult[] = [];
 
+  const detailOrigHeader = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
+
   // 1. Build corrective-standard Excel (uses shared ITEM_COLUMNS)
   const corrStdBuffer = await buildCorrectiveStandardExcel(run, items, segment);
 
@@ -907,9 +908,26 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
     tolerance: "±1 rounding",
   });
 
-  const failCount = checks.filter(c => !c.pass).length;
+  // Compute divergence metrics inline (previously orphaned outside a function body)
+  const detailPlanHeader  = items.reduce((s, i) => s + Math.round(Number(i.planRev ?? 0)), 0);
+  const stdGrandMin       = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
+  const stdGrandMax       = detailPlanHeader;
+  const storedOrig        = Math.round(Number(run.originalMonthTotal ?? 0));
+  const storedRevised     = Math.round(Number(run.revisedMonthTotal ?? 0));
+  const origDivergence    = Math.abs(detailOrigHeader - storedOrig);
+  const planDivergence    = Math.abs(detailPlanHeader - storedRevised);
+
+  const failCount = checks.filter((c) => !c.pass).length;
   res.json({
-    month, segment, allPass: failCount === 0,
+    month, segment,
+    runId: run.id,
+    itemCount: items.length,
+    detailOrigHeader, detailPlanHeader,
+    stdGrandMin, stdGrandMax,
+    storedOriginalMonthTotal: storedOrig,
+    storedRevisedMonthTotal:  storedRevised,
+    origDivergence, planDivergence,
+    allPass: failCount === 0,
     passCount: checks.length - failCount, failCount, checks,
   });
 });
@@ -918,15 +936,14 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
 router.get("/corrective/runs/:id/export/excel", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
-  const format  = req.query.format  ? String(req.query.format)  : "detail";
+  const format = req.query.format ? String(req.query.format) : "detail";
 
   const [run] = await db.select()
     .from(correctivePlanRunsTable)
-    .where(eq(correctivePlanRunsTable.id, id))
-    .limit(1);
+    .where(eq(correctivePlanRunsTable.id, id));
 
   if (!run) {
-    res.status(404).json({ error: `No corrective run found with id ${id}.` });
+    res.status(404).json({ error: `No corrective run found for id ${id}.` });
     return;
   }
 
@@ -956,11 +973,10 @@ router.get("/corrective/runs/:id/export/pdf", async (req, res): Promise<void> =>
 
   const [run] = await db.select()
     .from(correctivePlanRunsTable)
-    .where(eq(correctivePlanRunsTable.id, id))
-    .limit(1);
+    .where(eq(correctivePlanRunsTable.id, id));
 
   if (!run) {
-    res.status(404).json({ error: `No corrective run found with id ${id}.` });
+    res.status(404).json({ error: `No corrective run found for id ${id}.` });
     return;
   }
 
