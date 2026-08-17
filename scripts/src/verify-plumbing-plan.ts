@@ -214,12 +214,28 @@ async function main(): Promise<void> {
     catch { dbLabel = rawDbUrl.replace(/:[^@]*@/, ":***@").slice(0, 80); }
   }
 
+  // Fetch API-side DB hostname + deployed commit SHA before printing the header.
+  // This lets us confirm (a) the suite is querying the intended database and not
+  // the dev "helium" instance while API_BASE points at production, and (b) that
+  // the deployed binary was built from a pushed commit (not a workspace-only bundle).
+  let apiDbHostname = "(healthz unavailable)";
+  let apiCommitSha  = "(unknown)";
+  try {
+    const hz = await fetchJson<{ dbHostname?: string; commitSha?: string }>(`${API_BASE}/api/healthz`);
+    if (hz) {
+      apiDbHostname = hz.dbHostname ?? "(not reported)";
+      apiCommitSha  = hz.commitSha  ?? "(not reported)";
+    }
+  } catch { /* healthz unreachable — non-fatal; checks still run */ }
+
   console.log("=".repeat(60));
   console.log("  PTMT Production Plan — Regression Test Suite");
   console.log(`  Plumbing month : ${PLUMBING_MONTH}`);
   console.log(`  PTMT month     : ${PTMT_MONTH}`);
   console.log(`  API base       : ${API_BASE}`);
-  console.log(`  Database       : ${dbLabel}`);
+  console.log(`  Local DATABASE_URL (NOT the DB under test) : ${dbLabel}`);
+  console.log(`  API database   : ${apiDbHostname}`);
+  console.log(`  Deployed commit: ${apiCommitSha}`);
   console.log("=".repeat(60));
 
   let anyFail = false;
@@ -700,11 +716,22 @@ async function main(): Promise<void> {
     // gapless 18→19→20→21, so #20 = PTMT Aug-2026. Any other value means PTMT picked up
     // the wrong baseline (e.g. a dev-only run), which this check would previously pass.
     const ptmtBaselineRunId = Number(ptmtAugReplan?.["baselinePlanRunId"] ?? 0);
-    newChecks.push({
-      name: `NC20a · PTMT Aug corrective · baselinePlanRunId === 20 (actual ${ptmtBaselineRunId})`,
+    // NC20a: exact id check — only meaningful against the production database where
+    // the plan_run sequence is gapless 18→19→20→21. On dev the highest finalized PTMT
+    // run has a different id, so the equality would always fail without signalling a
+    // real regression. The structural check NC20e (always-on) catches mis-selection
+    // regardless of environment by comparing against the actual highest finalized id.
+    const isProductionApi = API_BASE.startsWith("https://") && API_BASE.includes(".replit.app");
+    newChecks.push(isProductionApi ? {
+      name: `NC20a · PTMT Aug corrective · baselinePlanRunId === 20 (actual ${ptmtBaselineRunId}) [production]`,
       expected: 20, actual: ptmtBaselineRunId,
       pass: ptmtBaselineRunId === 20,
-      tolerance: "must be exactly 20 — the production PTMT Aug-2026 plan run (gapless 18→19→20→21)",
+      tolerance: "must be exactly 20 — production PTMT Aug-2026 plan run (gapless 18→19→20→21)",
+    } : {
+      name: `NC20a · PTMT Aug corrective · baselinePlanRunId non-null [⊘ exact id=20 gate: production API only]`,
+      expected: 1, actual: ptmtBaselineRunId > 0 ? 1 : 0,
+      pass: ptmtBaselineRunId > 0,
+      tolerance: "⊘ exact id=20 requires production API (API_BASE ending .replit.app); on dev: baseline must be non-null",
     });
 
     // NC20b: originalMonthTotal ≈ 617,711 — tolerance tightened to ±200 so the
@@ -748,11 +775,16 @@ async function main(): Promise<void> {
     // #21 is the production Plumbing Aug-2026 baseline (gapless sequence 18→19→20→21).
     // #44 was a dev-only run; the old check passed on any baseline, certifying nothing.
     const plumbBaselineId = Number(plumbAugReplan?.["baselinePlanRunId"] ?? 0);
-    newChecks.push({
-      name: `NC21a · Plumbing Aug corrective · baselinePlanRunId === 21 (actual ${plumbBaselineId})`,
+    newChecks.push(isProductionApi ? {
+      name: `NC21a · Plumbing Aug corrective · baselinePlanRunId === 21 (actual ${plumbBaselineId}) [production]`,
       expected: 21, actual: plumbBaselineId,
       pass: plumbBaselineId === 21,
       tolerance: "must be exactly 21 — production Plumbing Aug-2026 plan run (gapless 18→19→20→21)",
+    } : {
+      name: `NC21a · Plumbing Aug corrective · baselinePlanRunId non-null [⊘ exact id=21 gate: production API only]`,
+      expected: 1, actual: plumbBaselineId > 0 ? 1 : 0,
+      pass: plumbBaselineId > 0,
+      tolerance: "⊘ exact id=21 requires production API (API_BASE ending .replit.app); on dev: baseline must be non-null",
     });
     // NC21b: production Plumbing baseline total is 2,331,647 — tolerance tightened to ±200
     // so the 103-pcs grandOrigComputed gap cannot hide behind the old ±5,000 band.
@@ -790,8 +822,45 @@ async function main(): Promise<void> {
     // Verifies (a) that an unrecognised segment is rejected with a named 400,
     // and (b) that a valid segment submitted in any supported casing normalises
     // correctly rather than producing a silent zero-item run.
-    // (b) is checked by verifying the existing finalized Plumbing run #44 has
-    // 1,120 items — a guarantee that the casing-normalised path produced real data.
+    // (b) is checked via the structural checks NC20e / NC21e below.
+
+    // Fetch PTMT and Plumbing Aug plan runs in parallel — used for structural baseline
+    // checks and the item-count check NC22b. Sorting by id DESC (plan-runs.ts fix) puts
+    // the newest finalized run at index 0, matching corrective auto-select order.
+    const [ptmtRunsAug, plumbRunsAug] = await Promise.all([
+      fetchJson<Array<Record<string, unknown>>>(`${API_BASE}/api/plan/runs?month=2026-08&segment=PTMT`),
+      fetchJson<Array<Record<string, unknown>>>(`${API_BASE}/api/plan/runs?month=2026-08&segment=Plumbing`),
+    ]);
+
+    // NC20e: structural — baseline must equal the highest finalized PTMT Aug run id.
+    // Always-on: catches the original "old id picked over new one" class of bug on any
+    // environment, without requiring knowledge of the exact production id sequence.
+    const ptmtFinalizedIds = (ptmtRunsAug ?? [])
+      .filter(r => r["status"] === "finalized")
+      .map(r => Number(r["id"]));
+    const ptmtMaxFinalizedId = ptmtFinalizedIds.length > 0 ? Math.max(...ptmtFinalizedIds) : 0;
+    const ptmtStructuralOk = ptmtBaselineRunId > 0 && ptmtBaselineRunId === ptmtMaxFinalizedId;
+    newChecks.push({
+      name: `NC20e · PTMT Aug · baseline (${ptmtBaselineRunId}) = highest finalized run id (${ptmtMaxFinalizedId})`,
+      expected: ptmtMaxFinalizedId, actual: ptmtBaselineRunId,
+      pass: ptmtStructuralOk,
+      tolerance: "corrective auto-select must pick the newest finalized plan run — not an older or dev-only one",
+    });
+    if (!ptmtStructuralOk) anyFail = true;
+
+    // NC21e: structural — baseline must equal the highest finalized Plumbing Aug run id.
+    const plumbFinalizedIds = (plumbRunsAug ?? [])
+      .filter(r => r["status"] === "finalized")
+      .map(r => Number(r["id"]));
+    const plumbMaxFinalizedId = plumbFinalizedIds.length > 0 ? Math.max(...plumbFinalizedIds) : 0;
+    const plumbStructuralOk = plumbBaselineId > 0 && plumbBaselineId === plumbMaxFinalizedId;
+    newChecks.push({
+      name: `NC21e · Plumbing Aug · baseline (${plumbBaselineId}) = highest finalized run id (${plumbMaxFinalizedId})`,
+      expected: plumbMaxFinalizedId, actual: plumbBaselineId,
+      pass: plumbStructuralOk,
+      tolerance: "corrective auto-select must pick the newest finalized plan run — not an older or dev-only one",
+    });
+    if (!plumbStructuralOk) anyFail = true;
 
     // NC22a: unrecognised segment → 400 UNRECOGNISED_SEGMENT (not silent zero)
     let unrecognisedSegRejectsLoudly = false;
@@ -814,13 +883,15 @@ async function main(): Promise<void> {
     // NC22b: production plan run #21 (Aug-26 Plumbing) has 1,120 items.
     // Previously looked up dev-only run #44; #21 is the production baseline whose
     // item count the corrective export now asserts against.
-    const plumbRunsAug = await fetchJson<Array<Record<string, unknown>>>(`${API_BASE}/api/plan/runs?month=2026-08&segment=Plumbing`);
-    const run21 = (plumbRunsAug ?? []).find((r) => Number(r["id"]) === 21);
+    // Filter to finalized — draft runs must not satisfy this check since auto-select ignores them.
+    const run21 = (plumbRunsAug ?? [])
+      .filter(r => r["status"] === "finalized")
+      .find((r) => Number(r["id"]) === 21);
     const run21ItemCount = Number(run21?.["itemCount"] ?? 0);
     newChecks.push({
       name: `NC22b · plan run #21 (Aug-26 Plumbing, production baseline) has 1,120 items (actual ${run21ItemCount})`,
       expected: 1120, actual: run21ItemCount, pass: run21ItemCount === 1120,
-      tolerance: "production run #21 created with segment='Plumbing'; zero = run absent from this environment",
+      tolerance: "production run #21 created with segment='Plumbing'; zero = run absent or not finalized in this environment",
     });
     if (run21ItemCount !== 1120) anyFail = true;
 
@@ -2072,6 +2143,138 @@ async function main(): Promise<void> {
     console.log(`\n✅  Corrective item-count: all ${agriCountChecks.length} PASSED`);
   }
 
+  // ── 6b-PTMT. Corrective export item-count check (PTMT Aug-2026) ──────────
+  // Parallel guard for PTMT: any future note-placement mistake in a PTMT
+  // category sheet (analogous to the Plumbing AGRI note incident) would inflate
+  // the row count and be caught here.  Downloads the Standard corrective Excel
+  // for a PINNED known-good PTMT Aug-2026 run and asserts exact per-category
+  // row counts.
+  //
+  // IMPORTANT: this check is PINNED to corrective run #101 — the known-good
+  // baseline established when the goldens below were recorded.  Do NOT switch
+  // to "latest run": the plant may create new Aug-2026 runs with a different
+  // weekClosed / updated actuals, which changes per-category breakdowns and
+  // would cause false failures.  If the pinned run is ever deleted and replaced,
+  // update PTMT_CORR_RUN_ID to the new known-good run id and re-record goldens.
+  console.log("\n⏳  Running PTMT corrective-export item-count check (2026-08, pinned run #101) …");
+  const ptmtCountChecks: CheckResult[] = [];
+  const PTMT_CORR_MONTH   = "2026-08";
+  const PTMT_CORR_SEGMENT = "PTMT";
+  const PTMT_CORR_RUN_ID  = 101; // pinned — do not change to "latest"
+
+  // Golden per-category item counts — recorded from run #101 (plan run #21 baseline).
+  // These must not change as long as the same plan run is the corrective baseline.
+  const PTMT_EXPECTED_CAT_COUNTS: Record<string, number> = {
+    "Cabinet":                       50,
+    "Cocks Standard":              2347,
+    "Ball Cock":                     63,
+    "Cocks Premium":                602,
+    "Faucets & Jetsprays & Shower": 183,
+    "Accessorise":                  204,
+    "Cistern & Seat Cover":         187,
+  };
+  const PTMT_EXPECTED_TOTAL_ITEMS = 3636;
+
+  try {
+    // Step 1: confirm the pinned run exists and belongs to the expected segment/month.
+    type CorrRunDetail = { id: number; month: string; segment: string; createdAt: string };
+    let pinnedRun: CorrRunDetail | null = null;
+    try {
+      pinnedRun = await fetchJson<CorrRunDetail>(
+        `${API_BASE}/api/corrective/runs/${PTMT_CORR_RUN_ID}`,
+      );
+    } catch {
+      // run fetch failed — will be reported below
+    }
+    if (!pinnedRun) {
+      ptmtCountChecks.push({
+        name: `PTMT-CORR · pinned corrective run #${PTMT_CORR_RUN_ID} found`,
+        expected: 1, actual: 0, pass: false,
+        tolerance: `Run #${PTMT_CORR_RUN_ID} not found — create a new known-good run and update PTMT_CORR_RUN_ID`,
+      });
+    } else {
+      ptmtCountChecks.push({
+        name: `PTMT-CORR · pinned corrective run #${PTMT_CORR_RUN_ID} found (${pinnedRun.segment}/${pinnedRun.month})`,
+        expected: 1, actual: 1, pass: true,
+      });
+
+      // Step 2: download Standard Excel for the pinned run.
+      const ptmtXlResp = await fetch(
+        `${API_BASE}/api/corrective/runs/${PTMT_CORR_RUN_ID}/export/excel?format=standard`,
+      );
+      if (!ptmtXlResp.ok) {
+        ptmtCountChecks.push({
+          name: `PTMT-CORR · standard Excel download HTTP 200 (got ${ptmtXlResp.status})`,
+          expected: 200, actual: ptmtXlResp.status, pass: false,
+        });
+      } else {
+        const ptmtXlBuf = Buffer.from(await ptmtXlResp.arrayBuffer());
+
+        // Step 3: parse with ExcelJS and count data rows per category sheet.
+        // Same filtering rules as the Plumbing check:
+        //   Row 1         — header row (bold, ITEM_COLUMNS) → skip
+        //   Fully blank   → skip
+        //   Starts with "ℹ" → explanatory note → skip (must NOT count)
+        //   Starts with "◆" → KPI row (detail format; not in standard) → skip
+        const ExcelJSMod2 = await import("exceljs");
+        const ptmtXlWb = new ExcelJSMod2.default.Workbook();
+        await ptmtXlWb.xlsx.load(ptmtXlBuf as unknown as ArrayBuffer);
+
+        const NON_CATEGORY_SHEETS2 = new Set(["Summary", "Legend", "Warnings", "Corrective Summary", "Revised Release"]);
+        const ptmtCatCounts: Record<string, number> = {};
+
+        for (const sheet of ptmtXlWb.worksheets) {
+          if (NON_CATEGORY_SHEETS2.has(sheet.name)) continue;
+          let dataRows = 0;
+          sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+            if (rowNumber === 1) return; // skip header row
+            const firstCell = row.getCell(1);
+            const cellText = firstCell.value != null ? String(firstCell.value).trim() : "";
+            if (!cellText) return;           // effectively blank
+            if (cellText.startsWith("ℹ")) return; // explanatory note — must NOT be counted
+            if (cellText.startsWith("◆")) return; // KPI row (detail format guard)
+            dataRows++;
+          });
+          ptmtCatCounts[sheet.name] = dataRows;
+        }
+
+        // Step 4: per-category exact assertions.
+        let ptmtTotalActual = 0;
+        for (const [cat, expected] of Object.entries(PTMT_EXPECTED_CAT_COUNTS)) {
+          const actual = ptmtCatCounts[cat] ?? 0;
+          ptmtTotalActual += actual;
+          ptmtCountChecks.push({
+            name: `PTMT-CORR · ${cat} item count = ${expected} (actual ${actual})`,
+            expected, actual, pass: actual === expected,
+            tolerance: "exact — header/blank/ℹ-note rows excluded",
+          });
+        }
+
+        // Step 5: grand-total assertion — the primary regression guard.
+        ptmtCountChecks.push({
+          name: `PTMT-CORR · total item count across 7 category sheets = ${PTMT_EXPECTED_TOTAL_ITEMS} (actual ${ptmtTotalActual})`,
+          expected: PTMT_EXPECTED_TOTAL_ITEMS, actual: ptmtTotalActual,
+          pass: ptmtTotalActual === PTMT_EXPECTED_TOTAL_ITEMS,
+          tolerance: "exact — a note placed before item rows would inflate this count",
+        });
+      }
+    }
+  } catch (err) {
+    ptmtCountChecks.push({
+      name: "PTMT-CORR · corrective export item-count check (unexpected error)",
+      expected: 1, actual: 0, pass: false,
+      tolerance: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  printSection(`Corrective export item-count (${PTMT_CORR_SEGMENT}/${PTMT_CORR_MONTH})`, ptmtCountChecks);
+  if (ptmtCountChecks.some((c) => !c.pass)) {
+    anyFail = true;
+    console.error(`\n❌  PTMT corrective item-count: ${ptmtCountChecks.filter((c) => !c.pass).length} check(s) FAILED`);
+  } else {
+    console.log(`\n✅  PTMT corrective item-count: all ${ptmtCountChecks.length} PASSED`);
+  }
+
   // ── 7. Workbook resolution & actuals-freshness guards ───────────────────
   console.log("\n⏳  Running workbook-resolution & actuals-freshness guards …");
   const wrChecks: CheckResult[] = [];
@@ -2199,8 +2402,8 @@ async function main(): Promise<void> {
   }
 
   // ── Summary ───────────────────────────────────────────────────────────────
-  const totalChecks = bundleChecks.length + plumbingResult.checks.length + replanResult.checks.length + ptmtResult.checks.length + monResult.checks.length + schemaParityResult.checks.length + newChecks.length + wrChecks.length;
-  const totalFail   = bundleChecks.filter((c) => !c.pass).length + plumbingResult.failCount + replanResult.failCount + ptmtResult.failCount + monResult.failCount + schemaParityResult.failCount + newChecks.filter((c) => !c.pass).length + wrChecks.filter((c) => !c.pass).length;
+  const totalChecks = bundleChecks.length + plumbingResult.checks.length + replanResult.checks.length + ptmtResult.checks.length + monResult.checks.length + schemaParityResult.checks.length + newChecks.length + agriCountChecks.length + ptmtCountChecks.length + wrChecks.length;
+  const totalFail   = bundleChecks.filter((c) => !c.pass).length + plumbingResult.failCount + replanResult.failCount + ptmtResult.failCount + monResult.failCount + schemaParityResult.failCount + newChecks.filter((c) => !c.pass).length + agriCountChecks.filter((c) => !c.pass).length + ptmtCountChecks.filter((c) => !c.pass).length + wrChecks.filter((c) => !c.pass).length;
   const totalPass   = totalChecks - totalFail;
 
   console.log("\n" + "=".repeat(60));

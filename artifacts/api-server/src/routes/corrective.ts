@@ -228,10 +228,11 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
 
   const [run] = await db.select()
     .from(correctivePlanRunsTable)
-    .where(eq(correctivePlanRunsTable.id, id));
+    .where(eq(correctivePlanRunsTable.id, id))
+    .limit(1);
 
   if (!run) {
-    res.status(404).json({ error: `No corrective run found for id ${id}.` });
+    res.status(404).json({ error: `No corrective run found with id ${id}.` });
     return;
   }
 
@@ -922,11 +923,6 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
     month, segment,
     runId: run.id,
     itemCount: items.length,
-    detailOrigHeader, detailPlanHeader,
-    stdGrandMin, stdGrandMax,
-    storedOriginalMonthTotal: storedOrig,
-    storedRevisedMonthTotal:  storedRevised,
-    origDivergence, planDivergence,
     allPass: failCount === 0,
     passCount: checks.length - failCount, failCount, checks,
   });
@@ -940,10 +936,11 @@ router.get("/corrective/runs/:id/export/excel", async (req, res): Promise<void> 
 
   const [run] = await db.select()
     .from(correctivePlanRunsTable)
-    .where(eq(correctivePlanRunsTable.id, id));
+    .where(eq(correctivePlanRunsTable.id, id))
+    .limit(1);
 
   if (!run) {
-    res.status(404).json({ error: `No corrective run found for id ${id}.` });
+    res.status(404).json({ error: `No corrective run found with id ${id}.` });
     return;
   }
 
@@ -973,10 +970,11 @@ router.get("/corrective/runs/:id/export/pdf", async (req, res): Promise<void> =>
 
   const [run] = await db.select()
     .from(correctivePlanRunsTable)
-    .where(eq(correctivePlanRunsTable.id, id));
+    .where(eq(correctivePlanRunsTable.id, id))
+    .limit(1);
 
   if (!run) {
-    res.status(404).json({ error: `No corrective run found for id ${id}.` });
+    res.status(404).json({ error: `No corrective run found with id ${id}.` });
     return;
   }
 

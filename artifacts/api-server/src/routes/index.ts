@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { commitSha } from "../lib/buildInfo";
 import bufferCategoriesRouter from "./buffer-categories";
 import uploadsRouter from "./uploads";
 import syncRouter from "./sync";
@@ -24,7 +25,18 @@ router.get("/", (_req, res) => {
 });
 
 router.get("/healthz", (_req, res) => {
-  res.json({ status: "ok" });
+  // dbHostname: identifies which database this API process is connected to.
+  // Lets the regression suite confirm it is querying the intended DB — not helium
+  // (dev) when running against the production URL, or vice-versa.
+  const rawDbUrl = process.env["DATABASE_URL"] ?? "";
+  let dbHostname = "(unknown)";
+  if (rawDbUrl) {
+    try { dbHostname = new URL(rawDbUrl).hostname; } catch { /* ignore */ }
+  }
+  // commitSha: SHA of the git commit that produced this running process.
+  // The regression suite can compare it against the local source tree to confirm
+  // production is not serving a stale bundle that was never pushed to GitHub.
+  res.json({ status: "ok", dbHostname, commitSha });
 });
 
 router.use(bufferCategoriesRouter);

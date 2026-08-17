@@ -158,13 +158,18 @@ router.get("/plan/runs", async (req, res): Promise<void> => {
     res.status(400).json({ error: "month is required" });
     return;
   }
-  const segment = String(req.query.segment ?? "PTMT");
+  // Normalise casing so "plumbing" / "PLUMBING" / "Plumbing" and "ptmt" / "PTMT"
+  // all resolve to the stored value. An exact eq() with the raw string returns []
+  // for any casing variant, which the caller then silently misreads as "no runs".
+  const RECOGNISED_SEGMENTS_GET: Record<string, string> = { ptmt: "PTMT", plumbing: "Plumbing" };
+  const rawSegGet = String(req.query.segment ?? "PTMT");
+  const segment = RECOGNISED_SEGMENTS_GET[rawSegGet.toLowerCase()] ?? rawSegGet;
 
   const runs = await db
     .select()
     .from(planRunsTable)
     .where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, segment)))
-    .orderBy(desc(planRunsTable.createdAt));
+    .orderBy(desc(planRunsTable.id)); // id DESC matches the auto-select order in corrective replan
 
   const summaries = await Promise.all(
     runs.map(async (run) => {
