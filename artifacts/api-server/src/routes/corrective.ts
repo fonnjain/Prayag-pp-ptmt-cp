@@ -511,19 +511,18 @@ async function buildCorrectiveStandardExcel(
     { header: "Max Production Required", key: "maxTotal", width: 22 },
   ];
   sumSh.getRow(1).font = { bold: true };
-  sumSh.addRow([`${segment} Corrective Plan — ${run.month} (Revised)`]);
+  // Same pattern as addSummarySheet in excel-export.ts: splice inserts blank at row 1,
+  // shifting the column-header row (Category/Min/Max) to row 2; write title into row 1.
+  // Do NOT addRow(title) before this — that creates a duplicate ghost row at row 3.
   sumSh.spliceRows(1, 0, []);
   sumSh.getRow(1).values = [`${segment} Corrective Plan — ${run.month} (Revised)`];
-
-  // Run provenance — id and created-at so a re-exported run is distinguishable
-  // from a freshly-generated one without opening the PDF.
-  const provRow = sumSh.addRow([`Run #${run.id}  ·  ${new Date(run.createdAt).toLocaleString("en-IN")}`]);
-  provRow.font = { italic: true, color: { argb: "FF334155" } };
 
   // Min column semantics note: in the Standard corrective export Min = the
   // original (baseline) plan quantity for each item; Max = the revised quantity.
   // This differs from the main Production Plan where Min uses the buffer formula.
   // Min > Max for an item means it was deferred/unfulfillable in the corrective.
+  // NOTE row sits at row 3 (after title and headers), before category data — intentional:
+  // it explains the column semantics before the reader reaches the data.
   const noteRow = sumSh.addRow([`NOTE — Min column: baseline plan quantity (not buffer-formula minimum). Baseline plan run: ${run.planRunId != null ? `#${run.planRunId}` : "live rebuild"}. Max column: corrective-revised quantity.`]);
   noteRow.font = { italic: true, color: { argb: "FF64748B" } };
   noteRow.getCell(1).alignment = { wrapText: true };
@@ -538,6 +537,13 @@ async function buildCorrectiveStandardExcel(
   }
   const sumTotalRow = sumSh.addRow({ category: "TOTAL", minTotal: grandMin, maxTotal: grandMax });
   sumTotalRow.font = { bold: true };
+
+  // Run provenance footer — placed after TOTAL so it does not shift the Category header
+  // row (row 2) or the first data row (row 4 after NOTE), keeping this sheet schema-
+  // identical to the main plan Summary up to and including the TOTAL row.
+  // The PDF already carries Run #; the Excel footer now matches without affecting parity.
+  const provRow = sumSh.addRow([`Run #${run.id}  ·  ${new Date(run.createdAt).toLocaleString("en-IN")}`]);
+  provRow.font = { italic: true, color: { argb: "FF334155" } };
 
   // ── Per-category sheets — identical column schema to main plan ──
   for (const [category, catItems] of byCategory) {
@@ -1123,6 +1129,41 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
       name: `SchemaParity · "${sheetName}" header row matches`,
       expected: 1, actual: headersMatch ? 1 : 0,
       pass: headersMatch,
+    });
+  }
+
+  // ── Summary sheet parity: row-2 = "Category" header in both workbooks ──
+  // The Summary sheet is excluded from the per-sheet loop above because it has
+  // corrective-specific preamble rows (NOTE, provenance footer).  We still assert
+  // that the Category / Min / Max column headers landed at row 2 in both workbooks
+  // (title at row 1, headers at row 2 — the spliceRows pattern in addSummarySheet
+  // and buildCorrectiveStandardExcel).  A deviation means the duplicate-addRow
+  // ghost has returned or a new preamble row was inserted before the headers.
+  const corrSumSheet = corrWb.getWorksheet("Summary");
+  const planSumSheet = planWb.getWorksheet("Summary");
+  if (corrSumSheet && planSumSheet) {
+    const corrRow2A = String(corrSumSheet.getRow(2).getCell(1).value ?? "").trim();
+    const planRow2A = String(planSumSheet.getRow(2).getCell(1).value ?? "").trim();
+    checks.push({
+      name: `SchemaParity · Summary row 2 = "Category" header in corrective workbook (actual: "${corrRow2A}")`,
+      expected: 1, actual: corrRow2A === "Category" ? 1 : 0,
+      pass: corrRow2A === "Category",
+      tolerance: "row 1 = title, row 2 = Category/Min/Max headers; a duplicate addRow shifts this to row 3",
+    });
+    checks.push({
+      name: `SchemaParity · Summary row 2 = "Category" header in plan workbook (actual: "${planRow2A}")`,
+      expected: 1, actual: planRow2A === "Category" ? 1 : 0,
+      pass: planRow2A === "Category",
+      tolerance: "row 1 = title, row 2 = Category/Min/Max headers; a duplicate addRow shifts this to row 3",
+    });
+    // Header columns must also match exactly between the two workbooks.
+    const corrSumRow2 = (corrSumSheet.getRow(2).values as (string | undefined)[]).filter(Boolean);
+    const planSumRow2 = (planSumSheet.getRow(2).values as (string | undefined)[]).filter(Boolean);
+    const sumHeadersMatch = JSON.stringify(corrSumRow2) === JSON.stringify(planSumRow2);
+    checks.push({
+      name: "SchemaParity · Summary header row columns match (Category / Min / Max)",
+      expected: 1, actual: sumHeadersMatch ? 1 : 0,
+      pass: sumHeadersMatch,
     });
   }
 

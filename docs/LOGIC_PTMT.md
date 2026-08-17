@@ -94,20 +94,8 @@ indicates a genuine change in the frozen plan run items.
 
 ### §B2 — NC21b: Plumbing August corrective baseline item-sum
 
-Asserted value: **2,331,647 ±200 pcs** (production API).
-Basis: `run.originalMonthTotal` (stored 32-bit real, rounded to INTEGER) on the
-Plumbing/2026-08 corrective run citing plan run #21.
-
-Three distinct values — same pattern as §A7:
-
-| Value | Basis |
-|-------|-------|
-| **2,331,647 pcs** | `run.originalMonthTotal` — stored real, rounded to INTEGER |
-| **2,331,648 pcs** | `frozenPlanGrandMax` (`plan_run_results`) — Σ `productionPlan` for plan run #21 items, first measured on corrective run #16 |
-
-**Why the 1-pcs gap (2,331,648 − 2,331,647):** same cause as §A7 — two independent
-float64 accumulations of the same float32 source values. Both are within the ±200
-MISMATCH tolerance; the cross-check remains real because the sources are independent.
+→ Moved to **LOGIC_PLUMBING.md §P1**. Plumbing goldens live there so they are
+not overlooked at month rollover when only PTMT figures are being updated.
 
 ### §B3 — NC20e / NC21e: Structural baseline integrity
 

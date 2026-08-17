@@ -61,7 +61,9 @@ function addSummarySheet(workbook: ExcelJS.Workbook, month: string, summary: Pla
     { header: "Max Production Required", key: "maxTotal", width: 22 },
   ];
   sheet.getRow(1).font = { bold: true };
-  sheet.addRow([`PTMT Production Plan — ${month}`]);
+  // spliceRows inserts a blank at position 1, shifting the auto-created column-header
+  // row (Category / Min / Max) from row 1 → row 2, then we write the title into row 1.
+  // Do NOT addRow(title) before this — that pattern creates a duplicate ghost row at row 3.
   sheet.spliceRows(1, 0, []);
   sheet.getRow(1).values = [`PTMT Production Plan — ${month}`];
 
