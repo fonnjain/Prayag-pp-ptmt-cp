@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { launchBrowser } from "../lib/browser";
 import { exportTimestamp } from "../lib/export-filename";
 import { db, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable, planRunsTable, planRunResultsTable } from "@workspace/db";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -292,6 +293,11 @@ async function buildCorrectiveExcel(run: typeof correctivePlanRunsTable.$inferSe
   const segmentLabel = run.segment ?? "PTMT";
   const wb = new ExcelJS.Workbook();
   wb.creator = "PTMT Production Planning";
+
+  // Pre-compute totals from item-level Math.round to avoid real-float rounding gap
+  // (stored revised_month_total is a 32-bit real; sum-then-round can differ by up to 100 pcs)
+  const grandMinComputed = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
+  const grandMaxComputed = items.reduce((s, i) => s + Math.round(Number(i.planRev ?? 0)), 0);
 
   // ── Sheet 1: Summary ──
   const sumSh = wb.addWorksheet("Corrective Summary");
@@ -838,12 +844,7 @@ router.get("/corrective/runs/:id/export/pdf", async (req, res): Promise<void> =>
 
   try {
     const html = buildCorrectivePdfHtml(run, items as unknown as CorrectiveItemResult[]);
-    const puppeteer = (await import("puppeteer")).default;
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      protocolTimeout: 120_000,
-    });
+    const browser = await launchBrowser();
     try {
       const page = await browser.newPage();
       await page.setContent(html, { waitUntil: "networkidle0" });
@@ -920,12 +921,7 @@ router.get("/corrective/export/pdf", async (req, res): Promise<void> => {
 
   try {
     const html = buildCorrectivePdfHtml(run, items as unknown as CorrectiveItemResult[]);
-    const puppeteer = (await import("puppeteer")).default;
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-      protocolTimeout: 120_000,
-    });
+    const browser = await launchBrowser();
     try {
       const page = await browser.newPage();
       await page.setContent(html, { waitUntil: "networkidle0" });

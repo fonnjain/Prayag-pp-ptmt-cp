@@ -1,5 +1,6 @@
 import type ExcelJS from "exceljs";
 import type { PaceMetrics, Warning, RecommendedAction, MachineQuality } from "./monitoring-calc";
+import { launchBrowser } from "./browser";
 
 export interface MonitoringExportData {
   month: string;
@@ -285,11 +286,7 @@ function buildHtml(data: MonitoringExportData): string {
 
 export async function exportMonitoringPdf(data: MonitoringExportData): Promise<Buffer> {
   const html = buildHtml(data);
-  const puppeteer = (await import("puppeteer")).default;
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });

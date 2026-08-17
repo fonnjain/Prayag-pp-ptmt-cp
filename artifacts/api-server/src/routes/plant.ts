@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { launchBrowser } from "../lib/browser";
 import { exportTimestamp } from "../lib/export-filename";
 import { db, plantConfigsTable, plantSourceConfigsTable, plantIngestionCacheTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -249,8 +250,7 @@ ${section === "control-board" ? `
 <div style="margin-top: 30px; color: #999; font-size: 10px;">Generated ${new Date().toISOString()} · PTMT Production Performance &amp; Monitoring</div>
 </body></html>`;
 
-    const puppeteer = (await import("puppeteer")).default;
-    const browser = await puppeteer.launch({ args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    const browser = await launchBrowser();
     try {
       const page = await browser.newPage();
       await page.setContent(htmlContent, { waitUntil: "networkidle0" });

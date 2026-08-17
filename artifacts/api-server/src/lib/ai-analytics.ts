@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
+import { launchBrowser } from "./browser";
 import type { MonitoringBundle } from "../routes/monitoring";
 import { buildWarningsList } from "../routes/monitoring";
 import { ragBand, buildRecommendedActions, type PaceMetrics } from "./monitoring-calc";
@@ -213,8 +214,7 @@ export async function exportAiAnalysisPdf(params: {
     }
   </body></html>`;
 
-  const puppeteer = (await import("puppeteer")).default;
-  const browser = await puppeteer.launch({ headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });

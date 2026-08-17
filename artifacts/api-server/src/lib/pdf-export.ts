@@ -1,4 +1,5 @@
 import type { CalcPlanItem, PlanSummaryResult } from "./calc";
+import { launchBrowser } from "./browser";
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -87,11 +88,7 @@ export async function exportPlanPdf(
   summary: PlanSummaryResult,
 ): Promise<Buffer> {
   const html = buildHtml(month, items, summary);
-  const puppeteer = (await import("puppeteer")).default;
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });

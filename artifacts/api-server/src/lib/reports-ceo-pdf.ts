@@ -1,6 +1,7 @@
 import type { PlantBundle } from "./plant-engine";
 import type { PlantWarning } from "./plant-warnings";
 import type { PlantRecommendation } from "./plant-recommendations";
+import { launchBrowser } from "./browser";
 
 export type FullBundle = PlantBundle & { warnings: PlantWarning[]; recommendations: PlantRecommendation[] };
 
@@ -179,8 +180,7 @@ function buildHtml(bundle: FullBundle, aiNarrative: string | null, generatedAt: 
 export async function generateCeoPdf(bundle: FullBundle, aiNarrative: string | null): Promise<Buffer> {
   const generatedAt = new Date().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
   const html = buildHtml(bundle, aiNarrative, generatedAt);
-  const puppeteer = (await import("puppeteer")).default;
-  const browser = await puppeteer.launch({ args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+  const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: "networkidle0" });
