@@ -1,4 +1,4 @@
-import { pgTable, serial, text, real, timestamp, jsonb, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, real, timestamp, jsonb, integer, boolean } from "drizzle-orm/pg-core";
 
 export interface CorrectiveWeekStat {
   week: number;
@@ -55,6 +55,15 @@ export const correctivePlanRunsTable = pgTable("corrective_plan_runs", {
   // SHA-256 of the full persisted run content (run fields + items + weekStats +
   // warnings). Used by the duplicate-run guard; NULL on legacy rows.
   fingerprint: text("fingerprint"),
+  // Σ productionPlan from plan_run_results for the cited planRunId, captured at
+  // run-creation time. Used by exports to cross-check the corrective baseline
+  // against the original frozen plan (not against the same-source stored real).
+  // NULL on legacy runs recorded before this column existed.
+  frozenPlanGrandMax: integer("frozen_plan_grand_max"),
+  // When true, the DELETE /corrective/runs/:id endpoint returns 409 instead of
+  // deleting the run. Used to protect regression-suite golden runs from accidental
+  // removal by the plant. Toggle via PATCH /corrective/runs/:id/pin.
+  pinned: boolean("pinned").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

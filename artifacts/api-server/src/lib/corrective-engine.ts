@@ -1087,6 +1087,9 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       workingDaysRemaining,
       asOfDate: effectiveAsOfDate ?? null,
       planRunId: input.planRunId ?? null,
+      // Persist the frozen plan run's grand-max so exports can compare it
+      // against grandOrigComputed without re-querying plan_run_results.
+      frozenPlanGrandMax: input.planRunGrandMax ?? null,
       note: note ?? null,
       fingerprint,
     }).returning();

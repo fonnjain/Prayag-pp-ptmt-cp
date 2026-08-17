@@ -182,6 +182,74 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
   }
 });
 
+// ─── DELETE /corrective/runs/:id ─────────────────────────────────────────────
+router.delete("/corrective/runs/:id", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
+
+  // Atomic conditional delete: only removes the row when pinned = false.
+  // This prevents a TOCTOU race between reading pinned and deleting.
+  const deleted = await db
+    .delete(correctivePlanRunsTable)
+    .where(and(eq(correctivePlanRunsTable.id, id), eq(correctivePlanRunsTable.pinned, false)))
+    .returning({ id: correctivePlanRunsTable.id });
+
+  if (deleted.length > 0) {
+    // Row existed and was not pinned — deleted successfully.
+    res.status(204).end();
+    return;
+  }
+
+  // No row deleted: either the run doesn't exist, or it is pinned.
+  const [run] = await db
+    .select({ id: correctivePlanRunsTable.id, pinned: correctivePlanRunsTable.pinned })
+    .from(correctivePlanRunsTable)
+    .where(eq(correctivePlanRunsTable.id, id))
+    .limit(1);
+
+  if (!run) {
+    res.status(404).json({ error: `No corrective run found with id ${id}.` });
+    return;
+  }
+
+  // Row exists and pinned = true (the WHERE clause excluded it from the DELETE).
+  res.status(409).json({
+    error: `Corrective run #${id} is pinned and cannot be deleted. ` +
+      `This run is protected because it is used as a regression-suite golden reference. ` +
+      `To delete it, first unpin it via PATCH /api/corrective/runs/${id}/pin with { "pinned": false }.`,
+    code: "PINNED_RUN",
+    runId: id,
+  });
+});
+
+// ─── PATCH /corrective/runs/:id/pin ──────────────────────────────────────────
+router.patch("/corrective/runs/:id/pin", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
+
+  const { pinned } = req.body as { pinned?: boolean };
+  if (typeof pinned !== "boolean") {
+    res.status(400).json({ error: "Request body must include { pinned: true } or { pinned: false }" });
+    return;
+  }
+
+  const [run] = await db.select()
+    .from(correctivePlanRunsTable)
+    .where(eq(correctivePlanRunsTable.id, id))
+    .limit(1);
+
+  if (!run) {
+    res.status(404).json({ error: `No corrective run found with id ${id}.` });
+    return;
+  }
+
+  await db.update(correctivePlanRunsTable)
+    .set({ pinned })
+    .where(eq(correctivePlanRunsTable.id, id));
+
+  res.json({ runId: id, pinned, message: pinned ? `Run #${id} is now pinned and protected from deletion.` : `Run #${id} has been unpinned and can now be deleted.` });
+});
+
 // ─── GET /corrective/runs ────────────────────────────────────────────────────
 router.get("/corrective/runs", async (req, res): Promise<void> => {
   const month = req.query.month ? String(req.query.month) : undefined;
@@ -216,6 +284,7 @@ router.get("/corrective/runs", async (req, res): Promise<void> => {
     revisedMonthTotal: r.revisedMonthTotal,
     unfulfillableQty: r.unfulfillableQty,
     planRunId: r.planRunId ?? null,
+    pinned: r.pinned ?? false,
     warnings: r.warningsJson,
     createdAt: r.createdAt,
   })));
@@ -253,6 +322,7 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
     revisedMonthTotal: run.revisedMonthTotal,
     unfulfillableQty: run.unfulfillableQty,
     planRunId: run.planRunId ?? null,
+    pinned: run.pinned ?? false,
     weekStats: run.weekStatsJson,
     warnings: run.warningsJson,
     items: items.map(i => ({
@@ -561,15 +631,29 @@ async function buildCorrectiveDetailExcel(
   sumSh.addRow(["Working Days Remaining", wdr]);
   sumSh.addRow(["Original Month Total",   grandOrigComputed]);
   sumSh.addRow(["Revised Month Total",    grandPlanComputed]);
-  // Baseline traceability — show BOTH the frozen run's stored total (run.originalMonthTotal,
-  // 32-bit real) and the item-level sum (grandOrigComputed) so readers can cross-check.
-  // The two values differ by 0–100 pcs due to real→float rounding in the DB. If they
-  // disagree by more, a data issue exists in the corrective run itself.
+  // Baseline traceability — cross-check the corrective baseline (grandOrigComputed,
+  // item-level Math.round sum) against the FROZEN plan run total (frozenPlanGrandMax,
+  // Σ productionPlan from plan_run_results, captured at run-creation time).
+  // These come from independent sources: any divergence beyond ±200 pcs means the
+  // corrective is no longer tracking its frozen baseline.
+  // Legacy runs lack frozenPlanGrandMax (NULL) — fall back to the stored real column
+  // with a note so the reader understands what they're seeing.
   if (run.planRunId != null) {
-    const runTotal = Math.round(run.originalMonthTotal);
-    const mismatch = runTotal !== grandOrigComputed ? "  ⚠ MISMATCH" : "";
-    sumSh.addRow(["Baseline Plan Run",
-      `#${run.planRunId}  (run total ${runTotal.toLocaleString()} pcs; items ${grandOrigComputed.toLocaleString()} pcs${mismatch})`]);
+    if (run.frozenPlanGrandMax != null) {
+      const frozen = run.frozenPlanGrandMax;
+      const diff = grandOrigComputed - frozen;
+      const absDiff = Math.abs(diff);
+      const mismatch = absDiff > 200
+        ? `  ⚠ MISMATCH (Δ${diff > 0 ? "+" : ""}${diff.toLocaleString()} pcs)`
+        : "";
+      sumSh.addRow(["Baseline Plan Run",
+        `#${run.planRunId}  (plan run: ${frozen.toLocaleString()} pcs · corrective baseline: ${grandOrigComputed.toLocaleString()} pcs${mismatch})`]);
+    } else {
+      // Legacy run: frozenPlanGrandMax not recorded; citing stored real — can differ
+      // by 0–100 pcs from grandOrigComputed due to real→float rounding only.
+      sumSh.addRow(["Baseline Plan Run",
+        `#${run.planRunId}  (corrective baseline: ${grandOrigComputed.toLocaleString()} pcs — frozen plan total not recorded for this run)`]);
+    }
   } else {
     sumSh.addRow(["Baseline Plan Run", "Live rebuild (no frozen run)"]);
   }
@@ -784,9 +868,158 @@ async function buildCorrectiveDetailExcel(
   return Buffer.from(buf);
 }
 
+// ─── GET /corrective/validate/export-totals ──────────────────────────────────
+// Builds both the Detail and Standard corrective Excel files in memory, parses
+// their actual header/TOTAL values, and verifies they agree with each other and
+// with the item-level Math.round sum from the database.
+//
+// Catches the regression where a builder reverts to using the stored 32-bit real
+// (run.revisedMonthTotal) instead of sum(Math.round(item.planRev)).
+//
+// Returns 404 when no corrective run exists for the requested month/segment
+// (callers should treat 404 as "not yet run — skip check").
+router.get("/corrective/validate/export-totals", async (req, res): Promise<void> => {
+  const month   = req.query.month   ? String(req.query.month)   : undefined;
+  const segment = req.query.segment ? String(req.query.segment) : "PTMT";
+
+  if (!month) { res.status(400).json({ error: "month is required" }); return; }
+
+  const [run] = await db.select()
+    .from(correctivePlanRunsTable)
+    .where(and(eq(correctivePlanRunsTable.month, month), eq(correctivePlanRunsTable.segment, segment)))
+    .orderBy(desc(correctivePlanRunsTable.id))
+    .limit(1);
+
+  if (!run) {
+    res.status(404).json({ error: `No corrective run found for ${segment}/${month}` });
+    return;
+  }
+
+  const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
+
+  // Reference sums: what the builders must produce (item-level Math.round)
+  const itemOrigSum = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
+  const itemPlanSum = items.reduce((s, i) => s + Math.round(Number(i.planRev      ?? 0)), 0);
+
+  // Stored 32-bit real totals (rounded for comparison)
+  const storedOrig    = Math.round(Number(run.originalMonthTotal ?? 0));
+  const storedRevised = Math.round(Number(run.revisedMonthTotal  ?? 0));
+
+  type CheckResult = { name: string; expected: number; actual: number; pass: boolean; tolerance?: string };
+  const checks: CheckResult[] = [];
+
+  // ── 1. Build Detail Excel (same builder as the actual user-facing Detail export) ──
+  //    buildCorrectiveDetailExcel needs capacity rows for the cap/feasible columns.
+  const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment));
+  const detailBuf = await buildCorrectiveDetailExcel(run, items, capRows, segment);
+  const detailWb  = new ExcelJS.Workbook();
+  await detailWb.xlsx.load(detailBuf as unknown as ArrayBuffer);
+  // buildCorrectiveDetailExcel writes a "Summary" sheet; values are stored as numbers.
+  const sumSheet = detailWb.getWorksheet("Summary");
+  let detailOrigHeader = -1;
+  let detailPlanHeader = -1;
+  if (sumSheet) {
+    sumSheet.eachRow({ includeEmpty: false }, (row) => {
+      const metric = String(row.getCell(1).value ?? "").trim();
+      const rawVal = row.getCell(2).value;
+      const parsed = typeof rawVal === "number" ? rawVal : NaN;
+      if (!isNaN(parsed)) {
+        if (metric === "Original Month Total") detailOrigHeader = parsed;
+        if (metric === "Revised Month Total")  detailPlanHeader = parsed;
+      }
+    });
+  }
+
+  // ── 2. Build Standard Excel and extract the TOTAL row Min/Max ──
+  const stdBuf = await buildCorrectiveStandardExcel(run, items, segment);
+  const stdWb  = new ExcelJS.Workbook();
+  await stdWb.xlsx.load(stdBuf as unknown as ArrayBuffer);
+  const stdSumSheet = stdWb.getWorksheet("Summary");
+  let stdGrandMin = -1;
+  let stdGrandMax = -1;
+  if (stdSumSheet) {
+    stdSumSheet.eachRow({ includeEmpty: false }, (row) => {
+      const cat = String(row.getCell(1).value ?? "").trim();
+      if (cat === "TOTAL") {
+        const v2 = row.getCell(2).value;
+        const v3 = row.getCell(3).value;
+        if (typeof v2 === "number") stdGrandMin = v2;
+        if (typeof v3 === "number") stdGrandMax = v3;
+      }
+    });
+  }
+
+  // ── 3. Checks ──
+  checks.push({
+    name: `ExportTotals · Detail "Original Month Total" (${detailOrigHeader}) == item-round sum (${itemOrigSum})`,
+    expected: itemOrigSum, actual: detailOrigHeader,
+    pass: detailOrigHeader === itemOrigSum,
+    tolerance: "exact — builder must use sum(Math.round(item.originalPlan))",
+  });
+  checks.push({
+    name: `ExportTotals · Detail "Revised Month Total" (${detailPlanHeader}) == item-round sum (${itemPlanSum})`,
+    expected: itemPlanSum, actual: detailPlanHeader,
+    pass: detailPlanHeader === itemPlanSum,
+    tolerance: "exact — builder must use sum(Math.round(item.planRev))",
+  });
+  checks.push({
+    name: `ExportTotals · Standard TOTAL Min (${stdGrandMin}) == item-round sum (${itemOrigSum})`,
+    expected: itemOrigSum, actual: stdGrandMin,
+    pass: stdGrandMin === itemOrigSum,
+    tolerance: "exact — Standard builder must use sum(Math.round(item.originalPlan))",
+  });
+  checks.push({
+    name: `ExportTotals · Standard TOTAL Max (${stdGrandMax}) == item-round sum (${itemPlanSum})`,
+    expected: itemPlanSum, actual: stdGrandMax,
+    pass: stdGrandMax === itemPlanSum,
+    tolerance: "exact — Standard builder must use sum(Math.round(item.planRev))",
+  });
+  checks.push({
+    name: `ExportTotals · Detail orig (${detailOrigHeader}) == Standard TOTAL Min (${stdGrandMin})`,
+    expected: detailOrigHeader, actual: stdGrandMin,
+    pass: detailOrigHeader === stdGrandMin && detailOrigHeader >= 0,
+    tolerance: "exact — both use the same per-item rounding path",
+  });
+  checks.push({
+    name: `ExportTotals · Detail revised (${detailPlanHeader}) == Standard TOTAL Max (${stdGrandMax})`,
+    expected: detailPlanHeader, actual: stdGrandMax,
+    pass: detailPlanHeader === stdGrandMax && detailPlanHeader >= 0,
+    tolerance: "exact — both use the same per-item rounding path",
+  });
+
+  const origDivergence = Math.abs(itemOrigSum - storedOrig);
+  const planDivergence = Math.abs(itemPlanSum - storedRevised);
+  checks.push({
+    name: `ExportTotals · stored orig divergence from item-round sum ≤ 100 pcs (actual ${origDivergence})`,
+    expected: 0, actual: origDivergence,
+    pass: origDivergence <= 100,
+    tolerance: "≤ 100 pcs (real float vs per-item-round gap for large plans)",
+  });
+  checks.push({
+    name: `ExportTotals · stored revised divergence from item-round sum ≤ 100 pcs (actual ${planDivergence})`,
+    expected: 0, actual: planDivergence,
+    pass: planDivergence <= 100,
+    tolerance: "≤ 100 pcs (real float vs per-item-round gap for large plans)",
+  });
+
+  const failCount = checks.filter((c) => !c.pass).length;
+  res.json({
+    month, segment,
+    runId: run.id,
+    itemCount: items.length,
+    detailOrigHeader, detailPlanHeader,
+    stdGrandMin, stdGrandMax,
+    storedOriginalMonthTotal: storedOrig,
+    storedRevisedMonthTotal:  storedRevised,
+    origDivergence, planDivergence,
+    allPass: failCount === 0,
+    passCount: checks.length - failCount, failCount, checks,
+  });
+});
+
 // ─── GET /corrective/validate/schema-parity ──────────────────────────────────
 router.get("/corrective/validate/schema-parity", async (req, res): Promise<void> => {
-  const month = req.query.month ? String(req.query.month) : undefined;
+  const month   = req.query.month   ? String(req.query.month)   : undefined;
   const segment = req.query.segment ? String(req.query.segment) : "PTMT";
 
   if (!month) { res.status(400).json({ error: "month is required" }); return; }
@@ -813,7 +1046,6 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
   const corrStdBuffer = await buildCorrectiveStandardExcel(run, items, segment);
 
   // 2. Build skeleton main-plan Excel from the same corrective items (same data, same function)
-  //    This lets us compare structure (sheet names + headers) without touching live sheets.
   const planItems: CalcPlanItem[] = items.map(i => ({
     itemCode: i.itemCode, colour: i.colour, category: i.category,
     avg3MoSale: i.avg3MoSale,
@@ -843,14 +1075,12 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
   const corrSheets = corrWb.worksheets.map(s => s.name);
   const planSheets = planWb.worksheets.map(s => s.name);
 
-  // Check: sheet count matches
   checks.push({
     name: "SchemaParity · Sheet count matches",
     expected: planSheets.length, actual: corrSheets.length,
     pass: corrSheets.length === planSheets.length,
   });
 
-  // Check: sheet names and order match
   const sheetNamesMatch = corrSheets.length === planSheets.length &&
     corrSheets.every((n, i) => n === planSheets[i]);
   checks.push({
@@ -859,7 +1089,6 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
     pass: sheetNamesMatch,
   });
 
-  // Check: per-category-sheet header rows match cell-by-cell
   const catSheets = corrSheets.filter(n => n !== "Summary" && n !== "Legend");
   for (const sheetName of catSheets) {
     const corrSheet = corrWb.getWorksheet(sheetName);
@@ -878,7 +1107,6 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
     });
   }
 
-  // Check: planRev = producedCapped + remaining per category (engine invariant)
   const catMap = new Map<string, { planRev: number; produced: number; remaining: number }>();
   for (const item of items) {
     const e = catMap.get(item.category) ?? { planRev: 0, produced: 0, remaining: 0 };
@@ -897,9 +1125,6 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
     });
   }
 
-  // Check: standard-format grand planRev total ≈ run.revisedMonthTotal (±1 rounding)
-  // Use raw float sum (planRev is stored to 2 dp by the engine's round()) so that
-  // per-item integer rounding doesn't accumulate into a false discrepancy.
   const stdTotalRaw = items.reduce((s, item) => s + Number(item.planRev), 0);
   const runTotalRaw = Number(run.revisedMonthTotal);
   checks.push({
@@ -909,20 +1134,24 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
     tolerance: "±1 rounding",
   });
 
-  // Compute divergence metrics inline (previously orphaned outside a function body)
-  const detailPlanHeader  = items.reduce((s, i) => s + Math.round(Number(i.planRev ?? 0)), 0);
-  const stdGrandMin       = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
-  const stdGrandMax       = detailPlanHeader;
-  const storedOrig        = Math.round(Number(run.originalMonthTotal ?? 0));
-  const storedRevised     = Math.round(Number(run.revisedMonthTotal ?? 0));
-  const origDivergence    = Math.abs(detailOrigHeader - storedOrig);
-  const planDivergence    = Math.abs(detailPlanHeader - storedRevised);
+  const storedOrig    = Math.round(Number(run.originalMonthTotal ?? 0));
+  const storedRevised = Math.round(Number(run.revisedMonthTotal  ?? 0));
+  const detailPlanHeader = items.reduce((s, i) => s + Math.round(Number(i.planRev ?? 0)), 0);
+  const stdGrandMin   = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
+  const stdGrandMax   = detailPlanHeader;
+  const origDivergence = Math.abs(detailOrigHeader - storedOrig);
+  const planDivergence = Math.abs(detailPlanHeader - storedRevised);
 
   const failCount = checks.filter((c) => !c.pass).length;
   res.json({
     month, segment,
     runId: run.id,
     itemCount: items.length,
+    detailOrigHeader, detailPlanHeader,
+    stdGrandMin, stdGrandMax,
+    storedOriginalMonthTotal: storedOrig,
+    storedRevisedMonthTotal:  storedRevised,
+    origDivergence, planDivergence,
     allPass: failCount === 0,
     passCount: checks.length - failCount, failCount, checks,
   });
@@ -932,7 +1161,7 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
 router.get("/corrective/runs/:id/export/excel", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
-  const format = req.query.format ? String(req.query.format) : "detail";
+  const format  = req.query.format  ? String(req.query.format)  : "detail";
 
   const [run] = await db.select()
     .from(correctivePlanRunsTable)
@@ -950,10 +1179,10 @@ router.get("/corrective/runs/:id/export/excel", async (req, res): Promise<void> 
   let buffer: Buffer;
   let suffix: string;
   if (format === "standard") {
-    buffer = await buildCorrectiveStandardExcel(run, items, segLabel);
+    buffer = await buildCorrectiveStandardExcel(run, items, run.segment ?? "PTMT");
     suffix = "Standard";
   } else {
-    const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segLabel));
+    const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, run.segment ?? "PTMT"));
     buffer = await buildCorrectiveDetailExcel(run, items, capRows, segLabel);
     suffix = "Detail";
   }
@@ -1021,6 +1250,8 @@ router.get("/corrective/export/excel", async (req, res): Promise<void> => {
 
   const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
 
+  const itemOrigSum = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
+
   let buffer: Buffer;
   let suffix: string;
   if (format === "standard") {
@@ -1056,6 +1287,8 @@ router.get("/corrective/export/pdf", async (req, res): Promise<void> => {
   }
 
   const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
+
+  const itemOrigSum = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
 
   try {
     const html = buildCorrectivePdfHtml(run, items as unknown as CorrectiveItemResult[]);
@@ -1101,6 +1334,9 @@ function buildCorrectivePdfHtml(
   const weekStats = (run.weekStatsJson as Array<{ weekLabel: string; released: number; capacity: number; produced: number; lag: number; loadFactor: number }>) ?? [];
   const warnings = (run.warningsJson as Array<{ code: string; severity: string; message: string }>) ?? [];
   const segLabel = run.segment ?? "PTMT";
+  // Item-level sum of original plans — matches the "Original Month Total" header in
+  // the Detail Excel export; used in the Baseline citation below.
+  const grandOrigComputed = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
 
   // Group items by category, only those needing action
   const byCat = new Map<string, CorrectiveItemResult[]>();
@@ -1187,7 +1423,14 @@ function buildCorrectivePdfHtml(
 </head>
 <body>
   <h1>${h(segLabel)} Corrective Re-Plan — ${h(run.month)} — Week ${run.weekClosed} closed</h1>
-  <p style="font-size:8px;color:#6b7280;margin:0 0 10px">Generated: ${new Date().toLocaleString("en-IN")} &nbsp;|&nbsp; Run #${run.id} &nbsp;|&nbsp; Baseline: ${run.planRunId != null ? `Plan Run #${run.planRunId} (${fmtN(run.originalMonthTotal)} pcs)` : "Live rebuild"}</p>
+  <p style="font-size:8px;color:#6b7280;margin:0 0 10px">Generated: ${new Date().toLocaleString("en-IN")} &nbsp;|&nbsp; Run #${run.id} &nbsp;|&nbsp; Baseline: ${run.planRunId != null ? (() => {
+    if (run.frozenPlanGrandMax != null) {
+      const diff = grandOrigComputed - run.frozenPlanGrandMax;
+      const mismatch = Math.abs(diff) > 200 ? ` ⚠ MISMATCH (Δ${diff > 0 ? "+" : ""}${diff.toLocaleString()})` : "";
+      return `Plan Run #${run.planRunId} (${fmtN(run.frozenPlanGrandMax)} pcs · corrective: ${fmtN(grandOrigComputed)} pcs${mismatch})`;
+    }
+    return `Plan Run #${run.planRunId} (${fmtN(run.originalMonthTotal)} pcs)`;
+  })() : "Live rebuild"}</p>
 
   <div class="kpi-row">
     <div class="kpi"><div class="label">Original Plan</div><div class="val">${fmtN(run.originalMonthTotal)} pcs</div></div>
