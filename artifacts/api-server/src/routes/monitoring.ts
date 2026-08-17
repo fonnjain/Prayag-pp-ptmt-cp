@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { exportTimestamp } from "../lib/export-filename";
 import {
   db,
   itemWeightsTable,
@@ -531,7 +532,7 @@ router.get("/monitoring/export/excel", async (req, res): Promise<void> => {
   };
   const buffer = await exportMonitoringExcel(data);
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="PTMT_Monitoring_${month}.xlsx"`);
+  res.setHeader("Content-Disposition", `attachment; filename="PTMT_Monitoring_${month}_${exportTimestamp()}.xlsx"`);
   res.send(buffer);
 });
 
@@ -562,7 +563,7 @@ router.get("/monitoring/export/pdf", async (req, res): Promise<void> => {
   };
   const buffer = await exportMonitoringPdf(data);
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="PTMT_Monitoring_${month}.pdf"`);
+  res.setHeader("Content-Disposition", `attachment; filename="PTMT_Monitoring_${month}_${exportTimestamp()}.pdf"`);
   res.send(buffer);
 });
 

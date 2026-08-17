@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { exportTimestamp } from "../lib/export-filename";
 import { db, aiAnalysesTable, aiAnalysisMessagesTable, aiPlantAnalysesTable, aiPlantAnalysisMessagesTable } from "@workspace/db";
 import { eq, desc, sql } from "drizzle-orm";
 import { buildMonitoringBundle } from "./monitoring";
@@ -273,7 +274,7 @@ router.get("/ai/analyses/:id/export/pdf", async (req, res): Promise<void> => {
     result: (analysis.resultJson as AnalysisResult) ?? null,
   });
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="PTMT_AI_Analysis_${analysis.month}_${id}.pdf"`);
+  res.setHeader("Content-Disposition", `attachment; filename="PTMT_AI_Analysis_${analysis.month}_${id}_${exportTimestamp()}.pdf"`);
   res.send(buffer);
 });
 
@@ -562,7 +563,7 @@ router.get("/ai/plant-trend/export/pdf", async (req, res): Promise<void> => {
 
     const buffer = await exportPlantTrendPdf(exportRows);
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="PTMT_Plant_AI_Trend.pdf"`);
+    res.setHeader("Content-Disposition", `attachment; filename="PTMT_Plant_AI_Trend_${exportTimestamp()}.pdf"`);
     res.send(buffer);
   } catch (err) {
     logger.error({ err }, "ai-analytics-plant: trend pdf export failed");
@@ -587,7 +588,7 @@ router.get("/ai/plant-analyses/:id/export/pdf", async (req, res): Promise<void> 
     result: (analysis.resultJson as PlantAnalysisResult) ?? null,
   });
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="PTMT_Plant_AI_${analysis.month}_${id}.pdf"`);
+  res.setHeader("Content-Disposition", `attachment; filename="PTMT_Plant_AI_${analysis.month}_${id}_${exportTimestamp()}.pdf"`);
   res.send(buffer);
 });
 

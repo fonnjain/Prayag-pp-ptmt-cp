@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { exportTimestamp } from "../lib/export-filename";
 import { db, plantConfigsTable, plantSourceConfigsTable, plantIngestionCacheTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { fetchDailyActuals, fetchMonthlyTargets } from "../lib/plant-ingestion";
@@ -256,7 +257,7 @@ ${section === "control-board" ? `
       const pdf = await page.pdf({ format: "A4", margin: { top: "15mm", bottom: "15mm", left: "15mm", right: "15mm" } });
       await browser.close();
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="PTMT_Plant_${section}_${month}.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="PTMT_Plant_${section}_${month}_${exportTimestamp()}.pdf"`);
       res.send(pdf);
     } catch (err) {
       await browser.close();

@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { exportTimestamp } from "../lib/export-filename";
 import { getTabValues, listTabs, SHEET_IDS, throttledGetTabValues, itemKey, normalizeCode, type DualTotals, fetchAvg3MoSaleTotals } from "../lib/sheets";
 import { logger } from "../lib/logger";
 import type * as ExcelJSType from "exceljs";
@@ -1108,7 +1109,7 @@ router.get("/ops/management-view/excel", async (req, res): Promise<void> => {
     }
 
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `attachment; filename="mgmt-view-${monthParam}.xlsx"`);
+    res.setHeader("Content-Disposition", `attachment; filename="mgmt-view-${monthParam}_${exportTimestamp()}.xlsx"`);
     await wb.xlsx.write(res);
   } catch (err) {
     logger.error({ err }, "management-view/excel failed");

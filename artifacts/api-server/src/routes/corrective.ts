@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { exportTimestamp } from "../lib/export-filename";
 import { db, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable, planRunsTable, planRunResultsTable } from "@workspace/db";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { runCorrectiveReplan, type CorrectiveItemResult } from "../lib/corrective-engine";
@@ -154,6 +155,25 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
 
   try {
     const result = await runCorrectiveReplan({ month, weekClosed: effectiveWeekClosed, asOfDate: effectiveAsOfDate, segment: seg, dailyCapacity, workingDaysPerWeek, planRunId: resolvedPlanRunId, planRunGrandMax: resolvedPlanRunGrandMax, dryRun: dryRun === true });
+
+    // Guard: a live rebuild with zero items is indistinguishable from a
+    // legitimate "empty month" plan — but in practice it means the upstream
+    // data (workbook / uploads) has not been seeded for this month.  Return a
+    // named error so callers get a clear signal instead of a silent plan of zeros.
+    if (result.baselinePlanRunId === null && result.categories.length === 0 && result.items.length === 0) {
+      res.status(422).json({
+        error: "EMPTY_BASELINE",
+        message: `Corrective replan for ${seg}/${month} fell back to a live rebuild but produced zero items and zero categories. ` +
+          `This usually means no finalized plan run exists for this month/segment and no upload data has been seeded. ` +
+          `Finalize a plan run first (POST /plan/runs → POST /plan/runs/:id/finalize) before running the corrective.`,
+        segment: seg,
+        month,
+        baselinePlanRunId: null,
+        baselineSource: result.baselineSource,
+      });
+      return;
+    }
+
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "corrective/replan failed");
@@ -287,8 +307,8 @@ async function buildCorrectiveExcel(run: typeof correctivePlanRunsTable.$inferSe
     ["Daily Capacity (pcs)", run.dailyCapacity.toLocaleString()],
     ["Produced To Date (pcs)", Math.round(run.producedToDate).toLocaleString()],
     ["New Orders This Month (pcs)", Math.round(run.newOrdersQty).toLocaleString()],
-    ["Original Month Total (pcs)", Math.round(run.originalMonthTotal).toLocaleString()],
-    ["Revised Month Total (pcs)", Math.round(run.revisedMonthTotal).toLocaleString()],
+    ["Original Month Total (pcs)", grandMinComputed.toLocaleString()],
+    ["Revised Month Total (pcs)", grandMaxComputed.toLocaleString()],
     ["Unfulfillable This Month (pcs)", Math.round(run.unfulfillableQty).toLocaleString()],
     ["Run Date", new Date(run.createdAt).toLocaleString("en-IN")],
     ...weekStats.map(ws => [
@@ -389,6 +409,14 @@ async function buildCorrectiveStandardExcel(
   const requiredCats = segment === "Plumbing" ? PLUMBING_CATS_ORDER : undefined;
   const byCategory = groupByCategory(items, requiredCats);
 
+  // Pre-compute plan totals from item-level Math.round so that the header
+  // "Revised Month Total" and the TOTAL row in the category table are derived
+  // from the same rounding path. run.revisedMonthTotal is stored as real (32-bit
+  // float) and its sum-then-round differs from sum-of-per-item-round by up to
+  // ~100 pcs for a 1,000-item plan.
+  const grandMaxComputed = items.reduce((s, i) => s + Math.round(i.planRev), 0);
+  const grandMinComputed = items.reduce((s, i) => s + Math.round(i.originalPlan), 0);
+
   // ── Summary sheet — mirrors main plan structure exactly ──
   const sumSh = wb.addWorksheet("Summary");
   sumSh.columns = [
@@ -470,6 +498,11 @@ async function buildCorrectiveDetailExcel(
   const requiredCats = segment === "Plumbing" ? PLUMBING_CATS_ORDER : undefined;
   const byCategory = groupByCategory(items, requiredCats);
 
+  // Pre-compute plan totals from item-level Math.round so that the "Revised
+  // Month Total" header cell and the TOTAL row in the category table agree
+  // exactly (same rounding path as the per-category loop below).
+  const grandPlanComputed = items.reduce((s, i) => s + Math.round(i.planRev), 0);
+
   // Prefer the engine's persisted per-category results (categoriesJson): these
   // are the exact Cap/Day + feasible values the replan computed (p90/mean from
   // Sheet3 for Plumbing). The category-capacity DB table is only a legacy
@@ -507,7 +540,7 @@ async function buildCorrectiveDetailExcel(
   sumSh.addRow(["As-of",                  asOfLabel]);
   sumSh.addRow(["Working Days Remaining", wdr]);
   sumSh.addRow(["Original Month Total",   Math.round(run.originalMonthTotal)]);
-  sumSh.addRow(["Revised Month Total",    Math.round(run.revisedMonthTotal)]);
+  sumSh.addRow(["Revised Month Total",    grandPlanComputed]);
   // Baseline traceability: show which plan run this corrective is built on
   // so any export file can be traced back to its issued baseline.
   sumSh.addRow(["Baseline Plan Run",      run.planRunId != null ? `#${run.planRunId}  (total ${Math.round(run.originalMonthTotal).toLocaleString()} pcs)` : "Live rebuild (no frozen run)"]);
@@ -782,7 +815,7 @@ router.get("/corrective/runs/:id/export/excel", async (req, res): Promise<void> 
   }
 
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="${segLabel}_Corrective_Plan_${run.month}_W${run.weekClosed}_${suffix}.xlsx"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${segLabel}_Corrective_Plan_${run.month}_W${run.weekClosed}_${suffix}_${exportTimestamp()}.xlsx"`);
   res.send(buffer);
 });
 
@@ -817,7 +850,7 @@ router.get("/corrective/runs/:id/export/pdf", async (req, res): Promise<void> =>
       const pdfUint8 = await page.pdf({ format: "A4", landscape: true, printBackground: true, margin: { top: "10mm", bottom: "10mm", left: "8mm", right: "8mm" } });
       const segLabel = run.segment ?? "PTMT";
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${segLabel}_Corrective_Plan_${run.month}_W${run.weekClosed}.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${segLabel}_Corrective_Plan_${run.month}_W${run.weekClosed}_${exportTimestamp()}.pdf"`);
       res.send(Buffer.from(pdfUint8));
     } finally {
       await browser.close();

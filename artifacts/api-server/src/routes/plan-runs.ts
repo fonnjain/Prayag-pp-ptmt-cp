@@ -26,7 +26,22 @@ function makeSummary(run: typeof planRunsTable.$inferSelect, items: typeof planR
 /** POST /api/plan/runs — create a draft run, snapshot all inputs & computed results */
 router.post("/plan/runs", async (req, res): Promise<void> => {
   const { month, note, segment: segmentRaw } = req.body ?? {};
-  const segment: string = typeof segmentRaw === "string" && segmentRaw ? segmentRaw : "PTMT";
+
+  // Normalise segment casing the same way GET /plan does, then validate.
+  // A casing mismatch previously produced a silent zero-item run that was
+  // indistinguishable from a genuine empty result and could poison a corrective
+  // baseline. Reject unrecognised values explicitly rather than silently defaulting.
+  const RECOGNISED_SEGMENTS: Record<string, string> = { ptmt: "PTMT", plumbing: "Plumbing" };
+  const rawStr = typeof segmentRaw === "string" && segmentRaw ? segmentRaw.trim() : "PTMT";
+  const segment = RECOGNISED_SEGMENTS[rawStr.toLowerCase()] ?? null;
+  if (!segment) {
+    res.status(400).json({
+      error: "UNRECOGNISED_SEGMENT",
+      message: `"${rawStr}" is not a recognised segment. Accepted values: PTMT, Plumbing.`,
+    });
+    return;
+  }
+
   if (!month || typeof month !== "string") {
     res.status(400).json({ error: "month is required (YYYY-MM)" });
     return;
@@ -50,6 +65,21 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
     ]);
   } catch (err) {
     handlePlanError(res, err); // 422 naming the missing/broken upload
+    return;
+  }
+
+  // Guard against silent zero-item runs. A zero result is indistinguishable
+  // from a legitimate empty result and could be cited as a corrective baseline,
+  // poisoning everything downstream. Fail loudly so the caller knows immediately.
+  if (planItems.length === 0) {
+    res.status(422).json({
+      error: "EMPTY_PLAN",
+      message: `No plan items were produced for segment="${segment}", month="${month}". ` +
+        `Check that all required uploads are present and non-empty, and that the workbook ` +
+        `for this segment/month is accessible.`,
+      segment,
+      month,
+    });
     return;
   }
 

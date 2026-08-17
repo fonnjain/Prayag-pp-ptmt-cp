@@ -1,0 +1,61 @@
+# Replit Prompt — Casing hardening, August Plumbing reconciliation, combined shortfall
+
+Three follow-ups. Two are small hardening fixes; one is a verification I want completed **before the August Plumbing numbers are trusted or acted on**.
+
+---
+
+## 1. Fix the segment-casing silent zero (hardening)
+
+You found that `POST /plan/runs` with `segment: "PLUMBING"` silently produced **0 items**, while `"Plumbing"` produced all 1,120.
+
+A POST that quietly creates an **empty plan run** on a casing mismatch is the same silent-zero class that has caused the most damage in this project (`Closing Stock`, `Qty.`, `Cap/Day = 0`). It is indistinguishable from a legitimate empty result — and an empty run could then be cited as a corrective baseline, poisoning everything downstream.
+
+**Do:**
+- Normalise segment casing on `POST /plan/runs` the way `GET /plan` already does, **or** reject an unrecognised segment with a named 400 error.
+- Never allow a zero-item plan run to be created silently.
+- **Assertion:** creating a plan run with a valid segment in any casing yields the expected item count (PTMT 3,636 / Plumbing 1,120); an unrecognised segment fails loudly.
+
+---
+
+## 2. Reconcile the August Plumbing plan against source (do this before acting on the numbers)
+
+The August Plumbing plan total has moved across reports:
+
+| Source | Total |
+|---|--:|
+| Earlier capacity-feasible plan | 2,330,816 |
+| Earlier corrective | 2,344,513 |
+| Plan run #44 header (`grandMaxTotal`) | 2,447,633 |
+| Corrective table total | 2,477,406 |
+
+That is a **~6% spread**, and **run #44's own header (2,447,633) does not match its own corrective total (2,477,406)**.
+
+Context for why this matters: the August **PTMT** plan had two silent-zero input bugs — `Closing Stock` and `Qty.` headers unrecognised by the parser — which inflated it by **66,482 pcs** before they were caught. The August **Plumbing** inputs have never been checked the same way.
+
+**Report:**
+- **(a)** Explain the 2,447,633 vs 2,477,406 difference. Is one the revised total including new-order delta, or is it a genuine mismatch between the plan run header and its stored results?
+- **(b)** Confirm every August Plumbing input column is resolved **by header name**, with **no silent-zero defaults**. List each input (avg-3-month, pending, pending-LM, stock, multiplier) with the exact header text matched and the row count read.
+- **(c)** Give per-category plan totals alongside the input columns used, so the figures can be reconciled independently.
+
+**Do not adjust any number to make totals agree** — report what each source actually contains and explain the difference.
+
+---
+
+## 3. Report the combined shortfall, both projections, one line
+
+For **PTMT and Plumbing together**, as of today:
+
+- total remaining
+- total feasible **@capacity**
+- total feasible **@run-rate**
+- implied shortfall under **each**
+
+The plant needs a single combined figure, and both projections must sit side by side until the batching-vs-constraint question is settled. Current evidence: PTMT optimism 1.56×, Plumbing 1.62× — consistent across two independent segments, so this is systematic in the method, not a quirk of either line. Corroborated by the W1 warnings (PTMT 67% shortfall, Plumbing 84%).
+
+**Do not change the feasibility method.** This remains a business question.
+
+---
+
+## Reminder — still not live
+
+The bundle is built (12:49 > 12:16) and the suite is green at 411/411, but **production still serves plan run #18 at 684,492**. A publish is required before any of this reaches users. Confirm the deployed app returns plan run #21 / 617,710 once published.

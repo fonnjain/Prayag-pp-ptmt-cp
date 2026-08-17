@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { exportTimestamp } from "../lib/export-filename";
 import { db, reportsTable, aiPlantAnalysesTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { computePlantBundle } from "./plant";
@@ -76,7 +77,7 @@ router.post("/reports/plant-pdf", async (req, res): Promise<void> => {
       includeAiNarrative ? fetchAiNarrative(month) : Promise.resolve(null),
     ]);
     const pdf = await generatePlantPdf(bundle, aiNarrative);
-    const filename = `PTMT_PlantManager_${month}.pdf`;
+    const filename = `PTMT_PlantManager_${month}_${exportTimestamp()}.pdf`;
     const snapshotDate = bundle.context.snapshotDate;
     const id = await storeReport("plant_pdf", month, snapshotDate, filename, pdf, "application/pdf");
     logger.info({ month, id }, "plant-pdf report generated");
@@ -108,7 +109,7 @@ router.post("/reports/ceo-pdf", async (req, res): Promise<void> => {
       includeAiNarrative ? fetchAiNarrative(month) : Promise.resolve(null),
     ]);
     const pdf = await generateCeoPdf(bundle, aiNarrative);
-    const filename = `PTMT_CEO_${month}.pdf`;
+    const filename = `PTMT_CEO_${month}_${exportTimestamp()}.pdf`;
     const snapshotDate = bundle.context.snapshotDate;
     const id = await storeReport("ceo_pdf", month, snapshotDate, filename, pdf, "application/pdf");
     logger.info({ month, id }, "ceo-pdf report generated");
@@ -132,7 +133,7 @@ router.post("/reports/plant-xlsx", async (req, res): Promise<void> => {
   try {
     const bundle = await computePlantBundle(month);
     const xlsx = await generatePlantXlsx(bundle);
-    const filename = `PTMT_PlantManager_${month}.xlsx`;
+    const filename = `PTMT_PlantManager_${month}_${exportTimestamp()}.xlsx`;
     const snapshotDate = bundle.context.snapshotDate;
     const id = await storeReport(
       "plant_xlsx",
