@@ -15,6 +15,8 @@ import {
   type WorkbookDivision,
 } from "../lib/sheets";
 
+import { invalidatePlumbingMonitoringCache, getPlumbingMonitoringPayloadCached } from "./plan";
+
 const router: IRouter = Router();
 
 // Planning month follows the IST calendar (plant timezone) — a UTC-hosted
@@ -187,6 +189,14 @@ export async function runFullSync(month?: string): Promise<void> {
   await sleep(1100);
   await syncPlumbingSheet3DateCheck(m);
 
+  // The Plumbing workbook may have changed — drop the cached monitoring payload
+  // and pre-warm it in the background so the dashboard's next hit is instant
+  // AND never serves data older than this sync.
+  invalidatePlumbingMonitoringCache();
+  getPlumbingMonitoringPayloadCached(m).catch((err) =>
+    logger.warn({ err, month: m }, "Plumbing monitoring pre-warm after sync failed"),
+  );
+
   logger.info({ month: m }, "Full sync complete");
 }
 
@@ -207,16 +217,15 @@ export function startSyncScheduler(): void {
   // Startup sync — 8 s delay so DB migrations finish first
   setTimeout(() => {
     logger.info("Auto-sync: startup run");
-    runFullSync()
-      .then(() => {
-        // Warm Sheet3 cache so /plan/plumbing-monitoring responds instantly on first browser hit.
-        // Fire-and-forget — a failure here is non-fatal.
-        const warmMonth = currentPlanningMonth();
-        fetchPlumbingSheet3Production(warmMonth).catch((err) =>
-          logger.warn({ err, month: warmMonth }, "Sheet3 warm-up after sync failed"),
-        );
-      })
-      .catch((err) => logger.error({ err }, "Startup sync failed"));
+    // Pre-warm the Plumbing monitoring payload IMMEDIATELY (in parallel with the
+    // full sync, which takes ~30 s of rate-limit sleeps) so the dashboard's
+    // first browser hit is served from cache instead of a ~24 s cold rebuild.
+    // runFullSync re-warms it again at the end (post-invalidation).
+    const warmMonth = currentPlanningMonth();
+    getPlumbingMonitoringPayloadCached(warmMonth).catch((err) =>
+      logger.warn({ err, month: warmMonth }, "Plumbing monitoring startup pre-warm failed"),
+    );
+    runFullSync().catch((err) => logger.error({ err }, "Startup sync failed"));
   }, 8000);
 
   // Hourly tick during IST work hours (08:00–20:00)

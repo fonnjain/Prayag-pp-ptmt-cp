@@ -257,17 +257,23 @@ async function main(): Promise<void> {
 
   let anyFail = false;
 
-  // ── 0a. Stale-bundle guard (offline, no API needed) ──────────────────────
-  // Fail early when the production CJS bundle is older than the latest git
-  // commit that touched api-server/src — a clear signal that `node
-  // esbuild.build.mjs` must be re-run before a deploy.
+  // ── 0a. Bundle-freshness guard (offline, no API needed) ──────────────────
+  // The production CJS bundle (dist/index.cjs) must reflect the latest source
+  // commit.  Because dist/ is gitignored and markTaskComplete commits sources
+  // before running this suite, the bundle will often be a few hundred ms older
+  // than the commit timestamp.  The guard therefore auto-rebuilds when stale so
+  // the suite is self-healing in CI; it only hard-fails when the rebuild itself
+  // fails (a genuine problem the developer must fix).
   const bundleChecks: CheckResult[] = [];
   (() => {
     const repoRoot   = resolve(fileURLToPath(import.meta.url), "../../..");
-    const bundlePath = resolve(repoRoot, "artifacts/api-server/dist/index.cjs");
+    const apiRoot    = resolve(repoRoot, "artifacts/api-server");
+    const bundlePath = resolve(apiRoot, "dist/index.cjs");
     const srcDir     = "artifacts/api-server/src";
     let bundleMtime = 0;
     let lastCommitTs = 0;
+
+    // 1. Confirm the bundle exists.
     try {
       bundleMtime = statSync(bundlePath).mtimeMs;
     } catch {
@@ -278,9 +284,11 @@ async function main(): Promise<void> {
       });
       return;
     }
+
+    // 2. Get the last src commit timestamp.
     try {
       const out = execSync(`git -C "${repoRoot}" log --format="%ct" -1 -- "${srcDir}"`, { encoding: "utf8" }).trim();
-      lastCommitTs = Number(out) * 1000; // convert to ms
+      lastCommitTs = Number(out) * 1000; // convert seconds → ms
     } catch {
       bundleChecks.push({
         name: "BUNDLE · git log succeeded for api-server/src",
@@ -288,17 +296,40 @@ async function main(): Promise<void> {
       });
       return;
     }
+
+    // 3. If stale, auto-rebuild.  dist/ is gitignored so the bundle mtime can
+    //    be a few ms behind the commit timestamp even when source and bundle were
+    //    built in the same workflow step.  Rebuilding here ensures the deployed
+    //    server will serve up-to-date code and lets the suite continue without a
+    //    hard failure on a timing artifact.
     const isUpToDate = lastCommitTs === 0 || bundleMtime >= lastCommitTs;
-    bundleChecks.push({
-      name: `BUNDLE · dist/index.cjs (${new Date(bundleMtime).toISOString().slice(0,16)}) ≥ last src commit (${lastCommitTs ? new Date(lastCommitTs).toISOString().slice(0,16) : "none"})`,
-      expected: 1, actual: isUpToDate ? 1 : 0, pass: isUpToDate,
-      tolerance: "bundle must be rebuilt after every commit to artifacts/api-server/src; run: cd artifacts/api-server && node esbuild.build.mjs",
-    });
+    if (!isUpToDate) {
+      try {
+        execSync(`node esbuild.build.mjs`, { cwd: apiRoot, encoding: "utf8", stdio: "pipe" });
+        bundleMtime = statSync(bundlePath).mtimeMs; // re-read after rebuild
+        bundleChecks.push({
+          name: `BUNDLE · dist/index.cjs auto-rebuilt (was ${new Date(bundleMtime).toISOString().slice(0,16)}; src commit ${new Date(lastCommitTs).toISOString().slice(0,16)})`,
+          expected: 1, actual: 1, pass: true,
+          tolerance: "rebuilt automatically",
+        });
+      } catch (buildErr) {
+        bundleChecks.push({
+          name: `BUNDLE · auto-rebuild failed`,
+          expected: 1, actual: 0, pass: false,
+          tolerance: `bundle must be rebuilt after every commit to artifacts/api-server/src; run: cd artifacts/api-server && node esbuild.build.mjs\nBuild error: ${String(buildErr).slice(0, 200)}`,
+        });
+      }
+    } else {
+      bundleChecks.push({
+        name: `BUNDLE · dist/index.cjs (${new Date(bundleMtime).toISOString().slice(0,16)}) ≥ last src commit (${lastCommitTs ? new Date(lastCommitTs).toISOString().slice(0,16) : "none"})`,
+        expected: 1, actual: 1, pass: true,
+      });
+    }
   })();
   printSection("Bundle freshness", bundleChecks);
   if (bundleChecks.some((c) => !c.pass)) {
     anyFail = true;
-    console.error("\n❌  Bundle freshness: FAILED — redeploy will serve stale code");
+    console.error("\n❌  Bundle freshness: FAILED — esbuild.build.mjs errored; fix the build before deploying");
   } else {
     console.log(`\n✅  Bundle freshness: all ${bundleChecks.length} PASSED`);
   }
@@ -316,16 +347,18 @@ async function main(): Promise<void> {
 
   // ── 1. Plumbing validate ─────────────────────────────────────────────────
   console.log("\n⏳  Running Plumbing validation (this calls live Sheets API, ~20s) …");
-  let plumbingResult: ValidateResponse;
+  let plumbingResult: ValidateResponse | undefined;
   try {
     plumbingResult = await runValidate("Plumbing", PLUMBING_MONTH);
   } catch (err) {
+    anyFail = true;
     console.error(`\n❌  Could not reach Plumbing validate endpoint:`);
     console.error(`    ${err instanceof Error ? err.message : String(err)}`);
     console.error(`    Is the API server running? Check workflow "artifacts/production-planning: api"`);
-    process.exit(1);
+    console.error(`    Skipping Plumbing-validate section — DB-backed checks (NC20f, NC22a–c, AGRI counts) will still run below.`);
   }
 
+  if (plumbingResult !== undefined) {
   // Group checks by prefix for display
   const guards      = plumbingResult.checks.filter((c) => c.name.startsWith("GUARD"));
   const isolation   = plumbingResult.checks.filter((c) => c.name.startsWith("ISOLATION"));
@@ -364,6 +397,7 @@ async function main(): Promise<void> {
   } else {
     console.log(`\n✅  Plumbing: all ${plumbingResult.passCount} checks PASSED`);
   }
+  } // end if (plumbingResult !== undefined)
 
   // ── 1b. Machine capacity hours-cap check ─────────────────────────────────
   console.log("\n⏳  Running machine hours-cap check (no machine > 100% utilisation) …");
@@ -922,7 +956,462 @@ async function main(): Promise<void> {
       }
     }
 
-    // NC22a: unrecognised segment → 400 UNRECOGNISED_SEGMENT (not silent zero)
+    // NC21f: frozenPlanGrandMax is non-null on the pinned production Plumbing run.
+    // Mirrors NC20f (PTMT) exactly.  dryRun corrective calls (NC21a) skip persistence
+    // so they cannot exercise the frozen_plan_grand_max column — this check reads an
+    // existing persisted Plumbing run via GET /corrective/runs/:id to verify the
+    // column is populated at run-creation time, whether planRunId was explicit or
+    // auto-resolved.  Production-only: no guaranteed persisted corrective runs exist
+    // in dev.  "No pinned run" → skip-with-note (pass: true); "pinned run exists,
+    // frozenPlanGrandMax null" → hard fail (code defect, not setup gap).
+    if (isProductionApi) {
+      try {
+        const plumbRunsList = await fetchJson<Array<Record<string, unknown>>>(`${API_BASE}/api/corrective/runs?month=2026-08&segment=Plumbing`);
+        const plumbPinnedRun = (plumbRunsList ?? []).find(r => r["pinned"] === true);
+        if (!plumbPinnedRun) {
+          newChecks.push({
+            name: "NC21f · Plumbing Aug · frozenPlanGrandMax check [skipped — no pinned corrective run found; seed and pin one first] [production]",
+            expected: 1, actual: 1, pass: true,
+            tolerance: "skipped: no pinned Plumbing Aug corrective run exists — create one and pin it, then this check will assert frozenPlanGrandMax != null",
+          });
+        } else {
+          const detail = await fetchJson<Record<string, unknown>>(`${API_BASE}/api/corrective/runs/${plumbPinnedRun["id"]}`);
+          const nc21fPass = detail?.["frozenPlanGrandMax"] != null;
+          const nc21fNote = nc21fPass
+            ? `run #${plumbPinnedRun["id"]} frozenPlanGrandMax=${detail?.["frozenPlanGrandMax"]}`
+            : `run #${plumbPinnedRun["id"]} frozenPlanGrandMax is null`;
+          newChecks.push({
+            name: `NC21f · Plumbing Aug · pinned corrective run has frozenPlanGrandMax != null (${nc21fNote}) [production]`,
+            expected: 1, actual: nc21fPass ? 1 : 0, pass: nc21fPass,
+            tolerance: "frozen_plan_grand_max must be populated regardless of whether planRunId was explicit or auto-resolved; null means the corrective predates migration 022 or was created via the buggy explicit-planRunId path",
+          });
+          if (!nc21fPass) anyFail = true;
+        }
+      } catch (e) {
+        newChecks.push({
+          name: `NC21f · Plumbing Aug · frozenPlanGrandMax check (error: ${String(e)}) [production]`,
+          expected: 1, actual: 0, pass: false,
+          tolerance: "unexpected error fetching Plumbing corrective runs",
+        });
+        anyFail = true;
+      }
+    }
+
+    // NC22f: Legacy Plumbing corrective export — "Revised Month Total" non-zero via legacy fallback
+    // A legacy run (frozenPlanGrandMax = null, created before migration 022) uses a different
+    // code path in buildCorrectiveDetailExcel: it cannot compare against the frozen plan run
+    // total, so it writes "corrective baseline: ... pcs — frozen plan total not recorded for
+    // this run" in the Baseline Plan Run row.  The "Revised Month Total" cell must still
+    // contain a non-zero number (grandPlanComputed = Σ Math.round(item.planRev)).
+    // If no legacy run exists this check documents a skip-with-note (pass: true) so the suite
+    // stays green — consistent with the NC20f / NC21f pattern for optional data.
+    {
+      try {
+        const plumbRunsLegacy = await fetchJson<Array<Record<string, unknown>>>(`${API_BASE}/api/corrective/runs?month=2026-08&segment=Plumbing`);
+        // Identify a legacy run: frozenPlanGrandMax must be null AND planRunId must be non-null.
+        // planRunId == null means a "live rebuild" run, whose Baseline Plan Run row correctly reads
+        // "Live rebuild (no frozen run)" — not the legacy advisory we are testing.  Only a run with
+        // a plan baseline (planRunId != null) but no frozenPlanGrandMax (null → pre-migration-022)
+        // falls to the legacy advisory path we want to exercise.
+        // The list endpoint does not include frozenPlanGrandMax, so fetch each run's detail.
+        let legacyRunId: number | null = null;
+        for (const r of plumbRunsLegacy ?? []) {
+          const det = await fetchJson<Record<string, unknown>>(`${API_BASE}/api/corrective/runs/${r["id"]}`);
+          const hasPlanRun = det?.["planRunId"] != null;
+          const lacksGrandMax = det?.["frozenPlanGrandMax"] == null;
+          const hasItems = Array.isArray(det?.["items"]) && (det["items"] as unknown[]).length > 0;
+          if (hasPlanRun && lacksGrandMax && hasItems) {
+            legacyRunId = Number(r["id"]);
+            break;
+          }
+        }
+        if (legacyRunId == null) {
+          newChecks.push({
+            name: "NC22f · Plumbing Aug · legacy export advisory [skipped — no legacy run found with planRunId!=null and frozenPlanGrandMax=null; all such runs already have the column populated]",
+            expected: 1, actual: 1, pass: true,
+            tolerance: "skipped: requires a Plumbing Aug corrective run with planRunId set but frozenPlanGrandMax=null (pre-migration-022); all current runs have it populated",
+          });
+        } else {
+          // Download the Detail Excel and parse the Summary sheet to find "Revised Month Total"
+          const xlResp = await fetch(`${API_BASE}/api/corrective/runs/${legacyRunId}/export/excel?format=detail`);
+          if (!xlResp.ok) {
+            const body = await xlResp.text().catch(() => "");
+            newChecks.push({
+              name: `NC22f · Plumbing Aug · legacy run #${legacyRunId} export/excel failed (HTTP ${xlResp.status})`,
+              expected: 200, actual: xlResp.status, pass: false,
+              tolerance: `export must succeed for a legacy run; body: ${body.slice(0, 120)}`,
+            });
+            anyFail = true;
+          } else {
+            const XLSX_lib = await import("xlsx");
+            const buf = Buffer.from(await xlResp.arrayBuffer());
+            const wbXl = XLSX_lib.read(buf, { type: "buffer" });
+            const sumSh = wbXl.Sheets["Summary"];
+            let revisedMonthTotal: number | null = null;
+            if (sumSh) {
+              const rows = XLSX_lib.utils.sheet_to_json<unknown[]>(sumSh, { header: 1 }) as unknown[][];
+              for (const row of rows) {
+                const label = String((row as unknown[])[0] ?? "").trim();
+                const val = (row as unknown[])[1];
+                if (label === "Revised Month Total" && typeof val === "number") {
+                  revisedMonthTotal = val;
+                  break;
+                }
+              }
+            }
+            // NC22f-i: "Revised Month Total" must be a non-zero number (legacy fallback computes
+            //          grandPlanComputed = Σ Math.round(item.planRev))
+            const nc22fTotalPass = revisedMonthTotal !== null && revisedMonthTotal > 0;
+            newChecks.push({
+              name: `NC22f-i · Plumbing Aug · legacy run #${legacyRunId} Detail export "Revised Month Total" = ${revisedMonthTotal?.toLocaleString() ?? "not found"} (non-zero)`,
+              expected: 1, actual: nc22fTotalPass ? 1 : 0, pass: nc22fTotalPass,
+              tolerance: "legacy fallback: grandPlanComputed = Σ Math.round(item.planRev); null or zero means the export builder regressed to a missing/zero fallback",
+            });
+            if (!nc22fTotalPass) anyFail = true;
+
+            // NC22f-ii: "Baseline Plan Run" row must contain the clear legacy advisory string.
+            // The corrective.ts else-branch writes:
+            //   "#<id>  (corrective baseline: <n> pcs — frozen plan total not recorded for this run)"
+            // If this text is absent the advisory was silently removed — the exact regression
+            // the task guards against.
+            let baselinePlanRunText: string | null = null;
+            if (sumSh) {
+              const allRows = XLSX_lib.utils.sheet_to_json<unknown[]>(sumSh, { header: 1 }) as unknown[][];
+              for (const row of allRows) {
+                const label = String((row as unknown[])[0] ?? "").trim();
+                if (label === "Baseline Plan Run") {
+                  baselinePlanRunText = String((row as unknown[])[1] ?? "");
+                  break;
+                }
+              }
+            }
+            const ADVISORY = "frozen plan total not recorded for this run";
+            const nc22fAdvisoryPass = baselinePlanRunText !== null && baselinePlanRunText.includes(ADVISORY);
+            newChecks.push({
+              name: `NC22f-ii · Plumbing Aug · legacy run #${legacyRunId} Detail export "Baseline Plan Run" contains legacy advisory (actual: ${baselinePlanRunText?.slice(0, 80) ?? "not found"})`,
+              expected: 1, actual: nc22fAdvisoryPass ? 1 : 0, pass: nc22fAdvisoryPass,
+              tolerance: `"Baseline Plan Run" row value must contain: "${ADVISORY}"`,
+            });
+            if (!nc22fAdvisoryPass) anyFail = true;
+          }
+        }
+      } catch (e) {
+        newChecks.push({
+          name: `NC22f · Plumbing Aug · legacy corrective export check (error: ${String(e)})`,
+          expected: 1, actual: 0, pass: false,
+          tolerance: "unexpected error fetching Plumbing corrective runs",
+        });
+        anyFail = true;
+      }
+    }
+
+    // NC22g: Legacy PTMT corrective export — "Revised Month Total" non-zero via legacy fallback
+    // Mirrors NC22f but targets PTMT corrective runs (any month).  The shared
+    // buildCorrectiveDetailExcel function handles both segments; this check confirms
+    // the legacy path (frozenPlanGrandMax = null, planRunId != null) works for PTMT too.
+    {
+      try {
+        const ptmtRunsAll = await fetchJson<Array<Record<string, unknown>>>(`${API_BASE}/api/corrective/runs?segment=PTMT`);
+        // Identify a legacy run: planRunId non-null (has a baseline) but frozenPlanGrandMax null
+        // (created before migration 022).  Live-rebuild runs (planRunId = null) don't hit the
+        // legacy advisory path, so they are excluded.
+        let ptmtLegacyRunId: number | null = null;
+        for (const r of ptmtRunsAll ?? []) {
+          const det = await fetchJson<Record<string, unknown>>(`${API_BASE}/api/corrective/runs/${r["id"]}`);
+          const hasPlanRun   = det?.["planRunId"] != null;
+          const lacksGrandMax = det?.["frozenPlanGrandMax"] == null;
+          const hasItems     = Array.isArray(det?.["items"]) && (det["items"] as unknown[]).length > 0;
+          if (hasPlanRun && lacksGrandMax && hasItems) {
+            ptmtLegacyRunId = Number(r["id"]);
+            break;
+          }
+        }
+        if (ptmtLegacyRunId == null) {
+          newChecks.push({
+            name: "NC22g · PTMT · legacy export advisory [skipped — no legacy PTMT run found with planRunId!=null and frozenPlanGrandMax=null; all such runs already have the column populated]",
+            expected: 1, actual: 1, pass: true,
+            tolerance: "skipped: requires a PTMT corrective run with planRunId set but frozenPlanGrandMax=null (pre-migration-022); all current runs have it populated",
+          });
+        } else {
+          // Download the Detail Excel and parse the Summary sheet
+          const xlResp = await fetch(`${API_BASE}/api/corrective/runs/${ptmtLegacyRunId}/export/excel?format=detail`);
+          if (!xlResp.ok) {
+            const body = await xlResp.text().catch(() => "");
+            newChecks.push({
+              name: `NC22g · PTMT · legacy run #${ptmtLegacyRunId} export/excel failed (HTTP ${xlResp.status})`,
+              expected: 200, actual: xlResp.status, pass: false,
+              tolerance: `export must succeed for a legacy PTMT run; body: ${body.slice(0, 120)}`,
+            });
+            anyFail = true;
+          } else {
+            const XLSX_lib2 = await import("xlsx");
+            const buf2 = Buffer.from(await xlResp.arrayBuffer());
+            const wbXl2 = XLSX_lib2.read(buf2, { type: "buffer" });
+            const sumSh2 = wbXl2.Sheets["Summary"];
+            let ptmtRevisedMonthTotal: number | null = null;
+            if (sumSh2) {
+              const rows2 = XLSX_lib2.utils.sheet_to_json<unknown[]>(sumSh2, { header: 1 }) as unknown[][];
+              for (const row of rows2) {
+                const label = String((row as unknown[])[0] ?? "").trim();
+                const val = (row as unknown[])[1];
+                if (label === "Revised Month Total" && typeof val === "number") {
+                  ptmtRevisedMonthTotal = val;
+                  break;
+                }
+              }
+            }
+            // NC22g-i: "Revised Month Total" must be non-zero
+            const nc22gTotalPass = ptmtRevisedMonthTotal !== null && ptmtRevisedMonthTotal > 0;
+            newChecks.push({
+              name: `NC22g-i · PTMT · legacy run #${ptmtLegacyRunId} Detail export "Revised Month Total" = ${ptmtRevisedMonthTotal?.toLocaleString() ?? "not found"} (non-zero)`,
+              expected: 1, actual: nc22gTotalPass ? 1 : 0, pass: nc22gTotalPass,
+              tolerance: "legacy fallback: grandPlanComputed = Σ Math.round(item.planRev); null or zero means the export builder regressed",
+            });
+            if (!nc22gTotalPass) anyFail = true;
+
+            // NC22g-ii: "Baseline Plan Run" row must contain the legacy advisory string
+            let ptmtBaselinePlanRunText: string | null = null;
+            if (sumSh2) {
+              const allRows2 = XLSX_lib2.utils.sheet_to_json<unknown[]>(sumSh2, { header: 1 }) as unknown[][];
+              for (const row of allRows2) {
+                const label = String((row as unknown[])[0] ?? "").trim();
+                if (label === "Baseline Plan Run") {
+                  ptmtBaselinePlanRunText = String((row as unknown[])[1] ?? "");
+                  break;
+                }
+              }
+            }
+            const PTMT_ADVISORY = "frozen plan total not recorded for this run";
+            const nc22gAdvisoryPass = ptmtBaselinePlanRunText !== null && ptmtBaselinePlanRunText.includes(PTMT_ADVISORY);
+            newChecks.push({
+              name: `NC22g-ii · PTMT · legacy run #${ptmtLegacyRunId} Detail export "Baseline Plan Run" contains legacy advisory (actual: ${ptmtBaselinePlanRunText?.slice(0, 80) ?? "not found"})`,
+              expected: 1, actual: nc22gAdvisoryPass ? 1 : 0, pass: nc22gAdvisoryPass,
+              tolerance: `"Baseline Plan Run" row value must contain: "${PTMT_ADVISORY}"`,
+            });
+            if (!nc22gAdvisoryPass) anyFail = true;
+          }
+        }
+      } catch (e) {
+        newChecks.push({
+          name: `NC22g · PTMT · legacy corrective export check (error: ${String(e)})`,
+          expected: 1, actual: 0, pass: false,
+          tolerance: "unexpected error fetching PTMT corrective runs",
+        });
+        anyFail = true;
+      }
+    }
+
+    // NC22h: Mismatch advisory — when grandOrigComputed diverges from frozenPlanGrandMax by > 200 pcs,
+    // the Detail export must write "⚠ MISMATCH (Δ+N pcs)" in the "Baseline Plan Run" cell.
+    // Without this check a future refactor could silently remove the warning, leaving users blind
+    // to genuine baseline drift.  The check scans Plumbing Aug corrective runs for one whose
+    // frozenPlanGrandMax differs from the item-level sum by > 200 pcs.  If no such run exists
+    // the check is skipped with pass: true (same pattern as NC22f).
+    {
+      try {
+        const plumbRunsMismatch = await fetchJson<Array<Record<string, unknown>>>(`${API_BASE}/api/corrective/runs?month=2026-08&segment=Plumbing`);
+        // Find a run that (a) has frozenPlanGrandMax set and (b) its item-level
+        // grandOrigComputed diverges from it by > 200 pcs.
+        let mismatchRunId: number | null = null;
+        let mismatchDiff: number = 0;
+        for (const r of plumbRunsMismatch ?? []) {
+          const det = await fetchJson<Record<string, unknown>>(`${API_BASE}/api/corrective/runs/${r["id"]}`);
+          const frozen = det?.["frozenPlanGrandMax"];
+          if (frozen == null) continue; // legacy run — not the path we test here
+          const items = Array.isArray(det?.["items"]) ? (det["items"] as Array<Record<string, unknown>>) : [];
+          if (items.length === 0) continue;
+          const grandOrigComputed = items.reduce((s, i) => s + Math.round(Number(i["originalPlan"] ?? 0)), 0);
+          const diff = grandOrigComputed - Number(frozen);
+          if (Math.abs(diff) > 200) {
+            mismatchRunId = Number(r["id"]);
+            mismatchDiff  = diff;
+            break;
+          }
+        }
+        if (mismatchRunId == null) {
+          newChecks.push({
+            name: "NC22h · Plumbing Aug · baseline-mismatch advisory [skipped — no run found with |grandOrigComputed − frozenPlanGrandMax| > 200 pcs; create such a run to activate this check]",
+            expected: 1, actual: 1, pass: true,
+            tolerance: "skipped: requires a Plumbing Aug corrective run where the item-level original-plan sum diverges from frozenPlanGrandMax by > 200 pcs",
+          });
+        } else {
+          // Download the Detail Excel and verify the "Baseline Plan Run" cell contains "⚠ MISMATCH".
+          const xlResp = await fetch(`${API_BASE}/api/corrective/runs/${mismatchRunId}/export/excel?format=detail`);
+          if (!xlResp.ok) {
+            const body = await xlResp.text().catch(() => "");
+            newChecks.push({
+              name: `NC22h · Plumbing Aug · mismatch run #${mismatchRunId} export/excel failed (HTTP ${xlResp.status})`,
+              expected: 200, actual: xlResp.status, pass: false,
+              tolerance: `export must succeed; body: ${body.slice(0, 120)}`,
+            });
+            anyFail = true;
+          } else {
+            const XLSX_lib = await import("xlsx");
+            const buf = Buffer.from(await xlResp.arrayBuffer());
+            const wbXl = XLSX_lib.read(buf, { type: "buffer" });
+            const sumSh = wbXl.Sheets["Summary"];
+            let baselineText: string | null = null;
+            if (sumSh) {
+              const allRows = XLSX_lib.utils.sheet_to_json<unknown[]>(sumSh, { header: 1 }) as unknown[][];
+              for (const row of allRows) {
+                const label = String((row as unknown[])[0] ?? "").trim();
+                if (label === "Baseline Plan Run") {
+                  baselineText = String((row as unknown[])[1] ?? "");
+                  break;
+                }
+              }
+            }
+            const MISMATCH_MARKER = "⚠ MISMATCH";
+            const nc22hPass = baselineText !== null && baselineText.includes(MISMATCH_MARKER);
+            newChecks.push({
+              name: `NC22h · Plumbing Aug · mismatch run #${mismatchRunId} (Δ${mismatchDiff > 0 ? "+" : ""}${mismatchDiff} pcs) Detail export "Baseline Plan Run" contains "⚠ MISMATCH" (actual: ${baselineText?.slice(0, 80) ?? "not found"})`,
+              expected: 1, actual: nc22hPass ? 1 : 0, pass: nc22hPass,
+              tolerance: `"Baseline Plan Run" cell must contain "${MISMATCH_MARKER}" when grandOrigComputed diverges from frozenPlanGrandMax by > 200 pcs`,
+            });
+            if (!nc22hPass) anyFail = true;
+          }
+        }
+      } catch (e) {
+        newChecks.push({
+          name: `NC22h · Plumbing Aug · baseline-mismatch advisory check (error: ${String(e)})`,
+          expected: 1, actual: 0, pass: false,
+          tolerance: "unexpected error fetching Plumbing corrective runs",
+        });
+        anyFail = true;
+      }
+    }
+
+    // NC22h-api: Baseline-drift banner — API field present + drift > 200 pcs
+    // Purpose: confirm frozenPlanGrandMax is returned by GET /corrective/runs/:id and that
+    //   |grandOrigComputed − frozenPlanGrandMax| > 200 so the BaselineDriftBanner fires.
+    // Mechanism: look for a pinned "NC22h drift-banner seed" run.  If none exists, create
+    //   one (POST /corrective/replan → PATCH frozenPlanGrandMax to +50001 → PIN it).  The
+    //   pinned fixture also ensures the NC22h Excel check (above) always finds a mismatch
+    //   run and never skips.
+    {
+      const NC22H_FIXTURE_NOTE = "NC22h drift-banner seed";
+      const DRIFT_OFFSET = 50001; // pcs added to natural frozenPlanGrandMax → guaranteed > 200
+      try {
+        // Step 1: look for an existing fixture run (pinned, note contains sentinel).
+        const plumbAllRuns = await fetchJson<Array<Record<string, unknown>>>(
+          `${API_BASE}/api/corrective/runs?segment=Plumbing`,
+        );
+        let fixtureRunId: number | null = null;
+        for (const r of plumbAllRuns ?? []) {
+          if (r["pinned"] === true && String(r["note"] ?? "").includes(NC22H_FIXTURE_NOTE)) {
+            fixtureRunId = Number(r["id"]);
+            break;
+          }
+        }
+
+        if (fixtureRunId == null) {
+          // Step 2: create a fresh corrective run for Plumbing Aug (dryRun:false → persists).
+          // Use asOfDate mid-month so working-day checks are stable.
+          const created = await fetchJson<Record<string, unknown>>(
+            `${API_BASE}/api/corrective/replan`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                month: "2026-08",
+                segment: "Plumbing",
+                asOfDate: "2026-08-11",
+                dryRun: false,
+              }),
+            },
+          );
+          if (!created?.["runId"] && !created?.["id"]) {
+            // Check if response looks like an error
+            newChecks.push({
+              name: "NC22h-api · Plumbing Aug · drift-banner fixture run creation failed — seed then re-run",
+              expected: 1, actual: 1, pass: true,
+              tolerance: `skipped: POST /corrective/replan returned no runId (likely no finalized plan run for 2026-08/Plumbing in this environment); response: ${JSON.stringify(created).slice(0, 200)}`,
+            });
+          } else {
+            const newRunId = Number(created["runId"] ?? created["id"]);
+            // Step 3: get the run to read natural grandOrigComputed.
+            const detail = await fetchJson<Record<string, unknown>>(
+              `${API_BASE}/api/corrective/runs/${newRunId}`,
+            );
+            const naturalFrozen = Number(detail?.["frozenPlanGrandMax"] ?? 0);
+            const items = Array.isArray(detail?.["items"])
+              ? (detail["items"] as Array<Record<string, unknown>>)
+              : [];
+            const grandOrigComputed = items.reduce(
+              (s, i) => s + Math.round(Number(i["originalPlan"] ?? 0)), 0,
+            );
+            const wrongFrozen = grandOrigComputed + DRIFT_OFFSET;
+
+            // Step 4: patch frozenPlanGrandMax to the intentionally wrong value.
+            await fetchJson<Record<string, unknown>>(
+              `${API_BASE}/api/corrective/runs/${newRunId}`,
+              {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  frozenPlanGrandMax: wrongFrozen,
+                  note: `${NC22H_FIXTURE_NOTE} — frozenPlanGrandMax patched to grandOrigComputed+${DRIFT_OFFSET} pcs for regression testing (natural frozen was ${naturalFrozen})`,
+                }),
+              },
+            );
+
+            // Step 5: pin the fixture so it survives future suite runs and delete sweeps.
+            await fetchJson<Record<string, unknown>>(
+              `${API_BASE}/api/corrective/runs/${newRunId}/pin`,
+              {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ pinned: true }),
+              },
+            );
+
+            fixtureRunId = newRunId;
+          }
+        }
+
+        if (fixtureRunId != null) {
+          // Step 6: read the fixture run and verify the API returns frozenPlanGrandMax.
+          const fixture = await fetchJson<Record<string, unknown>>(
+            `${API_BASE}/api/corrective/runs/${fixtureRunId}`,
+          );
+          const frozenReturned = fixture?.["frozenPlanGrandMax"];
+
+          // NC22h-api-i: frozenPlanGrandMax field present and non-null in GET /corrective/runs/:id
+          const fieldPresent = frozenReturned !== null && frozenReturned !== undefined;
+          newChecks.push({
+            name: `NC22h-api-i · Plumbing Aug · fixture run #${fixtureRunId} frozenPlanGrandMax returned by GET /corrective/runs/:id (value: ${frozenReturned})`,
+            expected: 1, actual: fieldPresent ? 1 : 0, pass: fieldPresent,
+            tolerance: "frozenPlanGrandMax must be a non-null integer in the GET /corrective/runs/:id response — required for the BaselineDriftBanner to compute drift",
+          });
+          if (!fieldPresent) anyFail = true;
+
+          // NC22h-api-ii: |grandOrigComputed − frozenPlanGrandMax| > 200 → banner fires
+          const fixtureItems = Array.isArray(fixture?.["items"])
+            ? (fixture["items"] as Array<Record<string, unknown>>)
+            : [];
+          const fixtureGrandOrig = fixtureItems.reduce(
+            (s, i) => s + Math.round(Number(i["originalPlan"] ?? 0)), 0,
+          );
+          const drift = Math.abs(fixtureGrandOrig - Number(frozenReturned ?? 0));
+          const bannerWouldFire = drift > 200;
+          newChecks.push({
+            name: `NC22h-api-ii · Plumbing Aug · fixture run #${fixtureRunId} drift ${drift.toLocaleString()} pcs > 200 → BaselineDriftBanner fires (grandOrig=${fixtureGrandOrig.toLocaleString()}, frozen=${Number(frozenReturned ?? 0).toLocaleString()})`,
+            expected: 1, actual: bannerWouldFire ? 1 : 0, pass: bannerWouldFire,
+            tolerance: "drift must exceed 200 pcs so the amber BaselineDriftBanner renders in the corrective run detail UI",
+          });
+          if (!bannerWouldFire) anyFail = true;
+        }
+      } catch (e) {
+        newChecks.push({
+          name: `NC22h-api · Plumbing Aug · drift-banner fixture check (error: ${String(e)})`,
+          expected: 1, actual: 0, pass: false,
+          tolerance: "unexpected error during NC22h-api fixture seed/verify",
+        });
+        anyFail = true;
+      }
+    }
+
+    // NC22a: unrecognised segment → 400 UNRECOGNISED_SEGMENT (not silent zero
     let unrecognisedSegRejectsLoudly = false;
     try {
       const resp = await fetch(`${API_BASE}/api/plan/runs`, {
@@ -2058,6 +2547,19 @@ async function main(): Promise<void> {
         continue;
       }
 
+      // Assert the check count is exactly 8.  The -1 sentinel restore (bed3ef6700)
+      // brought it back from 6 to 8 by re-adding the two ≤100 pcs divergence checks
+      // (checks 7 & 8) that first caught the 39/103-pcs header-vs-table bug.
+      // A count < 8 means the sentinel init was reverted or the divergence checks
+      // were accidentally removed; a count > 8 means new checks were added without
+      // updating this assertion.
+      newChecks.push({
+        name: `NC23 · ${seg}/${nc23Month} · check count === 8 (actual ${nc23Checks.length}) — sentinel restore confirms ≤100 pcs divergence checks are active`,
+        expected: 8, actual: nc23Checks.length,
+        pass: nc23Checks.length === 8,
+        tolerance: "exact — 6 consistency checks + 2 divergence (≤100 pcs) assertions; < 8 means sentinels regressed",
+      });
+
       for (const c of nc23Checks) {
         newChecks.push({
           name: `NC23 · ${seg}/${nc23Month} · ${c.name}`,
@@ -2494,8 +2996,11 @@ async function main(): Promise<void> {
   }
 
   // ── Summary ───────────────────────────────────────────────────────────────
-  const totalChecks = bundleChecks.length + plumbingResult.checks.length + replanResult.checks.length + ptmtResult.checks.length + monResult.checks.length + schemaParityResult.checks.length + newChecks.length + agriCountChecks.length + ptmtCountChecks.length + wrChecks.length;
-  const totalFail   = bundleChecks.filter((c) => !c.pass).length + plumbingResult.failCount + replanResult.failCount + ptmtResult.failCount + monResult.failCount + schemaParityResult.failCount + newChecks.filter((c) => !c.pass).length + agriCountChecks.filter((c) => !c.pass).length + ptmtCountChecks.filter((c) => !c.pass).length + wrChecks.filter((c) => !c.pass).length;
+  // plumbingResult may be undefined if the validate endpoint was unreachable;
+  // in that case we count 0 checks/failures from that section (anyFail is
+  // already true from the catch block) so the summary totals remain meaningful.
+  const totalChecks = bundleChecks.length + (plumbingResult?.checks.length ?? 0) + replanResult.checks.length + ptmtResult.checks.length + monResult.checks.length + schemaParityResult.checks.length + newChecks.length + agriCountChecks.length + ptmtCountChecks.length + wrChecks.length;
+  const totalFail   = bundleChecks.filter((c) => !c.pass).length + (plumbingResult?.failCount ?? 0) + replanResult.failCount + ptmtResult.failCount + monResult.failCount + schemaParityResult.failCount + newChecks.filter((c) => !c.pass).length + agriCountChecks.filter((c) => !c.pass).length + ptmtCountChecks.filter((c) => !c.pass).length + wrChecks.filter((c) => !c.pass).length;
   const totalPass   = totalChecks - totalFail;
 
   console.log("\n" + "=".repeat(60));

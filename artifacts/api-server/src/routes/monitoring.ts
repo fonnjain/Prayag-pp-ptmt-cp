@@ -8,7 +8,7 @@ import {
   monitoringConfigTable,
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { buildPlanItems, computePlumbingMonitoringPayload } from "./plan";
+import { buildPlanItems, getPlumbingMonitoringPayloadCached } from "./plan";
 import { parseReport5 } from "../lib/report5";
 import { getWorkbookIdForMonth, normalizeCodeStrict } from "../lib/sheets";
 import { fetchDailyActuals, type DailyActualRow } from "../lib/plant-ingestion";
@@ -355,7 +355,7 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
 
   // ── Plumbing: pieces-based data from Sheet3 ────────────────────────────────
   if (segment.toUpperCase() === "PLUMBING") {
-    const data = await computePlumbingMonitoringPayload(month);
+    const data = await getPlumbingMonitoringPayloadCached(month);
     res.json({
       month,
       segment: "PLUMBING",

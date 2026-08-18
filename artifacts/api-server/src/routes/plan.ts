@@ -2274,21 +2274,94 @@ export async function computePlumbingMonitoringPayload(month: string) {
   };
 }
 
+// Shared 5-min TTL cache for the Plumbing monitoring payload. Used by BOTH
+// /plan/plumbing-monitoring and /monitoring/dashboard?segment=Plumbing so the
+// dashboard's first hit doesn't rebuild the plan from Drive workbook tabs
+// (~24 s cold). In-flight dedupe: concurrent cold hits share one computation.
+// Invalidated after every auto-sync (see routes/sync.ts) so data never goes
+// stale past a sync.
 const _plumbingMonCache = new Map<string, { payload: unknown; expires: number }>();
+const _plumbingMonInFlight = new Map<string, Promise<unknown>>();
+// Cache generation: bumped on invalidation. An in-flight computation started
+// under an older generation may still resolve to its caller, but it is NOT
+// allowed to populate the cache or be reused — so a sync invalidation can never
+// be undone by a rebuild that started before (or during) the sync.
+let _plumbingMonGeneration = 0;
+
+/** Injectable for tests — defaults to the real computation. */
+let _computePlumbingMonitoring: (month: string) => Promise<unknown> = (m) =>
+  computePlumbingMonitoringPayload(m);
+
+/** TEST ONLY: swap the underlying computation; returns a restore function. */
+export function _setPlumbingMonitoringComputeForTest(
+  fn: (month: string) => Promise<unknown>,
+): () => void {
+  const prev = _computePlumbingMonitoring;
+  _computePlumbingMonitoring = fn;
+  return () => {
+    _computePlumbingMonitoring = prev;
+  };
+}
+
+export async function getPlumbingMonitoringPayloadCached(month: string): Promise<any> {
+  const cached = _plumbingMonCache.get(month);
+  if (cached && Date.now() < cached.expires) return cached.payload;
+
+  const inFlight = _plumbingMonInFlight.get(month);
+  const refresh =
+    inFlight ??
+    (() => {
+      const gen = _plumbingMonGeneration;
+      const promise = _computePlumbingMonitoring(month)
+        .then((payload) => {
+          // Only populate the cache if no invalidation happened while computing —
+          // otherwise this result predates the latest workbook sync.
+          if (gen === _plumbingMonGeneration) {
+            _plumbingMonCache.set(month, { payload, expires: Date.now() + 5 * 60 * 1000 });
+          }
+          return payload;
+        })
+        .finally(() => {
+          if (_plumbingMonInFlight.get(month) === promise) {
+            _plumbingMonInFlight.delete(month);
+          }
+        });
+      _plumbingMonInFlight.set(month, promise);
+      return promise;
+    })();
+
+  // Stale-while-revalidate: an EXPIRED entry (TTL passed, not sync-invalidated)
+  // is still served instantly while the refresh runs in the background, so no
+  // browser hit ever waits out the full ~24 s rebuild. Sync invalidation clears
+  // the map entirely, so post-sync data is never served stale.
+  if (cached) {
+    refresh.catch((err) =>
+      logger.warn({ err, month }, "plumbing-monitoring background refresh failed — serving stale"),
+    );
+    return cached.payload;
+  }
+  return refresh;
+}
+
+/**
+ * Drop cached Plumbing monitoring payloads — call after a workbook sync.
+ * Bumps the cache generation so any computation already in flight is
+ * disregarded: it neither populates the cache nor gets reused by later callers.
+ */
+export function invalidatePlumbingMonitoringCache(): void {
+  _plumbingMonGeneration++;
+  _plumbingMonCache.clear();
+  _plumbingMonInFlight.clear();
+}
+
 router.get("/plan/plumbing-monitoring", async (req, res) => {
   const month = String(req.query.month ?? "");
   if (!/^\d{4}-\d{2}$/.test(month)) {
     res.status(400).json({ error: "month query param required (YYYY-MM)" });
     return;
   }
-  const cached = _plumbingMonCache.get(month);
-  if (cached && Date.now() < cached.expires) {
-    res.json(cached.payload);
-    return;
-  }
   try {
-    const payload = await computePlumbingMonitoringPayload(month);
-    _plumbingMonCache.set(month, { payload, expires: Date.now() + 5 * 60 * 1000 });
+    const payload = await getPlumbingMonitoringPayloadCached(month);
     res.json(payload);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
