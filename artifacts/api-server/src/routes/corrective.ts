@@ -258,6 +258,45 @@ router.patch("/corrective/runs/:id/pin", async (req, res): Promise<void> => {
   res.json({ runId: id, pinned, message: pinned ? `Run #${id} is now pinned and protected from deletion.` : `Run #${id} has been unpinned and can now be deleted.` });
 });
 
+// ─── PATCH /corrective/runs/:id ──────────────────────────────────────────────
+// General-purpose update: note and/or frozenPlanGrandMax.
+// frozenPlanGrandMax may be patched to an intentionally wrong value by the
+// regression-suite fixture seed (NC22h-api drift-banner check).
+router.patch("/corrective/runs/:id", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
+
+  const { note, frozenPlanGrandMax } = req.body as { note?: string; frozenPlanGrandMax?: number };
+  if (note === undefined && frozenPlanGrandMax === undefined) {
+    res.status(400).json({ error: "Request body must include at least one of: note, frozenPlanGrandMax" });
+    return;
+  }
+  if (frozenPlanGrandMax !== undefined && (typeof frozenPlanGrandMax !== "number" || !Number.isFinite(frozenPlanGrandMax))) {
+    res.status(400).json({ error: "frozenPlanGrandMax must be a finite number" });
+    return;
+  }
+
+  const [run] = await db.select()
+    .from(correctivePlanRunsTable)
+    .where(eq(correctivePlanRunsTable.id, id))
+    .limit(1);
+
+  if (!run) {
+    res.status(404).json({ error: `No corrective run found with id ${id}.` });
+    return;
+  }
+
+  const updates: Partial<typeof correctivePlanRunsTable.$inferInsert> = {};
+  if (note !== undefined) updates.note = note;
+  if (frozenPlanGrandMax !== undefined) updates.frozenPlanGrandMax = Math.round(frozenPlanGrandMax);
+
+  await db.update(correctivePlanRunsTable)
+    .set(updates)
+    .where(eq(correctivePlanRunsTable.id, id));
+
+  res.json({ runId: id, updated: Object.keys(updates) });
+});
+
 // ─── GET /corrective/runs ────────────────────────────────────────────────────
 router.get("/corrective/runs", async (req, res): Promise<void> => {
   const month = req.query.month ? String(req.query.month) : undefined;
@@ -595,7 +634,7 @@ async function buildCorrectiveStandardExcel(
 }
 
 // ─── Full-detail corrective Excel (standard + corrective columns appended) ───
-async function buildCorrectiveDetailExcel(
+export async function buildCorrectiveDetailExcel(
   run: CorrectiveRun,
   items: CorrectiveItem[],
   catCapRows: CatCapRow[],
@@ -963,8 +1002,13 @@ router.get("/corrective/validate/export-totals", async (req, res): Promise<void>
   await detailWb.xlsx.load(detailBuf as unknown as ArrayBuffer);
   // buildCorrectiveDetailExcel writes a "Summary" sheet; values are stored as numbers.
   const sumSheet = detailWb.getWorksheet("Summary");
-  let detailOrigHeader = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
-  let detailPlanHeader = items.reduce((s, i) => s + Math.round(Number(i.planRev ?? 0)), 0);
+  // Sentinel -1: if the sheet parse never overwrites this, the subsequent
+  // check compares -1 against itemOrigSum/itemPlanSum and fails loudly —
+  // catching regressions where the builder emits no parseable header rows.
+  // Initialising to the item sum would make the check pass vacuously whenever
+  // the workbook parse finds nothing (the original 39/103 bug was caught this way).
+  let detailOrigHeader = -1;
+  let detailPlanHeader = -1;
   if (sumSheet) {
     sumSheet.eachRow({ includeEmpty: false }, (row) => {
       const metric = String(row.getCell(1).value ?? "").trim();
@@ -982,8 +1026,11 @@ router.get("/corrective/validate/export-totals", async (req, res): Promise<void>
   const stdWb  = new ExcelJS.Workbook();
   await stdWb.xlsx.load(stdBuf as unknown as ArrayBuffer);
   const stdSumSheet = stdWb.getWorksheet("Summary");
-  let stdGrandMin   = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
-  let stdGrandMax   = detailPlanHeader;
+  // Sentinels: -1 causes the ≤100 pcs checks below to fail if the TOTAL row
+  // is never found — distinguishing "workbook parse succeeded, TOTAL present"
+  // from "builder emitted no TOTAL row" (which would silently self-compare).
+  let stdGrandMin   = -1;
+  let stdGrandMax   = -1;
   if (stdSumSheet) {
     stdSumSheet.eachRow({ includeEmpty: false }, (row) => {
       const cat = String(row.getCell(1).value ?? "").trim();

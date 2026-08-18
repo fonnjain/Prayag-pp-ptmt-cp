@@ -27,7 +27,8 @@ export default function PlumbingReports({ month }: { month: string }) {
   const [runs, setRuns]         = useState<Run[]>([]);
   const [loading, setLoading]   = useState(false);
   const [loaded, setLoaded]     = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError]       = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [exporting, setExporting]   = useState<number | null>(null);
 
@@ -45,9 +46,10 @@ export default function PlumbingReports({ month }: { month: string }) {
 
   async function downloadExcel(runId: number) {
     setExporting(runId);
+    setDownloadError(null);
     try {
       const res = await fetch(`/api/corrective/runs/${runId}/export/excel`);
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) throw new Error(`Excel export failed: HTTP ${res.status}`);
       const blob = await res.blob();
       const cd   = res.headers.get("content-disposition") ?? "";
       const name = cd.match(/filename="?([^";]+)"?/)?.[1] ?? `Plumbing_Corrective_${month}.xlsx`;
@@ -55,15 +57,17 @@ export default function PlumbingReports({ month }: { month: string }) {
       const a    = document.createElement("a");
       a.href = url; a.download = name; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* silent */ }
-    finally { setExporting(null); }
+    } catch (e: any) {
+      setDownloadError(e.message ?? String(e));
+    } finally { setExporting(null); }
   }
 
   async function downloadPdf(runId: number) {
     setExporting(runId * -1);
+    setDownloadError(null);
     try {
       const res = await fetch(`/api/corrective/runs/${runId}/export/pdf`);
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) throw new Error(`PDF export failed: HTTP ${res.status}`);
       const blob = await res.blob();
       const cd   = res.headers.get("content-disposition") ?? "";
       const name = cd.match(/filename="?([^";]+)"?/)?.[1] ?? `Plumbing_Corrective_${month}.pdf`;
@@ -71,8 +75,9 @@ export default function PlumbingReports({ month }: { month: string }) {
       const a    = document.createElement("a");
       a.href = url; a.download = name; a.click();
       URL.revokeObjectURL(url);
-    } catch { /* silent */ }
-    finally { setExporting(null); }
+    } catch (e: any) {
+      setDownloadError(e.message ?? String(e));
+    } finally { setExporting(null); }
   }
 
   return (
