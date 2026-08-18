@@ -44,25 +44,36 @@ export default function PlumbingVelocity({ month }: { month: string }) {
 
   if (isError) {
     const msg = (error as any)?.message ?? String(error);
+    const errorData = (error as any)?.data as { code?: string; upstreamErrorType?: string } | undefined;
     const is503 = msg.includes("503");
+    const isTimeout = msg.includes("504") || errorData?.code === "UPSTREAM_TIMEOUT" || errorData?.upstreamErrorType === "timeout";
+
+    let heading: string;
+    let detail: string;
+    let hint: string;
+    if (is503) {
+      heading = "Plant live API not configured";
+      detail = "The PRAYAG_PLANT_API_KEY secret is missing in the production environment. Deploy environments do not inherit dev secrets automatically — add it via the deployment secrets panel.";
+      hint = `Diagnostic: GET /api/plant-live/periods lists valid period tokens. GET /api/plant-live/summary?period=${month}&plant=PIPE shows the raw status.`;
+    } else if (isTimeout) {
+      heading = "Plant live API timed out";
+      detail = "The upstream prayag-plant.com service did not respond within 20 s. The service may be slow, overloaded, or temporarily unreachable. Check the server log for details or increase UPSTREAM_TIMEOUT_MS if the service consistently needs more time.";
+      hint = `Diagnostic: GET /api/plant-live/summary?period=${month}&plant=PIPE — if it also times out, the upstream itself is the bottleneck.`;
+    } else {
+      heading = "Could not load plant live data";
+      detail = `The upstream plant service returned an error (${msg}). Check that prayag-plant.com is reachable and the API key is valid.`;
+      hint = `Diagnostic: GET /api/plant-live/periods lists valid period tokens. GET /api/plant-live/summary?period=${month}&plant=PIPE shows the raw status.`;
+    }
+
     return (
       <div className="space-y-6 max-w-[1200px] mx-auto pb-10">
         <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2 mb-1">
           <TrendingUp className="h-6 w-6 text-primary" /> PIPE Plant Velocity
         </h1>
         <div className="text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-4 space-y-1">
-          <p className="font-semibold text-red-600">
-            {is503 ? "Plant live API not configured" : "Could not load plant live data"}
-          </p>
-          <p className="text-red-600/80">
-            {is503
-              ? "The PRAYAG_PLANT_API_KEY secret is missing in the production environment. Deploy environments do not inherit dev secrets automatically — add it via the deployment secrets panel."
-              : `API returned: ${msg}. Check that the upstream plant service is reachable and the API key is valid.`}
-          </p>
-          <p className="text-red-600/60 text-xs pt-1">
-            Diagnostic: <code className="font-mono">GET /api/plant-live/periods</code> lists valid period tokens.{" "}
-            <code className="font-mono">GET /api/plant-live/summary?period={month}&plant=PIPE</code> shows the raw status.
-          </p>
+          <p className="font-semibold text-red-600">{heading}</p>
+          <p className="text-red-600/80">{detail}</p>
+          <p className="text-red-600/60 text-xs pt-1">{hint}</p>
         </div>
         <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isRefetching} className="gap-2">
           <RefreshCw className={`h-3.5 w-3.5 ${isRefetching ? "animate-spin" : ""}`} />

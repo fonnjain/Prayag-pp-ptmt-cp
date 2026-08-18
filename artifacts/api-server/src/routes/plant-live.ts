@@ -33,8 +33,9 @@ router.get("/plant-live/plants", async (req, res) => {
     const isTimeout = err?.name === "TimeoutError";
     logger.error({ err, isTimeout }, "plant-live/plants fetch failed");
     if (isTimeout) {
-      res.status(502).set("X-Upstream-Error", "timeout").json({
+      res.status(504).set("X-Upstream-Error", "timeout").json({
         error: `Upstream timed out after ${UPSTREAM_TIMEOUT_MS / 1000}s — prayag-plant.com may be slow or unreachable`,
+        code: "UPSTREAM_TIMEOUT",
         upstreamErrorType: "timeout",
       });
     } else {
@@ -61,8 +62,9 @@ router.get("/plant-live/periods", async (_req, res) => {
     const isTimeout = err?.name === "TimeoutError";
     logger.error({ err, isTimeout }, "plant-live/periods fetch failed");
     if (isTimeout) {
-      res.status(502).set("X-Upstream-Error", "timeout").json({
+      res.status(504).set("X-Upstream-Error", "timeout").json({
         error: `Upstream timed out after ${UPSTREAM_TIMEOUT_MS / 1000}s — prayag-plant.com may be slow or unreachable`,
+        code: "UPSTREAM_TIMEOUT",
         upstreamErrorType: "timeout",
       });
     } else {
@@ -99,8 +101,9 @@ router.get("/plant-live/summary", async (req, res) => {
     const isTimeout = err?.name === "TimeoutError";
     logger.error({ err, isTimeout }, "plant-live/summary fetch failed");
     if (isTimeout) {
-      res.status(502).set("X-Upstream-Error", "timeout").json({
+      res.status(504).set("X-Upstream-Error", "timeout").json({
         error: `Upstream timed out after ${UPSTREAM_TIMEOUT_MS / 1000}s — prayag-plant.com may be slow or unreachable`,
+        code: "UPSTREAM_TIMEOUT",
         upstreamErrorType: "timeout",
       });
     } else {
@@ -128,8 +131,9 @@ router.get("/plant-live/records", requireApiKey, async (req, res) => {
     const isTimeout = err?.name === "TimeoutError";
     logger.error({ err, isTimeout }, "plant-live/records fetch failed");
     if (isTimeout) {
-      res.status(502).set("X-Upstream-Error", "timeout").json({
+      res.status(504).set("X-Upstream-Error", "timeout").json({
         error: `Upstream timed out after ${UPSTREAM_TIMEOUT_MS / 1000}s — prayag-plant.com may be slow or unreachable`,
+        code: "UPSTREAM_TIMEOUT",
         upstreamErrorType: "timeout",
       });
     } else {
