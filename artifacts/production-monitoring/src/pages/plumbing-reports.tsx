@@ -97,6 +97,13 @@ export default function PlumbingReports({ month }: { month: string }) {
         </Button>
       </header>
 
+      {downloadError && (
+        <div className="text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 flex items-start justify-between gap-4">
+          <p className="text-red-600">{downloadError}</p>
+          <button onClick={() => setDownloadError(null)} className="text-red-400 hover:text-red-600 shrink-0 text-xs underline">Dismiss</button>
+        </div>
+      )}
+
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Corrective Re-plan Runs</CardTitle>
