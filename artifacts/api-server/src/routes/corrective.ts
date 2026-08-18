@@ -1157,17 +1157,23 @@ router.get("/corrective/validate/export-totals", async (req, res): Promise<void>
   // ≤200 pcs vs the per-item Math.round sum — the ≤500 threshold catches gross
   // errors (wrong column, missing items) while tolerating legitimate float drift.
   //
-  // Sentinel initialisation (-1 not itemOrigSum) means a failed workbook parse
-  // produces origDivergence = storedOrig + 1 (>> 500), failing loudly rather than
-  // self-comparing to produce a false zero.
+  // Sentinel initialisation (-1, not itemOrigSum) means a failed workbook parse
+  // produces detailOrigHeader = -1, so origDivergence = storedOrig + 1 (>> 500),
+  // failing loudly. The name strings interpolate detailOrigHeader / detailPlanHeader
+  // (the actual operands), NOT itemOrigSum / itemPlanSum — they agree on the success
+  // path but diverge on failure, and a parse failure is exactly when the name must
+  // point at the unparsed value. A failure reads:
+  //   |detail orig header (-1) − stored real orig (617711)| = 617712 pcs ≤ 500  FAIL
+  // making it immediately clear the header was not parsed, not that the check itself
+  // is broken.
   checks.push({
-    name: `ExportTotals · |item-round orig (${itemOrigSum}) − stored real orig (${storedOrig})| = ${origDivergence} pcs ≤ 500`,
+    name: `ExportTotals · |detail orig header (${detailOrigHeader}) − stored real orig (${storedOrig})| = ${origDivergence} pcs ≤ 500`,
     expected: 0, actual: origDivergence,
     pass: origDivergence <= 500,
     tolerance: "≤500 pcs — stored real is 32-bit float accumulated over all items; > 500 means the builder is reading the wrong source",
   });
   checks.push({
-    name: `ExportTotals · |item-round revised (${itemPlanSum}) − stored real revised (${storedRevised})| = ${planDivergence} pcs ≤ 500`,
+    name: `ExportTotals · |detail revised header (${detailPlanHeader}) − stored real revised (${storedRevised})| = ${planDivergence} pcs ≤ 500`,
     expected: 0, actual: planDivergence,
     pass: planDivergence <= 500,
     tolerance: "≤500 pcs — stored real is 32-bit float accumulated over all items; > 500 means the builder is reading the wrong source",
