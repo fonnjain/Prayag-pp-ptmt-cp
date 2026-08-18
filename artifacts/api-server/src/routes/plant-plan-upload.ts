@@ -6,7 +6,7 @@
  * GET  /monitoring/plant-plan/:id/items — full item list for one upload
  * DELETE /monitoring/plant-plan/:id — remove an upload (cascade deletes items)
  *
- * Supports two Excel formats:
+ * Supports three Excel formats:
  *
  * FORMAT A — legacy ("Pipe Plan" / "Fitting Plan" sheets):
  *   Sheet "Pipe Plan"    — header row 3, cols: Item Code | Material | Requested pcs | Feasible pcs |
@@ -22,6 +22,17 @@
  *   Sheet "6. Material & Cost" — header row 4, cols:
  *     Type | Material | Items | Total Pcs | Prod Wt (kg) | Material Req (kg) | … (summary)
  *   In this format the plan is already capacity-feasible; Qty = feasiblePcs = requestedPcs, shortfall = 0.
+ *
+ * FORMAT C — Revised Production Plan ("Pipe Items" / "Fitting Items" sheets):
+ *   Sheet "Pipe Items"    — header row 1, cols:
+ *     Item Code | Material | Net Pcs | Rej % | Rej Basis | Gross Pcs | Extra Pcs |
+ *     Waste % | Waste Basis | Material kg | Wt/pc (kg) | Mach Hrs
+ *   Sheet "Fitting Items" — same columns
+ *   Sheet "Summary"      — header row 3, cols:
+ *     Type | Material | Net Pieces | Rej % | Gross Pieces | Extra Pieces |
+ *     Waste % | Waste Basis | Material kg | Machine Hrs
+ *   Plan is already capacity-feasible; Net Pcs = feasiblePcs = requestedPcs; shortfall = 0.
+ *   No machine-assignment column — machines field left blank.
  */
 import { Router, type IRouter } from "express";
 import multer from "multer";
@@ -191,6 +202,76 @@ function parseConsolidatedSummarySheet(ws: XLSX.WorkSheet): SummaryRow[] {
   return rows;
 }
 
+// ─── FORMAT C parsers (Revised Production Plan) ───────────────────────────────
+
+/**
+ * Parse "Pipe Items" / "Fitting Items" sheets from the Revised Production Plan workbook.
+ * Header row 1 (0-indexed: row 0). Data from row 2 (0-indexed: row 1).
+ * Cols: Item Code | Material | Net Pcs | Rej % | Rej Basis | Gross Pcs | Extra Pcs |
+ *       Waste % | Waste Basis | Material kg | Wt/pc (kg) | Mach Hrs
+ * Plan is already capacity-feasible: Net Pcs = feasiblePcs = requestedPcs; shortfall = 0.
+ * No machine-assignment column — machines left blank.
+ */
+function parseRevisedItemSheet(ws: XLSX.WorkSheet, itemType: "PIPE" | "FITTING"): ItemRow[] {
+  const rows: ItemRow[] = [];
+  const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1:A1");
+  for (let r = 1; r <= range.e.r; r++) {           // data starts at 0-indexed row 1
+    const cell = (col: number) => ws[XLSX.utils.encode_cell({ r, c: col })]?.v;
+    const code = str(cell(0));
+    if (!code || code === "Item Code") continue;    // skip blank / re-header rows
+    const netPcs   = num(cell(2));  // Net Pcs  → feasible = requested
+    const matKg    = num(cell(9));  // Material kg
+    const machHrs  = num(cell(11)); // Mach Hrs
+    rows.push({
+      itemType,
+      itemCode:     code,
+      material:     str(cell(1)),
+      requestedPcs: netPcs,
+      feasiblePcs:  netPcs,
+      shortfallPcs: 0,
+      requestedKg:  matKg,
+      feasibleKg:   matKg,
+      shortfallKg:  0,
+      machines:     "",
+      machineHrs:   machHrs,
+      note:         "",
+    });
+  }
+  return rows;
+}
+
+/**
+ * Parse "Summary" sheet from the Revised Production Plan workbook.
+ * Header row 3 (0-indexed: row 2). Data from row 4 (0-indexed: row 3).
+ * Cols: Type | Material | Net Pieces | Rej % | Gross Pieces | Extra Pieces |
+ *       Waste % | Waste Basis | Material kg | Machine Hrs
+ */
+function parseRevisedSummarySheet(ws: XLSX.WorkSheet): SummaryRow[] {
+  const rows: SummaryRow[] = [];
+  const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1:A1");
+  for (let r = 3; r <= range.e.r; r++) {           // data starts at 0-indexed row 3
+    const cell = (col: number) => ws[XLSX.utils.encode_cell({ r, c: col })]?.v;
+    const rawType = str(cell(0));
+    const material = str(cell(1));
+    if (!rawType || !material || rawType === "Type") continue;
+    const type   = rawType.toUpperCase().startsWith("FIT") ? "Fitting" : "Pipe";
+    const netPcs = num(cell(2));   // Net Pieces → feasible = requested
+    const matKg  = num(cell(8));   // Material kg
+    rows.push({
+      type,
+      material,
+      requestedPcs: netPcs,
+      feasiblePcs:  netPcs,
+      shortfallPcs: 0,
+      shortfallPct: "100.0%",
+      requestedKg:  matKg,
+      feasibleKg:   matKg,
+      shortfallKg:  0,
+    });
+  }
+  return rows;
+}
+
 // ─── POST /monitoring/plant-plan ─────────────────────────────────────────────
 
 router.post("/plant-plan", upload.single("file"), async (req, res): Promise<void> => {
@@ -217,16 +298,26 @@ router.post("/plant-plan", upload.single("file"), async (req, res): Promise<void
 
   // ── Detect format and parse ──────────────────────────────────────────────────
   // FORMAT B: "5. Item Assignment" present → Consolidated Plan workbook
+  // FORMAT C: "Pipe Items" or "Fitting Items" present → Revised Production Plan
   // FORMAT A: legacy "Pipe Plan" / "Fitting Plan" sheets
   const allItems: ItemRow[] = [];
   let summary: SummaryRow[] = [];
 
   const consolidatedItemSheet = wb.Sheets["5. Item Assignment"];
+  const revisedPipeSheet      = wb.Sheets["Pipe Items"];
+  const revisedFittingSheet   = wb.Sheets["Fitting Items"];
+
   if (consolidatedItemSheet) {
     // Format B — Consolidated Plan
     allItems.push(...parseConsolidatedItemSheet(consolidatedItemSheet));
     const matCostSheet = wb.Sheets["6. Material & Cost"];
     if (matCostSheet) summary = parseConsolidatedSummarySheet(matCostSheet);
+  } else if (revisedPipeSheet || revisedFittingSheet) {
+    // Format C — Revised Production Plan
+    if (revisedPipeSheet)    allItems.push(...parseRevisedItemSheet(revisedPipeSheet,    "PIPE"));
+    if (revisedFittingSheet) allItems.push(...parseRevisedItemSheet(revisedFittingSheet, "FITTING"));
+    const summarySheet = wb.Sheets["Summary"];
+    if (summarySheet) summary = parseRevisedSummarySheet(summarySheet);
   } else {
     // Format A — legacy Pipe Plan / Fitting Plan
     const pipeSheet    = wb.Sheets["Pipe Plan"];
@@ -243,6 +334,7 @@ router.post("/plant-plan", upload.single("file"), async (req, res): Promise<void
         `No items found in the uploaded file.`,
         `Supported formats:`,
         `  • Consolidated Plan: sheet "5. Item Assignment" (new format)`,
+        `  • Revised Production Plan: sheets "Pipe Items" and/or "Fitting Items"`,
         `  • Legacy: sheets "Pipe Plan" and/or "Fitting Plan"`,
         `Sheets found: ${wb.SheetNames.join(", ")}`,
       ].join(" "),
