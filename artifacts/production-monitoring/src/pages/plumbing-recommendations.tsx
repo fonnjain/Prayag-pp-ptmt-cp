@@ -49,10 +49,11 @@ export default function PlumbingRecommendations({ month }: { month: string }) {
 
   const cats: any[] = data?.categories ?? [];
   // API returns { plant: { produced, mapped, unmapped, runRatePerDay }, categories, weeks }
-  // — no top-level totalProduced / totalRelease / notStartedCategories / unmappedCodes.
-  const totalActual   = data?.plant?.produced ?? cats.reduce((s: number, c: any) => s + (c.totalActual  ?? 0), 0);
+  // cumPct must use mappedActual (summed from categories) for both numerator and denominator —
+  // plant.produced = mapped + unmapped and would inflate the ratio by the unmapped quantity.
+  const mappedActual  = cats.reduce((s: number, c: any) => s + (c.totalActual  ?? 0), 0);
   const totalRelease  = cats.reduce((s: number, c: any) => s + (c.totalRelease ?? 0), 0);
-  const cumPct        = totalRelease > 0 ? (totalActual / totalRelease) * 100 : null;
+  const cumPct        = totalRelease > 0 ? (mappedActual / totalRelease) * 100 : null;
   const notStarted: string[]  = data?.notStartedCategories
     ?? cats.filter((c: any) => c.notStarted).map((c: any) => c.category);
   const unmappedCodes: number = data?.unmappedCodes ?? data?.plant?.unmapped ?? 0;

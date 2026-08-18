@@ -52,13 +52,15 @@ export default function PlumbingAttainment({ month }: { month: string }) {
 
   const cats: any[] = data?.categories ?? [];
   // API returns { plant: { produced, mapped, unmapped }, categories: [...], weeks: [...] }
-  // — no top-level totalRelease / totalProduced / weeklyRows.
-  // Sum totalRelease from categories (mapped items only).
-  // plant.produced = Sheet3 mapped + unmapped total; use it when available so the
-  // "Produced to Date" card reflects all Sheet3 output, not just the planned categories.
+  // totalRelease and mappedActual must share the same population (categories = mapped items only).
+  // plant.produced = mapped + unmapped; using it in the ratio inflates attainment by the unmapped
+  // quantity and makes the metric improve as data quality worsens — wrong direction.
   const totalRelease = cats.reduce((s: number, c: any) => s + (c.totalRelease ?? 0), 0);
-  const totalActual  = data?.plant?.produced ?? cats.reduce((s: number, c: any) => s + (c.totalActual ?? 0), 0);
-  const attPct = totalRelease > 0 ? (totalActual / totalRelease) * 100 : null;
+  const mappedActual = cats.reduce((s: number, c: any) => s + (c.totalActual  ?? 0), 0);
+  const attPct       = totalRelease > 0 ? (mappedActual / totalRelease) * 100 : null;
+  // Sheet3 total (mapped + unmapped) — for the PRODUCED TO DATE card only, not the ratio.
+  const totalActual  = data?.plant?.produced ?? mappedActual;
+  const unmappedPcs  = data?.plant?.unmapped ?? 0;
 
   const ragColor = (pct: number | null) => {
     if (pct == null) return "text-muted-foreground";
@@ -116,7 +118,12 @@ export default function PlumbingAttainment({ month }: { month: string }) {
           <CardContent className="p-5">
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Cum. Attainment</div>
             <div className={`text-3xl font-bold ${ragColor(attPct)}`}>{fmtPct(attPct)}</div>
-            <div className="text-xs text-muted-foreground mt-1">actual ÷ released</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              mapped actual ÷ released
+              {unmappedPcs > 0 && (
+                <span className="ml-2 text-amber-600 font-medium">{fmtN(unmappedPcs)} unmapped</span>
+              )}
+            </div>
           </CardContent>
         </Card>
         <Card>

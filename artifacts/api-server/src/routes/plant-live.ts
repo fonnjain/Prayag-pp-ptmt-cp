@@ -20,6 +20,7 @@ router.get("/plant-live/plants", async (req, res) => {
     res.status(503).json({ error: "PRAYAG_PLANT_API_KEY not configured" });
     return;
   }
+  let rawBody: string | undefined;
   try {
     const upstream = await upstreamFetch("/plants", apiKey);
     if (!upstream.ok) {
@@ -27,18 +28,26 @@ router.get("/plant-live/plants", async (req, res) => {
       res.status(502).set("X-Upstream-Error", "non-2xx").json({ error: `Upstream responded ${upstream.status}`, upstreamErrorType: "non-2xx" });
       return;
     }
-    const data = await upstream.json();
-    res.json(data);
+    rawBody = await upstream.text();
+    res.json(JSON.parse(rawBody));
   } catch (err: any) {
     const isTimeout = err?.name === "TimeoutError";
-    logger.error({ err, isTimeout }, "plant-live/plants fetch failed");
+    const isBadJson = err instanceof SyntaxError;
     if (isTimeout) {
+      logger.error({ err }, "plant-live/plants fetch failed: timeout");
       res.status(504).set("X-Upstream-Error", "timeout").json({
         error: `Upstream timed out after ${UPSTREAM_TIMEOUT_MS / 1000}s — prayag-plant.com may be slow or unreachable`,
         code: "UPSTREAM_TIMEOUT",
         upstreamErrorType: "timeout",
       });
+    } else if (isBadJson) {
+      logger.error({ err, bodyPreview: rawBody?.slice(0, 200) }, "plant-live/plants: upstream returned non-JSON (2xx but not parseable — likely an auth/error page)");
+      res.status(502).set("X-Upstream-Error", "bad-json").json({
+        error: "Upstream returned a 2xx response that is not JSON — usually an auth or error page served with status 200",
+        upstreamErrorType: "bad-json",
+      });
     } else {
+      logger.error({ err }, "plant-live/plants fetch failed");
       res.status(502).set("X-Upstream-Error", "non-2xx").json({ error: "Failed to reach prayag-plant.com", upstreamErrorType: "non-2xx" });
     }
   }
@@ -50,6 +59,7 @@ router.get("/plant-live/periods", async (_req, res) => {
     res.status(503).json({ error: "PRAYAG_PLANT_API_KEY not configured" });
     return;
   }
+  let rawBody: string | undefined;
   try {
     const upstream = await upstreamFetch("/periods", apiKey);
     if (!upstream.ok) {
@@ -57,17 +67,26 @@ router.get("/plant-live/periods", async (_req, res) => {
       res.status(502).set("X-Upstream-Error", "non-2xx").json({ error: `Upstream responded ${upstream.status}`, upstreamErrorType: "non-2xx" });
       return;
     }
-    res.json(await upstream.json());
+    rawBody = await upstream.text();
+    res.json(JSON.parse(rawBody));
   } catch (err: any) {
     const isTimeout = err?.name === "TimeoutError";
-    logger.error({ err, isTimeout }, "plant-live/periods fetch failed");
+    const isBadJson = err instanceof SyntaxError;
     if (isTimeout) {
+      logger.error({ err }, "plant-live/periods fetch failed: timeout");
       res.status(504).set("X-Upstream-Error", "timeout").json({
         error: `Upstream timed out after ${UPSTREAM_TIMEOUT_MS / 1000}s — prayag-plant.com may be slow or unreachable`,
         code: "UPSTREAM_TIMEOUT",
         upstreamErrorType: "timeout",
       });
+    } else if (isBadJson) {
+      logger.error({ err, bodyPreview: rawBody?.slice(0, 200) }, "plant-live/periods: upstream returned non-JSON (2xx but not parseable — likely an auth/error page)");
+      res.status(502).set("X-Upstream-Error", "bad-json").json({
+        error: "Upstream returned a 2xx response that is not JSON — usually an auth or error page served with status 200",
+        upstreamErrorType: "bad-json",
+      });
     } else {
+      logger.error({ err }, "plant-live/periods fetch failed");
       res.status(502).set("X-Upstream-Error", "non-2xx").json({ error: "Failed to reach prayag-plant.com", upstreamErrorType: "non-2xx" });
     }
   }
@@ -89,6 +108,7 @@ router.get("/plant-live/summary", async (req, res) => {
     return;
   }
   const qs = buildFilterQuery(req);
+  let rawBody: string | undefined;
   try {
     const upstream = await upstreamFetch(`/summary?${qs}`, apiKey);
     if (!upstream.ok) {
@@ -96,17 +116,26 @@ router.get("/plant-live/summary", async (req, res) => {
       res.status(502).set("X-Upstream-Error", "non-2xx").json({ error: `Upstream responded ${upstream.status}`, upstreamErrorType: "non-2xx" });
       return;
     }
-    res.json(await upstream.json());
+    rawBody = await upstream.text();
+    res.json(JSON.parse(rawBody));
   } catch (err: any) {
     const isTimeout = err?.name === "TimeoutError";
-    logger.error({ err, isTimeout }, "plant-live/summary fetch failed");
+    const isBadJson = err instanceof SyntaxError;
     if (isTimeout) {
+      logger.error({ err }, "plant-live/summary fetch failed: timeout");
       res.status(504).set("X-Upstream-Error", "timeout").json({
         error: `Upstream timed out after ${UPSTREAM_TIMEOUT_MS / 1000}s — prayag-plant.com may be slow or unreachable`,
         code: "UPSTREAM_TIMEOUT",
         upstreamErrorType: "timeout",
       });
+    } else if (isBadJson) {
+      logger.error({ err, bodyPreview: rawBody?.slice(0, 200) }, "plant-live/summary: upstream returned non-JSON (2xx but not parseable — likely an auth/error page)");
+      res.status(502).set("X-Upstream-Error", "bad-json").json({
+        error: "Upstream returned a 2xx response that is not JSON — usually an auth or error page served with status 200",
+        upstreamErrorType: "bad-json",
+      });
     } else {
+      logger.error({ err }, "plant-live/summary fetch failed");
       res.status(502).set("X-Upstream-Error", "non-2xx").json({ error: "Failed to reach prayag-plant.com", upstreamErrorType: "non-2xx" });
     }
   }
@@ -119,6 +148,7 @@ router.get("/plant-live/records", requireApiKey, async (req, res) => {
     return;
   }
   const qs = buildFilterQuery(req);
+  let rawBody: string | undefined;
   try {
     const upstream = await upstreamFetch(`/records?${qs}`, apiKey);
     if (!upstream.ok) {
@@ -126,17 +156,26 @@ router.get("/plant-live/records", requireApiKey, async (req, res) => {
       res.status(502).set("X-Upstream-Error", "non-2xx").json({ error: `Upstream responded ${upstream.status}`, upstreamErrorType: "non-2xx" });
       return;
     }
-    res.json(await upstream.json());
+    rawBody = await upstream.text();
+    res.json(JSON.parse(rawBody));
   } catch (err: any) {
     const isTimeout = err?.name === "TimeoutError";
-    logger.error({ err, isTimeout }, "plant-live/records fetch failed");
+    const isBadJson = err instanceof SyntaxError;
     if (isTimeout) {
+      logger.error({ err }, "plant-live/records fetch failed: timeout");
       res.status(504).set("X-Upstream-Error", "timeout").json({
         error: `Upstream timed out after ${UPSTREAM_TIMEOUT_MS / 1000}s — prayag-plant.com may be slow or unreachable`,
         code: "UPSTREAM_TIMEOUT",
         upstreamErrorType: "timeout",
       });
+    } else if (isBadJson) {
+      logger.error({ err, bodyPreview: rawBody?.slice(0, 200) }, "plant-live/records: upstream returned non-JSON (2xx but not parseable — likely an auth/error page)");
+      res.status(502).set("X-Upstream-Error", "bad-json").json({
+        error: "Upstream returned a 2xx response that is not JSON — usually an auth or error page served with status 200",
+        upstreamErrorType: "bad-json",
+      });
     } else {
+      logger.error({ err }, "plant-live/records fetch failed");
       res.status(502).set("X-Upstream-Error", "non-2xx").json({ error: "Failed to reach prayag-plant.com", upstreamErrorType: "non-2xx" });
     }
   }
