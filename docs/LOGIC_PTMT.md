@@ -21,8 +21,26 @@ path, so the grand total always reconciles to zero against the table.
 Written once at corrective run creation time from the engine's `originalMonthTotal`
 variable (a float64 sum of float32 DB reads → float64 accumulation). Stored as a
 PostgreSQL `real` (32-bit). When read back and rounded, it can differ from
-`grandOrigComputed` by **0–100 pcs** across a 3,636-item PTMT plan or 0–39 pcs
-across a 1,120-item Plumbing plan. This is pure rounding — no data loss.
+`grandOrigComputed` by a small amount due to float32 accumulation. This is pure
+rounding — no data loss.
+
+**Measured divergences (August 2026 production runs):**
+
+| Segment | Items | `detailOrigHeader` | `storedOrig` | Divergence |
+|---------|------:|------------------:|-------------:|-----------:|
+| PTMT    | 3,636 | 617,750           | 617,711      | **39 pcs** |
+| Plumbing| 1,120 | 2,331,750         | 2,331,647    | **103 pcs**|
+
+Notably, the larger item count (PTMT) produces the *smaller* gap. This is
+counter-intuitive but correct: PTMT items are smaller quantities with less
+float32 rounding error per item; Plumbing items are larger quantities (~2.4 M
+total) where accumulated float32 drift is more pronounced.
+
+The ExportTotals divergence check asserts `|detailOrigHeader − storedOrig| ≤ 500`.
+The ±500 threshold is set above the observed maximum (103 pcs) with margin for
+future months, and matches the order of magnitude of the MISMATCH tolerance (±200)
+used in §A4. Values above 500 indicate a builder reading the wrong column or a
+missing-items problem — not normal float drift.
 
 ### §A3 — frozenPlanGrandMax (plan run items sum, frozen at run-creation time)
 

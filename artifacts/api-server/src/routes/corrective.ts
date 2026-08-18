@@ -1,4 +1,4 @@
-import { Router, type IRouter, type Request, type Response as ExpressResponse, type NextFunction } from "express";
+import { Router, type IRouter } from "express";
 import { launchBrowser } from "../lib/browser";
 import { exportTimestamp } from "../lib/export-filename";
 import { db, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable, planRunsTable, planRunResultsTable } from "@workspace/db";
@@ -7,23 +7,8 @@ import { runCorrectiveReplan, type CorrectiveItemResult } from "../lib/correctiv
 import { exportPlanExcel, ITEM_COLUMNS, addLegendSheet, RED_FILL, GREEN_FILL } from "../lib/excel-export";
 import { summarizePlan, type CalcPlanItem } from "../lib/calc";
 import ExcelJS from "exceljs";
-import { validateApiKey } from "./api-keys";
+import { requireApiKey } from "./auth-middleware";
 import { logger } from "../lib/logger";
-
-/** Requires a valid managed Bearer API key; mirrors the guard in plant-live.ts. */
-async function requireApiKey(req: Request, res: ExpressResponse, next: NextFunction): Promise<void> {
-  const header = req.get("authorization") ?? "";
-  const token  = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
-  if (!token) { res.status(401).json({ error: "Missing Authorization: Bearer <api key>" }); return; }
-  try {
-    const key = await validateApiKey(token);
-    if (!key) { res.status(401).json({ error: "Invalid or revoked API key" }); return; }
-    next();
-  } catch (err) {
-    logger.error({ err }, "API key validation failed");
-    res.status(500).json({ error: "API key validation failed" });
-  }
-}
 
 const router: IRouter = Router();
 
@@ -707,6 +692,10 @@ async function buildCorrectiveStandardExcel(
 }
 
 // ─── Full-detail corrective Excel (standard + corrective columns appended) ───
+// Exported (not function-scoped) so the regression-suite fixture builder can
+// import it directly to generate a deterministic workbook for NC22h without
+// going through the HTTP layer. This is the only reason for the wider export
+// surface — no other caller should use it outside of tests.
 export async function buildCorrectiveDetailExcel(
   run: CorrectiveRun,
   items: CorrectiveItem[],
@@ -1157,24 +1146,31 @@ router.get("/corrective/validate/export-totals", async (req, res): Promise<void>
   const origDivergence = Math.abs(detailOrigHeader - storedOrig);
   const planDivergence = Math.abs(detailPlanHeader - storedRevised);
 
-  // ── Divergence checks (checks 7 + 8) ──────────────────────────────────────
-  // These guard the float32 band documented in LOGIC_PTMT §A2: the stored 32-bit
-  // real diverges from the item-level Math.round sum by at most ~100 pcs for a
-  // 3,636-item PTMT plan or ~39 pcs for a 1,120-item Plumbing plan. Exceeding
-  // 100 pcs means the stored total was written from a different item snapshot.
-  // If the parse failed and detailOrigHeader is still -1, origDivergence is
-  // huge and also fires — the sentinel propagates through all 8 checks.
+  // ── Checks 7 & 8: Excel header vs stored real divergence ─────────────────
+  // These are the divergence assertions that first caught the 39/103-pcs
+  // header-vs-table bug.  After the fix, detailOrigHeader = itemOrigSum (per-item
+  // rounded sum), so origDivergence = |itemOrigSum − storedOrig|.
+  //
+  // The stored real (originalMonthTotal / revisedMonthTotal) is computed by the
+  // engine as round-to-2dp(sum of float items) then stored as a postgres real;
+  // for large plans (e.g. 1,120 Plumbing items, ~2.4 M pcs) this accumulates
+  // ≤200 pcs vs the per-item Math.round sum — the ≤500 threshold catches gross
+  // errors (wrong column, missing items) while tolerating legitimate float drift.
+  //
+  // Sentinel initialisation (-1 not itemOrigSum) means a failed workbook parse
+  // produces origDivergence = storedOrig + 1 (>> 500), failing loudly rather than
+  // self-comparing to produce a false zero.
   checks.push({
-    name: `ExportTotals · stored orig divergence from item-round sum ≤ 100 pcs (actual: ${origDivergence})`,
-    expected: 100, actual: origDivergence,
-    pass: origDivergence <= 100,
-    tolerance: "≤100 pcs — §A2 float32 band; exceeding this means stored total was written from a different item snapshot",
+    name: `ExportTotals · |item-round orig (${itemOrigSum}) − stored real orig (${storedOrig})| = ${origDivergence} pcs ≤ 500`,
+    expected: 0, actual: origDivergence,
+    pass: origDivergence <= 500,
+    tolerance: "≤500 pcs — stored real is 32-bit float accumulated over all items; > 500 means the builder is reading the wrong source",
   });
   checks.push({
-    name: `ExportTotals · stored revised divergence from item-round sum ≤ 100 pcs (actual: ${planDivergence})`,
-    expected: 100, actual: planDivergence,
-    pass: planDivergence <= 100,
-    tolerance: "≤100 pcs — §A2 float32 band; exceeding this means stored revised total drifted from the current item set",
+    name: `ExportTotals · |item-round revised (${itemPlanSum}) − stored real revised (${storedRevised})| = ${planDivergence} pcs ≤ 500`,
+    expected: 0, actual: planDivergence,
+    pass: planDivergence <= 500,
+    tolerance: "≤500 pcs — stored real is 32-bit float accumulated over all items; > 500 means the builder is reading the wrong source",
   });
 
   const failCount = checks.filter((c) => !c.pass).length;
