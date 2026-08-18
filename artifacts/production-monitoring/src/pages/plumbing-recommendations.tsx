@@ -8,16 +8,19 @@ import { Link } from "wouter";
 export default function PlumbingRecommendations({ month }: { month: string }) {
   const [data, setData]       = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   async function load() {
     try {
       setRefreshing(true);
+      setError(null);
       const res = await fetch(`/api/monitoring/dashboard?month=${month}&segment=Plumbing`);
-      if (!res.ok) throw new Error(`${res.status}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setData(await res.json());
-    } catch { /* silent */ }
-    finally { setLoading(false); setRefreshing(false); }
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+    } finally { setLoading(false); setRefreshing(false); }
   }
 
   useEffect(() => { load(); }, [month]);
@@ -26,6 +29,21 @@ export default function PlumbingRecommendations({ month }: { month: string }) {
     <div className="space-y-4 animate-pulse">
       <div className="h-24 bg-muted/40 rounded-xl" />
       <div className="h-48 bg-muted/40 rounded-xl" />
+    </div>
+  );
+
+  if (error) return (
+    <div className="space-y-4 max-w-[1000px] mx-auto pb-10">
+      <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+        <ListChecks className="h-6 w-6 text-primary" /> Plumbing Recommendations
+      </h1>
+      <div className="text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 space-y-1">
+        <p className="font-semibold text-red-600">Failed to load monitoring data</p>
+        <p className="text-red-600/80">{error} — <code className="font-mono">GET /api/monitoring/dashboard?month={month}&amp;segment=Plumbing</code></p>
+      </div>
+      <Button size="sm" variant="outline" onClick={load} className="gap-2">
+        <RefreshCw className="h-3.5 w-3.5" /> Retry
+      </Button>
     </div>
   );
 

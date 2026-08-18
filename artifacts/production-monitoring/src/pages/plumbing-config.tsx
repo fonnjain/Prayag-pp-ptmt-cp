@@ -14,22 +14,23 @@ export default function PlumbingConfig({ month }: { month: string }) {
   const [capacity, setCapacity] = useState<any[]>([]);
   const [workbook, setWorkbook] = useState<any>(null);
   const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   async function load() {
     try {
       setRefreshing(true);
+      setError(null);
       const [capRes, wbRes] = await Promise.all([
         fetch(`/api/capacity/categories?segment=Plumbing`),
         fetch(`/api/workbook-config/resolved`),
       ]);
-      if (capRes.ok) setCapacity(await capRes.json());
-      if (wbRes.ok) {
-        const wbData = await wbRes.json() as any;
-        setWorkbook(wbData);
-      }
-    } catch { /* silent */ }
-    finally { setLoading(false); setRefreshing(false); }
+      if (!capRes.ok) throw new Error(`Capacity API: HTTP ${capRes.status}`);
+      setCapacity(await capRes.json());
+      if (wbRes.ok) setWorkbook(await wbRes.json() as any);
+    } catch (e: any) {
+      setError(e.message ?? String(e));
+    } finally { setLoading(false); setRefreshing(false); }
   }
 
   useEffect(() => { load(); }, [month]);
@@ -38,6 +39,21 @@ export default function PlumbingConfig({ month }: { month: string }) {
     <div className="space-y-4 animate-pulse">
       <div className="h-24 bg-muted/40 rounded-xl" />
       <div className="h-64 bg-muted/40 rounded-xl" />
+    </div>
+  );
+
+  if (error) return (
+    <div className="space-y-4 max-w-[900px] mx-auto pb-10">
+      <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+        <SlidersHorizontal className="h-6 w-6 text-primary" /> Plumbing Config
+      </h1>
+      <div className="text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 space-y-1">
+        <p className="font-semibold text-red-600">Failed to load configuration</p>
+        <p className="text-red-600/80">{error}</p>
+      </div>
+      <Button size="sm" variant="outline" onClick={load} className="gap-2">
+        <RefreshCw className="h-3.5 w-3.5" /> Retry
+      </Button>
     </div>
   );
 

@@ -9,7 +9,7 @@ function fmt(n: number | null | undefined, dec = 0): string {
 }
 
 export default function PlumbingVelocity({ month }: { month: string }) {
-  const { data: raw, isLoading, isRefetching, refetch } = useGetPlantLiveSummary(
+  const { data: raw, isLoading, isError, error, isRefetching, refetch } = useGetPlantLiveSummary(
     { period: month, plant: "PIPE" },
     { query: { queryKey: getGetPlantLiveSummaryQueryKey({ period: month, plant: "PIPE" }), staleTime: 5 * 60 * 1000 } as any }
   );
@@ -41,6 +41,36 @@ export default function PlumbingVelocity({ month }: { month: string }) {
       <div className="h-64 bg-muted/40 rounded-xl" />
     </div>
   );
+
+  if (isError) {
+    const msg = (error as any)?.message ?? String(error);
+    const is503 = msg.includes("503");
+    return (
+      <div className="space-y-6 max-w-[1200px] mx-auto pb-10">
+        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2 mb-1">
+          <TrendingUp className="h-6 w-6 text-primary" /> PIPE Plant Velocity
+        </h1>
+        <div className="text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-4 space-y-1">
+          <p className="font-semibold text-red-600">
+            {is503 ? "Plant live API not configured" : "Could not load plant live data"}
+          </p>
+          <p className="text-red-600/80">
+            {is503
+              ? "The PRAYAG_PLANT_API_KEY secret is missing in the production environment. Deploy environments do not inherit dev secrets automatically — add it via the deployment secrets panel."
+              : `API returned: ${msg}. Check that the upstream plant service is reachable and the API key is valid.`}
+          </p>
+          <p className="text-red-600/60 text-xs pt-1">
+            Diagnostic: <code className="font-mono">GET /api/plant-live/periods</code> lists valid period tokens.{" "}
+            <code className="font-mono">GET /api/plant-live/summary?period={month}&plant=PIPE</code> shows the raw status.
+          </p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isRefetching} className="gap-2">
+          <RefreshCw className={`h-3.5 w-3.5 ${isRefetching ? "animate-spin" : ""}`} />
+          {isRefetching ? "Retrying…" : "Retry"}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-[1200px] mx-auto pb-10">
@@ -155,7 +185,7 @@ export default function PlumbingVelocity({ month }: { month: string }) {
       </Card>
 
       <p className="text-xs text-muted-foreground text-right">
-        Live data from prayag-plant.com · PIPE plant · cached 5 min
+        Live data from prayag-plant.com · PIPE plant only (fitting/solvent excluded) · cached 5 min
       </p>
     </div>
   );

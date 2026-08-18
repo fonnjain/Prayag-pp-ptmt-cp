@@ -27,16 +27,20 @@ export default function PlumbingReports({ month }: { month: string }) {
   const [runs, setRuns]         = useState<Run[]>([]);
   const [loading, setLoading]   = useState(false);
   const [loaded, setLoaded]     = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [exporting, setExporting]   = useState<number | null>(null);
 
   async function loadRuns() {
     try {
       setRefreshing(true);
+      setLoadError(null);
       const res = await fetch(`/api/corrective/runs?month=${month}&segment=Plumbing`);
-      if (res.ok) setRuns(await res.json());
-    } catch { /* silent */ }
-    finally { setLoading(false); setLoaded(true); setRefreshing(false); }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setRuns(await res.json());
+    } catch (e: any) {
+      setLoadError(e.message ?? String(e));
+    } finally { setLoading(false); setLoaded(true); setRefreshing(false); }
   }
 
   async function downloadExcel(runId: number) {
@@ -99,6 +103,10 @@ export default function PlumbingReports({ month }: { month: string }) {
           {!loaded ? (
             <div className="px-6 py-10 text-center text-muted-foreground text-sm">
               Click "Load runs" to fetch corrective plan history for {month}.
+            </div>
+          ) : loadError ? (
+            <div className="px-6 py-4 text-sm text-red-600 bg-red-500/10 border-t border-red-500/20">
+              Failed to load runs: {loadError}
             </div>
           ) : runs.length === 0 ? (
             <div className="px-6 py-10 text-center text-muted-foreground text-sm">
