@@ -51,8 +51,13 @@ export default function PlumbingAttainment({ month }: { month: string }) {
   );
 
   const cats: any[] = data?.categories ?? [];
-  const totalRelease = data?.weeklyRows?.reduce((s: number, r: any) => s + (r.cumRelease ?? 0), 0) ?? data?.totalRelease ?? 0;
-  const totalActual  = data?.totalProduced ?? 0;
+  // API returns { plant: { produced, mapped, unmapped }, categories: [...], weeks: [...] }
+  // — no top-level totalRelease / totalProduced / weeklyRows.
+  // Sum totalRelease from categories (mapped items only).
+  // plant.produced = Sheet3 mapped + unmapped total; use it when available so the
+  // "Produced to Date" card reflects all Sheet3 output, not just the planned categories.
+  const totalRelease = cats.reduce((s: number, c: any) => s + (c.totalRelease ?? 0), 0);
+  const totalActual  = data?.plant?.produced ?? cats.reduce((s: number, c: any) => s + (c.totalActual ?? 0), 0);
   const attPct = totalRelease > 0 ? (totalActual / totalRelease) * 100 : null;
 
   const ragColor = (pct: number | null) => {
@@ -96,7 +101,7 @@ export default function PlumbingAttainment({ month }: { month: string }) {
         <Card>
           <CardContent className="p-5">
             <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">Total Released</div>
-            <div className="text-3xl font-bold">{fmtN(data?.totalRelease ?? 0)}</div>
+            <div className="text-3xl font-bold">{fmtN(totalRelease)}</div>
             <div className="text-xs text-muted-foreground mt-1">pcs cumulative</div>
           </CardContent>
         </Card>

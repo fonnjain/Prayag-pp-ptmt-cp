@@ -48,11 +48,14 @@ export default function PlumbingRecommendations({ month }: { month: string }) {
   );
 
   const cats: any[] = data?.categories ?? [];
-  const totalActual   = data?.totalProduced ?? 0;
-  const totalRelease  = data?.totalRelease  ?? 0;
+  // API returns { plant: { produced, mapped, unmapped, runRatePerDay }, categories, weeks }
+  // — no top-level totalProduced / totalRelease / notStartedCategories / unmappedCodes.
+  const totalActual   = data?.plant?.produced ?? cats.reduce((s: number, c: any) => s + (c.totalActual  ?? 0), 0);
+  const totalRelease  = cats.reduce((s: number, c: any) => s + (c.totalRelease ?? 0), 0);
   const cumPct        = totalRelease > 0 ? (totalActual / totalRelease) * 100 : null;
-  const notStarted: string[]  = data?.notStartedCategories ?? [];
-  const unmappedCodes: number = data?.unmappedCodes ?? 0;
+  const notStarted: string[]  = data?.notStartedCategories
+    ?? cats.filter((c: any) => c.notStarted).map((c: any) => c.category);
+  const unmappedCodes: number = data?.unmappedCodes ?? data?.plant?.unmapped ?? 0;
 
   // Derive simple actionable recommendations from monitoring data
   const recs: { priority: "high" | "medium" | "low"; title: string; detail: string }[] = [];

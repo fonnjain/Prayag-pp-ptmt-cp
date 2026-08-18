@@ -62,7 +62,8 @@ export default function PlumbingTrend({ month }: { month: string }) {
   );
 
   const cats: any[] = data?.categories ?? [];
-  const weeklyRows: any[] = data?.weeklyRows ?? [];
+  // API returns { plant, categories, weeks } — no weeklyRows field; the array is data.weeks
+  const weeklyRows: any[] = data?.weeks ?? [];
 
   // Week-over-week trend data
   const weekTrend = weeklyRows.map((r: any) => ({

@@ -16,7 +16,7 @@ function severityBadge(sev: string) {
 }
 
 export default function PlumbingWarnings({ month }: { month: string }) {
-  const { data: raw, isLoading, isRefetching, refetch } = useGetPlantLiveSummary(
+  const { data: raw, isLoading, isRefetching, isError, error: queryError, refetch } = useGetPlantLiveSummary(
     { period: month, plant: "PIPE" },
     { query: { queryKey: getGetPlantLiveSummaryQueryKey({ period: month, plant: "PIPE" }), staleTime: 5 * 60 * 1000 } as any }
   );
@@ -34,6 +34,31 @@ export default function PlumbingWarnings({ month }: { month: string }) {
       <div className="h-64 bg-muted/40 rounded-xl" />
     </div>
   );
+
+  // Surface plant-live errors explicitly — a failed fetch must not render as "No issues detected"
+  if (isError) {
+    const msg = (queryError as any)?.message ?? String(queryError ?? "unknown error");
+    return (
+      <div className="space-y-6 max-w-[1000px] mx-auto pb-10">
+        <header className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2 mb-1">
+              <AlertTriangle className="h-6 w-6 text-amber-500" /> PIPE Plant Warnings
+            </h1>
+            <p className="text-muted-foreground text-sm">Plant-level data quality issues · {month}</p>
+          </div>
+          <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isRefetching} className="gap-2">
+            <RefreshCw className={`h-3.5 w-3.5 ${isRefetching ? "animate-spin" : ""}`} />
+            {isRefetching ? "Refreshing…" : "Retry"}
+          </Button>
+        </header>
+        <div className="text-sm text-amber-700 bg-amber-500/10 border border-amber-500/20 rounded-lg px-4 py-3 flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>Could not load plant-live warnings: {msg}. The plant connection may be unavailable — issue counts are not reliable while data is missing.</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-[1000px] mx-auto pb-10">
