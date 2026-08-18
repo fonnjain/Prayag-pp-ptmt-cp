@@ -3004,6 +3004,9 @@ async function main(): Promise<void> {
   const totalPass   = totalChecks - totalFail;
 
   console.log("\n" + "=".repeat(60));
+  if (plumbingResult === undefined) {
+    console.log("⏭  1 section skipped (Plumbing validate — Sheets quota/unreachable); N/M denominator excludes those checks.");
+  }
   if (anyFail) {
     console.error(`❌  SUITE FAILED — ${totalFail} / ${totalChecks} checks failed`);
     console.error("    Fix failures above before proceeding.");
