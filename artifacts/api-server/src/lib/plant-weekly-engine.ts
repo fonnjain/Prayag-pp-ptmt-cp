@@ -1,4 +1,5 @@
 import { normalizeCode } from "./sheets";
+import { versionForDate, type PlanVersion, type VersionTarget } from "./plant-plan-timeline";
 
 export interface WeekWindow {
   week: 1 | 2 | 3 | 4;
@@ -19,6 +20,7 @@ export interface WeeklyStats {
   attainmentPct: number | null;
   attainmentEffectivePct: number | null;
   ragBand: "green" | "amber" | "red" | null;
+  planVersions?: string[];
 }
 
 export interface WeeklyReleaseCategoryRow {
@@ -101,9 +103,12 @@ function buildWeeklyStats(
   calendar: WeekWindow[],
   today: string,
   month: string,
+  resetCarryBeforeWeek: boolean[] = [],
+  planVersionsByWeek: string[][] = [],
 ): WeeklyStats[] {
   let carry = 0;
   return calendar.map((wk, i) => {
+    if (resetCarryBeforeWeek[i]) carry = 0;
     const target = targets[i];
     const actual = actuals[i];
     const carryover = carry;
@@ -128,6 +133,7 @@ function buildWeeklyStats(
       attainmentPct,
       attainmentEffectivePct,
       ragBand: weekRagBand(attainmentPct),
+      planVersions: planVersionsByWeek[i] ?? [],
     };
   });
 }
@@ -138,6 +144,7 @@ export function buildPlantWeeklySummary(
   planItems: WeeklyInputPlanItem[],
   targets: WeeklyInputTarget[],
   snapshotDate: string | null,
+  versionTimeline: PlanVersion[] = [],
 ): PlantWeeklySummary {
   const calendar = buildWeekCalendar(month);
 
@@ -164,6 +171,23 @@ export function buildPlantWeeklySummary(
     elapsedDaysInWeek = Math.max(0, Math.min(dataDay - wk.startDay + 1, wk.endDay - wk.startDay + 1));
   }
 
+  const makeCategoryLookup = (rows: Array<WeeklyInputTarget | VersionTarget>) => {
+    const byKey = new Map<string, string>();
+    const byCode = new Map<string, string>();
+    for (const t of rows) {
+      byKey.set(`${t.itemCode}|${t.colour}`, t.category);
+      const nc = normalizeCode(t.itemCode);
+      if (!byCode.has(nc)) byCode.set(nc, t.category);
+    }
+    return { byKey, byCode };
+  };
+  const staticLookup = makeCategoryLookup(targets);
+  const categoryForDate = (date: string, itemCode: string, colour: string) => {
+    const version = versionForDate(versionTimeline, date);
+    const lookup = version ? makeCategoryLookup(version.targets) : staticLookup;
+    return lookup.byKey.get(`${itemCode}|${colour}`) ?? lookup.byCode.get(normalizeCode(itemCode)) ?? null;
+  };
+
   const catByKey = new Map<string, string>();
   const catByCode = new Map<string, string>();
   for (const t of targets) {
@@ -173,7 +197,41 @@ export function buildPlantWeeklySummary(
   }
 
   const catW = new Map<string, [number, number, number, number]>();
-  for (const item of planItems) {
+  const timelineItems: WeeklyInputPlanItem[] = [];
+  const planVersionsByWeek = calendar.map(() => new Set<string>());
+  const resetCarryBeforeWeek = calendar.map((week) =>
+    versionTimeline.some((version) => version.effectiveFrom >= week.startDate && version.effectiveFrom <= week.endDate),
+  );
+  if (versionTimeline.length > 0) {
+    for (const version of versionTimeline) {
+      for (let weekIndex = 0; weekIndex < calendar.length; weekIndex++) {
+        const week = calendar[weekIndex];
+        const dates: string[] = [];
+        for (let day = week.startDay; day <= week.endDay; day++) {
+          const date = `${month}-${pad2(day)}`;
+          if (versionForDate(versionTimeline, date)?.sourceId === version.sourceId &&
+              versionForDate(versionTimeline, date)?.kind === version.kind) dates.push(date);
+        }
+        if (dates.length === 0) continue;
+        planVersionsByWeek[weekIndex].add(`v${version.sourceId} · ${version.kind}`);
+        const ratio = dates.length / (week.endDay - week.startDay + 1);
+        for (const target of version.targets) {
+          const release = [target.w1, target.w2, target.w3, target.w4][weekIndex] ?? 0;
+          timelineItems.push({
+            itemCode: target.itemCode,
+            colour: target.colour,
+            category: target.category,
+            maxProduction: target.maxPcs,
+            w1: weekIndex === 0 ? release * ratio : 0,
+            w2: weekIndex === 1 ? release * ratio : 0,
+            w3: weekIndex === 2 ? release * ratio : 0,
+            w4: weekIndex === 3 ? release * ratio : 0,
+          });
+        }
+      }
+    }
+  }
+  for (const item of versionTimeline.length > 0 ? timelineItems : planItems) {
     if (item.maxProduction <= 0) continue;
     const arr = catW.get(item.category) ?? [0, 0, 0, 0];
     arr[0] += item.w1;
@@ -188,10 +246,7 @@ export function buildPlantWeeklySummary(
     if (row.date.slice(0, 7) !== month) continue;
     const wkIdx = dateToWeekIndex(row.date, calendar);
     if (wkIdx === null) continue;
-    const cat =
-      catByKey.get(`${row.itemCode}|${row.colour}`) ??
-      catByCode.get(normalizeCode(row.itemCode)) ??
-      null;
+    const cat = categoryForDate(row.date, row.itemCode, row.colour);
     if (!cat) continue;
     const arr = catA.get(cat) ?? [0, 0, 0, 0];
     arr[wkIdx] += row.qty;
@@ -210,7 +265,10 @@ export function buildPlantWeeklySummary(
       plantTargets[i] += tgts[i];
       plantActuals[i] += acts[i];
     }
-    categoryRows.push({ category: cat, weeks: buildWeeklyStats(tgts, acts, calendar, realToday, month) });
+    categoryRows.push({
+      category: cat,
+      weeks: buildWeeklyStats(tgts, acts, calendar, realToday, month, resetCarryBeforeWeek, planVersionsByWeek.map((x) => [...x])),
+    });
   }
 
   categoryRows.sort((a, b) => {
@@ -225,7 +283,17 @@ export function buildPlantWeeklySummary(
     weekCalendar: calendar,
     currentWeek,
     elapsedDaysInWeek,
-    plant: { weeks: buildWeeklyStats(plantTargets, plantActuals, calendar, realToday, month) },
+    plant: {
+      weeks: buildWeeklyStats(
+        plantTargets,
+        plantActuals,
+        calendar,
+        realToday,
+        month,
+        resetCarryBeforeWeek,
+        planVersionsByWeek.map((x) => [...x]),
+      ),
+    },
     categories: categoryRows,
   };
 }

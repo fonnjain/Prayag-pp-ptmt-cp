@@ -26,6 +26,7 @@ export const correctivePlanRunsTable = pgTable("corrective_plan_runs", {
   id: serial("id").primaryKey(),
   segment: text("segment").notNull().default("PTMT"),
   month: text("month").notNull(),
+  effectiveFrom: text("effective_from"),
   weekClosed: integer("week_closed").notNull().default(0),
   dailyCapacity: real("daily_capacity").notNull().default(21335),
   workingDaysPerWeek: integer("working_days_per_week").notNull().default(6),

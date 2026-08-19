@@ -6,6 +6,7 @@ export const planRunsTable = pgTable("plan_runs", {
   id: serial("id").primaryKey(),
   segment: text("segment").notNull().default("PTMT"),
   month: text("month").notNull(),
+  effectiveFrom: text("effective_from"),
   asOfAt: timestamp("as_of_at", { withTimezone: true }).notNull().defaultNow(),
   status: text("status").notNull().default("draft"),
   factorsJson: jsonb("factors_json").notNull().$type<Record<string, number>>().default({}),

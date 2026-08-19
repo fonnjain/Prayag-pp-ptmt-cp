@@ -4,6 +4,7 @@ export const plantPlanUploadsTable = pgTable("plant_plan_uploads", {
   id:          serial("id").primaryKey(),
   month:       text("month").notNull(),
   segment:     text("segment").notNull().default("Plumbing"),
+  effectiveFrom: text("effective_from"),
   filename:    text("filename").notNull(),
   itemCount:   integer("item_count").notNull().default(0),
   summaryJson: jsonb("summary_json"),

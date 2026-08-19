@@ -1,8 +1,16 @@
 import { Router, type IRouter } from "express";
 import { db, bufferCategoriesTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, correctivePlanRunsTable } from "@workspace/db";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, ne } from "drizzle-orm";
 import { buildPlanItems, loadLatestUploadRowsByKind, handlePlanError } from "./plan";
 import { summarizePlan } from "../lib/calc";
+import {
+  assertEffectiveDate,
+  defaultEffectiveDate,
+  monthStart,
+  savePlanVersionSnapshot,
+  setPlanVersionSnapshotEffectiveDate,
+  validateNewVersionDate,
+} from "../lib/plant-plan-timeline";
 
 const router: IRouter = Router();
 
@@ -25,7 +33,7 @@ function makeSummary(run: typeof planRunsTable.$inferSelect, items: typeof planR
 
 /** POST /api/plan/runs — create a draft run, snapshot all inputs & computed results */
 router.post("/plan/runs", async (req, res): Promise<void> => {
-  const { month, note, segment: segmentRaw } = req.body ?? {};
+  const { month, note, segment: segmentRaw, effectiveFrom: effectiveFromRaw } = req.body ?? {};
 
   // Normalise segment casing the same way GET /plan does, then validate.
   // A casing mismatch previously produced a silent zero-item run that was
@@ -83,10 +91,22 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
     return;
   }
 
-  // Create the plan run record
+  let effectiveFrom: string;
+  try {
+    effectiveFrom = effectiveFromRaw === undefined
+      ? defaultEffectiveDate(month)
+      : assertEffectiveDate(month, effectiveFromRaw);
+  } catch (err) {
+    res.status(400).json({ error: String(err instanceof Error ? err.message : err) });
+    return;
+  }
+
+  // Create the plan run record. The first run is normalized to the first day
+  // when it is finalized; retaining the requested/default date on a draft lets
+  // a planner correct it before issuance.
   const [run] = await db
     .insert(planRunsTable)
-    .values({ month, segment, status: "draft", factorsJson, note: note ?? null })
+    .values({ month, segment, effectiveFrom, status: "draft", factorsJson, note: note ?? null })
     .returning();
 
   const runId = run.id;
@@ -146,6 +166,26 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
       await db.insert(pendingSnapshotsTable).values(snapshotValues.slice(i, i + BATCH));
     }
   }
+
+  await savePlanVersionSnapshot({
+    month,
+    segment,
+    kind: "run",
+    sourceId: runId,
+    effectiveFrom,
+    sourceLabel: note ?? `Plan run #${runId}`,
+    targets: planItems.map((item) => ({
+      itemCode: item.itemCode,
+      colour: item.colour,
+      category: item.category,
+      maxPcs: item.maxProduction,
+      minPcs: item.minProduction,
+      w1: item.w1 ?? 0,
+      w2: item.w2 ?? 0,
+      w3: item.w3 ?? 0,
+      w4: item.w4 ?? 0,
+    })),
+  });
 
   const summary = makeSummary(run, resultValues as any);
   res.status(201).json(summary);
@@ -379,9 +419,33 @@ router.post("/plan/runs/:id/finalize", async (req, res): Promise<void> => {
     res.json({ message: "Already finalized", run: run.id });
     return;
   }
-  await db.update(planRunsTable).set({ status: "finalized" }).where(eq(planRunsTable.id, id));
+  const earlierFinalized = await db
+    .select({ id: planRunsTable.id })
+    .from(planRunsTable)
+    .where(and(
+      eq(planRunsTable.month, run.month),
+      eq(planRunsTable.segment, run.segment),
+      eq(planRunsTable.status, "finalized"),
+      ne(planRunsTable.id, id),
+    ))
+    .limit(1);
+  let effectiveFrom: string;
+  try {
+    // Version one governs the whole month even if the run was issued later.
+    effectiveFrom = earlierFinalized.length === 0
+      ? monthStart(run.month)
+      : req.body?.effectiveFrom === undefined
+        ? (run.effectiveFrom ?? defaultEffectiveDate(run.month))
+        : assertEffectiveDate(run.month, req.body.effectiveFrom);
+    await validateNewVersionDate({ month: run.month, segment: run.segment, effectiveFrom, kind: "run", sourceId: id });
+  } catch (err) {
+    res.status(400).json({ error: String(err instanceof Error ? err.message : err) });
+    return;
+  }
+  await db.update(planRunsTable).set({ status: "finalized", effectiveFrom }).where(eq(planRunsTable.id, id));
+  await setPlanVersionSnapshotEffectiveDate({ kind: "run", sourceId: id, effectiveFrom });
   const results = await db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, id));
-  const updated = { ...run, status: "finalized" };
+  const updated = { ...run, status: "finalized", effectiveFrom };
   res.json(makeSummary(updated, results));
 });
 

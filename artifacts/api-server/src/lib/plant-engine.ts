@@ -1,6 +1,7 @@
 import { countWorkingDaysElapsed, buildCalendarModel } from "./monitoring-calc";
 import type { DailyActualRow, PlantTargetRow } from "./plant-ingestion";
 import { itemKey, normalizeCode } from "./sheets";
+import { versionForDate, type PlanVersion, type VersionTarget } from "./plant-plan-timeline";
 
 const r2 = (n: number): number => Math.round(n * 100) / 100;
 const rNull = (n: number | null): number | null => (n === null ? null : r2(n));
@@ -87,6 +88,7 @@ export interface PlantCalendarConfig {
   shiftsPerDay: number;
   shiftHours: number;
   snapshotDate: string | null;
+  versionTimeline?: PlanVersion[];
 }
 
 function ragBand(pct: number | null): "green" | "amber" | "red" | null {
@@ -102,10 +104,12 @@ function computeKPIs(
   producedToDate: number,
   calendar: ReturnType<typeof buildCalendarModel>,
   dailyOutputs: number[],
+  requiredCumOverride?: number,
+  requiredPerDayOverride?: number,
 ): PlantKPIs {
   const { workingDays, elapsed, remaining } = calendar;
-  const requiredPerDay = workingDays > 0 ? r2(targetMax / workingDays) : 0;
-  const requiredCum = r2(requiredPerDay * elapsed);
+  const requiredPerDay = requiredPerDayOverride ?? (workingDays > 0 ? r2(targetMax / workingDays) : 0);
+  const requiredCum = requiredCumOverride ?? r2(requiredPerDay * elapsed);
 
   const attainmentCumPct = requiredCum > 0 ? r2((producedToDate / requiredCum) * 100) : null;
   const attainmentMonthPct = targetMax > 0 ? r2((producedToDate / targetMax) * 100) : null;
@@ -175,9 +179,25 @@ export function buildPlantBundle(
   const calendar = buildCalendarModel(workingDays, elapsed);
 
   const allWorkingDays = workingDaysInMonth(month);
+  const versionTimeline = config.versionTimeline ?? [];
 
-  const targetByKey = new Map<string, PlantTargetRow>();
-  const targetByCode = new Map<string, PlantTargetRow>();
+  const targetLookup = (rows: Array<PlantTargetRow | VersionTarget>) => {
+    const byKey = new Map<string, PlantTargetRow | VersionTarget>();
+    const byCode = new Map<string, PlantTargetRow | VersionTarget>();
+    for (const t of rows) {
+      byKey.set(itemKey(t.itemCode, t.colour), t);
+      if (!byCode.has(normalizeCode(t.itemCode))) byCode.set(normalizeCode(t.itemCode), t);
+    }
+    return { byKey, byCode };
+  };
+  const latestLookup = targetLookup(targets);
+  const lookupForDate = (date: string) => {
+    const version = versionForDate(versionTimeline, date);
+    return version ? targetLookup(version.targets) : latestLookup;
+  };
+
+  const targetByKey = latestLookup.byKey;
+  const targetByCode = latestLookup.byCode;
   for (const t of targets) {
     targetByKey.set(itemKey(t.itemCode, t.colour), t);
     if (!targetByCode.has(normalizeCode(t.itemCode))) targetByCode.set(normalizeCode(t.itemCode), t);
@@ -197,27 +217,45 @@ export function buildPlantBundle(
 
   const elapsedWorkingDays = allWorkingDays.slice(0, elapsed);
   const dailyOutputsArr = elapsedWorkingDays.map((d) => dailyByDate.get(d) ?? 0);
+  const dailyRequiredByDate = new Map<string, number>();
+  for (const date of allWorkingDays) {
+    const version = versionForDate(versionTimeline, date);
+    const activeTargets = version?.targets ?? targets;
+    const total = activeTargets.reduce((sum, target) => sum + target.maxPcs, 0);
+    dailyRequiredByDate.set(date, workingDays > 0 ? total / workingDays : 0);
+  }
+  const requiredCumByTimeline = elapsedWorkingDays.reduce((sum, date) => sum + (dailyRequiredByDate.get(date) ?? 0), 0);
 
   let plantProduced = 0;
   for (const v of dailyOutputsArr) plantProduced += v;
 
-  const plantKPIs = computeKPIs(plantTargetMax, plantTargetMin, plantProduced, calendar, dailyOutputsArr);
+  const plantKPIs = computeKPIs(
+    plantTargetMax,
+    plantTargetMin,
+    plantProduced,
+    calendar,
+    dailyOutputsArr,
+    requiredCumByTimeline,
+    workingDays > 0 ? plantTargetMax / workingDays : 0,
+  );
 
   const dailySeries: DayRecord[] = [];
   let cumActual = 0;
   let wdNum = 0;
-  const reqPerDay = plantKPIs.requiredPerDay;
+  let cumulativeRequired = 0;
   for (const d of allWorkingDays) {
     wdNum++;
     const dayActual = dailyByDate.get(d) ?? 0;
+    const dayRequired = dailyRequiredByDate.get(d) ?? 0;
     if (wdNum <= elapsed) cumActual += dayActual;
+    if (wdNum <= elapsed) cumulativeRequired += dayRequired;
     dailySeries.push({
       date: d,
       workingDayNum: wdNum,
       actualPcs: wdNum <= elapsed ? dayActual : 0,
-      requiredPerDay: reqPerDay,
+      requiredPerDay: r2(dayRequired),
       cumulativeActual: wdNum <= elapsed ? cumActual : 0,
-      cumulativeRequired: r2(reqPerDay * wdNum),
+      cumulativeRequired: wdNum <= elapsed ? r2(cumulativeRequired) : 0,
     });
   }
 
@@ -230,7 +268,8 @@ export function buildPlantBundle(
   }
 
   for (const row of actuals) {
-    const t = targetByKey.get(itemKey(row.itemCode, row.colour)) ?? targetByCode.get(normalizeCode(row.itemCode));
+    const rowLookup = lookupForDate(row.date);
+    const t = rowLookup.byKey.get(itemKey(row.itemCode, row.colour)) ?? rowLookup.byCode.get(normalizeCode(row.itemCode));
     const cat = t?.category ?? "Unknown";
     const entry = categoryMap.get(cat);
     if (!entry) continue;

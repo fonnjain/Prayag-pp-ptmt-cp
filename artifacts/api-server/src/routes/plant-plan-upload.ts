@@ -39,6 +39,12 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { db, plantPlanUploadsTable, plantPlanItemsTable } from "@workspace/db";
 import { desc, eq, and } from "drizzle-orm";
+import {
+  assertEffectiveDate,
+  defaultEffectiveDate,
+  savePlanVersionSnapshot,
+  validateNewVersionDate,
+} from "../lib/plant-plan-timeline";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -282,9 +288,18 @@ router.post("/plant-plan", upload.single("file"), async (req, res): Promise<void
 
   const month   = str(req.body?.month);
   const segment = str(req.body?.segment) || "Plumbing";
+  const effectiveFromRaw = str(req.body?.effectiveFrom);
 
   if (!/^\d{4}-\d{2}$/.test(month)) {
     res.status(400).json({ error: "month is required and must be YYYY-MM" });
+    return;
+  }
+  let effectiveFrom: string;
+  try {
+    effectiveFrom = effectiveFromRaw ? assertEffectiveDate(month, effectiveFromRaw) : defaultEffectiveDate(month);
+    await validateNewVersionDate({ month, segment, effectiveFrom, kind: "import" });
+  } catch (err) {
+    res.status(400).json({ error: String(err instanceof Error ? err.message : err) });
     return;
   }
 
@@ -346,6 +361,7 @@ router.post("/plant-plan", upload.single("file"), async (req, res): Promise<void
   const [uploadRecord] = await db.insert(plantPlanUploadsTable).values({
     month,
     segment,
+    effectiveFrom,
     filename:    req.file.originalname,
     itemCount:   allItems.length,
     summaryJson: summary.length > 0 ? summary : null,
@@ -363,6 +379,28 @@ router.post("/plant-plan", upload.single("file"), async (req, res): Promise<void
       allItems.slice(i, i + BATCH).map((it) => ({ ...it, uploadId: uploadRecord.id }))
     );
   }
+
+  // Uploaded workbooks do not carry issued W1–W4 releases. Persist the item
+  // totals but leave the week fields empty rather than inventing a schedule.
+  await savePlanVersionSnapshot({
+    month,
+    segment,
+    kind: "import",
+    sourceId: uploadRecord.id,
+    effectiveFrom,
+    sourceLabel: req.file.originalname,
+    targets: allItems.map((item) => ({
+      itemCode: item.itemCode,
+      colour: "",
+      category: item.material || item.itemType,
+      maxPcs: item.feasiblePcs,
+      minPcs: 0,
+      w1: 0,
+      w2: 0,
+      w3: 0,
+      w4: 0,
+    })),
+  });
 
   req.log?.info({ uploadId: uploadRecord.id, month, segment, itemCount: allItems.length }, "plant-plan uploaded");
 

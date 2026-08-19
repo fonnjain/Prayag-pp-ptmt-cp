@@ -3,7 +3,7 @@ import { launchBrowser } from "../lib/browser";
 import { exportTimestamp } from "../lib/export-filename";
 import { db, plantConfigsTable, plantSourceConfigsTable, plantIngestionCacheTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { fetchDailyActuals, fetchMonthlyTargets } from "../lib/plant-ingestion";
+import { fetchDailyActuals, fetchMonthlyTargets, fetchMonitoringPlanTimeline } from "../lib/plant-ingestion";
 import { buildPlantBundle, type PlantBundle } from "../lib/plant-engine";
 import { buildPlantWarnings, buildPlantWeeklyWarnings, DEFAULT_PLANT_WARNING_THRESHOLDS, type PlantWarningThresholds } from "../lib/plant-warnings";
 import { buildPlantRecommendations } from "../lib/plant-recommendations";
@@ -52,14 +52,20 @@ export async function computePlantBundle(month: string) {
     snapshotDate: row?.snapshotDate ?? null,
     elapsed: 0,
   };
-  const [actuals, targets] = await Promise.all([fetchDailyActuals(month), fetchMonthlyTargets(month)]);
-  const bundle = buildPlantBundle(month, actuals, targets, config);
+  const [actuals, targets, versionTimeline] = await Promise.all([
+    fetchDailyActuals(month),
+    fetchMonthlyTargets(month),
+    fetchMonitoringPlanTimeline(month),
+  ]);
+  const bundle = buildPlantBundle(month, actuals, targets, { ...config, versionTimeline });
   const thresholds = loadThresholds(row);
   const warnings = buildPlantWarnings(bundle, thresholds);
 
   // Append weekly release warnings
   let planItems: Awaited<ReturnType<typeof buildPlanItems>> = [];
-  try { planItems = await buildPlanItems(month); } catch { /* plan unavailable */ }
+  if (versionTimeline.length === 0) {
+    try { planItems = await buildPlanItems(month); } catch { /* plan unavailable */ }
+  }
   const snapshotDate = row?.snapshotDate ?? (actuals.length > 0 ? [...actuals].map((r) => r.date).sort().pop()! : null);
   const weekly = buildPlantWeeklySummary(
     month,
@@ -67,6 +73,7 @@ export async function computePlantBundle(month: string) {
     planItems as { itemCode: string; colour: string; category: string; w1: number; w2: number; w3: number; w4: number; maxProduction: number }[],
     targets,
     snapshotDate,
+    versionTimeline,
   );
   const weeklyWarnings = buildPlantWeeklyWarnings(weekly);
   const allWarnings = [...warnings, ...weeklyWarnings].sort((a, b) => {
@@ -75,7 +82,7 @@ export async function computePlantBundle(month: string) {
   });
 
   const recommendations = buildPlantRecommendations(bundle, thresholds);
-  return { ...bundle, warnings: allWarnings, recommendations };
+  return { ...bundle, planVersions: versionTimeline.map(({ targets: _targets, ...version }) => version), warnings: allWarnings, recommendations };
 }
 
 // --- GET /plant/bundle ---
@@ -133,8 +140,12 @@ router.get("/plant/trend", async (req, res) => {
           snapshotDate: row?.snapshotDate ?? null,
           elapsed: 0,
         };
-        const [actuals, targets] = await Promise.all([fetchDailyActuals(month), fetchMonthlyTargets(month)]);
-        const bundle = buildPlantBundle(month, actuals, targets, config);
+        const [actuals, targets, versionTimeline] = await Promise.all([
+          fetchDailyActuals(month),
+          fetchMonthlyTargets(month),
+          fetchMonitoringPlanTimeline(month),
+        ]);
+        const bundle = buildPlantBundle(month, actuals, targets, { ...config, versionTimeline });
         const { plant, categories } = bundle;
         const sortedCats = [...categories].sort((a, b) => (b.attainmentCumPct ?? 0) - (a.attainmentCumPct ?? 0));
         return {
@@ -366,16 +377,19 @@ router.get("/plant/weekly-summary", async (req, res) => {
   }
   try {
     const configRow = await loadPlantConfigRow(month);
-    const [actuals, targets] = await Promise.all([
+    const [actuals, targets, versionTimeline] = await Promise.all([
       fetchDailyActuals(month),
       fetchMonthlyTargets(month),
+      fetchMonitoringPlanTimeline(month),
     ]);
 
     let planItems: Awaited<ReturnType<typeof buildPlanItems>> = [];
-    try {
-      planItems = await buildPlanItems(month);
-    } catch {
-      // plan items unavailable for this month
+    if (versionTimeline.length === 0) {
+      try {
+        planItems = await buildPlanItems(month);
+      } catch {
+        // plan items unavailable for this month
+      }
     }
 
     const snapshotDate =
@@ -388,6 +402,7 @@ router.get("/plant/weekly-summary", async (req, res) => {
       planItems as { itemCode: string; colour: string; category: string; w1: number; w2: number; w3: number; w4: number; maxProduction: number }[],
       targets,
       snapshotDate,
+      versionTimeline,
     );
 
     res.json(summary);

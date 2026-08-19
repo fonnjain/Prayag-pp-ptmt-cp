@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { getTabValues, SHEET_IDS, itemKey, normalizeCode } from "./sheets";
 import { logger } from "./logger";
 import { buildPlanItems } from "../routes/plan";
+import { getPlanVersionTimeline, type PlanVersion } from "./plant-plan-timeline";
 
 export interface DailyActualRow {
   date: string;
@@ -24,7 +25,7 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 
 function currentMonthStr(): string {
   const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 function toNum(v: unknown): number {
@@ -116,6 +117,17 @@ export async function fetchDailyActuals(month: string): Promise<DailyActualRow[]
 }
 
 export async function fetchMonthlyTargets(month: string): Promise<PlantTargetRow[]> {
+  const timeline = await getPlanVersionTimeline(month, "PTMT");
+  const latest = timeline.at(-1);
+  if (latest) {
+    return latest.targets.map((item) => ({
+      itemCode: item.itemCode,
+      colour: item.colour,
+      category: item.category,
+      maxPcs: item.maxPcs,
+      minPcs: item.minPcs,
+    }));
+  }
   if (month >= currentMonthStr()) {
     const planItems = await buildPlanItems(month);
     return planItems.map((item) => ({
@@ -133,6 +145,11 @@ export async function fetchMonthlyTargets(month: string): Promise<PlantTargetRow
     return [];
   }
   return fetchTargetsFromMasterSheet(src.fileId, month);
+}
+
+/** The immutable plan timeline used by monitoring calculations for PTMT. */
+export async function fetchMonitoringPlanTimeline(month: string): Promise<PlanVersion[]> {
+  return getPlanVersionTimeline(month, "PTMT");
 }
 
 async function fetchTargetsFromMasterSheet(fileId: string, month: string): Promise<PlantTargetRow[]> {

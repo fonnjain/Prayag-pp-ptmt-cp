@@ -15,6 +15,7 @@ import {
 import { buildPlanItems, loadLatestUploadRowsByKind, type PlanItemWithBom } from "../routes/plan";
 import { annotateWeeklyRelease, type CalcPlanItem } from "./calc";
 import { logger } from "./logger";
+import { defaultEffectiveDate, savePlanVersionSnapshot } from "./plant-plan-timeline";
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
@@ -207,6 +208,12 @@ export interface CorrectiveReplanResult {
   baselinePlanRunId: number | null;
   /** "frozen-run" when the baseline came from an immutable plan run snapshot. */
   baselineSource: "frozen-run" | "live";
+  /**
+   * Grand total of plan_run_results for the cited baseline run (rounded pcs).
+   * null = either no frozen baseline was used or the run predates migration 022.
+   * Used by the UI to detect item-sum drift vs the frozen plan run header.
+   */
+  frozenPlanGrandMax: number | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1047,6 +1054,10 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     workingDaysRemaining,
   });
 
+  const versionEffectiveFrom = effectiveAsOfDate
+    ?? (weekClosed > 0
+      ? `${month}-${String(weekClosed * 7 + 1).padStart(2, "0")}`
+      : defaultEffectiveDate(month));
   let run: typeof correctivePlanRunsTable.$inferSelect | undefined;
   let reusedExistingRun = false;
   if (!input.dryRun) {
@@ -1073,6 +1084,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     const [inserted] = await tx.insert(correctivePlanRunsTable).values({
       segment,
       month,
+      effectiveFrom: versionEffectiveFrom,
       weekClosed,
       dailyCapacity: Math.round(totalDailyApplied),
       workingDaysPerWeek: globalWorkingDays,
@@ -1146,6 +1158,28 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     categories: categories.length, unplanned: unplannedProduction.length,
   }, "corrective-engine: replan complete");
 
+  if (run && !reusedExistingRun) {
+    await savePlanVersionSnapshot({
+      month,
+      segment,
+      kind: "corrective",
+      sourceId: run.id,
+      effectiveFrom: versionEffectiveFrom,
+      sourceLabel: `Corrective run #${run.id}`,
+      targets: items.map((item) => ({
+        itemCode: item.itemCode,
+        colour: item.colour,
+        category: item.category,
+        maxPcs: item.planRev,
+        minPcs: 0,
+        w1: item.w1Rev,
+        w2: item.w2Rev,
+        w3: item.w3Rev,
+        w4: item.w4Rev,
+      })),
+    });
+  }
+
   return {
     runId: run?.id ?? 0,
     month,
@@ -1170,5 +1204,6 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     unplannedTotal,
     baselinePlanRunId: input.planRunId ?? null,
     baselineSource: input.planRunId != null ? "frozen-run" : "live",
+    frozenPlanGrandMax: input.planRunGrandMax != null ? Math.round(input.planRunGrandMax) : null,
   };
 }
