@@ -369,6 +369,7 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
         runRatePerDay: data.runRatePerDay,
       },
       categories: data.categories,
+       items: data.items,
       weeks: data.weeks,
       unmapped: data.unmapped,
     });

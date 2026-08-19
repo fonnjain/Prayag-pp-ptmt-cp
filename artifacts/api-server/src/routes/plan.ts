@@ -2171,6 +2171,7 @@ export async function computePlumbingMonitoringPayload(month: string) {
   function wkIdx(day: number): number { return day <= 7 ? 0 : day <= 14 ? 1 : day <= 21 ? 2 : 3; }
 
   const catActual = new Map<string, [number, number, number, number]>();
+  const itemActual = new Map<string, [number, number, number, number]>();
   const unmappedByWeek: [number, number, number, number] = [0, 0, 0, 0];
   const unmappedCodeQty = new Map<string, number>();
 
@@ -2185,6 +2186,10 @@ export async function computePlumbingMonitoringPayload(month: string) {
     const arr = catActual.get(cat) ?? [0, 0, 0, 0];
     arr[wi] += row.qty;
     catActual.set(cat, arr);
+    const itemKey = `${cat}::${row.normCode}`;
+    const itemArr = itemActual.get(itemKey) ?? [0, 0, 0, 0];
+    itemArr[wi] += row.qty;
+    itemActual.set(itemKey, itemArr);
   }
 
   // Week calendar
@@ -2257,6 +2262,54 @@ export async function computePlumbingMonitoringPayload(month: string) {
     };
   }).sort((a, b) => b.totalRelease - a.totalRelease);
 
+  // Per-item rows for category drill-down. Keep the same weekly population and
+  // normalization as the category totals so expanding a row reconciles exactly
+  // to the numbers shown above it.
+  const itemRelease = new Map<string, {
+    itemCode: string;
+    category: string;
+    release: [number, number, number, number];
+  }>();
+  for (const item of planItems) {
+    const normCode = normalizeCodeStrict(item.itemCode);
+    const key = `${item.category}::${normCode}`;
+    const existing = itemRelease.get(key);
+    const release: [number, number, number, number] = existing?.release ?? [0, 0, 0, 0];
+    release[0] += (item as unknown as Record<string, number>)["w1"] ?? 0;
+    release[1] += (item as unknown as Record<string, number>)["w2"] ?? 0;
+    release[2] += (item as unknown as Record<string, number>)["w3"] ?? 0;
+    release[3] += (item as unknown as Record<string, number>)["w4"] ?? 0;
+    itemRelease.set(key, {
+      itemCode: existing?.itemCode ?? item.itemCode,
+      category: item.category,
+      release,
+    });
+  }
+  const itemKeys = new Set([...itemRelease.keys(), ...itemActual.keys()]);
+  const items = [...itemKeys].map((key) => {
+    const planned = itemRelease.get(key);
+    const actual = itemActual.get(key) ?? [0, 0, 0, 0];
+    const category = planned?.category ?? key.split("::")[0]!;
+    const itemCode = planned?.itemCode ?? key.split("::")[1]!;
+    const release = planned?.release ?? [0, 0, 0, 0];
+    const totalRelease = release.reduce((sum, value) => sum + value, 0);
+    const totalActual = actual.reduce((sum, value) => sum + value, 0);
+    return {
+      itemCode,
+      category,
+      w1Release: Math.round(release[0]),
+      w1Actual: actual[0],
+      w2Release: Math.round(release[1]),
+      w2Actual: actual[1],
+      w3Release: Math.round(release[2]),
+      w3Actual: actual[2],
+      w4Release: Math.round(release[3]),
+      w4Actual: actual[3],
+      totalRelease: Math.round(totalRelease),
+      totalActual,
+    };
+  }).sort((a, b) => b.totalRelease - a.totalRelease || a.itemCode.localeCompare(b.itemCode));
+
   // Unmapped top codes
   const topCodes = [...unmappedCodeQty.entries()]
     .sort((a, b) => b[1] - a[1]).slice(0, 20).map(([code, qty]) => ({ code, qty }));
@@ -2268,7 +2321,7 @@ export async function computePlumbingMonitoringPayload(month: string) {
 
   return {
     month, lastDataDate, workingDaysElapsed,
-    weeks, categories,
+    weeks, categories, items,
     unmapped: { byWeek: [...unmappedByWeek], total: totalUnmapped, topCodes },
     totalProduced, totalMapped, totalUnmapped, runRatePerDay,
   };

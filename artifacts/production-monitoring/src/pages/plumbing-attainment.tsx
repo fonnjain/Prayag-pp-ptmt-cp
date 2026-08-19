@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Layers, TrendingUp, TrendingDown } from "lucide-react";
+import { RefreshCw, Layers, TrendingUp, TrendingDown, ChevronDown, ChevronRight } from "lucide-react";
 
 const CATEGORY_ORDER = [
   "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
@@ -25,6 +25,7 @@ export default function PlumbingAttainment({ month }: { month: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -51,6 +52,7 @@ export default function PlumbingAttainment({ month }: { month: string }) {
   );
 
   const cats: any[] = data?.categories ?? [];
+  const items: any[] = data?.items ?? [];
   // API returns { plant: { produced, mapped, unmapped }, categories: [...], weeks: [...] }
   // totalRelease and mappedActual must share the same population (categories = mapped items only).
   // plant.produced = mapped + unmapped; using it in the ratio inflates attainment by the unmapped
@@ -139,6 +141,7 @@ export default function PlumbingAttainment({ month }: { month: string }) {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Category-Level Attainment</CardTitle>
+          <p className="text-xs text-muted-foreground">Click a category to view its item codes.</p>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto">
@@ -165,17 +168,89 @@ export default function PlumbingAttainment({ month }: { month: string }) {
                     </tr>
                   );
                   const att = c.totalRelease > 0 ? (c.totalActual / c.totalRelease) * 100 : null;
+                  const isExpanded = expandedCategory === catName;
+                  const categoryItems = items.filter((item: any) => item.category === catName);
                   return (
-                    <tr key={catName} className="hover:bg-muted/20">
-                      <td className="py-2 px-4 font-medium">{catName}</td>
-                      <td className="py-2 px-3 text-right font-mono">{fmtN(c.w1Release)}</td>
-                      <td className="py-2 px-3 text-right font-mono">{fmtN(c.w1Actual)}</td>
-                      <td className="py-2 px-3 text-right font-mono">{fmtN(c.w2Release)}</td>
-                      <td className="py-2 px-3 text-right font-mono">{fmtN(c.w2Actual)}</td>
-                      <td className="py-2 px-3 text-right font-mono font-semibold">{fmtN(c.totalRelease)}</td>
-                      <td className="py-2 px-3 text-right font-mono font-semibold">{fmtN(c.totalActual)}</td>
-                      <td className="py-2 px-4 text-right">{ragBadge(att)}</td>
-                    </tr>
+                    <Fragment key={catName}>
+                      <tr
+                        className="hover:bg-muted/20 cursor-pointer select-none"
+                        role="button"
+                        tabIndex={0}
+                        aria-expanded={isExpanded}
+                        aria-label={`${isExpanded ? "Collapse" : "Expand"} ${catName} item codes`}
+                        onClick={() => setExpandedCategory(isExpanded ? null : catName)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setExpandedCategory(isExpanded ? null : catName);
+                          }
+                        }}
+                      >
+                        <td className="py-2 px-4 font-medium">
+                          <span className="inline-flex items-center gap-1.5">
+                            {isExpanded
+                              ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                              : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                            {catName}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono">{fmtN(c.w1Release)}</td>
+                        <td className="py-2 px-3 text-right font-mono">{fmtN(c.w1Actual)}</td>
+                        <td className="py-2 px-3 text-right font-mono">{fmtN(c.w2Release)}</td>
+                        <td className="py-2 px-3 text-right font-mono">{fmtN(c.w2Actual)}</td>
+                        <td className="py-2 px-3 text-right font-mono font-semibold">{fmtN(c.totalRelease)}</td>
+                        <td className="py-2 px-3 text-right font-mono font-semibold">{fmtN(c.totalActual)}</td>
+                        <td className="py-2 px-4 text-right">{ragBadge(att)}</td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-muted/15">
+                          <td colSpan={8} className="px-4 py-2">
+                            <div className="rounded-md border border-border/50 overflow-x-auto">
+                              <table className="w-full text-xs">
+                                <thead className="bg-muted/30">
+                                  <tr className="border-b border-border/40 text-right text-muted-foreground">
+                                    <th className="text-left py-2 px-3 font-medium">Item Code</th>
+                                    <th className="py-2 px-2 font-medium">W1 Release</th>
+                                    <th className="py-2 px-2 font-medium">W1 Actual</th>
+                                    <th className="py-2 px-2 font-medium">W2 Release</th>
+                                    <th className="py-2 px-2 font-medium">W2 Actual</th>
+                                    <th className="py-2 px-2 font-medium">Total Release</th>
+                                    <th className="py-2 px-2 font-medium">Total Actual</th>
+                                    <th className="py-2 px-3 font-medium">Attainment</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border/30">
+                                  {categoryItems.map((item: any) => {
+                                    const itemAtt = item.totalRelease > 0
+                                      ? (item.totalActual / item.totalRelease) * 100
+                                      : null;
+                                    return (
+                                      <tr key={`${item.category}-${item.itemCode}`} className="hover:bg-muted/20">
+                                        <td className="py-1.5 px-3 text-left font-mono font-medium">{item.itemCode}</td>
+                                        <td className="py-1.5 px-2 text-right font-mono">{fmtN(item.w1Release)}</td>
+                                        <td className="py-1.5 px-2 text-right font-mono">{fmtN(item.w1Actual)}</td>
+                                        <td className="py-1.5 px-2 text-right font-mono">{fmtN(item.w2Release)}</td>
+                                        <td className="py-1.5 px-2 text-right font-mono">{fmtN(item.w2Actual)}</td>
+                                        <td className="py-1.5 px-2 text-right font-mono font-semibold">{fmtN(item.totalRelease)}</td>
+                                        <td className="py-1.5 px-2 text-right font-mono font-semibold">{fmtN(item.totalActual)}</td>
+                                        <td className="py-1.5 px-3 text-right">{ragBadge(itemAtt)}</td>
+                                      </tr>
+                                    );
+                                  })}
+                                  {categoryItems.length === 0 && (
+                                    <tr>
+                                      <td colSpan={8} className="py-3 px-3 text-center text-muted-foreground">
+                                        No item-code detail available for this category.
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>
