@@ -9,18 +9,79 @@ import { resolvePlantMonthLifecycle, resolveWorkingDays } from "../lib/plant-lif
 import { logger } from "../lib/logger";
 const router: IRouter = Router();
 
-// In-memory bundle cache — keyed by month, invalidated after 5 min or on demand
-type BundleCacheEntry = {
-  result: Awaited<ReturnType<typeof computePlantBundle>>;
+// The dashboard asks for the bundle and weekly summary together. Cache the full
+// shared computation so a cold page visit never starts two independent Sheet +
+// plan rebuilds for the same month.
+type PlantMonitoringResult = Awaited<ReturnType<typeof computeLifecyclePlantMonitoring>>;
+type MonitoringCacheEntry = {
+  result: PlantMonitoringResult;
   lifecycle: ReturnType<typeof resolvePlantMonthLifecycle>["state"];
   ts: number;
 };
-const bundleCache = new Map<string, BundleCacheEntry>();
-const BUNDLE_CACHE_TTL_MS = 5 * 60 * 1000;
+const monitoringCache = new Map<string, MonitoringCacheEntry>();
+const monitoringInFlight = new Map<string, {
+  lifecycle: ReturnType<typeof resolvePlantMonthLifecycle>["state"];
+  promise: Promise<PlantMonitoringResult>;
+}>();
+const PLANT_MONITORING_CACHE_TTL_MS = 5 * 60 * 1000;
+let plantMonitoringCacheEpoch = 0;
+let computePlantMonitoringForCache = computeLifecyclePlantMonitoring;
 
 export function invalidatePlantBundleCache(month?: string) {
-  if (month) bundleCache.delete(month);
-  else bundleCache.clear();
+  // Incrementing the epoch prevents a pre-invalidation computation from
+  // repopulating the cache after source data or configuration changes.
+  plantMonitoringCacheEpoch++;
+  if (month) {
+    monitoringCache.delete(month);
+    monitoringInFlight.delete(month);
+  } else {
+    monitoringCache.clear();
+    monitoringInFlight.clear();
+  }
+}
+
+export function _setPlantMonitoringComputeForTest(
+  compute: (month: string) => Promise<PlantMonitoringResult>,
+): () => void {
+  const previous = computePlantMonitoringForCache;
+  computePlantMonitoringForCache = compute;
+  return () => {
+    computePlantMonitoringForCache = previous;
+  };
+}
+
+export async function getPlantMonitoringCached(month: string): Promise<PlantMonitoringResult> {
+  const lifecycle = resolvePlantMonthLifecycle(month).state;
+  const cached = monitoringCache.get(month);
+  if (
+    cached
+    && cached.lifecycle === lifecycle
+    && Date.now() - cached.ts < PLANT_MONITORING_CACHE_TTL_MS
+  ) {
+    return cached.result;
+  }
+
+  const pending = monitoringInFlight.get(month);
+  if (pending && pending.lifecycle === lifecycle) {
+    return pending.promise;
+  }
+
+  const epoch = plantMonitoringCacheEpoch;
+  const promise = computePlantMonitoringForCache(month)
+    .then((result) => {
+      if (epoch === plantMonitoringCacheEpoch) {
+        monitoringCache.set(month, { result, lifecycle, ts: Date.now() });
+      }
+      return result;
+    })
+    .finally(() => {
+      if (monitoringInFlight.get(month)?.promise === promise) {
+        monitoringInFlight.delete(month);
+      }
+    });
+
+  monitoringInFlight.set(month, { lifecycle, promise });
+  return promise;
 }
 
 async function loadPlantConfigRow(month: string) {
@@ -45,7 +106,7 @@ function loadThresholds(row: { thresholdsJson?: unknown } | null): PlantWarningT
 }
 
 export async function computePlantBundle(month: string) {
-  return (await computeLifecyclePlantMonitoring(month)).bundle;
+  return (await getPlantMonitoringCached(month)).bundle;
 }
 
 // --- GET /plant/bundle ---
@@ -56,15 +117,8 @@ router.get("/plant/bundle", async (req, res) => {
     return;
   }
   try {
-    const cached = bundleCache.get(month);
-    const lifecycle = resolvePlantMonthLifecycle(month).state;
-    if (cached && cached.lifecycle === lifecycle && Date.now() - cached.ts < BUNDLE_CACHE_TTL_MS) {
-      res.set("Cache-Control", "private, max-age=300").json(cached.result);
-      return;
-    }
-    const result = await computePlantBundle(month);
-    bundleCache.set(month, { result, lifecycle, ts: Date.now() });
-    res.set("Cache-Control", "private, max-age=300").json(result);
+    const { bundle } = await getPlantMonitoringCached(month);
+    res.set("Cache-Control", "private, max-age=300").json(bundle);
   } catch (err) {
     logger.error({ err, month }, "plant/bundle failed");
     res.status(500).json({ error: "Failed to compute plant bundle" });
@@ -359,7 +413,8 @@ router.get("/plant/weekly-summary", async (req, res) => {
     return;
   }
   try {
-    res.json((await computeLifecyclePlantMonitoring(month)).weekly);
+    const { weekly } = await getPlantMonitoringCached(month);
+    res.set("Cache-Control", "private, max-age=300").json(weekly);
   } catch (err) {
     logger.error({ err, month }, "plant/weekly-summary failed");
     res.status(500).json({ error: "Failed to compute weekly summary" });

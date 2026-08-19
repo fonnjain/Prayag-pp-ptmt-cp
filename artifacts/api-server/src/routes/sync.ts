@@ -197,6 +197,16 @@ export async function runFullSync(month?: string): Promise<void> {
     logger.warn({ err, month: m }, "Plumbing monitoring pre-warm after sync failed"),
   );
 
+  // PTMT Control Board calls bundle + weekly-summary in parallel. Refresh their
+  // shared cache once the sync has completed so the next page load is instant.
+  import("./plant")
+    .then(({ invalidatePlantBundleCache, getPlantMonitoringCached }) => {
+      invalidatePlantBundleCache(m);
+      return getPlantMonitoringCached(m);
+    })
+    .then(() => logger.info({ month: m }, "PTMT monitoring pre-warm after sync complete"))
+    .catch((err) => logger.warn({ err, month: m }, "PTMT monitoring pre-warm after sync failed"));
+
   logger.info({ month: m }, "Full sync complete");
 }
 

@@ -37,6 +37,15 @@ async function main(): Promise<void> {
     // Start auto-sync scheduler after DB is ready.
     // Pulls Daily Production + Order Book hourly during IST work hours.
     startSyncScheduler();
+
+    // Warm the active PTMT monitoring payload before the first browser visit.
+    // Bundle and weekly endpoints share this one result, so the Control Board
+    // can render from memory rather than waiting for a cold Sheets/plan rebuild.
+    const month = new Date().toISOString().slice(0, 7);
+    import("./routes/plant")
+      .then(({ getPlantMonitoringCached }) => getPlantMonitoringCached(month))
+      .then(() => logger.info({ month }, "Plant monitoring startup pre-warm complete"))
+      .catch((err) => logger.warn({ err, month }, "Plant monitoring startup pre-warm failed"));
   })();
 }
 
