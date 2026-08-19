@@ -61,8 +61,6 @@ async function storeReport(
 
 // --- POST /reports/plant-pdf ---
 router.post("/reports/plant-pdf", async (req, res): Promise<void> => {
-  res.status(503).json({ error: "PDF export is not available in this deployment" });
-  return;
   const { month, includeAiNarrative = false } = req.body as {
     month: string;
     includeAiNarrative?: boolean;
@@ -93,8 +91,6 @@ router.post("/reports/plant-pdf", async (req, res): Promise<void> => {
 
 // --- POST /reports/ceo-pdf ---
 router.post("/reports/ceo-pdf", async (req, res): Promise<void> => {
-  res.status(503).json({ error: "PDF export is not available in this deployment" });
-  return;
   const { month, includeAiNarrative = false } = req.body as {
     month: string;
     includeAiNarrative?: boolean;
