@@ -179,12 +179,13 @@ async function hydrateLegacyPlanVersions(month: string, segment: string): Promis
   for (const run of runs) {
     const effectiveFrom = legacyEffectiveFrom(month, run.effectiveFrom, run.createdAt);
     if (!effectiveFrom) continue;
-    const [results, linkedCorrective] = await Promise.all([
+    const [results, linkedCorrectiveRows] = await Promise.all([
       db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, run.id)),
       db.select().from(correctivePlanRunsTable).where(eq(correctivePlanRunsTable.planRunId, run.id)).orderBy(asc(correctivePlanRunsTable.createdAt)).limit(1),
     ]);
+    const linkedCorrective = linkedCorrectiveRows[0];
     const allocationRows = linkedCorrective
-      ? await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, linkedCorrective[0].id))
+      ? await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, linkedCorrective.id))
       : [];
     const allocationByKey = new Map(allocationRows.map((item) => [
       `${item.itemCode}|${item.colour}|${item.category}`,

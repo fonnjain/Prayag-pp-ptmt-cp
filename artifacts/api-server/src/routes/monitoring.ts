@@ -30,6 +30,7 @@ import {
   type Warning,
 } from "../lib/monitoring-calc";
 import { logger } from "../lib/logger";
+import { resolveWorkingDays } from "../lib/plant-lifecycle";
 import { exportMonitoringExcel, exportMonitoringPdf, type MonitoringExportData } from "../lib/monitoring-export";
 
 const router: IRouter = Router();
@@ -51,8 +52,10 @@ async function loadWeightMap(): Promise<ItemWeightMap> {
 
 async function loadConfig(month: string) {
   const [row] = await db.select().from(monitoringConfigTable).where(eq(monitoringConfigTable.month, month));
+  const workingDaysConfig = resolveWorkingDays(month, row?.workingDays);
   return {
-    workingDays: row?.workingDays ?? 27,
+    workingDays: workingDaysConfig.workingDays,
+    workingDaysSource: workingDaysConfig.workingDaysSource,
     shiftsPerDay: row?.shiftsPerDay ?? 2,
     shiftHours: row?.shiftHours ?? 12,
     snapshotDate: row?.snapshotDate ?? null,
@@ -667,7 +670,7 @@ router.put("/monitoring/config", async (req, res): Promise<void> => {
   }
   const [existing] = await db.select().from(monitoringConfigTable).where(eq(monitoringConfigTable.month, month));
   const values = {
-    workingDays: workingDays ?? existing?.workingDays ?? 27,
+    workingDays: workingDays ?? existing?.workingDays ?? null,
     shiftsPerDay: shiftsPerDay ?? existing?.shiftsPerDay ?? 2,
     shiftHours: shiftHours ?? existing?.shiftHours ?? 12,
     snapshotDate: snapshotDate ?? existing?.snapshotDate ?? null,

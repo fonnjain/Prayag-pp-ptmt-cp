@@ -4,6 +4,7 @@ import { getTabValues, SHEET_IDS, itemKey, normalizeCode } from "./sheets";
 import { logger } from "./logger";
 import { buildPlanItems } from "../routes/plan";
 import { getPlanVersionTimeline, type PlanVersion } from "./plant-plan-timeline";
+import { resolvePlantMonthLifecycle } from "./plant-lifecycle";
 
 export interface DailyActualRow {
   date: string;
@@ -139,6 +140,8 @@ export async function fetchDailyActuals(
 }
 
 export async function fetchMonthlyTargets(month: string): Promise<PlantTargetRow[]> {
+  if (resolvePlantMonthLifecycle(month).state === "future") return [];
+
   const timeline = await getPlanVersionTimeline(month, "PTMT");
   const latest = timeline.at(-1);
   if (latest) {

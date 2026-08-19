@@ -7,8 +7,10 @@ import {
   planRunsTable,
   plantIngestionCacheTable,
   plantMonitoringSnapshotsTable,
+  plantPlanVersionsTable,
 } from "@workspace/db";
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "./plant-lifecycle";
+import { getPlanVersionTimeline } from "./plant-plan-timeline";
 import { buildPlantBundle } from "./plant-engine";
 import { buildPlantWeeklySummary } from "./plant-weekly-engine";
 import {
@@ -30,6 +32,45 @@ test("UTC lifecycle boundaries include grace through the 7th and close on the 8t
 test("working days are derived from the UTC calendar only when configuration is absent", () => {
   assert.deepEqual(resolveWorkingDays("2026-08", 25), { workingDays: 25, workingDaysSource: "configured" });
   assert.deepEqual(resolveWorkingDays("2026-08", null), { workingDays: 26, workingDaysSource: "derived" });
+});
+
+test("legacy finalized plans hydrate without requiring a linked corrective run", async () => {
+  await runMigrations();
+  const month = "1996-01";
+  await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
+  await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
+
+  try {
+    const [run] = await db.insert(planRunsTable).values({
+      month,
+      segment: "PTMT",
+      status: "finalized",
+      effectiveFrom: `${month}-01`,
+      weeklyReleaseVersion: 1,
+    }).returning();
+    await db.insert(planRunResultsTable).values({
+      runId: run.id,
+      itemCode: "LEGACY-A",
+      colour: "",
+      category: "Legacy Test",
+      productionPlan: 100,
+      minProduction: 80,
+      bufferReq: 0,
+      releaseWeek: 1,
+      w1: 100,
+      w2: 0,
+      w3: 0,
+      w4: 0,
+    });
+
+    const timeline = await getPlanVersionTimeline(month, "PTMT");
+    assert.equal(timeline.length, 1);
+    assert.equal(timeline[0]?.sourceId, run.id);
+    assert.equal(timeline[0]?.effectiveFrom, `${month}-01`);
+  } finally {
+    await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
+    await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
+  }
 });
 
 test("uncaptured closed months remain eligible after later month rollovers", () => {
