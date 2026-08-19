@@ -8,6 +8,7 @@ import { useLocation } from "wouter";
 import { fmtDate } from "@/lib/utils";
 import { exportXlsx } from "@/lib/excel";
 import { WeeklyPlanVersionProvenance } from "@/components/weekly-plan-version-provenance";
+import { classifyPlantLiveError } from "@/lib/plant-live-error";
 
 function downloadPdf(month: string, section: string) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -57,7 +58,7 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
     { query: { queryKey: getGetPlantWeeklySummaryQueryKey({ month }), staleTime: 0 } as any }
   );
 
-  const { data: liveRaw, isLoading: isLiveLoading, refetch: refetchLive, isRefetching: isLiveRefetching } = useGetPlantLiveSummary(
+  const { data: liveRaw, isLoading: isLiveLoading, isError: isLiveError, error: liveError, refetch: refetchLive, isRefetching: isLiveRefetching } = useGetPlantLiveSummary(
     { period: month, plant: "PTMT" },
     { query: {
       queryKey: getGetPlantLiveSummaryQueryKey({ period: month, plant: "PTMT" }),
@@ -77,7 +78,8 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
   const targetsAvailable = (bundle as any).targetsAvailable !== false;
   const actualsAvailable = (bundle as any).actualsAvailable !== false;
   const unavailableReason = (bundle as any).unavailableReason as string | null;
-  const sourceInfo = context.sourceInfo as any;
+  const contextWithMetadata = context as any;
+  const sourceInfo = contextWithMetadata.sourceInfo as any;
 
   const categories = selectedCategory
     ? allCategories.filter((c) => c.category === selectedCategory)
@@ -117,7 +119,7 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
           </div>
           <p className="text-muted-foreground text-sm">
             PTMT production monitoring — {month} · {context.workingDays} working days
-            {` (${context.workingDaysSource})`}
+            {` (${contextWithMetadata.workingDaysSource ?? "derived"})`}
           </p>
         </header>
         <Card className={lifecycle === "future" ? "border-slate-500/30 bg-slate-500/5" : "border-amber-500/30 bg-amber-500/5"}>
@@ -144,9 +146,9 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
             </h1>
             <p className="text-muted-foreground text-sm">
               NOS (pieces) against Production Plan — {month} · {context.elapsed}/{context.workingDays} working days elapsed
-              {` (${context.workingDaysSource})`}
+              {` (${contextWithMetadata.workingDaysSource ?? "derived"})`}
               {context.snapshotDate ? ` · snapshot ${fmtDate(context.snapshotDate)}` : ""}
-              {context.capturedAt ? ` · frozen ${fmtDate(context.capturedAt)}` : ""}
+              {contextWithMetadata.capturedAt ? ` · frozen ${fmtDate(contextWithMetadata.capturedAt)}` : ""}
               {sourceInfo?.planRunId ? ` · finalized plan #${sourceInfo.planRunId}` : ""}
               {sourceInfo?.actualsCachedAt ? ` · actuals captured ${fmtDate(sourceInfo.actualsCachedAt)}` : ""}
               {sourceInfo?.weeklyTargetSource === "legacy_frozen_inputs"
@@ -453,8 +455,11 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
         <LiveMachinePanel
           liveData={liveData}
           isLoading={isLiveLoading}
+          isError={isLiveError}
+          error={liveError}
           isRefetching={isLiveRefetching}
           onRefresh={() => refetchLive()}
+          month={month}
         />
       )}
     </div>
@@ -475,18 +480,30 @@ function fmtLive(n: number | null | undefined, dec = 1): string {
 function LiveMachinePanel({
   liveData,
   isLoading,
+  isError,
+  error,
   isRefetching,
   onRefresh,
+  month,
 }: {
   liveData: any;
   isLoading: boolean;
+  isError: boolean;
+  error: unknown;
   isRefetching: boolean;
   onRefresh: () => void;
+  month: string;
 }) {
   const machines: [string, PlantLiveMachineMetrics][] = liveData?.by_machine
     ? Object.entries<PlantLiveMachineMetrics>(liveData.by_machine).sort((a, b) => a[0].localeCompare(b[0]))
     : [];
   const period = liveData?.period;
+  const errorCopy = isError
+    ? classifyPlantLiveError(
+      { message: (error as any)?.message ?? String(error), data: (error as any)?.data },
+      month,
+    )
+    : null;
 
   return (
     <Card className="border-border/50">
@@ -512,6 +529,15 @@ function LiveMachinePanel({
       <CardContent>
         {isLoading ? (
           <div className="text-muted-foreground text-sm py-6 text-center">Loading live data…</div>
+        ) : errorCopy ? (
+          <div role="alert" className="flex items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-4 text-sm">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-semibold text-amber-700">{errorCopy.heading}</p>
+              <p className="text-amber-700/90">{errorCopy.detail}</p>
+              <p className="text-xs text-muted-foreground pt-1">{errorCopy.hint}</p>
+            </div>
+          </div>
         ) : machines.length === 0 ? (
           <div className="text-muted-foreground text-sm py-6 text-center">No machine data available for this period.</div>
         ) : (

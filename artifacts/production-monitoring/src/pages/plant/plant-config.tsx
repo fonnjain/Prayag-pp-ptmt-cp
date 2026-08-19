@@ -157,7 +157,7 @@ export default function PlantConfig({ month }: { month: string }) {
               <Input id="wd" type="number" min={1} max={31} placeholder={String(cfg.workingDays)}
                 value={workingDays} onChange={(e) => setWorkingDays(e.target.value)} />
               <div className="text-xs text-muted-foreground">
-                Current: {cfg.workingDays} ({cfg.workingDaysSource})
+                Current: {cfg.workingDays} ({(cfg as any).workingDaysSource ?? "derived"})
               </div>
             </div>
             <div className="space-y-1.5">

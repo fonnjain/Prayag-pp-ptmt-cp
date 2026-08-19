@@ -1588,7 +1588,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlantLivePeriodsResponse"
         "502":
-          description: Upstream API unreachable
+          description: Upstream API unreachable, returned non-JSON, or redirected the API request to sign-in
           content:
             application/json:
               schema:
@@ -1686,7 +1686,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlantLiveSummaryResponse"
         "502":
-          description: Upstream API unreachable
+          description: Upstream API unreachable, returned non-JSON, or redirected the API request to sign-in
           content:
             application/json:
               schema:
@@ -3081,6 +3081,12 @@ components:
       required: [error]
       properties:
         error: { type: string }
+        code:
+          type: string
+          description: Machine-readable upstream failure code when available
+        upstreamErrorType:
+          type: string
+          description: "Upstream failure category (for example: auth-redirect, bad-json, timeout)"
 
     PlantLivePlant:
       type: object
@@ -3295,4 +3301,3 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MachineUnfulfillableItem"
-

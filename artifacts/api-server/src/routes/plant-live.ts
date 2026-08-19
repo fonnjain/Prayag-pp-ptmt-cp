@@ -9,7 +9,13 @@ const UPSTREAM_TIMEOUT_MS = 20_000;
 
 async function upstreamFetch(path: string, apiKey: string): Promise<Response> {
   return fetch(`${BASE_URL}${path}`, {
-    headers: { "X-API-Key": apiKey },
+    headers: {
+      Accept: "application/json",
+      "X-API-Key": apiKey,
+    },
+    // Never follow a browser sign-in redirect. Following it turns an upstream
+    // authentication failure into a misleading 200 HTML response.
+    redirect: "manual",
     signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
   });
 }
@@ -111,6 +117,19 @@ router.get("/plant-live/summary", async (req, res) => {
   let rawBody: string | undefined;
   try {
     const upstream = await upstreamFetch(`/summary?${qs}`, apiKey);
+    if (upstream.status >= 300 && upstream.status < 400) {
+      const location = upstream.headers.get("location");
+      logger.warn(
+        { status: upstream.status, location, qs: qs.toString() },
+        "plant-live/summary upstream redirected an API request",
+      );
+      res.status(502).set("X-Upstream-Error", "auth-redirect").json({
+        error: "Upstream redirected the API request to its sign-in page",
+        code: "UPSTREAM_AUTH_REDIRECT",
+        upstreamErrorType: "auth-redirect",
+      });
+      return;
+    }
     if (!upstream.ok) {
       logger.warn({ status: upstream.status, qs: qs.toString() }, "plant-live/summary upstream error");
       res.status(502).set("X-Upstream-Error", "non-2xx").json({ error: `Upstream responded ${upstream.status}`, upstreamErrorType: "non-2xx" });

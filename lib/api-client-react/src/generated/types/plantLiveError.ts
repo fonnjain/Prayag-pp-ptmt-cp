@@ -7,4 +7,8 @@
 
 export interface PlantLiveError {
   error: string;
+  /** Machine-readable upstream failure code when available */
+  code?: string;
+  /** Upstream failure category (for example: auth-redirect, bad-json, timeout) */
+  upstreamErrorType?: string;
 }
