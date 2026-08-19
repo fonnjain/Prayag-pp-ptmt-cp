@@ -20,3 +20,9 @@ When legacy plan snapshots share an effective date, the last stored revision gov
 **Why:** Historical backfill can contain repeat same-day recomputes even though new versions reject duplicate effective dates. Hiding the earlier records makes historical production attribution impossible to audit.
 
 **How to apply:** Do not delete or silently merge duplicate legacy source rows. Canonicalise them only in the returned timeline, retain their kind/source ID/label as superseded provenance, and use the canonical timeline for monitoring attribution.
+
+A small difference between a pre-version live dashboard figure and a later frozen plan-run figure is expected source drift, not a value to normalize away.
+
+**Why:** Live monitoring used to rebuild from uploads as they changed, while a plan-run snapshot preserves the issued values. Comparing the two conflates different point-in-time sources and can create a false discrepancy.
+
+**How to apply:** Label live-rebuild and frozen-plan figures distinctly in audits and reports. Reconcile historical reporting to the governing frozen version; never overwrite a frozen value just to match a previously observed live rebuild.
