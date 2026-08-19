@@ -31,6 +31,12 @@ export interface PlanVersion {
   effectiveFrom: string;
   effectiveTo: string | null;
   targets: VersionTarget[];
+  /** Legacy same-day source records retained for audit, but superseded by this revision. */
+  supersededSameDaySources?: Array<{
+    kind: PlanVersionKind;
+    sourceId: number;
+    sourceLabel: string | null;
+  }>;
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -133,22 +139,38 @@ export async function getPlanVersionTimeline(month: string, segment: string): Pr
         .map((row) => row.id),
     );
 
-  // Legacy data may contain identical repeat recomputes. New writes are
-  // rejected by validateNewVersionDate; retain only the last legacy snapshot
-  // at a date to make the historical timeline deterministic.
-  const byDate = new Map<string, typeof snapshots[number]>();
+  // Legacy data may contain same-day repeat recomputes. New writes are rejected
+  // by validateNewVersionDate; retain the last stored snapshot for the date and
+  // carry the earlier source IDs into provenance so the choice is auditable.
+  const byDate = new Map<string, Array<typeof snapshots[number]>>();
   for (const row of snapshots) {
     if (row.kind === "run" && !finalizedRunIds.has(row.sourceId)) continue;
-    byDate.set(row.effectiveFrom, row);
+    const revisions = byDate.get(row.effectiveFrom) ?? [];
+    revisions.push(row);
+    byDate.set(row.effectiveFrom, revisions);
   }
-  const ordered = [...byDate.values()].sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
-  return ordered.map((row, index) => ({
-    kind: row.kind as PlanVersionKind,
-    sourceId: row.sourceId,
-    sourceLabel: row.sourceLabel,
-    effectiveFrom: row.effectiveFrom,
+  const ordered = [...byDate.entries()]
+    .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
+    .map(([effectiveFrom, revisions]) => {
+      const canonical = revisions.at(-1)!;
+      return {
+        canonical,
+        effectiveFrom,
+        supersededSameDaySources: revisions.slice(0, -1).map((row) => ({
+          kind: row.kind as PlanVersionKind,
+          sourceId: row.sourceId,
+          sourceLabel: row.sourceLabel,
+        })),
+      };
+    });
+  return ordered.map(({ canonical, effectiveFrom, supersededSameDaySources }, index) => ({
+    kind: canonical.kind as PlanVersionKind,
+    sourceId: canonical.sourceId,
+    sourceLabel: canonical.sourceLabel,
+    effectiveFrom,
     effectiveTo: ordered[index + 1]?.effectiveFrom ?? null,
-    targets: row.targetsJson as VersionTarget[],
+    targets: canonical.targetsJson as VersionTarget[],
+    ...(supersededSameDaySources.length > 0 ? { supersededSameDaySources } : {}),
   }));
 }
 

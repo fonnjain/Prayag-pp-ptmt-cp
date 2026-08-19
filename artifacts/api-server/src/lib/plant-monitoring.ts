@@ -57,6 +57,7 @@ export interface PlantSnapshotSourceInfo {
     effectiveFrom: string;
     effectiveTo: string | null;
     targetCount: number;
+    supersededSameDaySources?: PlanVersion["supersededSameDaySources"];
   }>;
 }
 
@@ -389,6 +390,7 @@ export async function captureClosedPlantMonth(
       effectiveFrom: version.effectiveFrom,
       effectiveTo: version.effectiveTo,
       targetCount: version.targets.length,
+      supersededSameDaySources: version.supersededSameDaySources,
     })),
   };
   const { bundle, snapshotDate } = await buildReadyBundle(
@@ -498,6 +500,7 @@ export async function computeLifecyclePlantMonitoring(
         effectiveFrom: version.effectiveFrom,
         effectiveTo: version.effectiveTo,
         targetCount: version.targets.length,
+        supersededSameDaySources: version.supersededSameDaySources,
       })),
     };
   } else {
@@ -527,6 +530,7 @@ export async function computeLifecyclePlantMonitoring(
         effectiveFrom: version.effectiveFrom,
         effectiveTo: version.effectiveTo,
         targetCount: version.targets.length,
+        supersededSameDaySources: version.supersededSameDaySources,
       })),
     };
   }

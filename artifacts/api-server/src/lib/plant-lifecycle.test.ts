@@ -73,6 +73,58 @@ test("legacy finalized plans hydrate without requiring a linked corrective run",
   }
 });
 
+test("same-day legacy revisions keep the last snapshot and expose superseded provenance", async () => {
+  await runMigrations();
+  const month = "1996-02";
+  const targets = [{
+    itemCode: "REV-A",
+    colour: "",
+    category: "Revision Test",
+    maxPcs: 100,
+    minPcs: 80,
+    w1: 100,
+    w2: 0,
+    w3: 0,
+    w4: 0,
+  }];
+  await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
+
+  try {
+    await db.insert(plantPlanVersionsTable).values([
+      {
+        month,
+        segment: "PTMT",
+        kind: "corrective",
+        sourceId: 990001,
+        effectiveFrom: `${month}-10`,
+        sourceLabel: "First same-day revision",
+        targetsJson: targets,
+      },
+      {
+        month,
+        segment: "PTMT",
+        kind: "corrective",
+        sourceId: 990002,
+        effectiveFrom: `${month}-10`,
+        sourceLabel: "Final same-day revision",
+        targetsJson: [{ ...targets[0], maxPcs: 120 }],
+      },
+    ]);
+
+    const timeline = await getPlanVersionTimeline(month, "PTMT");
+    assert.equal(timeline.length, 1);
+    assert.equal(timeline[0]?.sourceId, 990002);
+    assert.equal(timeline[0]?.targets[0]?.maxPcs, 120);
+    assert.deepEqual(timeline[0]?.supersededSameDaySources, [{
+      kind: "corrective",
+      sourceId: 990001,
+      sourceLabel: "First same-day revision",
+    }]);
+  } finally {
+    await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
+  }
+});
+
 test("uncaptured closed months remain eligible after later month rollovers", () => {
   assert.deepEqual(
     selectUnfrozenClosedMonths(
