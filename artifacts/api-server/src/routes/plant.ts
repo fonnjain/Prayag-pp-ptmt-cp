@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { launchBrowser } from "../lib/browser";
 import { exportTimestamp } from "../lib/export-filename";
-import { db, plantConfigsTable, plantSourceConfigsTable, plantIngestionCacheTable } from "@workspace/db";
+import { db, plantConfigsTable, plantSourceConfigsTable, plantIngestionCacheTable, plantMonthSnapshotsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { fetchDailyActuals, fetchMonthlyTargets, fetchMonitoringPlanTimeline } from "../lib/plant-ingestion";
 import { buildPlantBundle, type PlantBundle } from "../lib/plant-engine";
@@ -10,6 +10,7 @@ import { buildPlantRecommendations } from "../lib/plant-recommendations";
 import { buildPlantWeeklySummary } from "../lib/plant-weekly-engine";
 import { buildPlanItems } from "./plan";
 import { logger } from "../lib/logger";
+import { derivedWorkingDays, lastWorkingDay, resolvePlantMonthLifecycle } from "../lib/month-lifecycle";
 const router: IRouter = Router();
 
 // In-memory bundle cache — keyed by month, invalidated after 5 min or on demand
@@ -43,17 +44,23 @@ function loadThresholds(row: { thresholdsJson?: unknown } | null): PlantWarningT
   };
 }
 
-export async function computePlantBundle(month: string) {
-  const row = await loadPlantConfigRow(month);
+async function computeUnfrozenPlantBundle(
+  month: string,
+  row: Awaited<ReturnType<typeof loadPlantConfigRow>>,
+  lifecycle: ReturnType<typeof resolvePlantMonthLifecycle>,
+) {
+  const workingDays = row?.workingDays ?? derivedWorkingDays(month);
   const config = {
-    workingDays: row?.workingDays ?? 27,
+    workingDays,
+    workingDaysSource: row?.workingDays ? "configured" as const : "derived" as const,
     shiftsPerDay: row?.shiftsPerDay ?? 2,
     shiftHours: row?.shiftHours ?? 12,
-    snapshotDate: row?.snapshotDate ?? null,
+    snapshotDate: lifecycle.state === "grace" || lifecycle.state === "closed" ? lastWorkingDay(month) : row?.snapshotDate ?? null,
+    lifecycleState: lifecycle.state,
     elapsed: 0,
   };
   const [actuals, targets, versionTimeline] = await Promise.all([
-    fetchDailyActuals(month),
+    fetchDailyActuals(month, { forceLive: lifecycle.state === "grace" || lifecycle.state === "closed" }),
     fetchMonthlyTargets(month),
     fetchMonitoringPlanTimeline(month),
   ]);
@@ -66,7 +73,7 @@ export async function computePlantBundle(month: string) {
   if (versionTimeline.length === 0) {
     try { planItems = await buildPlanItems(month); } catch { /* plan unavailable */ }
   }
-  const snapshotDate = row?.snapshotDate ?? (actuals.length > 0 ? [...actuals].map((r) => r.date).sort().pop()! : null);
+  const snapshotDate = config.snapshotDate ?? (actuals.length > 0 ? [...actuals].map((r) => r.date).sort().pop()! : null);
   const weekly = buildPlantWeeklySummary(
     month,
     actuals,
@@ -82,7 +89,68 @@ export async function computePlantBundle(month: string) {
   });
 
   const recommendations = buildPlantRecommendations(bundle, thresholds);
-  return { ...bundle, planVersions: versionTimeline.map(({ targets: _targets, ...version }) => version), warnings: allWarnings, recommendations };
+  return {
+    ...bundle,
+    weekly,
+    planVersions: versionTimeline.map(({ targets: _targets, ...version }) => version),
+    warnings: allWarnings,
+    recommendations,
+  };
+}
+
+export async function computePlantBundle(month: string) {
+  const lifecycle = resolvePlantMonthLifecycle(month);
+  const row = await loadPlantConfigRow(month);
+  if (lifecycle.state === "future") {
+    const config = {
+      workingDays: row?.workingDays ?? derivedWorkingDays(month),
+      workingDaysSource: row?.workingDays ? "configured" as const : "derived" as const,
+      shiftsPerDay: row?.shiftsPerDay ?? 2,
+      shiftHours: row?.shiftHours ?? 12,
+      snapshotDate: null,
+      lifecycleState: lifecycle.state,
+      elapsed: 0,
+    };
+    const bundle = buildPlantBundle(month, [], [], config);
+    return {
+      ...bundle,
+      weekly: buildPlantWeeklySummary(month, [], [], [], null),
+      planVersions: [],
+      warnings: [],
+      recommendations: [],
+      unavailableReason: "This is a future month. Plan targets and KPIs are not available yet.",
+    };
+  }
+
+  if (lifecycle.state === "closed") {
+    const [snapshot] = await db.select().from(plantMonthSnapshotsTable).where(
+      eq(plantMonthSnapshotsTable.month, month),
+    );
+    if (snapshot) return snapshot.payloadJson as Awaited<ReturnType<typeof computeUnfrozenPlantBundle>>;
+
+    const computed = await computeUnfrozenPlantBundle(month, row, lifecycle);
+    if (computed.planVersions.length === 0) {
+      return {
+        ...computed,
+        unavailableReason: "No finalized plan version is available to freeze this completed month.",
+      };
+    }
+    const closedAt = lifecycle.closedAt ?? new Date();
+    await db.insert(plantMonthSnapshotsTable).values({
+      month,
+      segment: "PTMT",
+      payloadJson: computed,
+      sourcePlanVersionsJson: computed.planVersions,
+      closedAt,
+      capturedCommitSha: process.env.GIT_COMMIT_SHA ?? null,
+    }).onConflictDoNothing();
+    const [persisted] = await db.select().from(plantMonthSnapshotsTable).where(
+      eq(plantMonthSnapshotsTable.month, month),
+    );
+    return (persisted?.payloadJson ?? computed) as Awaited<ReturnType<typeof computeUnfrozenPlantBundle>>;
+  }
+
+  return computeUnfrozenPlantBundle(month, row, lifecycle);
 }
 
 // --- GET /plant/bundle ---
@@ -132,20 +200,7 @@ router.get("/plant/trend", async (req, res) => {
 
     const summaries = await Promise.allSettled(allMonths.map(async (month) => {
       try {
-        const row = await loadPlantConfigRow(month);
-        const config = {
-          workingDays: row?.workingDays ?? 27,
-          shiftsPerDay: row?.shiftsPerDay ?? 2,
-          shiftHours: row?.shiftHours ?? 12,
-          snapshotDate: row?.snapshotDate ?? null,
-          elapsed: 0,
-        };
-        const [actuals, targets, versionTimeline] = await Promise.all([
-          fetchDailyActuals(month),
-          fetchMonthlyTargets(month),
-          fetchMonitoringPlanTimeline(month),
-        ]);
-        const bundle = buildPlantBundle(month, actuals, targets, { ...config, versionTimeline });
+        const bundle = await computePlantBundle(month);
         const { plant, categories } = bundle;
         const sortedCats = [...categories].sort((a, b) => (b.attainmentCumPct ?? 0) - (a.attainmentCumPct ?? 0));
         return {
@@ -157,7 +212,7 @@ router.get("/plant/trend", async (req, res) => {
           producedTotal: plant.producedToDate,
           targetMax: plant.targetMax,
           targetMin: plant.targetMin,
-          workingDays: config.workingDays,
+          workingDays: bundle.context.workingDays,
           bestCategory: sortedCats[0]?.category ?? null,
           worstCategory: sortedCats[sortedCats.length - 1]?.category ?? null,
           ragBand: plant.ragBand,
@@ -376,36 +431,8 @@ router.get("/plant/weekly-summary", async (req, res) => {
     return;
   }
   try {
-    const configRow = await loadPlantConfigRow(month);
-    const [actuals, targets, versionTimeline] = await Promise.all([
-      fetchDailyActuals(month),
-      fetchMonthlyTargets(month),
-      fetchMonitoringPlanTimeline(month),
-    ]);
-
-    let planItems: Awaited<ReturnType<typeof buildPlanItems>> = [];
-    if (versionTimeline.length === 0) {
-      try {
-        planItems = await buildPlanItems(month);
-      } catch {
-        // plan items unavailable for this month
-      }
-    }
-
-    const snapshotDate =
-      configRow?.snapshotDate ??
-      (actuals.length > 0 ? [...actuals].map((r) => r.date).sort().pop()! : null);
-
-    const summary = buildPlantWeeklySummary(
-      month,
-      actuals,
-      planItems as { itemCode: string; colour: string; category: string; w1: number; w2: number; w3: number; w4: number; maxProduction: number }[],
-      targets,
-      snapshotDate,
-      versionTimeline,
-    );
-
-    res.json(summary);
+    const bundle = await computePlantBundle(month);
+    res.json(bundle.weekly);
   } catch (err) {
     logger.error({ err, month }, "plant/weekly-summary failed");
     res.status(500).json({ error: "Failed to compute weekly summary" });

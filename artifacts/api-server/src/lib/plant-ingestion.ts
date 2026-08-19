@@ -49,11 +49,11 @@ function parseDate(raw: string): string | null {
   return null;
 }
 
-export async function fetchDailyActuals(month: string): Promise<DailyActualRow[]> {
+export async function fetchDailyActuals(month: string, options: { forceLive?: boolean } = {}): Promise<DailyActualRow[]> {
   const [cached] = await db.select().from(plantIngestionCacheTable).where(eq(plantIngestionCacheTable.month, month));
   if (cached) {
     const age = Date.now() - new Date(cached.cachedAt).getTime();
-    if (month < currentMonthStr() || age < CACHE_TTL_MS) {
+    if (!options.forceLive && (month < currentMonthStr() || age < CACHE_TTL_MS)) {
       return cached.rawActualsJson as DailyActualRow[];
     }
   }

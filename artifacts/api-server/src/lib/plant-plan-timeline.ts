@@ -39,6 +39,11 @@ export function monthStart(month: string): string {
   return `${month}-01`;
 }
 
+function legacyEffectiveFrom(month: string, value: string | null | undefined, createdAt: Date): string | null {
+  const candidate = value ?? createdAt.toISOString().slice(0, 10);
+  return candidate.startsWith(`${month}-`) ? candidate : null;
+}
+
 export function assertEffectiveDate(month: string, value: unknown): string {
   if (typeof value !== "string" || !DATE_RE.test(value) || value.slice(0, 7) !== month) {
     throw new Error(`effectiveFrom must be a YYYY-MM-DD date within ${month}`);
@@ -88,13 +93,21 @@ export async function savePlanVersionSnapshot(input: {
  * can never influence monitoring.
  */
 export async function getPlanVersionTimeline(month: string, segment: string): Promise<PlanVersion[]> {
+  const key = `${segment}|${month}`;
+  const inFlightHydration = pendingLegacyHydrations.get(key);
+  if (inFlightHydration) await inFlightHydration;
   let snapshots = await db
     .select()
     .from(plantPlanVersionsTable)
     .where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, segment)))
     .orderBy(asc(plantPlanVersionsTable.effectiveFrom), asc(plantPlanVersionsTable.createdAt), asc(plantPlanVersionsTable.id));
   if (snapshots.length === 0) {
-    await hydrateLegacyPlanVersions(month, segment);
+    let hydration = pendingLegacyHydrations.get(key);
+    if (!hydration) {
+      hydration = hydrateLegacyPlanVersions(month, segment).finally(() => pendingLegacyHydrations.delete(key));
+      pendingLegacyHydrations.set(key, hydration);
+    }
+    await hydration;
     snapshots = await db
       .select()
       .from(plantPlanVersionsTable)
@@ -130,6 +143,8 @@ export async function getPlanVersionTimeline(month: string, segment: string): Pr
   }));
 }
 
+const pendingLegacyHydrations = new Map<string, Promise<void>>();
+
 /**
  * Pre-version-table records still contain immutable plan and corrective item
  * rows. Hydrate them once so existing months adopt timeline semantics on their
@@ -141,18 +156,20 @@ async function hydrateLegacyPlanVersions(month: string, segment: string): Promis
       eq(planRunsTable.month, month),
       eq(planRunsTable.segment, segment),
       eq(planRunsTable.status, "finalized"),
-    )),
+    )).orderBy(asc(planRunsTable.createdAt)),
     db.select().from(plantPlanUploadsTable).where(and(
       eq(plantPlanUploadsTable.month, month),
       eq(plantPlanUploadsTable.segment, segment),
-    )),
+    )).orderBy(asc(plantPlanUploadsTable.uploadedAt)),
     db.select().from(correctivePlanRunsTable).where(and(
       eq(correctivePlanRunsTable.month, month),
       eq(correctivePlanRunsTable.segment, segment),
-    )),
+    )).orderBy(asc(correctivePlanRunsTable.createdAt)),
   ]);
 
   for (const run of runs) {
+    const effectiveFrom = legacyEffectiveFrom(month, run.effectiveFrom, run.createdAt);
+    if (!effectiveFrom) continue;
     const [results, linkedCorrective] = await Promise.all([
       db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, run.id)),
       db.select().from(correctivePlanRunsTable).where(eq(correctivePlanRunsTable.planRunId, run.id)).orderBy(asc(correctivePlanRunsTable.createdAt)).limit(1),
@@ -169,7 +186,7 @@ async function hydrateLegacyPlanVersions(month: string, segment: string): Promis
       segment,
       kind: "run",
       sourceId: run.id,
-      effectiveFrom: run.effectiveFrom ?? monthStart(month),
+      effectiveFrom,
       sourceLabel: run.note ?? `Plan run #${run.id} (legacy)`,
       targets: results.map((item) => {
         const week = allocationByKey.get(`${item.itemCode}|${item.colour}|${item.category}`) ?? 0;
@@ -189,13 +206,15 @@ async function hydrateLegacyPlanVersions(month: string, segment: string): Promis
   }
 
   for (const upload of imports) {
+    const effectiveFrom = legacyEffectiveFrom(month, upload.effectiveFrom, upload.uploadedAt);
+    if (!effectiveFrom) continue;
     const items = await db.select().from(plantPlanItemsTable).where(eq(plantPlanItemsTable.uploadId, upload.id));
     await savePlanVersionSnapshot({
       month,
       segment,
       kind: "import",
       sourceId: upload.id,
-      effectiveFrom: upload.effectiveFrom ?? monthStart(month),
+      effectiveFrom,
       sourceLabel: upload.filename,
       targets: items.map((item) => ({
         itemCode: item.itemCode,
@@ -212,13 +231,15 @@ async function hydrateLegacyPlanVersions(month: string, segment: string): Promis
   }
 
   for (const run of correctiveRuns) {
+    const effectiveFrom = legacyEffectiveFrom(month, run.effectiveFrom ?? run.asOfDate, run.createdAt);
+    if (!effectiveFrom) continue;
     const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
     await savePlanVersionSnapshot({
       month,
       segment,
       kind: "corrective",
       sourceId: run.id,
-      effectiveFrom: run.effectiveFrom ?? run.asOfDate ?? monthStart(month),
+      effectiveFrom,
       sourceLabel: `Corrective run #${run.id} (legacy)`,
       targets: items.map((item) => ({
         itemCode: item.itemCode,

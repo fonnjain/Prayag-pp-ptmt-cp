@@ -66,10 +66,13 @@ export interface PlantBundle {
     month: string;
     snapshotDate: string | null;
     workingDays: number;
+    workingDaysSource?: "configured" | "derived";
     elapsed: number;
     remaining: number;
     shiftsPerDay: number;
     shiftHours: number;
+    lifecycleState?: "future" | "open" | "grace" | "closed";
+    frozenAt?: string | null;
   };
   plant: PlantKPIs;
   categories: CategoryKPIs[];
@@ -89,6 +92,9 @@ export interface PlantCalendarConfig {
   shiftHours: number;
   snapshotDate: string | null;
   versionTimeline?: PlanVersion[];
+  workingDaysSource?: "configured" | "derived";
+  lifecycleState?: "future" | "open" | "grace" | "closed";
+  frozenAt?: string | null;
 }
 
 function ragBand(pct: number | null): "green" | "amber" | "red" | null {
@@ -362,10 +368,13 @@ export function buildPlantBundle(
       month,
       snapshotDate,
       workingDays,
+      workingDaysSource: config.workingDaysSource,
       elapsed,
       remaining: calendar.remaining,
       shiftsPerDay,
       shiftHours,
+      lifecycleState: config.lifecycleState,
+      frozenAt: config.frozenAt,
     },
     plant: plantKPIs,
     categories,

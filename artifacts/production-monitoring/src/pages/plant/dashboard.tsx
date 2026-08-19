@@ -52,6 +52,9 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
   const weekly = weeklyRaw as any;
 
   const { plant, context, categories: allCategories, warnings } = bundle;
+  const lifecycleState = (context as any).lifecycleState as string | undefined;
+  const workingDaysSource = (context as any).workingDaysSource as string | undefined;
+  const unavailableReason = (data as any).unavailableReason as string | undefined;
 
   const categories = selectedCategory
     ? allCategories.filter((c) => c.category === selectedCategory)
@@ -85,10 +88,16 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
             <p className="text-muted-foreground text-sm">
               NOS (pieces) against Production Plan — {month} · {context.elapsed}/{context.workingDays} working days elapsed
               {context.snapshotDate ? ` · snapshot ${fmtDate(context.snapshotDate)}` : ""}
+              {workingDaysSource ? ` · ${workingDaysSource} working-day calendar` : ""}
               {selectedCategory ? ` · ${selectedCategory}` : ""}
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {lifecycleState && (
+              <Badge variant="outline" className={lifecycleState === "closed" ? "border-slate-400 text-slate-700" : lifecycleState === "grace" ? "border-amber-400 text-amber-700" : "border-primary/40 text-primary"}>
+                {lifecycleState === "closed" ? "Frozen month" : lifecycleState === "grace" ? "Finalizing" : lifecycleState === "future" ? "Future month" : "Live month"}
+              </Badge>
+            )}
             <Button variant="outline" size="sm" onClick={() => exportXlsx(`plant-dashboard-${month}`, [
               { name: "Plant Summary", rows: [{ Month: month, AttainmentCumPct: bundle.plant?.attainmentCumPct, ProducedToDate: bundle.plant?.producedToDate, TargetMax: bundle.plant?.targetMax, TargetMin: bundle.plant?.targetMin, ProjectedAttainmentPct: bundle.plant?.projectedAttainmentPct, RAG: bundle.plant?.ragBand }] },
               { name: "Categories", rows: categories.map((c: any) => ({ Category: c.category, ProducedToDate: c.producedToDate, TargetMax: c.targetMax, TargetMin: c.targetMin, AttainmentCumPct: c.attainmentCumPct, ProjectedAttainmentPct: c.projectedAttainmentPct, RAG: c.ragBand })) },
@@ -106,6 +115,14 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
         <Card className="border-amber-500/30 bg-amber-500/5">
           <CardContent className="pt-4 text-amber-600 flex items-center gap-2 text-sm">
             <AlertTriangle className="h-4 w-4" /> No production data found for this month. Ensure the PTMT ANUJ Production tab has been updated.
+          </CardContent>
+        </Card>
+      )}
+
+      {unavailableReason && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardContent className="pt-4 text-amber-700 flex items-center gap-2 text-sm">
+            <AlertTriangle className="h-4 w-4" /> {unavailableReason}
           </CardContent>
         </Card>
       )}

@@ -20,3 +20,4 @@ export * from "./workbook-config";
 export * from "./plumbing-machine-capacity";
 export * from "./plant-plan-uploads";
 export * from "./plant-plan-versions";
+export * from "./plant-month-snapshots";
