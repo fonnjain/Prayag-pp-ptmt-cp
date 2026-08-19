@@ -350,6 +350,10 @@ export default function RunsPage() {
   const [driftRunId, setDriftRunId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [effectiveFrom, setEffectiveFrom] = useState(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return today.slice(0, 7) === month ? today : `${month}-01`;
+  });
 
   const runs = (data as unknown as PlanRunSummary[] | undefined) ?? [];
 
@@ -364,7 +368,7 @@ export default function RunsPage() {
 
   const handleCreate = () => {
     createRun.mutate(
-      { data: { month, segment } },
+      { data: { month, segment, effectiveFrom } },
       {
         onSuccess: () => {
           toast({ title: "Plan run created", description: `Draft snapshot for ${formatMonthLabel(month)} saved.` });
@@ -378,7 +382,7 @@ export default function RunsPage() {
 
   const handleFinalize = (id: number) => {
     finalizeRun.mutate(
-      { id },
+      { id, data: {} },
       {
         onSuccess: () => {
           toast({ title: "Run finalized", description: `Run #${id} is now locked.` });
@@ -437,6 +441,17 @@ export default function RunsPage() {
             </p>
           </div>
           <div className="flex gap-2">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              Effective from
+              <input
+                type="date"
+                min={`${month}-01`}
+                max={`${month}-${new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate()}`}
+                value={effectiveFrom}
+                onChange={(event) => setEffectiveFrom(event.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+              />
+            </label>
             {selectedIds.size >= 1 && (
               <Button
                 variant="outline"
@@ -497,6 +512,7 @@ export default function RunsPage() {
                     <TableHead className="w-8"></TableHead>
                     <TableHead>Run #</TableHead>
                     <TableHead>As-of</TableHead>
+                    <TableHead>Effective from</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Min Required</TableHead>
                     <TableHead className="text-right">Plan (Max)</TableHead>
@@ -520,6 +536,7 @@ export default function RunsPage() {
                       </TableCell>
                       <TableCell className="font-medium">#{run.id}</TableCell>
                       <TableCell className="text-sm">{fmtDateTime(run.asOfAt)}</TableCell>
+                      <TableCell className="text-sm">{run.effectiveFrom ?? "Legacy"}</TableCell>
                       <TableCell>
                         <Badge className={cn("capitalize text-xs", statusColor(run.status))}>
                           {run.status}

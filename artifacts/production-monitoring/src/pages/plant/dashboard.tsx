@@ -7,6 +7,7 @@ import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, Activity, Downlo
 import { useLocation } from "wouter";
 import { fmtDate } from "@/lib/utils";
 import { exportXlsx } from "@/lib/excel";
+import { WeeklyPlanVersionProvenance } from "@/components/weekly-plan-version-provenance";
 
 function downloadPdf(month: string, section: string) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -29,6 +30,22 @@ function ragColors(band: string | null | undefined) {
   return { bg: "bg-red-500/10 border-red-500/30", text: "text-red-600", badge: "bg-red-500/15 text-red-700 border-red-500/30" };
 }
 
+function lifecycleBadge(status: string) {
+  if (status === "live") return "bg-emerald-500/10 text-emerald-700 border-emerald-500/30";
+  if (status === "grace") return "bg-blue-500/10 text-blue-700 border-blue-500/30";
+  if (status === "frozen") return "bg-violet-500/10 text-violet-700 border-violet-500/30";
+  if (status === "future") return "bg-slate-500/10 text-slate-600 border-slate-500/30";
+  return "bg-amber-500/10 text-amber-700 border-amber-500/30";
+}
+
+function lifecycleLabel(status: string) {
+  if (status === "live") return "Live month";
+  if (status === "grace") return "Grace period · targets finalized";
+  if (status === "frozen") return "Frozen snapshot";
+  if (status === "future") return "Future month";
+  return "Targets unavailable";
+}
+
 export default function PlantDashboard({ month, selectedCategory, setSelectedCategory }: { month: string; selectedCategory?: string | null; setSelectedCategory?: (c: string | null) => void }) {
   const [, navigate] = useLocation();
   const { data, isLoading } = useGetPlantBundle(
@@ -42,7 +59,11 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
 
   const { data: liveRaw, isLoading: isLiveLoading, refetch: refetchLive, isRefetching: isLiveRefetching } = useGetPlantLiveSummary(
     { period: month, plant: "PTMT" },
-    { query: { queryKey: getGetPlantLiveSummaryQueryKey({ period: month, plant: "PTMT" }), staleTime: 5 * 60 * 1000 } as any }
+    { query: {
+      queryKey: getGetPlantLiveSummaryQueryKey({ period: month, plant: "PTMT" }),
+      staleTime: 5 * 60 * 1000,
+      enabled: month === new Date().toISOString().slice(0, 7),
+    } as any }
   );
   const liveData = liveRaw as any;
 
@@ -52,9 +73,11 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
   const weekly = weeklyRaw as any;
 
   const { plant, context, categories: allCategories, warnings } = bundle;
-  const lifecycleState = (context as any).lifecycleState as string | undefined;
-  const workingDaysSource = (context as any).workingDaysSource as string | undefined;
-  const unavailableReason = (data as any).unavailableReason as string | undefined;
+  const lifecycle = (bundle as any).monitoringStatus ?? "live";
+  const targetsAvailable = (bundle as any).targetsAvailable !== false;
+  const actualsAvailable = (bundle as any).actualsAvailable !== false;
+  const unavailableReason = (bundle as any).unavailableReason as string | null;
+  const sourceInfo = context.sourceInfo as any;
 
   const categories = selectedCategory
     ? allCategories.filter((c) => c.category === selectedCategory)
@@ -77,6 +100,39 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
     ? weeklyCatRow.weeks
     : weeklyPlantWeeks;
 
+  if (!targetsAvailable || !actualsAvailable) {
+    const unavailableTitle = lifecycle === "future"
+      ? "No plan issued"
+      : !targetsAvailable
+        ? "Targets unavailable"
+        : "Actuals unavailable";
+    return (
+      <div className="space-y-6 max-w-[1300px] mx-auto pb-10">
+        <header className="mb-6">
+          <div className="flex items-center gap-3 mb-1">
+            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+              <Activity className="h-7 w-7 text-primary" /> Plant Dashboard
+            </h1>
+            <Badge variant="outline" className={lifecycleBadge(lifecycle)}>{lifecycleLabel(lifecycle)}</Badge>
+          </div>
+          <p className="text-muted-foreground text-sm">
+            PTMT production monitoring — {month} · {context.workingDays} working days
+            {` (${context.workingDaysSource})`}
+          </p>
+        </header>
+        <Card className={lifecycle === "future" ? "border-slate-500/30 bg-slate-500/5" : "border-amber-500/30 bg-amber-500/5"}>
+          <CardContent className="py-10 text-center">
+            <CalendarRange className="h-8 w-8 mx-auto mb-3 text-muted-foreground" />
+            <h2 className="text-lg font-semibold mb-1">{unavailableTitle}</h2>
+            <p className="text-sm text-muted-foreground max-w-xl mx-auto">
+              {unavailableReason ?? "Monitoring cannot be shown for this month because its finalized targets are unavailable."}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-[1300px] mx-auto pb-10">
       <header className="mb-6">
@@ -84,20 +140,25 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
           <div>
             <h1 className="text-3xl font-bold tracking-tight mb-1 flex items-center gap-2">
               <Activity className="h-7 w-7 text-primary" /> Plant Dashboard
+              <Badge variant="outline" className={`ml-1 text-xs ${lifecycleBadge(lifecycle)}`}>{lifecycleLabel(lifecycle)}</Badge>
             </h1>
             <p className="text-muted-foreground text-sm">
               NOS (pieces) against Production Plan — {month} · {context.elapsed}/{context.workingDays} working days elapsed
+              {` (${context.workingDaysSource})`}
               {context.snapshotDate ? ` · snapshot ${fmtDate(context.snapshotDate)}` : ""}
-              {workingDaysSource ? ` · ${workingDaysSource} working-day calendar` : ""}
+              {context.capturedAt ? ` · frozen ${fmtDate(context.capturedAt)}` : ""}
+              {sourceInfo?.planRunId ? ` · finalized plan #${sourceInfo.planRunId}` : ""}
+              {sourceInfo?.actualsCachedAt ? ` · actuals captured ${fmtDate(sourceInfo.actualsCachedAt)}` : ""}
+              {sourceInfo?.weeklyTargetSource === "legacy_frozen_inputs"
+                ? ` · legacy weekly release frozen with ${sourceInfo.weeklyBandSnapshot?.length ?? 0} band rules`
+                : ""}
+              {sourceInfo?.planVersions?.length
+                ? ` · ${sourceInfo.planVersions.length} issued plan version${sourceInfo.planVersions.length === 1 ? "" : "s"}`
+                : ""}
               {selectedCategory ? ` · ${selectedCategory}` : ""}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {lifecycleState && (
-              <Badge variant="outline" className={lifecycleState === "closed" ? "border-slate-400 text-slate-700" : lifecycleState === "grace" ? "border-amber-400 text-amber-700" : "border-primary/40 text-primary"}>
-                {lifecycleState === "closed" ? "Frozen month" : lifecycleState === "grace" ? "Finalizing" : lifecycleState === "future" ? "Future month" : "Live month"}
-              </Badge>
-            )}
             <Button variant="outline" size="sm" onClick={() => exportXlsx(`plant-dashboard-${month}`, [
               { name: "Plant Summary", rows: [{ Month: month, AttainmentCumPct: bundle.plant?.attainmentCumPct, ProducedToDate: bundle.plant?.producedToDate, TargetMax: bundle.plant?.targetMax, TargetMin: bundle.plant?.targetMin, ProjectedAttainmentPct: bundle.plant?.projectedAttainmentPct, RAG: bundle.plant?.ragBand }] },
               { name: "Categories", rows: categories.map((c: any) => ({ Category: c.category, ProducedToDate: c.producedToDate, TargetMax: c.targetMax, TargetMin: c.targetMin, AttainmentCumPct: c.attainmentCumPct, ProjectedAttainmentPct: c.projectedAttainmentPct, RAG: c.ragBand })) },
@@ -115,14 +176,6 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
         <Card className="border-amber-500/30 bg-amber-500/5">
           <CardContent className="pt-4 text-amber-600 flex items-center gap-2 text-sm">
             <AlertTriangle className="h-4 w-4" /> No production data found for this month. Ensure the PTMT ANUJ Production tab has been updated.
-          </CardContent>
-        </Card>
-      )}
-
-      {unavailableReason && (
-        <Card className="border-amber-500/30 bg-amber-500/5">
-          <CardContent className="pt-4 text-amber-700 flex items-center gap-2 text-sm">
-            <AlertTriangle className="h-4 w-4" /> {unavailableReason}
           </CardContent>
         </Card>
       )}
@@ -238,6 +291,8 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
                         </div>
                       )}
                     </div>
+
+                    <WeeklyPlanVersionProvenance versions={wk.planVersions ?? []} />
 
                     {/* Attainment progress bar */}
                     {!futureWeek && wk.target > 0 && (
@@ -394,12 +449,14 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
         </Card>
       )}
 
-      <LiveMachinePanel
-        liveData={liveData}
-        isLoading={isLiveLoading}
-        isRefetching={isLiveRefetching}
-        onRefresh={() => refetchLive()}
-      />
+      {lifecycle === "live" && (
+        <LiveMachinePanel
+          liveData={liveData}
+          isLoading={isLiveLoading}
+          isRefetching={isLiveRefetching}
+          onRefresh={() => refetchLive()}
+        />
+      )}
     </div>
   );
 }

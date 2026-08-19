@@ -24,6 +24,8 @@ export interface CorrectivePlanRunSummary {
   unfulfillableQty: number;
   /** Immutable plan run cited as the baseline (null = live rebuild) */
   planRunId?: CorrectivePlanRunSummaryPlanRunId;
+  /** When true, deletion and frozen-baseline changes are blocked. */
+  pinned: boolean;
   warnings: CorrectiveWarning[];
   createdAt: string;
 }

@@ -270,7 +270,8 @@ export const runCorrectiveReplanResponse = zod.object({
 })).optional().describe('Plumbing Sheet3 codes not matched to any plan item'),
   "baselinePlanRunId": zod.number().nullish().describe('Immutable plan run cited as the baseline (null = live rebuild)'),
   "baselineSource": zod.enum(['frozen-run', 'live']).optional().describe('Where the original plan baseline came from'),
-  "unplannedTotal": zod.number().describe('Sum of unplannedProduction quantities')
+  "unplannedTotal": zod.number().describe('Sum of unplannedProduction quantities'),
+  "frozenPlanGrandMax": zod.number().nullish().describe('Grand total (pcs) from the cited baseline plan run\'s results rows; null when no frozen baseline or run predates drift tracking')
 })
 
 
@@ -293,6 +294,7 @@ export const listCorrectiveRunsResponseItem = zod.object({
   "revisedMonthTotal": zod.number(),
   "unfulfillableQty": zod.number(),
   "planRunId": zod.number().nullish().describe('Immutable plan run cited as the baseline (null = live rebuild)'),
+  "pinned": zod.boolean().describe('When true, deletion and frozen-baseline changes are blocked.'),
   "warnings": zod.array(zod.object({
   "code": zod.string(),
   "severity": zod.enum(['info', 'medium', 'high', 'critical']),
@@ -399,7 +401,28 @@ export const getCorrectiveRunResponse = zod.object({
 })).optional().describe('Plumbing Sheet3 codes not matched to any plan item'),
   "baselinePlanRunId": zod.number().nullish().describe('Immutable plan run cited as the baseline (null = live rebuild)'),
   "baselineSource": zod.enum(['frozen-run', 'live']).optional().describe('Where the original plan baseline came from'),
-  "unplannedTotal": zod.number().describe('Sum of unplannedProduction quantities')
+  "unplannedTotal": zod.number().describe('Sum of unplannedProduction quantities'),
+  "frozenPlanGrandMax": zod.number().nullish().describe('Grand total (pcs) from the cited baseline plan run\'s results rows; null when no frozen baseline or run predates drift tracking')
+})
+
+
+export const deleteCorrectiveRunParams = zod.object({
+  "id": zod.number()
+})
+
+
+export const pinCorrectiveRunParams = zod.object({
+  "id": zod.number()
+})
+
+export const pinCorrectiveRunBody = zod.object({
+  "pinned": zod.boolean()
+})
+
+export const pinCorrectiveRunResponse = zod.object({
+  "runId": zod.number(),
+  "pinned": zod.boolean(),
+  "message": zod.string()
 })
 
 
@@ -736,7 +759,8 @@ export const updateWeeklyReleaseBandResponse = zod.object({
 export const createPlanRunBody = zod.object({
   "month": zod.string(),
   "segment": zod.string().optional(),
-  "note": zod.string().optional()
+  "note": zod.string().optional(),
+  "effectiveFrom": zod.string().date().optional().describe('Date within the plan month when this issued version begins governing monitoring.')
 })
 
 
@@ -753,6 +777,7 @@ export const listPlanRunsResponseItem = zod.object({
   "segment": zod.string(),
   "asOfAt": zod.string().datetime({}),
   "status": zod.enum(['draft', 'finalized']),
+  "effectiveFrom": zod.string().date().nullable().describe('Date this issued plan version begins governing monitoring; null only for legacy runs.'),
   "note": zod.string().nullable(),
   "itemCount": zod.number(),
   "grandMinTotal": zod.number(),
@@ -795,6 +820,7 @@ export const getPlanRunResponse = zod.object({
   "segment": zod.string(),
   "asOfAt": zod.string().datetime({}),
   "status": zod.enum(['draft', 'finalized']),
+  "effectiveFrom": zod.string().date().nullable().describe('Date this issued plan version begins governing monitoring; null only for legacy runs.'),
   "note": zod.string().nullable(),
   "itemCount": zod.number(),
   "grandMinTotal": zod.number(),
@@ -859,12 +885,17 @@ export const finalizePlanRunParams = zod.object({
   "id": zod.number()
 })
 
+export const finalizePlanRunBody = zod.object({
+  "effectiveFrom": zod.string().date().optional().describe('Optional final effective date for this issued plan version.')
+})
+
 export const finalizePlanRunResponse = zod.object({
   "id": zod.number(),
   "month": zod.string(),
   "segment": zod.string(),
   "asOfAt": zod.string().datetime({}),
   "status": zod.enum(['draft', 'finalized']),
+  "effectiveFrom": zod.string().date().nullable().describe('Date this issued plan version begins governing monitoring; null only for legacy runs.'),
   "note": zod.string().nullable(),
   "itemCount": zod.number(),
   "grandMinTotal": zod.number(),
@@ -1318,7 +1349,11 @@ export const getPlantBundleResponse = zod.object({
   "elapsed": zod.number(),
   "remaining": zod.number(),
   "shiftsPerDay": zod.number(),
-  "shiftHours": zod.number()
+  "shiftHours": zod.number(),
+  "lifecycle": zod.enum(['future', 'open', 'grace', 'closed']),
+  "workingDaysSource": zod.enum(['configured', 'derived']),
+  "capturedAt": zod.string().nullable(),
+  "sourceInfo": zod.record(zod.string(), zod.unknown()).nullable()
 }),
   "plant": zod.object({
   "targetMax": zod.number(),
@@ -1421,7 +1456,11 @@ export const getPlantBundleResponse = zod.object({
   "category": zod.string()
 })),
   "caveats": zod.array(zod.string()),
-  "dataAvailable": zod.boolean()
+  "dataAvailable": zod.boolean(),
+  "monitoringStatus": zod.enum(['live', 'grace', 'frozen', 'unavailable', 'future']),
+  "targetsAvailable": zod.boolean(),
+  "actualsAvailable": zod.boolean(),
+  "unavailableReason": zod.string().nullable()
 })
 
 
@@ -1432,6 +1471,7 @@ export const getPlantConfigQueryParams = zod.object({
 export const getPlantConfigResponse = zod.object({
   "month": zod.string(),
   "workingDays": zod.number(),
+  "workingDaysSource": zod.enum(['configured', 'derived']),
   "shiftsPerDay": zod.number(),
   "shiftHours": zod.number(),
   "snapshotDate": zod.string().nullable(),
@@ -1446,7 +1486,7 @@ export const getPlantConfigResponse = zod.object({
 
 export const updatePlantConfigBody = zod.object({
   "month": zod.string(),
-  "workingDays": zod.number().optional(),
+  "workingDays": zod.number().nullish(),
   "shiftsPerDay": zod.number().optional(),
   "shiftHours": zod.number().optional(),
   "snapshotDate": zod.string().nullish(),
@@ -1460,7 +1500,7 @@ export const updatePlantConfigResponse = zod.object({
 
 export const patchPlantConfigBody = zod.object({
   "month": zod.string(),
-  "workingDays": zod.number().optional(),
+  "workingDays": zod.number().nullish(),
   "shiftsPerDay": zod.number().optional(),
   "shiftHours": zod.number().optional(),
   "snapshotDate": zod.string().nullish(),
@@ -1552,7 +1592,8 @@ export const getPlantWeeklySummaryResponse = zod.object({
   "gap": zod.number(),
   "attainmentPct": zod.number().nullish(),
   "attainmentEffectivePct": zod.number().nullish(),
-  "ragBand": zod.enum(['green', 'amber', 'red']).nullish()
+  "ragBand": zod.enum(['green', 'amber', 'red']).nullish(),
+  "planVersions": zod.array(zod.string()).describe('Issued plan versions whose effective dates govern one or more days in this week.')
 }))
 }),
   "categories": zod.array(zod.object({
@@ -1566,9 +1607,21 @@ export const getPlantWeeklySummaryResponse = zod.object({
   "gap": zod.number(),
   "attainmentPct": zod.number().nullish(),
   "attainmentEffectivePct": zod.number().nullish(),
-  "ragBand": zod.enum(['green', 'amber', 'red']).nullish()
+  "ragBand": zod.enum(['green', 'amber', 'red']).nullish(),
+  "planVersions": zod.array(zod.string()).describe('Issued plan versions whose effective dates govern one or more days in this week.')
 }))
 }))
+})
+
+
+/**
+ * @summary Capture the immutable monitoring snapshot for a closed PTMT month
+ */
+export const backfillPlantMonitoringSnapshotBodyMonthRegExp = new RegExp('^\\d{4}-(0[1-9]|1[0-2])$');
+
+
+export const backfillPlantMonitoringSnapshotBody = zod.object({
+  "month": zod.string().regex(backfillPlantMonitoringSnapshotBodyMonthRegExp)
 })
 
 

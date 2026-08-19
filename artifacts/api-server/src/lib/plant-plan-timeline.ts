@@ -48,6 +48,15 @@ export function assertEffectiveDate(month: string, value: unknown): string {
   if (typeof value !== "string" || !DATE_RE.test(value) || value.slice(0, 7) !== month) {
     throw new Error(`effectiveFrom must be a YYYY-MM-DD date within ${month}`);
   }
+  const [year, monthNumber, day] = value.split("-").map(Number);
+  const parsed = new Date(Date.UTC(year, monthNumber - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== monthNumber - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    throw new Error(`effectiveFrom must be a valid calendar date within ${month}`);
+  }
   return value;
 }
 

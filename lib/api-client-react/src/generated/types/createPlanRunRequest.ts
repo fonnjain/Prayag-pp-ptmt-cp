@@ -9,4 +9,6 @@ export interface CreatePlanRunRequest {
   month: string;
   segment?: string;
   note?: string;
+  /** Date within the plan month when this issued version begins governing monitoring. */
+  effectiveFrom?: string;
 }

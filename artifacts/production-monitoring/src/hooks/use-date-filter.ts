@@ -39,10 +39,11 @@ export function computeDateRange(preset: DatePreset, customMonth: string): DateR
     const start = new Date(today.getFullYear(), today.getMonth(), 1);
     return { start: toISO(start), end: todayStr, month: monthOf(today) };
   }
-  const [y, m] = customMonth.split("-").map(Number);
+  const safeMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(customMonth) ? customMonth : monthOf(today);
+  const [y, m] = safeMonth.split("-").map(Number);
   const start = new Date(y, m - 1, 1);
   const end = new Date(y, m, 0);
-  return { start: toISO(start), end: toISO(end), month: customMonth };
+  return { start: toISO(start), end: toISO(end), month: safeMonth };
 }
 
 export function useDateFilter() {

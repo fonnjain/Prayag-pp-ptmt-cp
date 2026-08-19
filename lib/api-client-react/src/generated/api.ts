@@ -38,6 +38,8 @@ import type {
   CreateUploadBody,
   DashboardSnapshot,
   DeleteApiKey200,
+  DeleteCorrectiveRun404,
+  DeleteCorrectiveRun409,
   ExportLatestCorrectiveExcelParams,
   ExportLatestCorrectivePdfParams,
   ExportMonitoringExcelParams,
@@ -46,6 +48,7 @@ import type {
   ExportPlanPdfParams,
   ExportPlantPdfParams,
   ExportWeeklyReleaseExcelParams,
+  FinalizePlanRunRequest,
   FollowupAiPlantAnalysisBody,
   GetMonitoringActionsParams,
   GetMonitoringBacklogParams,
@@ -90,6 +93,9 @@ import type {
   MonitoringVelocity,
   MonitoringWarnings,
   OkResult,
+  PinCorrectiveRun200,
+  PinCorrectiveRun404,
+  PinCorrectiveRunBody,
   PlanItem,
   PlanRunDetail,
   PlanRunDiff,
@@ -104,6 +110,9 @@ import type {
   PlantLivePlantsResponse,
   PlantLiveRecordsResponse,
   PlantLiveSummaryResponse,
+  PlantSnapshotBackfillError,
+  PlantSnapshotBackfillInput,
+  PlantSnapshotBackfillResult,
   PlantSourceConfigUpsert,
   PlantWeeklySummary,
   PlumbingMachine,
@@ -1086,6 +1095,181 @@ export function useGetCorrectiveRun<TData = Awaited<ReturnType<typeof getCorrect
 
 
 
+
+export type deleteCorrectiveRunResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteCorrectiveRunResponse404 = {
+  data: DeleteCorrectiveRun404
+  status: 404
+}
+
+export type deleteCorrectiveRunResponse409 = {
+  data: DeleteCorrectiveRun409
+  status: 409
+}
+
+export type deleteCorrectiveRunResponseSuccess = (deleteCorrectiveRunResponse204) & {
+  headers: Headers;
+};
+export type deleteCorrectiveRunResponseError = (deleteCorrectiveRunResponse404 | deleteCorrectiveRunResponse409) & {
+  headers: Headers;
+};
+
+export type deleteCorrectiveRunResponse = (deleteCorrectiveRunResponseSuccess | deleteCorrectiveRunResponseError)
+
+export const getDeleteCorrectiveRunUrl = (id: number,) => {
+
+
+
+
+  return `/api/corrective/runs/${id}`
+}
+
+export const deleteCorrectiveRun = async (id: number, options?: RequestInit): Promise<deleteCorrectiveRunResponse> => {
+
+  return customFetch<deleteCorrectiveRunResponse>(getDeleteCorrectiveRunUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteCorrectiveRunMutationOptions = <TError = DeleteCorrectiveRun404 | DeleteCorrectiveRun409,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCorrectiveRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteCorrectiveRun>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteCorrectiveRun'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCorrectiveRun>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteCorrectiveRun(id,requestOptions)
+        }
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteCorrectiveRunMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCorrectiveRun>>>
+
+    export type DeleteCorrectiveRunMutationError = DeleteCorrectiveRun404 | DeleteCorrectiveRun409
+
+    export const useDeleteCorrectiveRun = <TError = DeleteCorrectiveRun404 | DeleteCorrectiveRun409,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteCorrectiveRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteCorrectiveRun>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+
+      const mutationOptions = getDeleteCorrectiveRunMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+
+export type pinCorrectiveRunResponse200 = {
+  data: PinCorrectiveRun200
+  status: 200
+}
+
+export type pinCorrectiveRunResponse404 = {
+  data: PinCorrectiveRun404
+  status: 404
+}
+
+export type pinCorrectiveRunResponseSuccess = (pinCorrectiveRunResponse200) & {
+  headers: Headers;
+};
+export type pinCorrectiveRunResponseError = (pinCorrectiveRunResponse404) & {
+  headers: Headers;
+};
+
+export type pinCorrectiveRunResponse = (pinCorrectiveRunResponseSuccess | pinCorrectiveRunResponseError)
+
+export const getPinCorrectiveRunUrl = (id: number,) => {
+
+
+
+
+  return `/api/corrective/runs/${id}/pin`
+}
+
+export const pinCorrectiveRun = async (id: number,
+    pinCorrectiveRunBody: PinCorrectiveRunBody, options?: RequestInit): Promise<pinCorrectiveRunResponse> => {
+
+  return customFetch<pinCorrectiveRunResponse>(getPinCorrectiveRunUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      pinCorrectiveRunBody,)
+  }
+);}
+
+
+
+
+export const getPinCorrectiveRunMutationOptions = <TError = PinCorrectiveRun404,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pinCorrectiveRun>>, TError,{id: number;data: PinCorrectiveRunBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pinCorrectiveRun>>, TError,{id: number;data: PinCorrectiveRunBody}, TContext> => {
+
+const mutationKey = ['pinCorrectiveRun'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pinCorrectiveRun>>, {id: number;data: PinCorrectiveRunBody}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  pinCorrectiveRun(id,data,requestOptions)
+        }
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PinCorrectiveRunMutationResult = NonNullable<Awaited<ReturnType<typeof pinCorrectiveRun>>>
+    export type PinCorrectiveRunMutationBody = PinCorrectiveRunBody
+    export type PinCorrectiveRunMutationError = PinCorrectiveRun404
+
+    export const usePinCorrectiveRun = <TError = PinCorrectiveRun404,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pinCorrectiveRun>>, TError,{id: number;data: PinCorrectiveRunBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pinCorrectiveRun>>,
+        TError,
+        {id: number;data: PinCorrectiveRunBody},
+        TContext
+      > => {
+
+      const mutationOptions = getPinCorrectiveRunMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
 
 export type exportCorrectiveExcelResponse200 = {
   data: Blob
@@ -3291,14 +3475,16 @@ export const getFinalizePlanRunUrl = (id: number,) => {
   return `/api/plan/runs/${id}/finalize`
 }
 
-export const finalizePlanRun = async (id: number, options?: RequestInit): Promise<finalizePlanRunResponse> => {
+export const finalizePlanRun = async (id: number,
+    finalizePlanRunRequest?: FinalizePlanRunRequest, options?: RequestInit): Promise<finalizePlanRunResponse> => {
   
   return customFetch<finalizePlanRunResponse>(getFinalizePlanRunUrl(id),
   {      
     ...options,
-    method: 'POST'
-    
-    
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      finalizePlanRunRequest,)
   }
 );}
 
@@ -3306,8 +3492,8 @@ export const finalizePlanRun = async (id: number, options?: RequestInit): Promis
 
 
 export const getFinalizePlanRunMutationOptions = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finalizePlanRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof finalizePlanRun>>, TError,{id: number}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finalizePlanRun>>, TError,{id: number;data: FinalizePlanRunRequest}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof finalizePlanRun>>, TError,{id: number;data: FinalizePlanRunRequest}, TContext> => {
 
 const mutationKey = ['finalizePlanRun'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -3319,10 +3505,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof finalizePlanRun>>, {id: number}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof finalizePlanRun>>, {id: number;data: FinalizePlanRunRequest}> = (props) => {
+          const {id,data} = props ?? {};
 
-          return  finalizePlanRun(id,requestOptions)
+          return  finalizePlanRun(id,data,requestOptions)
         }
 
         
@@ -3331,15 +3517,15 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type FinalizePlanRunMutationResult = NonNullable<Awaited<ReturnType<typeof finalizePlanRun>>>
-    
+    export type FinalizePlanRunMutationBody = FinalizePlanRunRequest
     export type FinalizePlanRunMutationError = void
 
     export const useFinalizePlanRun = <TError = void,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finalizePlanRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof finalizePlanRun>>, TError,{id: number;data: FinalizePlanRunRequest}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof finalizePlanRun>>,
         TError,
-        {id: number},
+        {id: number;data: FinalizePlanRunRequest},
         TContext
       > => {
 
@@ -6163,6 +6349,112 @@ export function useGetPlantWeeklySummary<TData = Awaited<ReturnType<typeof getPl
 
 
 
+/**
+ * @summary Capture the immutable monitoring snapshot for a closed PTMT month
+ */
+export type backfillPlantMonitoringSnapshotResponse201 = {
+  data: PlantSnapshotBackfillResult
+  status: 201
+}
+
+export type backfillPlantMonitoringSnapshotResponse400 = {
+  data: PlantSnapshotBackfillError
+  status: 400
+}
+
+export type backfillPlantMonitoringSnapshotResponse409 = {
+  data: PlantSnapshotBackfillError
+  status: 409
+}
+
+export type backfillPlantMonitoringSnapshotResponse422 = {
+  data: PlantSnapshotBackfillError
+  status: 422
+}
+
+export type backfillPlantMonitoringSnapshotResponse500 = {
+  data: PlantSnapshotBackfillError
+  status: 500
+}
+    
+export type backfillPlantMonitoringSnapshotResponseSuccess = (backfillPlantMonitoringSnapshotResponse201) & {
+  headers: Headers;
+};
+export type backfillPlantMonitoringSnapshotResponseError = (backfillPlantMonitoringSnapshotResponse400 | backfillPlantMonitoringSnapshotResponse409 | backfillPlantMonitoringSnapshotResponse422 | backfillPlantMonitoringSnapshotResponse500) & {
+  headers: Headers;
+};
+
+export type backfillPlantMonitoringSnapshotResponse = (backfillPlantMonitoringSnapshotResponseSuccess | backfillPlantMonitoringSnapshotResponseError)
+
+export const getBackfillPlantMonitoringSnapshotUrl = () => {
+
+
+  
+
+  return `/api/plant/snapshots/backfill`
+}
+
+export const backfillPlantMonitoringSnapshot = async (plantSnapshotBackfillInput: PlantSnapshotBackfillInput, options?: RequestInit): Promise<backfillPlantMonitoringSnapshotResponse> => {
+  
+  return customFetch<backfillPlantMonitoringSnapshotResponse>(getBackfillPlantMonitoringSnapshotUrl(),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      plantSnapshotBackfillInput,)
+  }
+);}
+
+
+
+
+export const getBackfillPlantMonitoringSnapshotMutationOptions = <TError = PlantSnapshotBackfillError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof backfillPlantMonitoringSnapshot>>, TError,{data: PlantSnapshotBackfillInput}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof backfillPlantMonitoringSnapshot>>, TError,{data: PlantSnapshotBackfillInput}, TContext> => {
+
+const mutationKey = ['backfillPlantMonitoringSnapshot'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof backfillPlantMonitoringSnapshot>>, {data: PlantSnapshotBackfillInput}> = (props) => {
+          const {data} = props ?? {};
+
+          return  backfillPlantMonitoringSnapshot(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BackfillPlantMonitoringSnapshotMutationResult = NonNullable<Awaited<ReturnType<typeof backfillPlantMonitoringSnapshot>>>
+    export type BackfillPlantMonitoringSnapshotMutationBody = PlantSnapshotBackfillInput
+    export type BackfillPlantMonitoringSnapshotMutationError = PlantSnapshotBackfillError
+
+    /**
+ * @summary Capture the immutable monitoring snapshot for a closed PTMT month
+ */
+export const useBackfillPlantMonitoringSnapshot = <TError = PlantSnapshotBackfillError,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof backfillPlantMonitoringSnapshot>>, TError,{data: PlantSnapshotBackfillInput}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof backfillPlantMonitoringSnapshot>>,
+        TError,
+        {data: PlantSnapshotBackfillInput},
+        TContext
+      > => {
+
+      const mutationOptions = getBackfillPlantMonitoringSnapshotMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
 /**
  * @summary List all API keys (hashes never returned)
  */

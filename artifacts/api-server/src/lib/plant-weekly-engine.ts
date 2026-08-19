@@ -144,17 +144,20 @@ export function buildPlantWeeklySummary(
   planItems: WeeklyInputPlanItem[],
   targets: WeeklyInputTarget[],
   snapshotDate: string | null,
+  completedCalendar = false,
   versionTimeline: PlanVersion[] = [],
 ): PlantWeeklySummary {
   const calendar = buildWeekCalendar(month);
 
   // Always use the real wall-clock date for "which week are we in" — never let
   // a stale snapshotDate cause the current-week badge to fall behind.
-  const realToday = new Date().toISOString().slice(0, 10);
+  const realToday = completedCalendar
+    ? `${month}-${String(daysInMonth(month)).padStart(2, "0")}`
+    : new Date().toISOString().slice(0, 10);
   const calToday = realToday.slice(0, 7) === month ? parseInt(realToday.slice(8), 10) : 0;
 
   // For data-elapsed calculations keep using snapshotDate (last data day)
-  const dataDay = (snapshotDate ?? realToday).slice(0, 7) === month
+  const dataDay = completedCalendar ? daysInMonth(month) : (snapshotDate ?? realToday).slice(0, 7) === month
     ? parseInt((snapshotDate ?? realToday).slice(8), 10) : 0;
   const todayInMonth = calToday; // alias used below
 
@@ -213,7 +216,7 @@ export function buildPlantWeeklySummary(
               versionForDate(versionTimeline, date)?.kind === version.kind) dates.push(date);
         }
         if (dates.length === 0) continue;
-        planVersionsByWeek[weekIndex].add(`v${version.sourceId} · ${version.kind}`);
+        planVersionsByWeek[weekIndex].add(`${version.sourceLabel} · effective ${version.effectiveFrom}`);
         const ratio = dates.length / (week.endDay - week.startDay + 1);
         for (const target of version.targets) {
           const release = [target.w1, target.w2, target.w3, target.w4][weekIndex] ?? 0;

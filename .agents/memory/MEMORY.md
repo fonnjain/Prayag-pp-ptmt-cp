@@ -51,4 +51,4 @@
 - [Corrective export totals](corrective-export-totals.md) — header "Revised Month Total" must derive from sum(Math.round(planRev) per item), not run.revisedMonthTotal (real float); gap can reach 100 pcs.
 - [Plumbing monitoring cache](plumbing-monitoring-cache.md) — always use the shared SWR-cached getter, never computePlumbingMonitoringPayload directly; sync invalidates+pre-warms; startup pre-warms in parallel with sync.
 - [Prod plan runs creation](prod-plan-runs-creation.md) — plan_run rows created in dev never reach production on publish; must POST to the prod API explicitly after any output-affecting fix.
-- [Plant monitoring version freeze](plant-monitoring-version-freeze.md) — legacy timelines hydrate once, skip out-of-month sources, and closed-month responses must be persisted before reuse.
+- [Plant monitoring version freeze](plant-monitoring-version-freeze.md) — completed months are immutable; versioned reporting must retain historical items and show each week’s governing plans.

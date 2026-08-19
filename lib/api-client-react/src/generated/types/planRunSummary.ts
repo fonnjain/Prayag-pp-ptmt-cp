@@ -5,6 +5,7 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { PlanRunSummaryStatus } from './planRunSummaryStatus';
+import type { PlanRunSummaryEffectiveFrom } from './planRunSummaryEffectiveFrom';
 import type { PlanRunSummaryNote } from './planRunSummaryNote';
 
 export interface PlanRunSummary {
@@ -13,6 +14,8 @@ export interface PlanRunSummary {
   segment: string;
   asOfAt: string;
   status: PlanRunSummaryStatus;
+  /** Date this issued plan version begins governing monitoring; null only for legacy runs. */
+  effectiveFrom: PlanRunSummaryEffectiveFrom;
   note: PlanRunSummaryNote;
   itemCount: number;
   grandMinTotal: number;

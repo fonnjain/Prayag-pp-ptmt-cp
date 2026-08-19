@@ -202,6 +202,22 @@ export async function runFullSync(month?: string): Promise<void> {
 
 // ── Scheduler ──────────────────────────────────────────────────────────────
 
+async function capturePendingClosedMonths(): Promise<void> {
+  const [{ captureUnfrozenClosedPlantMonths }, { invalidatePlantBundleCache }] = await Promise.all([
+    import("../lib/plant-monitoring"),
+    import("./plant"),
+  ]);
+  const outcomes = await captureUnfrozenClosedPlantMonths();
+  for (const { month, result } of outcomes) {
+    if (result.ok) {
+      invalidatePlantBundleCache(month);
+      logger.info({ month, capturedAt: result.capturedAt }, "Closed plant month snapshot ready");
+    } else {
+      logger.warn({ month, code: result.code, reason: result.reason }, "Closed plant month snapshot unavailable");
+    }
+  }
+}
+
 function isISTWorkHour(): boolean {
   const istMs = Date.now() + 5.5 * 60 * 60 * 1000;
   const hour = new Date(istMs).getUTCHours();
@@ -225,14 +241,22 @@ export function startSyncScheduler(): void {
     getPlumbingMonitoringPayloadCached(warmMonth).catch((err) =>
       logger.warn({ err, month: warmMonth }, "Plumbing monitoring startup pre-warm failed"),
     );
-    runFullSync().catch((err) => logger.error({ err }, "Startup sync failed"));
+    runFullSync()
+      .catch((err) => logger.error({ err }, "Startup sync failed"))
+      .finally(() => capturePendingClosedMonths().catch((err) =>
+        logger.error({ err }, "Startup closed-month capture failed"),
+      ));
   }, 8000);
 
   // Hourly tick during IST work hours (08:00–20:00)
   setInterval(() => {
     if (isISTWorkHour()) {
       logger.info("Auto-sync: hourly scheduled run");
-      runFullSync().catch((err) => logger.error({ err }, "Scheduled sync failed"));
+      runFullSync()
+        .catch((err) => logger.error({ err }, "Scheduled sync failed"))
+        .finally(() => capturePendingClosedMonths().catch((err) =>
+          logger.error({ err }, "Scheduled closed-month capture failed"),
+        ));
     }
   }, 60 * 60 * 1000);
 }
@@ -242,6 +266,7 @@ export function startSyncScheduler(): void {
 router.post("/sync/sheets", async (req, res): Promise<void> => {
   const month = req.body?.month ? String(req.body.month) : currentPlanningMonth();
   await runFullSync(month);
+  await capturePendingClosedMonths();
   const results = await db.select().from(syncSourcesTable).orderBy(syncSourcesTable.name);
   res.json(results);
 });

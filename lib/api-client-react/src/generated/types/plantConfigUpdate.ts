@@ -4,12 +4,13 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { PlantConfigUpdateWorkingDays } from './plantConfigUpdateWorkingDays';
 import type { PlantConfigUpdateSnapshotDate } from './plantConfigUpdateSnapshotDate';
 import type { PlantConfigUpdateThresholds } from './plantConfigUpdateThresholds';
 
 export interface PlantConfigUpdate {
   month: string;
-  workingDays?: number;
+  workingDays?: PlantConfigUpdateWorkingDays;
   shiftsPerDay?: number;
   shiftHours?: number;
   snapshotDate?: PlantConfigUpdateSnapshotDate;

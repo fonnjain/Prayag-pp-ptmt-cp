@@ -13,6 +13,7 @@ import type { CorrectiveCategoryResult } from './correctiveCategoryResult';
 import type { CorrectiveReplanResultUnplannedProductionItem } from './correctiveReplanResultUnplannedProductionItem';
 import type { CorrectiveReplanResultBaselinePlanRunId } from './correctiveReplanResultBaselinePlanRunId';
 import type { CorrectiveReplanResultBaselineSource } from './correctiveReplanResultBaselineSource';
+import type { CorrectiveReplanResultFrozenPlanGrandMax } from './correctiveReplanResultFrozenPlanGrandMax';
 
 export interface CorrectiveReplanResult {
   runId: number;
@@ -47,4 +48,6 @@ export interface CorrectiveReplanResult {
   baselineSource?: CorrectiveReplanResultBaselineSource;
   /** Sum of unplannedProduction quantities */
   unplannedTotal: number;
+  /** Grand total (pcs) from the cited baseline plan run's results rows; null when no frozen baseline or run predates drift tracking */
+  frozenPlanGrandMax?: CorrectiveReplanResultFrozenPlanGrandMax;
 }

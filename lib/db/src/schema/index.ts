@@ -10,6 +10,7 @@ export * from "./ai-analyses";
 export * from "./plant-configs";
 export * from "./plant-source-configs";
 export * from "./plant-ingestion-cache";
+export * from "./plant-monitoring-snapshots";
 export * from "./reports";
 export * from "./plan-runs";
 export * from "./weekly-release-bands";

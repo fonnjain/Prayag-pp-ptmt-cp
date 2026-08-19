@@ -27,6 +27,13 @@ export function countWorkingDaysElapsed(month: string, throughDateIso: string | 
   return count;
 }
 
+/** Calendar fallback when a plant has not configured the month explicitly. */
+export function countWorkingDaysInMonth(month: string): number {
+  const [y, m] = month.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return countWorkingDaysElapsed(month, `${month}-${String(lastDay).padStart(2, "0")}`);
+}
+
 export function buildCalendarModel(workingDays: number, elapsed: number): CalendarModel {
   return { workingDays, elapsed, remaining: Math.max(workingDays - elapsed, 0) };
 }

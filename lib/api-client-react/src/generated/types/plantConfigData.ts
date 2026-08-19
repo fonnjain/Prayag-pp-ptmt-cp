@@ -4,12 +4,14 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { PlantConfigDataWorkingDaysSource } from './plantConfigDataWorkingDaysSource';
 import type { PlantConfigDataSnapshotDate } from './plantConfigDataSnapshotDate';
 import type { PlantSourceConfigItem } from './plantSourceConfigItem';
 
 export interface PlantConfigData {
   month: string;
   workingDays: number;
+  workingDaysSource: PlantConfigDataWorkingDaysSource;
   shiftsPerDay: number;
   shiftHours: number;
   snapshotDate: PlantConfigDataSnapshotDate;

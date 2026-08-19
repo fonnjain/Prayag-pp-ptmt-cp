@@ -224,6 +224,77 @@ paths:
                 $ref: "#/components/schemas/CorrectiveReplanResult"
         "404":
           description: Not found
+    delete:
+      operationId: deleteCorrectiveRun
+      tags: [corrective]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "204":
+          description: Run deleted
+        "404":
+          description: Run not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error: { type: string }
+        "409":
+          description: Pinned run cannot be deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error, code, runId]
+                properties:
+                  error: { type: string }
+                  code: { type: string }
+                  runId: { type: integer }
+
+  /corrective/runs/{id}/pin:
+    patch:
+      operationId: pinCorrectiveRun
+      tags: [corrective]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pinned]
+              properties:
+                pinned: { type: boolean }
+      responses:
+        "200":
+          description: Pin status updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runId, pinned, message]
+                properties:
+                  runId: { type: integer }
+                  pinned: { type: boolean }
+                  message: { type: string }
+        "404":
+          description: Run not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error: { type: string }
 
   /corrective/runs/{id}/export/excel:
     get:
@@ -764,6 +835,12 @@ paths:
           in: path
           required: true
           schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinalizePlanRunRequest"
       responses:
         "200":
           description: Run finalized (locked)
@@ -1366,6 +1443,49 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlantWeeklySummary"
 
+  /plant/snapshots/backfill:
+    post:
+      operationId: backfillPlantMonitoringSnapshot
+      tags: [plant]
+      summary: Capture the immutable monitoring snapshot for a closed PTMT month
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlantSnapshotBackfillInput"
+      responses:
+        "201":
+          description: Snapshot captured or already present
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantSnapshotBackfillResult"
+        "400":
+          description: Invalid month input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantSnapshotBackfillError"
+        "409":
+          description: The month is not closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantSnapshotBackfillError"
+        "422":
+          description: Required finalized targets or fresh actuals are unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantSnapshotBackfillError"
+        "500":
+          description: Snapshot capture failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlantSnapshotBackfillError"
+
   /api-keys:
     get:
       operationId: listApiKeys
@@ -1754,16 +1874,32 @@ components:
         month: { type: string }
         segment: { type: string }
         note: { type: string }
+        effectiveFrom:
+          type: string
+          format: date
+          description: Date within the plan month when this issued version begins governing monitoring.
+
+    FinalizePlanRunRequest:
+      type: object
+      properties:
+        effectiveFrom:
+          type: string
+          format: date
+          description: Optional final effective date for this issued plan version.
 
     PlanRunSummary:
       type: object
-      required: [id, month, segment, asOfAt, status, note, itemCount, grandMinTotal, grandMaxTotal, createdAt]
+      required: [id, month, segment, asOfAt, status, effectiveFrom, note, itemCount, grandMinTotal, grandMaxTotal, createdAt]
       properties:
         id: { type: integer }
         month: { type: string }
         segment: { type: string }
         asOfAt: { type: string, format: date-time }
         status: { type: string, enum: [draft, finalized] }
+        effectiveFrom:
+          type: ["string", "null"]
+          format: date
+          description: Date this issued plan version begins governing monitoring; null only for legacy runs.
         note: { type: ["string", "null"] }
         itemCount: { type: integer }
         grandMinTotal: { type: number }
@@ -2376,7 +2512,7 @@ components:
 
     PlantContext:
       type: object
-      required: [month, snapshotDate, workingDays, elapsed, remaining, shiftsPerDay, shiftHours]
+      required: [month, snapshotDate, workingDays, elapsed, remaining, shiftsPerDay, shiftHours, lifecycle, workingDaysSource, capturedAt, sourceInfo]
       properties:
         month: { type: string }
         snapshotDate: { type: ["string", "null"] }
@@ -2385,6 +2521,12 @@ components:
         remaining: { type: integer }
         shiftsPerDay: { type: integer }
         shiftHours: { type: integer }
+        lifecycle: { type: string, enum: [future, open, grace, closed] }
+        workingDaysSource: { type: string, enum: [configured, derived] }
+        capturedAt: { type: ["string", "null"] }
+        sourceInfo:
+          type: ["object", "null"]
+          additionalProperties: true
 
     PlantBundle:
       type: object
@@ -2402,6 +2544,10 @@ components:
         - needsReview
         - caveats
         - dataAvailable
+        - monitoringStatus
+        - targetsAvailable
+        - actualsAvailable
+        - unavailableReason
       properties:
         month: { type: string }
         context:
@@ -2444,6 +2590,34 @@ components:
           type: array
           items: { type: string }
         dataAvailable: { type: boolean }
+        monitoringStatus: { type: string, enum: [live, grace, frozen, unavailable, future] }
+        targetsAvailable: { type: boolean }
+        actualsAvailable: { type: boolean }
+        unavailableReason: { type: ["string", "null"] }
+
+    PlantSnapshotBackfillInput:
+      type: object
+      required: [month]
+      properties:
+        month:
+          type: string
+          pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+
+    PlantSnapshotBackfillResult:
+      type: object
+      required: [month, status, capturedAt]
+      properties:
+        month: { type: string }
+        status: { type: string, enum: [frozen] }
+        capturedAt: { type: string }
+
+    PlantSnapshotBackfillError:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string }
+        message: { type: string }
+        month: { type: string }
 
     PlantTrendSummary:
       type: object
@@ -2473,10 +2647,11 @@ components:
 
     PlantConfigData:
       type: object
-      required: [month, workingDays, shiftsPerDay, shiftHours, snapshotDate, sourceConfigs]
+      required: [month, workingDays, workingDaysSource, shiftsPerDay, shiftHours, snapshotDate, sourceConfigs]
       properties:
         month: { type: string }
         workingDays: { type: integer }
+        workingDaysSource: { type: string, enum: [configured, derived] }
         shiftsPerDay: { type: integer }
         shiftHours: { type: integer }
         snapshotDate: { type: ["string", "null"] }
@@ -2490,7 +2665,7 @@ components:
       required: [month]
       properties:
         month: { type: string }
-        workingDays: { type: integer }
+        workingDays: { type: [integer, "null"] }
         shiftsPerDay: { type: integer }
         shiftHours: { type: integer }
         snapshotDate: { type: ["string", "null"] }
@@ -2620,7 +2795,7 @@ components:
 
     PlantWeeklyStats:
       type: object
-      required: [week, target, actual, carryover, effectiveTarget, gap]
+      required: [week, target, actual, carryover, effectiveTarget, gap, planVersions]
       properties:
         week: { type: integer }
         target: { type: number }
@@ -2638,6 +2813,10 @@ components:
           nullable: true
           type: string
           enum: [green, amber, red]
+        planVersions:
+          type: array
+          description: Issued plan versions whose effective dates govern one or more days in this week.
+          items: { type: string }
 
     CorrectiveReplanInput:
       type: object
@@ -2778,6 +2957,7 @@ components:
         baselinePlanRunId: { type: ["integer", "null"], description: "Immutable plan run cited as the baseline (null = live rebuild)" }
         baselineSource: { type: string, enum: [frozen-run, live], description: "Where the original plan baseline came from" }
         unplannedTotal: { type: integer, description: "Sum of unplannedProduction quantities" }
+        frozenPlanGrandMax: { type: ["integer", "null"], description: "Grand total (pcs) from the cited baseline plan run's results rows; null when no frozen baseline or run predates drift tracking" }
 
     CategoryCapacity:
       type: object
@@ -2806,7 +2986,7 @@ components:
 
     CorrectivePlanRunSummary:
       type: object
-      required: [id, segment, month, weekClosed, dailyCapacity, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, warnings, createdAt]
+      required: [id, segment, month, weekClosed, dailyCapacity, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, pinned, warnings, createdAt]
       properties:
         id: { type: integer }
         segment: { type: string }
@@ -2821,6 +3001,7 @@ components:
         revisedMonthTotal: { type: number }
         unfulfillableQty: { type: number }
         planRunId: { type: ["integer", "null"], description: "Immutable plan run cited as the baseline (null = live rebuild)" }
+        pinned: { type: boolean, description: "When true, deletion and frozen-baseline changes are blocked." }
         warnings:
           type: array
           items: { $ref: "#/components/schemas/CorrectiveWarning" }

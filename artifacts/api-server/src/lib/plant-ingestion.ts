@@ -49,11 +49,27 @@ function parseDate(raw: string): string | null {
   return null;
 }
 
-export async function fetchDailyActuals(month: string, options: { forceLive?: boolean } = {}): Promise<DailyActualRow[]> {
+export async function loadStoredDailyActuals(month: string): Promise<{
+  actuals: DailyActualRow[];
+  snapshotDate: string | null;
+  cachedAt: Date | null;
+}> {
+  const [cached] = await db.select().from(plantIngestionCacheTable).where(eq(plantIngestionCacheTable.month, month));
+  return {
+    actuals: cached ? cached.rawActualsJson as DailyActualRow[] : [],
+    snapshotDate: cached?.snapshotDate || null,
+    cachedAt: cached?.cachedAt ?? null,
+  };
+}
+
+export async function fetchDailyActuals(
+  month: string,
+  options: { forceRefresh?: boolean; requireFresh?: boolean } = {},
+): Promise<DailyActualRow[]> {
   const [cached] = await db.select().from(plantIngestionCacheTable).where(eq(plantIngestionCacheTable.month, month));
   if (cached) {
     const age = Date.now() - new Date(cached.cachedAt).getTime();
-    if (!options.forceLive && (month < currentMonthStr() || age < CACHE_TTL_MS)) {
+    if (!options.forceRefresh && (month < currentMonthStr() || age < CACHE_TTL_MS)) {
       return cached.rawActualsJson as DailyActualRow[];
     }
   }
@@ -68,10 +84,16 @@ export async function fetchDailyActuals(month: string, options: { forceLive?: bo
     rows = await getTabValues(SHEET_IDS.ptmtAnuj, "Production", "A1:F500000");
   } catch (err) {
     logger.error({ err, month }, "plant-ingestion: failed to read PTMT ANUJ Production tab");
+    if (options.requireFresh) throw err;
     return cached ? (cached.rawActualsJson as DailyActualRow[]) : [];
   }
 
-  if (rows.length === 0) return [];
+  if (rows.length === 0) {
+    if (options.requireFresh) {
+      throw new Error("PTMT ANUJ Production tab returned no rows");
+    }
+    return [];
+  }
 
   const header = rows[0].map((h) => String(h ?? "").trim().toLowerCase());
   const fi = (pred: (h: string) => boolean, fallback: number) => {
@@ -147,7 +169,7 @@ export async function fetchMonthlyTargets(month: string): Promise<PlantTargetRow
   return fetchTargetsFromMasterSheet(src.fileId, month);
 }
 
-/** The immutable plan timeline used by monitoring calculations for PTMT. */
+/** Immutable issued-plan versions used by monitoring calculations. */
 export async function fetchMonitoringPlanTimeline(month: string): Promise<PlanVersion[]> {
   return getPlanVersionTimeline(month, "PTMT");
 }

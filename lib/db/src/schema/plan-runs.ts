@@ -9,6 +9,7 @@ export const planRunsTable = pgTable("plan_runs", {
   effectiveFrom: text("effective_from"),
   asOfAt: timestamp("as_of_at", { withTimezone: true }).notNull().defaultNow(),
   status: text("status").notNull().default("draft"),
+  weeklyReleaseVersion: integer("weekly_release_version").notNull().default(0),
   factorsJson: jsonb("factors_json").notNull().$type<Record<string, number>>().default({}),
   note: text("note"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -38,6 +39,11 @@ export const planRunResultsTable = pgTable("plan_run_results", {
   bufferReq: real("buffer_req").notNull().default(0),
   minProduction: real("min_production").notNull().default(0),
   productionPlan: real("production_plan").notNull().default(0),
+  releaseWeek: integer("release_week"),
+  w1: real("w1").notNull().default(0),
+  w2: real("w2").notNull().default(0),
+  w3: real("w3").notNull().default(0),
+  w4: real("w4").notNull().default(0),
 });
 
 export const pendingSnapshotsTable = pgTable("pending_snapshots", {

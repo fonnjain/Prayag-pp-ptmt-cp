@@ -13,6 +13,8 @@ import type { PlantMixFlag } from './plantMixFlag';
 import type { PlantWarning } from './plantWarning';
 import type { PlantRecommendation } from './plantRecommendation';
 import type { NeedsReviewItem } from './needsReviewItem';
+import type { PlantBundleMonitoringStatus } from './plantBundleMonitoringStatus';
+import type { PlantBundleUnavailableReason } from './plantBundleUnavailableReason';
 
 export interface PlantBundle {
   month: string;
@@ -28,4 +30,8 @@ export interface PlantBundle {
   needsReview: NeedsReviewItem[];
   caveats: string[];
   dataAvailable: boolean;
+  monitoringStatus: PlantBundleMonitoringStatus;
+  targetsAvailable: boolean;
+  actualsAvailable: boolean;
+  unavailableReason: PlantBundleUnavailableReason;
 }

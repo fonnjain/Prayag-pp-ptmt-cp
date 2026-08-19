@@ -71,6 +71,9 @@ export interface PlantBundle {
     remaining: number;
     shiftsPerDay: number;
     shiftHours: number;
+    lifecycle: "future" | "open" | "grace" | "closed";
+    capturedAt: string | null;
+    sourceInfo: Record<string, unknown> | null;
     lifecycleState?: "future" | "open" | "grace" | "closed";
     frozenAt?: string | null;
   };
@@ -93,6 +96,9 @@ export interface PlantCalendarConfig {
   snapshotDate: string | null;
   versionTimeline?: PlanVersion[];
   workingDaysSource?: "configured" | "derived";
+  lifecycle?: "future" | "open" | "grace" | "closed";
+  capturedAt?: string | null;
+  sourceInfo?: Record<string, unknown> | null;
   lifecycleState?: "future" | "open" | "grace" | "closed";
   frozenAt?: string | null;
 }
@@ -181,7 +187,10 @@ export function buildPlantBundle(
 
   const lastDate = actuals.length > 0 ? [...actuals].map((r) => r.date).sort().pop()! : null;
   const snapshotDate = config.snapshotDate ?? lastDate;
-  const elapsed = snapshotDate ? countWorkingDaysElapsed(month, snapshotDate) : 0;
+  const lifecycle = config.lifecycle ?? config.lifecycleState ?? "open";
+  const elapsed = lifecycle === "closed" || lifecycle === "grace"
+    ? workingDays
+    : snapshotDate ? countWorkingDaysElapsed(month, snapshotDate) : 0;
   const calendar = buildCalendarModel(workingDays, elapsed);
 
   const allWorkingDays = workingDaysInMonth(month);
@@ -201,13 +210,6 @@ export function buildPlantBundle(
     const version = versionForDate(versionTimeline, date);
     return version ? targetLookup(version.targets) : latestLookup;
   };
-
-  const targetByKey = latestLookup.byKey;
-  const targetByCode = latestLookup.byCode;
-  for (const t of targets) {
-    targetByKey.set(itemKey(t.itemCode, t.colour), t);
-    if (!targetByCode.has(normalizeCode(t.itemCode))) targetByCode.set(normalizeCode(t.itemCode), t);
-  }
 
   let plantTargetMax = 0;
   let plantTargetMin = 0;
@@ -265,7 +267,16 @@ export function buildPlantBundle(
     });
   }
 
+  const targetUniverse: Array<PlantTargetRow | VersionTarget> = [
+    ...versionTimeline.flatMap((version) => version.targets),
+    ...targets,
+  ];
   const categoryMap = new Map<string, { targetMax: number; targetMin: number; produced: number; dailyOutputs: number[] }>();
+  for (const target of targetUniverse) {
+    if (!categoryMap.has(target.category)) {
+      categoryMap.set(target.category, { targetMax: 0, targetMin: 0, produced: 0, dailyOutputs: Array(elapsed).fill(0) });
+    }
+  }
   for (const t of targets) {
     const existing = categoryMap.get(t.category) ?? { targetMax: 0, targetMin: 0, produced: 0, dailyOutputs: Array(elapsed).fill(0) };
     existing.targetMax += t.maxPcs;
@@ -273,38 +284,77 @@ export function buildPlantBundle(
     categoryMap.set(t.category, existing);
   }
 
-  for (const row of actuals) {
+  const needsReview: PlantBundle["needsReview"] = [];
+  const needsReviewKeys = new Set<string>();
+  const resolvedActuals = actuals.map((row) => {
     const rowLookup = lookupForDate(row.date);
-    const t = rowLookup.byKey.get(itemKey(row.itemCode, row.colour)) ?? rowLookup.byCode.get(normalizeCode(row.itemCode));
-    const cat = t?.category ?? "Unknown";
-    const entry = categoryMap.get(cat);
+    const target = rowLookup.byKey.get(itemKey(row.itemCode, row.colour)) ?? rowLookup.byCode.get(normalizeCode(row.itemCode));
+    if (!target) {
+      const key = itemKey(row.itemCode, row.colour);
+      if (!needsReviewKeys.has(key)) {
+        needsReviewKeys.add(key);
+        needsReview.push({ itemCode: row.itemCode, colour: row.colour, category: "Unknown" });
+      }
+    }
+    return { row, target };
+  });
+
+  for (const { row, target } of resolvedActuals) {
+    if (!target) continue;
+    const entry = categoryMap.get(target.category);
     if (!entry) continue;
     const dayIdx = elapsedWorkingDays.indexOf(row.date);
     entry.produced += row.qty;
     if (dayIdx >= 0) entry.dailyOutputs[dayIdx] = (entry.dailyOutputs[dayIdx] ?? 0) + row.qty;
   }
 
+  const categoryRequiredCum = new Map<string, number>();
+  for (const date of elapsedWorkingDays) {
+    const activeTargets = versionForDate(versionTimeline, date)?.targets ?? targets;
+    const totals = new Map<string, number>();
+    for (const target of activeTargets) {
+      totals.set(target.category, (totals.get(target.category) ?? 0) + target.maxPcs);
+    }
+    for (const [category, total] of totals) {
+      categoryRequiredCum.set(
+        category,
+        (categoryRequiredCum.get(category) ?? 0) + (workingDays > 0 ? total / workingDays : 0),
+      );
+    }
+  }
+
   const categories: CategoryKPIs[] = [];
   for (const [cat, data] of categoryMap.entries()) {
-    const kpis = computeKPIs(data.targetMax, data.targetMin, data.produced, calendar, data.dailyOutputs);
+    const kpis = computeKPIs(
+      data.targetMax,
+      data.targetMin,
+      data.produced,
+      calendar,
+      data.dailyOutputs,
+      categoryRequiredCum.get(cat) ?? 0,
+      workingDays > 0 ? data.targetMax / workingDays : 0,
+    );
     categories.push({ ...kpis, category: cat, gapPcs: r2(data.targetMax - data.produced) });
   }
   categories.sort((a, b) => (a.attainmentCumPct ?? 999) - (b.attainmentCumPct ?? 999));
 
   const itemProducedByKey = new Map<string, number>();
   const itemDayCountByKey = new Map<string, Set<string>>();
-  for (const row of actuals) {
-    const k = itemKey(row.itemCode, row.colour);
+  const categoryItemKey = (target: Pick<PlantTargetRow, "itemCode" | "colour" | "category">) =>
+    `${target.category}\u0000${itemKey(target.itemCode, target.colour)}`;
+  for (const { row, target } of resolvedActuals) {
+    if (!target) continue;
+    const k = categoryItemKey(target);
     itemProducedByKey.set(k, (itemProducedByKey.get(k) ?? 0) + row.qty);
     if (!itemDayCountByKey.has(k)) itemDayCountByKey.set(k, new Set());
     itemDayCountByKey.get(k)!.add(row.date);
   }
 
   const itemKPIs: ItemKPIs[] = [];
-  const needsReview: PlantBundle["needsReview"] = [];
+  const itemTargetUniverse = new Map<string, PlantTargetRow | VersionTarget>();
+  for (const target of targetUniverse) itemTargetUniverse.set(categoryItemKey(target), target);
 
-  for (const t of targets) {
-    const k = itemKey(t.itemCode, t.colour);
+  for (const [k, t] of itemTargetUniverse) {
     const produced = itemProducedByKey.get(k) ?? 0;
     const attainmentMonthPct = t.maxPcs > 0 ? r2((produced / t.maxPcs) * 100) : null;
     const daysWithProduction = itemDayCountByKey.get(k)?.size ?? 0;
@@ -319,14 +369,6 @@ export function buildPlantBundle(
       attainmentMonthPct,
       daysWithNoProduction,
     });
-  }
-
-  for (const row of actuals) {
-    const t = targetByKey.get(itemKey(row.itemCode, row.colour));
-    const tc = targetByCode.get(normalizeCode(row.itemCode));
-    if (!t && !tc) {
-      needsReview.push({ itemCode: row.itemCode, colour: row.colour, category: "Unknown" });
-    }
   }
 
   const variancePareto = [...itemKPIs].sort((a, b) => b.gapPcs - a.gapPcs).slice(0, 20);
@@ -368,13 +410,16 @@ export function buildPlantBundle(
       month,
       snapshotDate,
       workingDays,
-      workingDaysSource: config.workingDaysSource,
       elapsed,
       remaining: calendar.remaining,
       shiftsPerDay,
       shiftHours,
-      lifecycleState: config.lifecycleState,
-      frozenAt: config.frozenAt,
+      lifecycle,
+      workingDaysSource: config.workingDaysSource ?? "configured",
+      capturedAt: config.capturedAt ?? config.frozenAt ?? null,
+      sourceInfo: config.sourceInfo ?? null,
+      lifecycleState: config.lifecycleState ?? lifecycle,
+      frozenAt: config.frozenAt ?? config.capturedAt ?? null,
     },
     plant: plantKPIs,
     categories,

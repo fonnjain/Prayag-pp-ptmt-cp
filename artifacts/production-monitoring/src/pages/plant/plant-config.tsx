@@ -27,7 +27,6 @@ export default function PlantConfig({ month }: { month: string }) {
   if (isLoading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
   if (!cfg) return <div className="text-red-500 p-4">Failed to load plant config.</div>;
 
-  const effectiveWorkingDays = workingDays !== "" ? Number(workingDays) : cfg.workingDays;
   const effectiveSnapshot = snapshotDate !== "" ? snapshotDate : (cfg.snapshotDate ?? "");
 
   async function saveConfig() {
@@ -38,7 +37,7 @@ export default function PlantConfig({ month }: { month: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           month,
-          workingDays: effectiveWorkingDays,
+          ...(workingDays !== "" ? { workingDays: Number(workingDays) } : {}),
           snapshotDate: effectiveSnapshot || null,
         }),
       });
@@ -157,7 +156,9 @@ export default function PlantConfig({ month }: { month: string }) {
               <Label htmlFor="wd">Working Days in Month</Label>
               <Input id="wd" type="number" min={1} max={31} placeholder={String(cfg.workingDays)}
                 value={workingDays} onChange={(e) => setWorkingDays(e.target.value)} />
-              <div className="text-xs text-muted-foreground">Current: {cfg.workingDays}</div>
+              <div className="text-xs text-muted-foreground">
+                Current: {cfg.workingDays} ({cfg.workingDaysSource})
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="snap">Snapshot Date</Label>

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { db, bufferCategoriesTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, correctivePlanRunsTable } from "@workspace/db";
+import { db, bufferCategoriesTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, correctivePlanRunsTable, plantMonitoringSnapshotsTable } from "@workspace/db";
 import { and, eq, desc, ne } from "drizzle-orm";
 import { buildPlanItems, loadLatestUploadRowsByKind, handlePlanError } from "./plan";
 import { summarizePlan } from "../lib/calc";
@@ -23,6 +23,7 @@ function makeSummary(run: typeof planRunsTable.$inferSelect, items: typeof planR
     segment: run.segment,
     asOfAt: run.asOfAt,
     status: run.status,
+    effectiveFrom: run.effectiveFrom ?? null,
     note: run.note ?? null,
     itemCount: items.length,
     grandMinTotal: Math.round(grandMinTotal),
@@ -106,7 +107,7 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
   // a planner correct it before issuance.
   const [run] = await db
     .insert(planRunsTable)
-    .values({ month, segment, effectiveFrom, status: "draft", factorsJson, note: note ?? null })
+    .values({ month, segment, effectiveFrom, status: "draft", weeklyReleaseVersion: 1, factorsJson, note: note ?? null })
     .returning();
 
   const runId = run.id;
@@ -131,6 +132,11 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
     bufferReq: item.bufferReq,
     minProduction: item.minProduction,
     productionPlan: item.maxProduction,
+    releaseWeek: item.week,
+    w1: item.w1,
+    w2: item.w2,
+    w3: item.w3,
+    w4: item.w4,
   }));
 
   // Pending audit snapshot: store the raw filtered rows from the DATA.xlsx upload
@@ -399,6 +405,16 @@ router.delete("/plan/runs/:id", async (req, res): Promise<void> => {
   if (citing.length > 0) {
     res.status(409).json({
       error: `Plan run #${id} is cited as the baseline by ${citing.length} corrective run(s) (#${citing.slice(0, 5).map(c => c.id).join(", #")}${citing.length > 5 ? ", …" : ""}) and cannot be deleted.`,
+    });
+    return;
+  }
+  const frozenMonths = await db
+    .select({ month: plantMonitoringSnapshotsTable.month })
+    .from(plantMonitoringSnapshotsTable)
+    .where(eq(plantMonitoringSnapshotsTable.planRunId, id));
+  if (frozenMonths.length > 0) {
+    res.status(409).json({
+      error: `Plan run #${id} is the finalized target source for frozen plant month ${frozenMonths[0].month} and cannot be deleted.`,
     });
     return;
   }

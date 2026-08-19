@@ -5,6 +5,10 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { PlantContextSnapshotDate } from './plantContextSnapshotDate';
+import type { PlantContextLifecycle } from './plantContextLifecycle';
+import type { PlantContextWorkingDaysSource } from './plantContextWorkingDaysSource';
+import type { PlantContextCapturedAt } from './plantContextCapturedAt';
+import type { PlantContextSourceInfo } from './plantContextSourceInfo';
 
 export interface PlantContext {
   month: string;
@@ -14,4 +18,8 @@ export interface PlantContext {
   remaining: number;
   shiftsPerDay: number;
   shiftHours: number;
+  lifecycle: PlantContextLifecycle;
+  workingDaysSource: PlantContextWorkingDaysSource;
+  capturedAt: PlantContextCapturedAt;
+  sourceInfo: PlantContextSourceInfo;
 }

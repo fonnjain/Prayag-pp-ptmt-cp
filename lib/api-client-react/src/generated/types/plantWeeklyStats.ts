@@ -19,4 +19,6 @@ export interface PlantWeeklyStats {
   attainmentEffectivePct?: number | null;
   /** @nullable */
   ragBand?: PlantWeeklyStatsRagBand;
+  /** Issued plan versions whose effective dates govern one or more days in this week. */
+  planVersions: string[];
 }
