@@ -733,7 +733,7 @@ const MGMT_CATEGORIES = [
 
 function fmtN(v: number) { return Math.round(v).toLocaleString("en-IN"); }
 
-function ManagementReportsPage() {
+function PtmtManagementReportsPage() {
   const [month, setMonth] = useState(defaultMgmtMonth);
   const [activeCategory, setActiveCategory] = useState(MGMT_CATEGORIES[0]);
   const [search, setSearch] = useState("");
@@ -766,9 +766,9 @@ function ManagementReportsPage() {
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Management Reports</h1>
+          <h1 className="text-2xl font-bold text-foreground">PTMT Management Reports</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Seasonality &amp; sales history · columns E–I per item
+            PTMT sales seasonality &amp; history · columns E–I per item
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -958,6 +958,357 @@ function ManagementReportsPage() {
       )}
     </div>
   );
+}
+
+function PlumbingManagementReportsPage() {
+  const [month, setMonth] = useState(defaultMgmtMonth);
+  const [activeCategory, setActiveCategory] = useState("");
+  const [search, setSearch] = useState("");
+
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: ["plumbing-management-view", month],
+    queryFn: async () => {
+      const res = await fetch(`/api/plan/plumbing-monitoring?month=${month}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Failed to load Plumbing management data");
+      }
+      return res.json();
+    },
+    enabled: /^\d{4}-\d{2}$/.test(month),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const categories: any[] = data?.categories ?? [];
+  const categoryNames = categories.map((category) => category.category).join("|");
+  useEffect(() => {
+    if (!categories.some((category) => category.category === activeCategory)) {
+      setActiveCategory(categories[0]?.category ?? "");
+      setSearch("");
+    }
+  }, [categoryNames, activeCategory]);
+
+  const activeItems = useMemo(() => {
+    const rows: any[] = (data?.items ?? [])
+      .filter((item: any) => item.category === activeCategory);
+    if (!search.trim()) return rows;
+    const query = search.trim().toUpperCase();
+    return rows.filter((item: any) => item.itemCode?.toUpperCase().includes(query));
+  }, [data?.items, activeCategory, search]);
+
+  const totalRelease = categories.reduce((sum, category) => sum + (category.totalRelease ?? 0), 0);
+  const mappedActual = categories.reduce((sum, category) => sum + (category.totalActual ?? 0), 0);
+  const attainment = totalRelease > 0 ? mappedActual / totalRelease * 100 : null;
+  const totalGap = Math.max(totalRelease - mappedActual, 0);
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Plumbing Management Reports</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Plumbing release plan versus Sheet3 production · item-code level
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Planning Month</label>
+          <input
+            type="month"
+            value={month}
+            onChange={(event) => setMonth(event.target.value)}
+            className="text-sm bg-background border border-border rounded-md px-2 py-1.5 text-foreground"
+          />
+          <button
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-border rounded-md text-muted-foreground hover:bg-muted transition-colors"
+          >
+            <RefreshCw size={12} className={isFetching ? "animate-spin" : ""} />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {data && (
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+          <KpiCard label="Released Plan" value={fmtQty(totalRelease)} sub="pcs across Plumbing" color={BLUE} />
+          <KpiCard label="Mapped Production" value={fmtQty(mappedActual)} sub={`through ${data.lastDataDate ?? "latest sync"}`} color={GREEN} />
+          <KpiCard label="Plan Attainment" value={attainment === null ? "—" : `${attainment.toFixed(1)}%`} sub="mapped actual ÷ release" color={attainment !== null && attainment >= 85 ? GREEN : AMBER} />
+          <KpiCard label="Open Gap" value={fmtQty(totalGap)} sub="pcs still to produce" color={totalGap > 0 ? RED : GREEN} />
+          <KpiCard label="Unmapped Production" value={fmtQty(data.totalUnmapped ?? 0)} sub="pcs outside plan roster" color={(data.totalUnmapped ?? 0) > 0 ? AMBER : GREEN} />
+        </div>
+      )}
+
+      {isLoading && <LoadingState label="Loading Plumbing plan and Sheet3 actuals…" />}
+      {error && <ErrorState message={(error as Error).message} />}
+
+      {data && !isLoading && (
+        <>
+          <div className="mb-5 bg-card border border-card-border rounded-lg p-4">
+            <div className="flex flex-wrap gap-3 text-xs">
+              <span><strong className="text-foreground">Source:</strong> Plumbing daily-production workbook + Sheet3 actuals</span>
+              <span className="text-muted-foreground">·</span>
+              <span><strong className="text-foreground">Data through:</strong> {data.lastDataDate ?? "No production rows"}</span>
+              <span className="text-muted-foreground">·</span>
+              <span><strong className="text-foreground">Run rate:</strong> {fmtQty(data.runRatePerDay)} pcs / working day</span>
+            </div>
+          </div>
+
+          <div className="flex gap-1.5 flex-wrap mb-4">
+            {categories.map((category) => (
+              <button
+                key={category.category}
+                onClick={() => { setActiveCategory(category.category); setSearch(""); }}
+                className={cn(
+                  "px-3 py-1.5 rounded-md text-xs font-medium transition-colors border",
+                  activeCategory === category.category
+                    ? "bg-amber-500 text-white border-amber-500"
+                    : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                {category.category} <span className="ml-1 opacity-60">({(data.items ?? []).filter((item: any) => item.category === category.category).length})</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="mb-3">
+            <input
+              type="text"
+              placeholder="Filter Plumbing item code…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              className="text-sm bg-background border border-border rounded-md px-3 py-1.5 w-full max-w-xs text-foreground placeholder:text-muted-foreground"
+            />
+          </div>
+
+          <div className="bg-card border border-card-border rounded-lg overflow-auto">
+            <table className="w-full text-xs border-collapse min-w-[820px]">
+              <thead>
+                <tr className="border-b border-border bg-muted/40">
+                  <th className="text-left px-3 py-2 font-semibold text-foreground sticky left-0 bg-muted/40">Item Code</th>
+                  <th className="text-right px-3 py-2 font-semibold text-blue-700">W1 Release</th>
+                  <th className="text-right px-3 py-2 font-semibold text-foreground">W1 Actual</th>
+                  <th className="text-right px-3 py-2 font-semibold text-blue-700">W2 Release</th>
+                  <th className="text-right px-3 py-2 font-semibold text-foreground">W2 Actual</th>
+                  <th className="text-right px-3 py-2 font-semibold text-blue-700">Total Release</th>
+                  <th className="text-right px-3 py-2 font-semibold text-foreground">Total Actual</th>
+                  <th className="text-right px-3 py-2 font-semibold text-foreground">Attainment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {activeItems.length === 0 ? (
+                  <tr><td colSpan={8} className="text-center text-muted-foreground py-10">No Plumbing item codes match this filter.</td></tr>
+                ) : activeItems.map((item: any) => {
+                  const itemAttainment = item.totalRelease > 0 ? item.totalActual / item.totalRelease * 100 : null;
+                  return (
+                    <tr key={`${item.category}-${item.itemCode}`} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
+                      <td className="px-3 py-1.5 font-mono font-medium text-foreground sticky left-0 bg-card">{item.itemCode}</td>
+                      <td className="px-3 py-1.5 text-right text-blue-800">{fmtN(item.w1Release)}</td>
+                      <td className="px-3 py-1.5 text-right">{fmtN(item.w1Actual)}</td>
+                      <td className="px-3 py-1.5 text-right text-blue-800">{fmtN(item.w2Release)}</td>
+                      <td className="px-3 py-1.5 text-right">{fmtN(item.w2Actual)}</td>
+                      <td className="px-3 py-1.5 text-right text-blue-800 font-semibold">{fmtN(item.totalRelease)}</td>
+                      <td className="px-3 py-1.5 text-right font-semibold">{fmtN(item.totalActual)}</td>
+                      <td className={cn("px-3 py-1.5 text-right font-semibold", itemAttainment !== null && itemAttainment >= 85 ? "text-emerald-600" : "text-amber-600")}>
+                        {itemAttainment === null ? "—" : `${itemAttainment.toFixed(1)}%`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            Release is the issued Plumbing plan. Actual is matched Sheet3 production; unmapped codes remain visible in the KPI above and are not folded into plan attainment.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CombinedMajorAnalyticsPage() {
+  const [month, setMonth] = useState(defaultMgmtMonth);
+  const ptmtQuery = useQuery({
+    queryKey: ["combined-ptmt-management", month],
+    queryFn: async () => {
+      const res = await fetch(`/api/ops/management-view?month=${month}`);
+      if (!res.ok) throw new Error("Failed to load PTMT commercial data");
+      return res.json();
+    },
+    enabled: /^\d{4}-\d{2}$/.test(month),
+    staleTime: 10 * 60 * 1000,
+  });
+  const plumbingQuery = useQuery({
+    queryKey: ["combined-plumbing-monitoring", month],
+    queryFn: async () => {
+      const res = await fetch(`/api/plan/plumbing-monitoring?month=${month}`);
+      if (!res.ok) throw new Error("Failed to load Plumbing operations data");
+      return res.json();
+    },
+    enabled: /^\d{4}-\d{2}$/.test(month),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const ptmt = ptmtQuery.data;
+  const plumbing = plumbingQuery.data;
+  const ptmtAnalytics = useMemo(() => {
+    const codes = new Map<string, any>();
+    for (const category of ptmt?.categories ?? []) {
+      for (const item of category.items ?? []) {
+        if (!codes.has(item.itemCode)) codes.set(item.itemCode, item);
+      }
+    }
+    const rows = [...codes.values()];
+    return {
+      codes: rows.length,
+      priorAvg: rows.reduce((sum, item) => sum + (item.E ?? 0), 0),
+      last3moAvg: rows.reduce((sum, item) => sum + (item.H ?? 0), 0),
+      lastMonth: rows.reduce((sum, item) => sum + (item.I ?? 0), 0),
+      currentMonth: rows.reduce((sum, item) => sum + (item.J ?? 0), 0),
+    };
+  }, [ptmt]);
+  const plumbingAnalytics = useMemo(() => {
+    const categories: any[] = plumbing?.categories ?? [];
+    const released = categories.reduce((sum, category) => sum + (category.totalRelease ?? 0), 0);
+    const actual = categories.reduce((sum, category) => sum + (category.totalActual ?? 0), 0);
+    return {
+      released,
+      actual,
+      attainment: released > 0 ? actual / released * 100 : null,
+      gap: Math.max(released - actual, 0),
+      unmapped: plumbing?.totalUnmapped ?? 0,
+      categories,
+    };
+  }, [plumbing]);
+
+  const loading = ptmtQuery.isLoading || plumbingQuery.isLoading;
+  const error = ptmtQuery.error ?? plumbingQuery.error;
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Combined Major Analytics</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Leadership view across PTMT commercial demand and Plumbing production execution
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="text-xs font-medium text-muted-foreground">Planning Month</label>
+          <input type="month" value={month} onChange={(event) => setMonth(event.target.value)}
+            className="text-sm bg-background border border-border rounded-md px-2 py-1.5 text-foreground" />
+          <button
+            onClick={() => { ptmtQuery.refetch(); plumbingQuery.refetch(); }}
+            disabled={ptmtQuery.isFetching || plumbingQuery.isFetching}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-border rounded-md text-muted-foreground hover:bg-muted transition-colors"
+          >
+            <RefreshCw size={12} className={ptmtQuery.isFetching || plumbingQuery.isFetching ? "animate-spin" : ""} /> Refresh
+          </button>
+        </div>
+      </div>
+
+      {loading && <LoadingState label="Loading major analytics for both segments…" />}
+      {error && <ErrorState message={(error as Error).message} />}
+
+      {!loading && !error && (
+        <>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
+            <div className="bg-card border border-card-border rounded-lg p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">PTMT · Commercial demand</p>
+                  <p className="text-xs text-muted-foreground mt-1">Sales-history analytics; monthly quantities</p>
+                </div>
+                <Badge label={`${ptmtAnalytics.codes} codes`} variant="blue" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <KpiCard label="Last 3-Month Avg" value={fmtQty(ptmtAnalytics.last3moAvg)} sub="units / month" color={BLUE} />
+                <KpiCard label="Last Completed Month" value={fmtQty(ptmtAnalytics.lastMonth)} sub="units sold" />
+                <KpiCard label="Prior FY Avg" value={fmtQty(ptmtAnalytics.priorAvg)} sub="units / month" />
+                <KpiCard label="Current Month" value={fmtQty(ptmtAnalytics.currentMonth)} sub="live sales units" color={GREEN} />
+              </div>
+            </div>
+
+            <div className="bg-card border border-card-border rounded-lg p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Plumbing · Production execution</p>
+                  <p className="text-xs text-muted-foreground mt-1">Issued release plan versus matched Sheet3 output</p>
+                </div>
+                <Badge label={`${plumbingAnalytics.categories.length} categories`} variant="green" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <KpiCard label="Released Plan" value={fmtQty(plumbingAnalytics.released)} sub="pcs" color={GREEN} />
+                <KpiCard label="Mapped Actual" value={fmtQty(plumbingAnalytics.actual)} sub="pcs" />
+                <KpiCard label="Plan Attainment" value={plumbingAnalytics.attainment === null ? "—" : `${plumbingAnalytics.attainment.toFixed(1)}%`} sub="actual ÷ release" color={plumbingAnalytics.attainment !== null && plumbingAnalytics.attainment >= 85 ? GREEN : AMBER} />
+                <KpiCard label="Unmapped Output" value={fmtQty(plumbingAnalytics.unmapped)} sub="pcs outside roster" color={plumbingAnalytics.unmapped > 0 ? AMBER : GREEN} />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <div className="bg-card border border-card-border rounded-lg p-5">
+              <h2 className="text-sm font-semibold text-foreground mb-1">Executive signals</h2>
+              <p className="text-xs text-muted-foreground mb-4">Comparable signals are shown within their own units; sales and production are never combined into a false total.</p>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center justify-between gap-4 border-b border-border/50 pb-3">
+                  <span className="text-muted-foreground">PTMT demand momentum</span>
+                  <span className={cn("font-semibold", ptmtAnalytics.priorAvg > 0 && ptmtAnalytics.last3moAvg >= ptmtAnalytics.priorAvg ? "text-emerald-600" : "text-amber-600")}>
+                    {ptmtAnalytics.priorAvg > 0 ? `${(ptmtAnalytics.last3moAvg / ptmtAnalytics.priorAvg * 100).toFixed(1)}% of prior-FY average` : "No baseline"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-4 border-b border-border/50 pb-3">
+                  <span className="text-muted-foreground">Plumbing production gap</span>
+                  <span className={cn("font-semibold", plumbingAnalytics.gap > 0 ? "text-amber-600" : "text-emerald-600")}>{fmtQty(plumbingAnalytics.gap)} pcs</span>
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-muted-foreground">Plumbing data freshness</span>
+                  <span className="font-semibold text-foreground">{plumbing?.lastDataDate ?? "No Sheet3 production date"}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-card border border-card-border rounded-lg overflow-auto">
+              <div className="px-5 py-4 border-b border-border">
+                <h2 className="text-sm font-semibold text-foreground">Plumbing category execution</h2>
+                <p className="text-xs text-muted-foreground mt-1">The highest-priority production gaps this month</p>
+              </div>
+              <table className="w-full text-xs">
+                <thead className="bg-muted/30 border-b border-border">
+                  <tr>
+                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Category</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Release</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Actual</th>
+                    <th className="text-right px-4 py-2 font-medium text-muted-foreground">Gap</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {[...plumbingAnalytics.categories]
+                    .sort((a, b) => (b.totalRelease - b.totalActual) - (a.totalRelease - a.totalActual))
+                    .slice(0, 6)
+                    .map((category) => (
+                      <tr key={category.category}>
+                        <td className="px-4 py-2 font-medium">{category.category}</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmtN(category.totalRelease)}</td>
+                        <td className="px-3 py-2 text-right font-mono">{fmtN(category.totalActual)}</td>
+                        <td className="px-4 py-2 text-right font-mono font-semibold text-amber-600">{fmtN(Math.max(category.totalRelease - category.totalActual, 0))}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ManagementReportsPage({ seg }: { seg: "PTMT" | "Plumbing" | "Combined" }) {
+  if (seg === "Plumbing") return <PlumbingManagementReportsPage />;
+  if (seg === "Combined") return <CombinedMajorAnalyticsPage />;
+  return <PtmtManagementReportsPage />;
 }
 
 // ─── Orders Page ──────────────────────────────────────────────────────────────
@@ -2235,7 +2586,7 @@ function AppRouter() {
     <AppLayout fy={fy} setFy={setFy} seg={seg} setSeg={setSeg}>
       <Switch>
         <Route path="/"             component={() => <OverviewPage fy={fy} seg={seg} />} />
-        <Route path="/management"   component={() => <ManagementReportsPage />} />
+        <Route path="/management"   component={() => <ManagementReportsPage seg={seg} />} />
         <Route path="/orders"       component={() => <OrdersPage fy={fy} seg={seg} />} />
         <Route path="/production"   component={() => <ProductionPage seg={seg} />} />
         <Route path="/stock-buffer" component={() => <StockBufferPage seg={seg} />} />
