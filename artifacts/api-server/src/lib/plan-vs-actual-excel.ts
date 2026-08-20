@@ -93,6 +93,8 @@ export async function generatePlanVsActualXlsx(report: PlanVsActualReport): Prom
     ["Lifecycle", report.lifecycle, "open / grace / closed / future"],
     ["Data Available", report.dataAvailable ? "Yes" : "No", ""],
     ["Unavailable Reason", report.unavailableReason ?? "–", ""],
+    ["Plan Status", report.planStatus, report.planStatusReason ?? ""],
+    ["Plan Evidence", String(report.planEvidence?.archiveCommit ?? "–"), "Archived reconstruction evidence"],
     ["Working Days", report.workingDays, report.workingDaysSource],
     ["Last Data Date", report.lastDataDate ?? "–", ""],
     ["Generated At", report.generatedAt, ""],
@@ -303,10 +305,11 @@ export async function generatePlanVsActualXlsx(report: PlanVsActualReport): Prom
     r.getCell(5).alignment = { wrapText: true };
   }
 
-  // ── Sheet 5: Out of Plan ──────────────────────────────────────────────────
-  const wsOop = wb.addWorksheet("Out of Plan");
+  // ── Sheet 5: Out of Plan / Actuals ────────────────────────────────────────
+  const oopTitle = report.planStatus === "actuals_only" ? "Actuals Only" : "Out of Plan";
+  const wsOop = wb.addWorksheet(oopTitle);
   wsOop.views = [{ state: "frozen", ySplit: 4 }];
-  addTitleBlock(wsOop, `Out of Plan — ${report.month} (${report.segment})`, subLine, 6);
+  addTitleBlock(wsOop, `${oopTitle} — ${report.month} (${report.segment})`, subLine, 6);
 
   wsOop.columns = [
     { key: "itemCode", width: 18 },
@@ -323,7 +326,7 @@ export async function generatePlanVsActualXlsx(report: PlanVsActualReport): Prom
   setHeaderRow(oopHdr);
 
   if (report.outOfPlan.length === 0) {
-    const r = wsOop.addRow(["No out-of-plan production", "", "", "", "", "", "", ""]);
+    const r = wsOop.addRow([report.planStatus === "actuals_only" ? "No frozen actual production rows" : "No out-of-plan production", "", "", "", "", "", "", ""]);
     r.font = { italic: true, size: 9 };
   } else {
     for (const oop of report.outOfPlan) {

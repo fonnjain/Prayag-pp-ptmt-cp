@@ -27,10 +27,11 @@
 import {
   db,
   plantMonitoringSnapshotsTable,
+  plantMonthSnapshotsTable,
   plantConfigsTable,
 } from "@workspace/db";
 import type { WorkingDaysSource } from "./plant-lifecycle";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { logger as rootLogger } from "./logger";
 import {
   getPlanVersionTimeline,
@@ -57,6 +58,7 @@ const logger = rootLogger.child({ module: "plan-vs-actual-engine" });
 // ── Public types ──────────────────────────────────────────────────────────────
 
 export type AchievementRemark = "UNDER" | "ON TARGET" | "OVER" | null;
+export type PlanStatus = "issued" | "actuals_only" | "unavailable";
 
 export interface PlanVersionSummary {
   kind: PlanVersion["kind"];
@@ -133,13 +135,13 @@ export interface ReportInvariant {
 }
 
 export interface ReportKPIs {
-  totalPlan: number;
+  totalPlan: number | null;
   mappedProduction: number;
   totalProduction: number;
   unmappedProduction: number;
   orderQty: number | null;
   saleQty: number | null;
-  variance: number;
+  variance: number | null;
   achievementPct: number | null;
   achievementRemark: AchievementRemark;
   plannedItemCount: number;
@@ -159,6 +161,10 @@ export interface PlanVsActualReport {
   generatedAt: string;
   dataAvailable: boolean;
   unavailableReason: string | null;
+  planStatus: PlanStatus;
+  planStatusReason: string | null;
+  planEvidence: Record<string, unknown> | null;
+  linearityIndex: number | null;
   workingDays: number;
   workingDaysSource: WorkingDaysSource;
   lastDataDate: string | null;
@@ -211,6 +217,22 @@ type PlanMapEntry = {
   w3: number;
   w4: number;
 };
+
+interface ActualsOnlySnapshotRow {
+  itemCode: string;
+  colour: string;
+  category: string | null;
+  weeks: [number, number, number, number];
+  totalProduction: number;
+}
+
+interface ActualsOnlySnapshotPayload {
+  kind: "actuals_only";
+  lastDataDate: string | null;
+  weeklyProduction: [number, number, number, number];
+  totalProduction: number;
+  rows: ActualsOnlySnapshotRow[];
+}
 
 // ── Achievement boundary (integer cross-multiplication) ───────────────────────
 
@@ -938,7 +960,7 @@ function buildInvariants(
   inv.push({
     code: "CAT_PLAN_SUM",
     ok: catPlanSum === kpis.totalPlan,
-    expected: kpis.totalPlan,
+    expected: kpis.totalPlan ?? 0,
     actual: catPlanSum,
     detail: "sum of category plans equals total plan",
   });
@@ -1025,6 +1047,8 @@ function buildInvariants(
     actual: categories.length,
     detail: "distinct categories in report",
   });
+
+  if (kpis.totalPlan == null || kpis.variance == null) return inv;
 
   const expectedVariance = kpis.mappedProduction - kpis.totalPlan;
   inv.push({
@@ -1152,6 +1176,128 @@ function buildCategoriesFromPlanMap(
   return categories;
 }
 
+const JUNE_ACTUALS_ONLY_MESSAGE =
+  "No finalized plan for June 2026 — plan reconstruction was attempted and rejected.";
+
+async function loadActualsOnlySnapshot(
+  month: string,
+  segment: "PTMT" | "Plumbing",
+): Promise<{
+  payload: ActualsOnlySnapshotPayload;
+  reason: string;
+  evidence: Record<string, unknown>;
+} | null> {
+  const [snapshot] = await db
+    .select({
+      payloadJson: plantMonthSnapshotsTable.payloadJson,
+      planStatus: plantMonthSnapshotsTable.planStatus,
+      planStatusReason: plantMonthSnapshotsTable.planStatusReason,
+      planEvidenceJson: plantMonthSnapshotsTable.planEvidenceJson,
+    })
+    .from(plantMonthSnapshotsTable)
+    .where(
+      and(
+        eq(plantMonthSnapshotsTable.month, month),
+        eq(plantMonthSnapshotsTable.segment, segment),
+        eq(plantMonthSnapshotsTable.planStatus, "actuals_only"),
+      ),
+    )
+    .limit(1);
+
+  if (!snapshot || !isActualsOnlyPayload(snapshot.payloadJson)) return null;
+  return {
+    payload: snapshot.payloadJson,
+    reason: snapshot.planStatusReason ?? JUNE_ACTUALS_ONLY_MESSAGE,
+    evidence: isRecord(snapshot.planEvidenceJson) ? snapshot.planEvidenceJson : {},
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isActualsOnlyPayload(value: unknown): value is ActualsOnlySnapshotPayload {
+  if (!isRecord(value) || value.kind !== "actuals_only" || !Array.isArray(value.rows)) return false;
+  return typeof value.totalProduction === "number"
+    && Array.isArray(value.weeklyProduction)
+    && value.weeklyProduction.length === 4;
+}
+
+function buildActualsOnlyReport(
+  month: string,
+  segment: "PTMT" | "Plumbing",
+  now: Date,
+  lifecycle: ReturnType<typeof resolvePlantMonthLifecycle>,
+  workingDays: number,
+  workingDaysSource: WorkingDaysSource,
+  weekCalendar: WeekCalendarEntry[],
+  snapshot: {
+    payload: ActualsOnlySnapshotPayload;
+    reason: string;
+    evidence: Record<string, unknown>;
+  },
+): PlanVsActualReport {
+  const { payload } = snapshot;
+  const outOfPlan = payload.rows
+    .filter((row) => row.totalProduction > 0)
+    .map((row) => ({
+      itemCode: row.itemCode,
+      colour: row.colour,
+      category: row.category,
+      totalProduction: row.totalProduction,
+      weeks: [...row.weeks],
+    }))
+    .sort((a, b) => b.totalProduction - a.totalProduction);
+
+  return {
+    month,
+    segment,
+    lifecycle: lifecycle.state,
+    generatedAt: now.toISOString(),
+    dataAvailable: true,
+    unavailableReason: null,
+    planStatus: "actuals_only",
+    planStatusReason: snapshot.reason,
+    planEvidence: snapshot.evidence,
+    linearityIndex: null,
+    workingDays,
+    workingDaysSource,
+    lastDataDate: payload.lastDataDate,
+    planVersions: [],
+    sources: {
+      plan: "No finalized plan — reconstruction rejected",
+      production: "Frozen actuals-only snapshot",
+      orders: {
+        available: false,
+        label: "Order Sheet 26-27",
+        note: "Unavailable because June has no finalized plan baseline",
+      },
+      sales: {
+        available: false,
+        label: "SALE SHEET 26-27",
+        note: "Unavailable because June has no finalized plan baseline",
+      },
+    },
+    weekCalendar,
+    kpis: {
+      totalPlan: null,
+      mappedProduction: 0,
+      totalProduction: payload.totalProduction,
+      unmappedProduction: payload.totalProduction,
+      orderQty: null,
+      saleQty: null,
+      variance: null,
+      achievementPct: null,
+      achievementRemark: null,
+      plannedItemCount: 0,
+      categoryCount: 0,
+    },
+    categories: [],
+    outOfPlan,
+    invariants: [],
+  };
+}
+
 // ── PTMT report builder ───────────────────────────────────────────────────────
 
 async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualReport> {
@@ -1170,6 +1316,22 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
     label: wk.label,
   }));
 
+  const actualsOnly = month === "2026-06"
+    ? await loadActualsOnlySnapshot(month, "PTMT")
+    : null;
+  if (actualsOnly) {
+    return buildActualsOnlyReport(
+      month,
+      "PTMT",
+      now,
+      lifecycle,
+      workingDays,
+      workingDaysSource,
+      weekCalendar,
+      actualsOnly,
+    );
+  }
+
   const buildUnavailable = (reason: string): PlanVsActualReport => ({
     month,
     segment: "PTMT",
@@ -1177,6 +1339,10 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
     generatedAt: now.toISOString(),
     dataAvailable: false,
     unavailableReason: reason,
+    planStatus: "unavailable",
+    planStatusReason: reason,
+    planEvidence: null,
+    linearityIndex: null,
     workingDays,
     workingDaysSource,
     lastDataDate: null,
@@ -1189,13 +1355,13 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
     },
     weekCalendar,
     kpis: {
-      totalPlan: 0,
+      totalPlan: null,
       mappedProduction: 0,
       totalProduction: 0,
       unmappedProduction: 0,
       orderQty: null,
       saleQty: null,
-      variance: 0,
+      variance: null,
       achievementPct: null,
       achievementRemark: null,
       plannedItemCount: 0,
@@ -1403,6 +1569,10 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
     generatedAt: now.toISOString(),
     dataAvailable: true,
     unavailableReason: null,
+    planStatus: "issued",
+    planStatusReason: null,
+    planEvidence: null,
+    linearityIndex: null,
     workingDays,
     workingDaysSource,
     lastDataDate,
@@ -1447,6 +1617,22 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
     label: wk.label,
   }));
 
+  const actualsOnly = month === "2026-06"
+    ? await loadActualsOnlySnapshot(month, "Plumbing")
+    : null;
+  if (actualsOnly) {
+    return buildActualsOnlyReport(
+      month,
+      "Plumbing",
+      now,
+      lifecycle,
+      workingDays,
+      workingDaysSource,
+      weekCalendar,
+      actualsOnly,
+    );
+  }
+
   const buildUnavailable = (reason: string): PlanVsActualReport => ({
     month,
     segment: "Plumbing",
@@ -1454,6 +1640,10 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
     generatedAt: now.toISOString(),
     dataAvailable: false,
     unavailableReason: reason,
+    planStatus: "unavailable",
+    planStatusReason: reason,
+    planEvidence: null,
+    linearityIndex: null,
     workingDays,
     workingDaysSource,
     lastDataDate: null,
@@ -1466,13 +1656,13 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
     },
     weekCalendar,
     kpis: {
-      totalPlan: 0,
+      totalPlan: null,
       mappedProduction: 0,
       totalProduction: 0,
       unmappedProduction: 0,
       orderQty: null,
       saleQty: null,
-      variance: 0,
+      variance: null,
       achievementPct: null,
       achievementRemark: null,
       plannedItemCount: 0,
@@ -1667,6 +1857,10 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
       generatedAt: now.toISOString(),
       dataAvailable: true,
       unavailableReason: null,
+      planStatus: "issued",
+      planStatusReason: null,
+      planEvidence: null,
+      linearityIndex: null,
       workingDays,
       workingDaysSource,
       lastDataDate: payload.lastDataDate as string | null,
@@ -1805,6 +1999,10 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
     generatedAt: now.toISOString(),
     dataAvailable: true,
     unavailableReason: null,
+    planStatus: "issued",
+    planStatusReason: null,
+    planEvidence: null,
+    linearityIndex: null,
     workingDays,
     workingDaysSource,
     lastDataDate: payload.lastDataDate as string | null,
