@@ -84,6 +84,7 @@ export interface PlantBundle {
   variancePareto: ItemKPIs[];
   mixFlags: MixFlag[];
   needsReview: { itemCode: string; colour: string; category: string }[];
+  unattributedPcs: number;
   caveats: string[];
   dataAvailable: boolean;
 }
@@ -137,7 +138,7 @@ function computeKPIs(
   let linearityIndex: number | null = null;
   if (elapsed > 0 && requiredPerDay > 0 && dailyOutputs.length > 0) {
     const cap = requiredPerDay;
-    const cappedSum = dailyOutputs.slice(0, elapsed).reduce((s, v) => s + Math.min(v, cap), 0);
+    const cappedSum = dailyOutputs.reduce((s, v) => s + Math.min(v, cap), 0);
     linearityIndex = r2(cappedSum / requiredCum);
   }
 
@@ -177,6 +178,19 @@ function workingDaysInMonth(month: string): string[] {
   return days;
 }
 
+export function buildElapsedProductionDays(
+  month: string,
+  dailyByDate: Map<string, number>,
+  snapshotDate: string | null,
+): string[] {
+  const calendarNonSundays = workingDaysInMonth(month);
+  const allDays = [...new Set([
+    ...calendarNonSundays,
+    ...[...dailyByDate.keys()].filter((d) => d.startsWith(month) && (dailyByDate.get(d) ?? 0) > 0),
+  ])].sort();
+  return allDays.filter((d) => !snapshotDate || d <= snapshotDate);
+}
+
 export function buildPlantBundle(
   month: string,
   actuals: DailyActualRow[],
@@ -193,7 +207,7 @@ export function buildPlantBundle(
     : snapshotDate ? countWorkingDaysElapsed(month, snapshotDate) : 0;
   const calendar = buildCalendarModel(workingDays, elapsed);
 
-  const allWorkingDays = workingDaysInMonth(month);
+  const calendarNonSundays = workingDaysInMonth(month);
   const versionTimeline = config.versionTimeline ?? [];
 
   const targetLookup = (rows: Array<PlantTargetRow | VersionTarget>) => {
@@ -223,19 +237,29 @@ export function buildPlantBundle(
     dailyByDate.set(row.date, (dailyByDate.get(row.date) ?? 0) + row.qty);
   }
 
-  const elapsedWorkingDays = allWorkingDays.slice(0, elapsed);
-  const dailyOutputsArr = elapsedWorkingDays.map((d) => dailyByDate.get(d) ?? 0);
+  const elapsedDays = buildElapsedProductionDays(month, dailyByDate, snapshotDate);
+  const elapsedCalendarDays = calendarNonSundays.filter((d) => !snapshotDate || d <= snapshotDate);
+  const dailyOutputsArr = elapsedDays.map((d) => dailyByDate.get(d) ?? 0);
   const dailyRequiredByDate = new Map<string, number>();
-  for (const date of allWorkingDays) {
+  for (const date of calendarNonSundays) {
     const version = versionForDate(versionTimeline, date);
     const activeTargets = version?.targets ?? targets;
     const total = activeTargets.reduce((sum, target) => sum + target.maxPcs, 0);
     dailyRequiredByDate.set(date, workingDays > 0 ? total / workingDays : 0);
   }
-  const requiredCumByTimeline = elapsedWorkingDays.reduce((sum, date) => sum + (dailyRequiredByDate.get(date) ?? 0), 0);
+  const requiredCumByTimeline = elapsedCalendarDays.reduce((sum, date) => sum + (dailyRequiredByDate.get(date) ?? 0), 0);
 
   let plantProduced = 0;
   for (const v of dailyOutputsArr) plantProduced += v;
+  const monthKeys = [...dailyByDate.keys()].filter((d) => d.startsWith(month));
+  const loadedTotal = monthKeys.reduce((sum, d) => sum + (dailyByDate.get(d) ?? 0), 0);
+  const countedTotal = dailyOutputsArr.reduce((sum, value) => sum + value, 0);
+  if (Math.round(loadedTotal) !== Math.round(countedTotal)) {
+    throw new Error(
+      `plant-engine: ${Math.round(loadedTotal - countedTotal)} pcs loaded but not counted for ${month} — ` +
+      "every actual row must be attributed to a day",
+    );
+  }
 
   const plantKPIs = computeKPIs(
     plantTargetMax,
@@ -251,7 +275,7 @@ export function buildPlantBundle(
   let cumActual = 0;
   let wdNum = 0;
   let cumulativeRequired = 0;
-  for (const d of allWorkingDays) {
+  for (const d of calendarNonSundays) {
     wdNum++;
     const dayActual = dailyByDate.get(d) ?? 0;
     const dayRequired = dailyRequiredByDate.get(d) ?? 0;
@@ -274,11 +298,11 @@ export function buildPlantBundle(
   const categoryMap = new Map<string, { targetMax: number; targetMin: number; produced: number; dailyOutputs: number[] }>();
   for (const target of targetUniverse) {
     if (!categoryMap.has(target.category)) {
-      categoryMap.set(target.category, { targetMax: 0, targetMin: 0, produced: 0, dailyOutputs: Array(elapsed).fill(0) });
+      categoryMap.set(target.category, { targetMax: 0, targetMin: 0, produced: 0, dailyOutputs: Array(elapsedDays.length).fill(0) });
     }
   }
   for (const t of targets) {
-    const existing = categoryMap.get(t.category) ?? { targetMax: 0, targetMin: 0, produced: 0, dailyOutputs: Array(elapsed).fill(0) };
+    const existing = categoryMap.get(t.category) ?? { targetMax: 0, targetMin: 0, produced: 0, dailyOutputs: Array(elapsedDays.length).fill(0) };
     existing.targetMax += t.maxPcs;
     existing.targetMin += t.minPcs;
     categoryMap.set(t.category, existing);
@@ -303,13 +327,21 @@ export function buildPlantBundle(
     if (!target) continue;
     const entry = categoryMap.get(target.category);
     if (!entry) continue;
-    const dayIdx = elapsedWorkingDays.indexOf(row.date);
+    const dayIdx = elapsedDays.indexOf(row.date);
     entry.produced += row.qty;
     if (dayIdx >= 0) entry.dailyOutputs[dayIdx] = (entry.dailyOutputs[dayIdx] ?? 0) + row.qty;
   }
 
+  const categoryProducedTotal = [...categoryMap.values()].reduce((sum, data) => sum + data.produced, 0);
+  const unattributedPcs = plantProduced - categoryProducedTotal;
+  if (unattributedPcs < 0) {
+    throw new Error(
+      `plant-engine: category totals exceed plant total by ${Math.round(-unattributedPcs)} pcs for ${month}`,
+    );
+  }
+
   const categoryRequiredCum = new Map<string, number>();
-  for (const date of elapsedWorkingDays) {
+  for (const date of elapsedCalendarDays) {
     const activeTargets = versionForDate(versionTimeline, date)?.targets ?? targets;
     const totals = new Map<string, number>();
     for (const target of activeTargets) {
@@ -400,9 +432,17 @@ export function buildPlantBundle(
   mixFlags.sort((a, b) => b.targetMax - a.targetMax);
 
   const caveats: string[] = [];
+  const outOfMonthDates = [...dailyByDate.keys()].filter((d) => !d.startsWith(month)).sort();
+  if (outOfMonthDates.length > 0) {
+    caveats.push(`Out-of-month actual dates detected: ${outOfMonthDates.join(", ")}`);
+  }
   if (elapsed === 0) caveats.push("No elapsed working days detected — KPIs will be null until production data is available.");
   if (plantTargetMax === 0) caveats.push("Monthly target (Max PP) is zero — attainment and pace metrics are unavailable.");
-  if (needsReview.length > 0) caveats.push(`${needsReview.length} produced item(s) have no matching plan entry — excluded from category totals.`);
+  if (unattributedPcs > 0) {
+    caveats.push(
+      `${needsReview.length} produced item(s) have no matching plan entry — ${Math.round(unattributedPcs).toLocaleString()} pcs excluded from category totals.`,
+    );
+  }
 
   return {
     month,
@@ -440,6 +480,7 @@ export function buildPlantBundle(
     variancePareto,
     mixFlags: mixFlags.slice(0, 20),
     needsReview: needsReview.slice(0, 50),
+    unattributedPcs: Math.round(unattributedPcs),
     caveats,
     dataAvailable: actuals.length > 0,
   };
