@@ -13,6 +13,9 @@ export const plantMonthSnapshotsTable = pgTable(
     capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
     capturedCommitSha: text("captured_commit_sha"),
     backfilled: boolean("backfilled").notNull().default(false),
+    planStatus: text("plan_status").notNull().default("finalized"),
+    planStatusReason: text("plan_status_reason"),
+    planEvidenceJson: jsonb("plan_evidence_json").notNull().default({}),
   },
   (table) => [uniqueIndex("plant_month_snapshots_month_segment_unique").on(table.month, table.segment)],
 );

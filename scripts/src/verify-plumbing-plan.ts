@@ -39,24 +39,34 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit): Pr
 };
 
 async function establishRegressionSession(): Promise<void> {
-  const email = process.env["REGRESSION_AUTH_EMAIL"]
-    ?? process.env["INITIAL_ADMIN_EMAILS"]?.split(",")[1]?.trim();
   const password = process.env["REGRESSION_AUTH_PASSWORD"]
     ?? process.env["BOOTSTRAP_ADMIN_PASSWORD"];
-  if (!email || !password) {
+  const explicitEmail = process.env["REGRESSION_AUTH_EMAIL"]?.trim();
+  const candidateEmails = explicitEmail
+    ? [explicitEmail]
+    : (process.env["INITIAL_ADMIN_EMAILS"] ?? "")
+      .split(",")
+      .map((email) => email.trim())
+      .filter(Boolean);
+  if (candidateEmails.length === 0 || !password) {
     throw new Error("Regression auth requires REGRESSION_AUTH_EMAIL/REGRESSION_AUTH_PASSWORD or the configured bootstrap admin settings");
   }
-  const response = await nativeFetch(`${API_BASE}/api/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!response.ok) {
-    throw new Error(`Regression auth login failed with HTTP ${response.status}`);
+
+  let lastStatus = 0;
+  for (const email of candidateEmails) {
+    const response = await nativeFetch(`${API_BASE}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    lastStatus = response.status;
+    if (!response.ok) continue;
+    const setCookie = response.headers.get("set-cookie");
+    regressionCookie = setCookie?.split(";")[0] ?? "";
+    if (!regressionCookie) throw new Error("Regression auth login returned no session cookie");
+    return;
   }
-  const setCookie = response.headers.get("set-cookie");
-  regressionCookie = setCookie?.split(";")[0] ?? "";
-  if (!regressionCookie) throw new Error("Regression auth login returned no session cookie");
+  throw new Error(`Regression auth login failed for all configured admin accounts; last HTTP status ${lastStatus}. Set REGRESSION_AUTH_EMAIL and REGRESSION_AUTH_PASSWORD to a known test account.`);
 }
 
 type CheckResult = {

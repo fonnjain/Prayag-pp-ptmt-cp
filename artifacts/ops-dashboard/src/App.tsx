@@ -964,6 +964,30 @@ function ReportUnavailableState({ data, compact = false }: { data: any; compact?
   );
 }
 
+function ActualsOnlyBanner({ data, compact = false }: { data: any; compact?: boolean }) {
+  return (
+    <div className={cn(
+      "border border-amber-200 bg-amber-50/70 text-amber-900 rounded-lg",
+      compact ? "px-3 py-3" : "px-4 py-4",
+    )}>
+      <div className="flex items-start gap-2.5">
+        <AlertCircle size={compact ? 15 : 18} className="mt-0.5 shrink-0 text-amber-600" />
+        <div>
+          <p className="font-semibold text-sm">Actuals only — no plan baseline</p>
+          <p className="text-xs mt-1 leading-relaxed">
+            {data.planStatusReason ?? "No finalized plan for June 2026 — plan reconstruction was attempted and rejected."}
+          </p>
+          {!compact && data.planEvidence?.archiveCommit && (
+            <p className="text-[11px] mt-2 text-amber-800/80">
+              Evidence archive commit: <span className="font-mono">{data.planEvidence.archiveCommit}</span>
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function OverviewPlanVsActualWidget({ month, seg, standalone }: { month: string, seg: "PTMT" | "Plumbing", standalone?: boolean }) {
   const { data, isLoading, error } = useQuery({
     queryKey: ["plan-vs-actual", month, seg],
@@ -987,17 +1011,18 @@ function OverviewPlanVsActualWidget({ month, seg, standalone }: { month: string,
 
   const content = (
     <>
+      {data.planStatus === "actuals_only" && <div className="mb-3"><ActualsOnlyBanner data={data} compact /></div>}
       <div className="flex justify-between items-start mb-3">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{seg}</p>
         <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{data.workingDays} working days</span>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label="Total Plan" value={fmtQty(data.kpis.totalPlan)} />
+        <KpiCard label={data.planStatus === "actuals_only" ? "Plan baseline" : "Total Plan"} value={data.kpis.totalPlan != null ? fmtQty(data.kpis.totalPlan) : "Unavailable"} />
         <KpiCard label="Production" value={fmtQty(data.kpis.totalProduction)} />
         <KpiCard
           label="Attainment"
           value={data.kpis.achievementPct != null ? `${data.kpis.achievementPct.toFixed(1)}%` : "—"}
-          sub={data.kpis.achievementRemark ?? "No plan baseline"}
+          sub={data.planStatus === "actuals_only" ? "Actuals only" : (data.kpis.achievementRemark ?? "No plan baseline")}
           color={reportRemarkColor(data.kpis.achievementRemark)}
         />
         <KpiCard label="Orders" value={data.kpis.orderQty != null ? fmtQty(data.kpis.orderQty) : "Unavailable"} color={data.kpis.orderQty != null ? undefined : "hsl(var(--muted-foreground))"} />
@@ -1053,16 +1078,18 @@ function PlanVsActualDetail({ data }: { data: any }) {
   const failedInvariants = (data.invariants ?? []).filter((inv: any) => !inv.ok);
 
   if (!data.dataAvailable) return <ReportUnavailableState data={data} />;
+  const actualsOnly = data.planStatus === "actuals_only";
 
   return (
     <div className="space-y-6">
+      {actualsOnly && <ActualsOnlyBanner data={data} />}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <KpiCard label="Plan" value={data.kpis.totalPlan?.toLocaleString("en-IN")} color={BLUE} />
+        <KpiCard label={actualsOnly ? "Plan baseline" : "Plan"} value={data.kpis.totalPlan != null ? data.kpis.totalPlan.toLocaleString("en-IN") : "Unavailable"} color={actualsOnly ? "hsl(var(--muted-foreground))" : BLUE} />
         <KpiCard label="Production" value={data.kpis.totalProduction?.toLocaleString("en-IN")} color={GREEN} />
         <KpiCard
           label="Attainment"
           value={data.kpis.achievementPct != null ? `${data.kpis.achievementPct.toFixed(1)}%` : "—"}
-          sub={data.kpis.achievementRemark ?? "No plan baseline"}
+          sub={actualsOnly ? "Actuals only" : (data.kpis.achievementRemark ?? "No plan baseline")}
           color={reportRemarkColor(data.kpis.achievementRemark)}
         />
         <KpiCard label="Orders" value={data.kpis.orderQty != null ? data.kpis.orderQty.toLocaleString("en-IN") : "Unavailable"} color={data.kpis.orderQty != null ? undefined : "hsl(var(--muted-foreground))"} />
@@ -1077,6 +1104,14 @@ function PlanVsActualDetail({ data }: { data: any }) {
             <p className="text-muted-foreground"><span className="font-medium text-foreground">Production Data Through:</span> {data.lastDataDate ?? "N/A"}</p>
             <p className="text-muted-foreground"><span className="font-medium text-foreground">Plan Source:</span> {data.sources?.plan ?? "Unavailable"}</p>
             <p className="text-muted-foreground"><span className="font-medium text-foreground">Production Source:</span> {data.sources?.production ?? "Unavailable"}</p>
+            {actualsOnly && (
+              <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-900">
+                <span className="font-medium">Plan status:</span> Actuals only. {data.planStatusReason}
+                {data.planEvidence?.archiveCommit && (
+                  <span className="block mt-1 text-[11px] font-mono">Evidence: {data.planEvidence.archiveCommit}</span>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-1.5 pt-1">
               {(["orders", "sales"] as const).map(source => {
                 const details = data.sources?.[source];
@@ -1093,7 +1128,7 @@ function PlanVsActualDetail({ data }: { data: any }) {
             </div>
             <div className="mt-2 pt-2 border-t border-border">
               {data.planVersions?.length === 0 && (
-                <p className="text-muted-foreground">No issued plan-version timeline is available for this report.</p>
+                <p className="text-muted-foreground">{actualsOnly ? "No plan-version timeline is available because June has no finalized plan." : "No issued plan-version timeline is available for this report."}</p>
               )}
               {data.planVersions?.map((v: any, i: number) => (
                 <div key={i} className="mt-1.5 flex items-start gap-2">
@@ -1245,7 +1280,7 @@ function PlanVsActualDetail({ data }: { data: any }) {
 
       {outOfPlanFiltered.length > 0 && (
         <div className="bg-card border border-card-border rounded-lg p-4">
-          <h4 className="font-semibold text-foreground text-sm mb-3 flex items-center gap-2"><Factory size={14} className="text-amber-500" /> Out of Plan Production</h4>
+           <h4 className="font-semibold text-foreground text-sm mb-3 flex items-center gap-2"><Factory size={14} className="text-amber-500" /> {actualsOnly ? "June Actual Production" : "Out of Plan Production"}</h4>
           <div className="overflow-x-auto border border-border rounded-md">
             <table className="w-full text-xs border-collapse min-w-[760px]">
               <thead>
