@@ -19,6 +19,8 @@ import {
   type PlumbingSheet3Row,
 } from "../lib/sheets";
 import { logger } from "../lib/logger";
+import { buildElapsedProductionDays } from "../lib/plant-engine";
+import { resolvePlantMonthLifecycle, resolveWorkingDays } from "../lib/plant-lifecycle";
 import { exportPlanExcel } from "../lib/excel-export";
 import { exportPlanPdf } from "../lib/pdf-export";
 import { exportWeeklyReleaseExcel } from "../lib/weekly-excel-export";
@@ -2214,15 +2216,34 @@ export async function computePlumbingMonitoringPayload(month: string) {
   for (const [, arr] of catActual)  for (let i = 0; i < 4; i++) plantMapped[i]  += arr[i];
   for (let i = 0; i < 4; i++) plantRelease[i] = Math.round(plantRelease[i]);
 
-  // Working days elapsed (non-Sunday days from 1st through last data date)
+  // Working days and elapsed production days use the same observed-day rule
+  // as PTMT monitoring: calendar non-Sundays plus worked Sundays, with future
+  // calendar non-Sundays projected for an open month.
   const lastDataDate = sheet3Rows.length > 0 ? [...sheet3Rows].map((r) => r.dateStr).sort().pop()! : null;
-  let workingDaysElapsed = 0;
-  if (lastDataDate) {
-    const throughDay = parseInt(lastDataDate.slice(8), 10);
-    for (let d = 1; d <= throughDay; d++) {
-      if (new Date(`${month}-${p2(d)}T00:00:00Z`).getUTCDay() !== 0) workingDaysElapsed++;
-    }
-  }
+  const lifecycle = resolvePlantMonthLifecycle(month).state;
+  const dailyByDate = new Map<string, number>();
+  for (const row of sheet3Rows) dailyByDate.set(row.dateStr, (dailyByDate.get(row.dateStr) ?? 0) + row.qty);
+  const elapsedDays = sheet3Rows.length > 0
+    ? buildElapsedProductionDays(month, dailyByDate, lastDataDate)
+    : [];
+  const workingDaysResolution = resolveWorkingDays(
+    month,
+    null,
+    sheet3Rows.filter((row) => row.qty > 0).map((row) => row.dateStr),
+    lastDataDate,
+    lifecycle,
+  );
+  const workingDaysElapsed = lifecycle === "closed" || lifecycle === "grace"
+    ? workingDaysResolution.workingDays
+    : Math.min(elapsedDays.length, workingDaysResolution.workingDays);
+  const workedSundayDates = elapsedDays.filter(
+    (date) => new Date(`${date}T00:00:00Z`).getUTCDay() === 0 && (dailyByDate.get(date) ?? 0) > 0,
+  );
+  const idleWeekdayDates = lastDataDate
+    ? [...Array(parseInt((lifecycle === "closed" || lifecycle === "grace" ? `${month}-${p2(lastDayOfMonth)}` : lastDataDate).slice(8), 10))]
+      .map((_, index) => `${month}-${p2(index + 1)}`)
+      .filter((date) => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0 && (dailyByDate.get(date) ?? 0) <= 0)
+    : [];
 
   // Build per-week response (cumulative columns)
   const today = new Date().toISOString().slice(0, 10);
@@ -2331,6 +2352,10 @@ export async function computePlumbingMonitoringPayload(month: string) {
 
   return {
     month, lastDataDate, workingDaysElapsed,
+    workingDays: workingDaysResolution.workingDays,
+    workingDaysSource: workingDaysResolution.workingDaysSource,
+    workedSundayDates,
+    idleWeekdayDates,
     weeks, categories, items,
     unmapped: { byWeek: [...unmappedByWeek], total: totalUnmapped, topCodes, allCodes },
     totalProduced, totalMapped, totalUnmapped, runRatePerDay,

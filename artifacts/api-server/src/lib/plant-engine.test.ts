@@ -53,7 +53,11 @@ function targetsFor(rows: DailyActualRow[]): PlantTargetRow[] {
   }, []);
 }
 
-function buildFixtureBundle(name: FixtureName, rows = readFixture(name)) {
+function buildFixtureBundle(
+  name: FixtureName,
+  rows = readFixture(name),
+  overrides: Partial<Parameters<typeof buildPlantBundle>[3]> = {},
+) {
   const expectation = fixtureExpectations[name];
   return buildPlantBundle(
     expectation.month,
@@ -67,6 +71,7 @@ function buildFixtureBundle(name: FixtureName, rows = readFixture(name)) {
       snapshotDate: expectation.snapshotDate,
       lifecycle: expectation.lifecycle,
       workingDaysSource: "derived",
+      ...overrides,
     },
   );
 }
@@ -163,4 +168,60 @@ test("unmatched production is reported as explicit unattributed quantity", () =>
   assert.equal(bundle.unattributedPcs, 7);
   assert.equal(bundle.categories.reduce((sum, category) => sum + category.producedToDate, 0), matched.qty);
   assert.match(bundle.caveats.at(-1) ?? "", /7 pcs excluded from category totals/);
+});
+
+test("closed-month working days include worked Sundays for both segments", () => {
+  assert.equal(buildFixtureBundle("ptmtJune").context.workingDays, 29);
+  assert.equal(buildFixtureBundle("ptmtJune").context.workingDaysSource, "observed");
+  assert.equal(buildFixtureBundle("plumbingJune").context.workingDays, 27);
+  assert.equal(buildFixtureBundle("plumbingJune").context.workingDaysSource, "observed");
+});
+
+test("configured working days override observed Sundays", () => {
+  const bundle = buildFixtureBundle("ptmtJune", undefined, {
+    workingDays: 25,
+    workingDaysSource: "configured",
+  });
+
+  assert.equal(bundle.context.workingDays, 25);
+  assert.equal(bundle.context.workingDaysSource, "configured");
+  assert.equal(bundle.context.elapsed <= bundle.context.workingDays, true);
+  assert.ok(Math.abs(bundle.plant.requiredPerDay * bundle.context.workingDays - bundle.plant.targetMax) < 2);
+});
+
+test("open-month projection includes remaining calendar non-Sundays without shrinking for idle weekdays", () => {
+  const bundle = buildFixtureBundle("ptmtAugust");
+  const elapsedDays = buildElapsedProductionDays(
+    "2026-08",
+    new Map(readFixture("ptmtAugust").map((row) => [row.date, row.qty])),
+    "2026-08-19",
+  );
+
+  assert.equal(bundle.context.workingDays, 28);
+  assert.equal(bundle.context.workingDaysSource, "observed");
+  assert.equal(bundle.context.elapsed, elapsedDays.length);
+  assert.equal(bundle.context.remaining, 10);
+  assert.ok(bundle.caveats.some((caveat) => /no production/.test(caveat)));
+  assert.ok(Math.abs(bundle.plant.requiredPerDay * bundle.context.workingDays - bundle.plant.targetMax) < 2);
+});
+
+test("future month with no actuals uses the calendar-derived fallback", () => {
+  const bundle = buildPlantBundle(
+    "2026-09",
+    [],
+    [{ itemCode: "FUTURE", colour: "", category: "Fixture", maxPcs: 100, minPcs: 80 }],
+    {
+      workingDays: 26,
+      elapsed: 0,
+      shiftsPerDay: 2,
+      shiftHours: 12,
+      snapshotDate: null,
+      lifecycle: "future",
+      workingDaysSource: "derived",
+    },
+  );
+
+  assert.equal(bundle.context.workingDays, 26);
+  assert.equal(bundle.context.workingDaysSource, "derived");
+  assert.equal(bundle.context.elapsed <= bundle.context.workingDays, true);
 });

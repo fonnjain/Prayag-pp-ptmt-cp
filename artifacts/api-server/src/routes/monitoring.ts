@@ -14,7 +14,6 @@ import { getWorkbookIdForMonth, normalizeCodeStrict } from "../lib/sheets";
 import { fetchDailyActuals, type DailyActualRow } from "../lib/plant-ingestion";
 import {
   buildCalendarModel,
-  countWorkingDaysElapsed,
   convertTargetsToPcs,
   computePaceMetrics,
   computeMachineQuality,
@@ -31,6 +30,8 @@ import {
 } from "../lib/monitoring-calc";
 import { logger } from "../lib/logger";
 import { resolveWorkingDays } from "../lib/plant-lifecycle";
+import { resolvePlantMonthLifecycle } from "../lib/plant-lifecycle";
+import { buildElapsedProductionDays } from "../lib/plant-engine";
 import { exportMonitoringExcel, exportMonitoringPdf, type MonitoringExportData } from "../lib/monitoring-export";
 
 const router: IRouter = Router();
@@ -178,6 +179,10 @@ export interface MonitoringBundle {
   outputToDateKg: number;
   /** Non-Sunday working days elapsed to lastDataDate. */
   workingDaysElapsed: number;
+  workingDays: number;
+  workingDaysSource: "configured" | "observed" | "derived";
+  workedSundayDates: string[];
+  idleWeekdayDates: string[];
   /** Produced pieces per working day. */
   runRatePerDay: number;
   /** Unmapped production (codes not in plan). */
@@ -247,10 +252,27 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
   // Data is available when either the piece actuals or the machine report have rows.
   const dataAvailable = machineDataAvailable || lastDataDate !== null;
 
-  const elapsed = config.snapshotDate
-    ? countWorkingDaysElapsed(month, config.snapshotDate)
-    : countWorkingDaysElapsed(month, lastDataDate);
-  const calendarPlant = buildCalendarModel(config.workingDays, elapsed);
+  const lifecycle = resolvePlantMonthLifecycle(month).state;
+  const snapshotDate = config.snapshotDate ?? lastDataDate;
+  const positiveDates = actuals
+    .filter((row) => row.qty > 0)
+    .map((row) => row.date);
+  const workingDaysResolution = resolveWorkingDays(
+    month,
+    config.workingDaysSource === "configured" ? config.workingDays : null,
+    positiveDates,
+    snapshotDate,
+    lifecycle,
+  );
+  const dailyByDate = new Map<string, number>();
+  for (const row of actuals) dailyByDate.set(row.date, (dailyByDate.get(row.date) ?? 0) + row.qty);
+  const elapsedDays = actuals.length > 0
+    ? buildElapsedProductionDays(month, dailyByDate, snapshotDate)
+    : [];
+  const elapsed = lifecycle === "closed" || lifecycle === "grace"
+    ? workingDaysResolution.workingDays
+    : Math.min(elapsedDays.length, workingDaysResolution.workingDays);
+  const calendarPlant = buildCalendarModel(workingDaysResolution.workingDays, elapsed);
 
   const outputToDateKg = report5Machines
     .filter((m) => !m.isGrinder)
@@ -295,13 +317,15 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
   for (let i = 0; i < 4; i++) plantRelease[i] = Math.round(plantRelease[i]);
 
   // Non-Sunday working days elapsed through lastDataDate
-  let workingDaysElapsed = 0;
-  if (lastDataDate) {
-    const throughDay = parseInt(lastDataDate.slice(8), 10);
-    for (let d = 1; d <= throughDay; d++) {
-      if (new Date(`${month}-${p2(d)}T00:00:00Z`).getUTCDay() !== 0) workingDaysElapsed++;
-    }
-  }
+  const workingDaysElapsed = elapsed;
+  const workedSundayDates = elapsedDays.filter(
+    (date) => new Date(`${date}T00:00:00Z`).getUTCDay() === 0 && (dailyByDate.get(date) ?? 0) > 0,
+  );
+  const idleWeekdayDates = lastDataDate
+    ? [...Array(parseInt((lifecycle === "closed" || lifecycle === "grace" ? `${month}-${p2(lastDayOfMonth)}` : snapshotDate ?? lastDataDate).slice(8), 10))]
+      .map((_, index) => `${month}-${p2(index + 1)}`)
+      .filter((date) => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0 && (dailyByDate.get(date) ?? 0) <= 0)
+    : [];
 
   const today = new Date().toISOString().slice(0, 10);
   let cumRelease = 0, cumMapped = 0, cumTotal = 0;
@@ -340,6 +364,10 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
     totalProducedPcs: ptmtActuals.totalProduced,
     outputToDateKg,
     workingDaysElapsed,
+    workingDays: workingDaysResolution.workingDays,
+    workingDaysSource: workingDaysResolution.workingDaysSource,
+    workedSundayDates,
+    idleWeekdayDates,
     runRatePerDay,
     unmappedPtmt: ptmtActuals.unmappedPtmt,
     weeks,
@@ -364,7 +392,11 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
       segment: "PLUMBING",
       dataAvailable: !!data.lastDataDate,
       lastDataDate: data.lastDataDate,
-      workingDaysElapsed: data.workingDaysElapsed,
+       workingDaysElapsed: data.workingDaysElapsed,
+       workingDays: data.workingDays,
+       workingDaysSource: data.workingDaysSource,
+       workedSundayDates: data.workedSundayDates,
+       idleWeekdayDates: data.idleWeekdayDates,
       plant: {
         produced: data.totalProduced,
         mapped: data.totalMapped,
@@ -388,6 +420,10 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
     sourceError: bundle.sourceError,
     lastDataDate: bundle.lastDataDate,
     workingDaysElapsed: bundle.workingDaysElapsed,
+    workingDays: bundle.workingDays,
+    workingDaysSource: bundle.workingDaysSource,
+    workedSundayDates: bundle.workedSundayDates,
+    idleWeekdayDates: bundle.idleWeekdayDates,
     calendar: bundle.calendarPlant,
     plant: {
       ...bundle.plantPace,

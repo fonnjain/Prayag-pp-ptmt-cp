@@ -40,6 +40,28 @@ test("working days are derived from the UTC calendar only when configuration is 
   assert.deepEqual(resolveWorkingDays("2026-08", null), { workingDays: 26, workingDaysSource: "derived" });
 });
 
+test("observed working-day resolution adds worked Sundays for closed months", () => {
+  assert.deepEqual(
+    resolveWorkingDays("2026-06", null, ["2026-06-07", "2026-06-14", "2026-06-28"], "2026-06-30", "closed"),
+    { workingDays: 29, workingDaysSource: "observed" },
+  );
+  assert.deepEqual(
+    resolveWorkingDays("2026-06", null, ["2026-06-28"], "2026-06-30", "closed"),
+    { workingDays: 27, workingDaysSource: "observed" },
+  );
+});
+
+test("open observed working days project future calendar non-Sundays and configured values still win", () => {
+  assert.deepEqual(
+    resolveWorkingDays("2026-08", null, ["2026-08-02", "2026-08-09"], "2026-08-19", "open"),
+    { workingDays: 28, workingDaysSource: "observed" },
+  );
+  assert.deepEqual(
+    resolveWorkingDays("2026-08", 25, ["2026-08-02", "2026-08-09"], "2026-08-19", "open"),
+    { workingDays: 25, workingDaysSource: "configured" },
+  );
+});
+
 test("legacy finalized plans hydrate without requiring a linked corrective run", async () => {
   await runMigrations();
   const month = "1996-01";

@@ -1,6 +1,7 @@
 import { countWorkingDaysInMonth } from "./monitoring-calc";
 
 export type PlantMonthState = "future" | "open" | "grace" | "closed";
+export type WorkingDaysSource = "configured" | "observed" | "derived";
 
 export interface PlantMonthLifecycle {
   state: PlantMonthState;
@@ -67,9 +68,46 @@ export function resolvePlantMonthLifecycle(month: string, now = new Date()): Pla
   };
 }
 
-export function resolveWorkingDays(month: string, configuredWorkingDays: number | null | undefined) {
+export function resolveWorkingDays(
+  month: string,
+  configuredWorkingDays: number | null | undefined,
+  observedProductionDates: string[] = [],
+  snapshotDate: string | null = null,
+  lifecycle: PlantMonthState = "open",
+): { workingDays: number; workingDaysSource: WorkingDaysSource } {
   if (typeof configuredWorkingDays === "number" && configuredWorkingDays > 0) {
     return { workingDays: configuredWorkingDays, workingDaysSource: "configured" as const };
   }
-  return { workingDays: derivedWorkingDays(month), workingDaysSource: "derived" as const };
+
+  const calendarDays = derivedWorkingDays(month);
+  const calendarNonSundays = new Set<string>();
+  const [year, monthNumber] = month.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  for (let day = 1; day <= lastDay; day++) {
+    const iso = `${month}-${String(day).padStart(2, "0")}`;
+    if (new Date(`${iso}T00:00:00Z`).getUTCDay() !== 0) calendarNonSundays.add(iso);
+  }
+
+  const positiveDates = [...new Set(observedProductionDates)]
+    .filter((date) => date.startsWith(month))
+    .sort();
+  if (positiveDates.length === 0) {
+    return { workingDays: calendarDays, workingDaysSource: "derived" as const };
+  }
+
+  const effectiveSnapshot = snapshotDate ?? positiveDates.at(-1)!;
+  if (lifecycle === "closed" || lifecycle === "grace") {
+    const extraWorkedDays = positiveDates.filter((date) => !calendarNonSundays.has(date)).length;
+    return { workingDays: calendarDays + extraWorkedDays, workingDaysSource: "observed" as const };
+  }
+
+  const elapsedObservedDays = new Set([
+    ...[...calendarNonSundays].filter((date) => date <= effectiveSnapshot),
+    ...positiveDates.filter((date) => date <= effectiveSnapshot),
+  ]);
+  const futureCalendarDays = [...calendarNonSundays].filter((date) => date > effectiveSnapshot).length;
+  return {
+    workingDays: elapsedObservedDays.size + futureCalendarDays,
+    workingDaysSource: "observed" as const,
+  };
 }

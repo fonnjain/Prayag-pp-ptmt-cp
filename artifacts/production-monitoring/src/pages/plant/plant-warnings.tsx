@@ -60,6 +60,7 @@ export default function PlantWarnings({ month, selectedCategory }: { month: stri
   if (isLoading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
   if (!data) return <div className="text-red-500 p-4">Failed to load plant data.</div>;
   const bundle = data as unknown as PlantBundle;
+  const unattributedPcs = (bundle as PlantBundle & { unattributedPcs?: number }).unattributedPcs ?? 0;
   const cfg = configData as unknown as PlantConfigData & { thresholds?: PlantThresholds };
 
   const activeThresholds: PlantThresholds = localThresholds ?? (cfg?.thresholds as PlantThresholds | undefined) ?? {};
@@ -240,7 +241,9 @@ export default function PlantWarnings({ month, selectedCategory }: { month: stri
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Items Needing Review</CardTitle>
-            <CardDescription>These produced items have no matching plan entry — excluded from category attainment totals</CardDescription>
+            <CardDescription>
+              These produced items have no matching plan entry — {unattributedPcs.toLocaleString()} pcs excluded from category attainment totals
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">

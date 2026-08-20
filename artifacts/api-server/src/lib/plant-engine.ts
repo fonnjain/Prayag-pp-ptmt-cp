@@ -1,7 +1,8 @@
-import { countWorkingDaysElapsed, buildCalendarModel } from "./monitoring-calc";
+import { buildCalendarModel } from "./monitoring-calc";
 import type { DailyActualRow, PlantTargetRow } from "./plant-ingestion";
 import { itemKey, normalizeCode } from "./sheets";
 import { versionForDate, type PlanVersion, type VersionTarget } from "./plant-plan-timeline";
+import { resolveWorkingDays, type PlantMonthState, type WorkingDaysSource } from "./plant-lifecycle";
 
 const r2 = (n: number): number => Math.round(n * 100) / 100;
 const rNull = (n: number | null): number | null => (n === null ? null : r2(n));
@@ -66,7 +67,7 @@ export interface PlantBundle {
     month: string;
     snapshotDate: string | null;
     workingDays: number;
-    workingDaysSource?: "configured" | "derived";
+    workingDaysSource?: WorkingDaysSource;
     elapsed: number;
     remaining: number;
     shiftsPerDay: number;
@@ -96,7 +97,7 @@ export interface PlantCalendarConfig {
   shiftHours: number;
   snapshotDate: string | null;
   versionTimeline?: PlanVersion[];
-  workingDaysSource?: "configured" | "derived";
+  workingDaysSource?: WorkingDaysSource;
   lifecycle?: "future" | "open" | "grace" | "closed";
   capturedAt?: string | null;
   sourceInfo?: Record<string, unknown> | null;
@@ -197,18 +198,37 @@ export function buildPlantBundle(
   targets: PlantTargetRow[],
   config: PlantCalendarConfig,
 ): PlantBundle {
-  const { workingDays, shiftsPerDay, shiftHours } = config;
+  const { shiftsPerDay, shiftHours } = config;
 
   const lastDate = actuals.length > 0 ? [...actuals].map((r) => r.date).sort().pop()! : null;
   const snapshotDate = config.snapshotDate ?? lastDate;
   const lifecycle = config.lifecycle ?? config.lifecycleState ?? "open";
-  const elapsed = lifecycle === "closed" || lifecycle === "grace"
-    ? workingDays
-    : snapshotDate ? countWorkingDaysElapsed(month, snapshotDate) : 0;
-  const calendar = buildCalendarModel(workingDays, elapsed);
-
   const calendarNonSundays = workingDaysInMonth(month);
   const versionTimeline = config.versionTimeline ?? [];
+  const dailyByDate = new Map<string, number>();
+  for (const row of actuals) {
+    dailyByDate.set(row.date, (dailyByDate.get(row.date) ?? 0) + row.qty);
+  }
+
+  const positiveProductionDates = [...dailyByDate.entries()]
+    .filter(([, qty]) => qty > 0)
+    .map(([date]) => date);
+  const workingDaysResolution = resolveWorkingDays(
+    month,
+    config.workingDaysSource === "configured" ? config.workingDays : null,
+    positiveProductionDates,
+    snapshotDate,
+    lifecycle as PlantMonthState,
+  );
+  const workingDays = workingDaysResolution.workingDays;
+  const workingDaysSource = workingDaysResolution.workingDaysSource;
+  const elapsedDays = actuals.length > 0
+    ? buildElapsedProductionDays(month, dailyByDate, snapshotDate)
+    : [];
+  const elapsed = lifecycle === "closed" || lifecycle === "grace"
+    ? workingDays
+    : Math.min(elapsedDays.length, workingDays);
+  const calendar = buildCalendarModel(workingDays, elapsed);
 
   const targetLookup = (rows: Array<PlantTargetRow | VersionTarget>) => {
     const byKey = new Map<string, PlantTargetRow | VersionTarget>();
@@ -232,22 +252,22 @@ export function buildPlantBundle(
     plantTargetMin += t.minPcs;
   }
 
-  const dailyByDate = new Map<string, number>();
-  for (const row of actuals) {
-    dailyByDate.set(row.date, (dailyByDate.get(row.date) ?? 0) + row.qty);
-  }
-
-  const elapsedDays = buildElapsedProductionDays(month, dailyByDate, snapshotDate);
-  const elapsedCalendarDays = calendarNonSundays.filter((d) => !snapshotDate || d <= snapshotDate);
   const dailyOutputsArr = elapsedDays.map((d) => dailyByDate.get(d) ?? 0);
   const dailyRequiredByDate = new Map<string, number>();
-  for (const date of calendarNonSundays) {
+  for (const date of new Set([...calendarNonSundays, ...elapsedDays])) {
     const version = versionForDate(versionTimeline, date);
     const activeTargets = version?.targets ?? targets;
     const total = activeTargets.reduce((sum, target) => sum + target.maxPcs, 0);
     dailyRequiredByDate.set(date, workingDays > 0 ? total / workingDays : 0);
   }
-  const requiredCumByTimeline = elapsedCalendarDays.reduce((sum, date) => sum + (dailyRequiredByDate.get(date) ?? 0), 0);
+  const requiredDaySequence = elapsedDays.length > 0
+    ? elapsedDays
+    : lifecycle === "closed" || lifecycle === "grace"
+      ? calendarNonSundays.slice(0, elapsed)
+      : [];
+  const requiredCumByTimeline = requiredDaySequence
+    .slice(0, elapsed)
+    .reduce((sum, date) => sum + (dailyRequiredByDate.get(date) ?? 0), 0);
 
   let plantProduced = 0;
   for (const v of dailyOutputsArr) plantProduced += v;
@@ -341,7 +361,7 @@ export function buildPlantBundle(
   }
 
   const categoryRequiredCum = new Map<string, number>();
-  for (const date of elapsedCalendarDays) {
+  for (const date of requiredDaySequence.slice(0, elapsed)) {
     const activeTargets = versionForDate(versionTimeline, date)?.targets ?? targets;
     const totals = new Map<string, number>();
     for (const target of activeTargets) {
@@ -436,6 +456,32 @@ export function buildPlantBundle(
   if (outOfMonthDates.length > 0) {
     caveats.push(`Out-of-month actual dates detected: ${outOfMonthDates.join(", ")}`);
   }
+  const reportThroughDate = lifecycle === "closed" || lifecycle === "grace"
+    ? calendarNonSundays.at(-1) ?? snapshotDate
+    : snapshotDate;
+  const workedSundayDates = elapsedDays.filter((date) => isSunday(date) && (dailyByDate.get(date) ?? 0) > 0);
+  if (workedSundayDates.length > 0) {
+    const monthName = new Date(`${month}-01T00:00:00Z`).toLocaleString("en-US", { month: "long", timeZone: "UTC" });
+    caveats.push(
+      `${workedSundayDates.length} Sunday${workedSundayDates.length === 1 ? "" : "s"} worked in ${monthName} — ` +
+      `${workedSundayDates.map((date) => Number(date.slice(8))).join(", ")}`,
+    );
+  }
+  if (actuals.length > 0 && reportThroughDate) {
+    const idleWeekdays = calendarNonSundays.filter(
+      (date) => date <= reportThroughDate && (dailyByDate.get(date) ?? 0) <= 0,
+    );
+    if (idleWeekdays.length > 0) {
+      const formatDate = (date: string) => {
+        const day = new Date(`${date}T00:00:00Z`);
+        return `${day.toLocaleString("en-US", { month: "short", timeZone: "UTC" })} ${Number(date.slice(8))} (${day.toLocaleString("en-US", { weekday: "short", timeZone: "UTC" })})`;
+      };
+      caveats.push(
+        `${idleWeekdays.length} weekday${idleWeekdays.length === 1 ? "" : "s"} with no production — ` +
+        `${idleWeekdays.map(formatDate).join(", ")}`,
+      );
+    }
+  }
   if (elapsed === 0) caveats.push("No elapsed working days detected — KPIs will be null until production data is available.");
   if (plantTargetMax === 0) caveats.push("Monthly target (Max PP) is zero — attainment and pace metrics are unavailable.");
   if (unattributedPcs > 0) {
@@ -455,7 +501,7 @@ export function buildPlantBundle(
       shiftsPerDay,
       shiftHours,
       lifecycle,
-      workingDaysSource: config.workingDaysSource ?? "configured",
+      workingDaysSource,
       capturedAt: config.capturedAt ?? config.frozenAt ?? null,
       sourceInfo: config.sourceInfo ?? null,
       lifecycleState: config.lifecycleState ?? lifecycle,
