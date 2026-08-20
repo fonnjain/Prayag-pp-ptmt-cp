@@ -1,0 +1,87 @@
+# ANALYSIS — Prompt 7: the freeze feature is split in two, and one half is not deployed
+
+Excellent report. Every statement I asked you to confirm is confirmed, and the answers are unambiguous. Three findings matter.
+
+---
+
+## 1. ⚠ The July PTMT snapshot is immutable and was captured before the Sunday fix
+
+Production has **one** snapshot row: PTMT 2026-07, captured **2026-08-19 09:36:20Z**.
+
+The Sunday fix (`d0a7c9a`) was committed **2026-08-20 14:36 IST** — the day *after*. The deployed commit on 19 August was around `125aec2`. **So this snapshot was captured by code that dropped Sunday production.**
+
+But its embedded `actuals_json` sums to **994,374**, the true source total. So the raw actuals are intact — only the derived `bundle_json` KPIs were computed with the drop.
+
+The −95,557 delta between `bundle.producedToDate` (898,817) and the raw sum is **not** the Sunday drop:
+
+- July 2026 had **one** worked Sunday, 5 July.
+- 95,557 pcs on a single day against a ~35k/day average is implausible.
+- The value is far more consistent with **unmapped production** — items with no plan entry, excluded from category totals.
+
+Your interpretation is right. But that leaves the actual question open: **the July bundle KPIs were computed on 19 August with the Sunday drop live, so `producedToDate` is short by 5 July's production and `workingDays` was 27 rather than 28.** The raw actuals survive; the derived numbers don't.
+
+Because `plant_monitoring_snapshots` has no `captured_commit_sha`, nothing in the row records that. Anyone reading July's frozen KPIs later has no way to know they predate the fix.
+
+**Recommendation:** this row should be invalidated and recaptured once `bb6b6f5` is published. It is the only snapshot in production, the raw actuals inside it are correct, and recapturing costs nothing. Leaving it is the expensive option — it becomes the permanent July record.
+
+## 2. The freeze feature is split across two tables, and the deployed half has none of the guarantees
+
+| | Monitoring path | Plan-vs-Actual path |
+|---|---|---|
+| Table | `plant_monitoring_snapshots` | `plant_month_snapshots` |
+| Deployed & writing | **yes** | no |
+| Segment-aware | **no** — `month` is the PK, PTMT-only | yes |
+| `captured_commit_sha` | **absent** | present, **read by nothing** |
+| `backfilled` | **absent** | present, **read by nothing** |
+| `plan_status` / reason / evidence | **absent** | read by Plan-vs-Actual, **missing in production** |
+| Plumbing closed months | **not captured at all** | seeded in dev only |
+
+So every provenance guarantee built over the last several rounds — knowing when a snapshot was taken, by which build, whether it was backfilled, whether its plan was rejected — sits on a table that no live path writes. And `captured_commit_sha` and `backfilled` have **no read consumer anywhere**.
+
+Two consequences worth stating plainly:
+
+**Plumbing closed months are never captured.** `loadFinalizedTargets` filters `plan_runs.segment = "PTMT"`, and Plumbing doesn't write the table. So Plumbing has no freeze at all — every closed Plumbing month recomputes live, forever, against whatever the sources say that day. That is the problem this whole workstream started from, still live for half the business.
+
+**"June is frozen in dev" is not true in the operative sense.** You confirmed it: the monitoring GET returns an unavailable bundle because `plant_monitoring_snapshots` has no June row. The seeded rows serve Plan-vs-Actual only. So Task #142's outcome is real for one report and absent for the monitoring UI.
+
+## 3. July's configured `working_days = 25` is now actively wrong
+
+| | Value |
+|---|--:|
+| Configured | **25** |
+| Calendar non-Sundays | 27 |
+| Observed production days | **28** (incl. Sunday 5 July) |
+| Resolved today | 25, source `configured` |
+
+The override wins, so July resolves to 25/25 — and `requiredPerDay = target ÷ 25` against a plant that worked **28** days. That is **12% too high**, larger than the PTMT June error we just spent three prompts fixing.
+
+The configured value is not merely stale; it is now overriding a correct computation with a wrong one. And it is the same `snapshot_date = 2026-07-05` that produced the *"4/25 working days elapsed"* screen this workstream opened with — that cursor has been wrong since July and is still wrong.
+
+This is worth reconsidering as a design point: `configured` currently beats `observed` unconditionally. An override entered before the month was worked cannot know how many days were worked. For a **closed** month, observed is strictly better information than a forecast made in advance.
+
+---
+
+## What I would do, in order
+
+1. **Do not seed June into production.** The blocker is now better understood, not removed: seeding `plant_month_snapshots` would serve Plan-vs-Actual and leave the monitoring UI unchanged.
+2. **Publish `bb6b6f5`** so migration 027's columns exist in production. Without them the Plan-vs-Actual read fails outright — that `START TRANSACTION / ROLLBACK` is a missing-column error.
+3. **Decide the table question.** Either converge on `plant_month_snapshots` — segment-aware, provenance-bearing — and repoint the monitoring path at it, or add segment and provenance to `plant_monitoring_snapshots`. Maintaining two is how the next six rounds get spent. My preference is converging on the segment-aware one, because Plumbing having no freeze is not a gap that can be left open.
+4. **Invalidate and recapture the July PTMT snapshot** after publishing. It is the only one, its raw actuals are good, and its KPIs are pre-fix.
+5. **Review July's `working_days = 25` override** — for a closed month, observed should probably win.
+
+---
+
+## Suggested reply
+
+> Every confirmation checks out, and three things follow.
+>
+> **1. The July PTMT snapshot is pre-fix and immutable.** Captured **2026-08-19 09:36Z**; `d0a7c9a` landed 2026-08-20. So its `bundle_json` KPIs were computed with the Sunday drop live — `producedToDate` short by 5 July, `workingDays` 27 not 28. The embedded `actuals_json` is intact at 994,374, so the raw data is fine; only the derived numbers are wrong. Your read of the −95,557 delta is right, incidentally — it can't be the Sunday drop, because July had one worked Sunday and 95,557 on a single day against a ~35k average isn't plausible. It's unmapped production.
+> Please invalidate and recapture that row after publishing. It's the only snapshot in production, its actuals are correct, and recapturing is cheap — leaving it makes pre-fix KPIs the permanent July record, with no `captured_commit_sha` to warn anyone.
+>
+> **2. Plumbing has no freeze at all.** `loadFinalizedTargets` filters `segment = "PTMT"` and Plumbing never writes `plant_monitoring_snapshots`. So every closed Plumbing month recomputes live against whatever the sources say that day — the exact problem this workstream started from, still live for half the business. And `captured_commit_sha` / `backfilled` have **no read consumer anywhere**; every provenance guarantee we built sits on the table no live path writes.
+> This needs a decision, not a patch: converge on `plant_month_snapshots` and repoint the monitoring path at it, or add segment and provenance columns to `plant_monitoring_snapshots`. Two tables with one freeze design between them will cost us the next several rounds. I'd converge on the segment-aware one.
+>
+> **3. July's configured `working_days = 25` is now actively wrong**, not just stale. Observed is 28 (27 calendar non-Sundays plus worked Sunday 5 July), so `requiredPerDay = target ÷ 25` is **12% too high** — a larger error than the PTMT June one we just spent three prompts fixing. And it's the same `snapshot_date = 2026-07-05` behind the "4/25 working days elapsed" screen that opened this workstream.
+> Worth reconsidering the precedence: `configured` currently beats `observed` unconditionally, but an override entered before the month was worked can't know how many days were worked. For a **closed** month, observed is strictly better information.
+>
+> Order: publish `bb6b6f5` (production is missing migration 027 — that `START TRANSACTION / ROLLBACK` is a missing-column error), decide the table question, then recapture July. **Still do not seed June into production** — seeding `plant_month_snapshots` would serve Plan-vs-Actual and leave the monitoring UI exactly as it is.
