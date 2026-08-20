@@ -1,0 +1,95 @@
+# AUDIT — `239dff9` (Sunday production drop)
+
+The core fix is correct and the positional-slice hazard was handled properly. **But the category guard asserts something that is false by design, and it will crash the plant dashboard for every month.**
+
+---
+
+## ✅ Verified
+
+**Positional slices are gone.** `grep "slice(0, elapsed)"` returns nothing. `buildElapsedProductionDays` filters by date (`d <= snapshotDate`), is exported so it's directly testable, and `elapsedDays.indexOf(row.date)` replaces the old positional index in the category path.
+
+**Required stayed on the calendar basis.** `elapsedCalendarDays` is kept separate and feeds `requiredCumByTimeline`, so `requiredPerDay` and `requiredCum` are untouched — exactly the Prompt 2 scope. `workingDays`, `resolveWorkingDays` and `plant_configs` are all clean.
+
+**Discarded is zero across all four fixtures**, totalling the full 3,667,029 pcs loaded.
+
+**The attainment shift corroborates the arithmetic.** PTMT June 118.16% → 119.84% is +1.428% relative; 933,653 ÷ 920,507 = 1.01428. Matches to three decimal places — the recovered quantity is exactly the Sunday production, nothing else moved.
+
+**Not inventing a Plumbing June denominator was right.** Log the "collapsed zero sales inputs" planner rejection as its own item; it's unrelated to this fix.
+
+**Out-of-month dates → caveat, not swallowed.** Good.
+
+---
+
+## ❌ The category guard is wrong, and it is currently breaking production
+
+```typescript
+const categoryProducedTotal = [...categoryMap.values()].reduce((sum, d) => sum + d.produced, 0);
+if (Math.round(categoryProducedTotal) !== Math.round(plantProduced)) {
+  throw new Error(`plant-engine: … pcs plant total is not attributed to categories for ${month}`);
+}
+```
+
+That invariant cannot hold. `:325–328`:
+
+```typescript
+for (const { row, target } of resolvedActuals) {
+  if (!target) continue;        // ← unmatched rows never reach a category
+```
+
+Production for an item with **no plan entry** has no category by construction. It is recorded in `needsReview` and surfaced as the banner you already ship: *"213 produced item(s) have no matching plan entry — excluded from category totals."*
+
+So the 201,637 PTMT August pieces are not a newly-discovered bug. **They are the documented out-of-plan quantity**, and the guard has turned a known, reported condition into a thrown exception.
+
+Consequence: `buildPlantBundle` now throws for any month with out-of-plan production — which is every month. The PTMT plant dashboard will 500 rather than render. That is worse than the bug this commit fixed.
+
+The distinction I should have drawn more sharply in Prompt 2: **throw when the invariant must hold; report when the gap is real and expected.**
+
+| Guard | Invariant | Correct behaviour |
+|---|---|---|
+| loaded vs counted | must always hold — every loaded row belongs to a day | **throw** ✅ as implemented |
+| category vs plant | cannot hold — out-of-plan rows have no category | **report**, not throw |
+
+**Fix:** make the category check account for the unattributed quantity, then assert the completed identity.
+
+```typescript
+const categoryProducedTotal = [...categoryMap.values()].reduce((sum, d) => sum + d.produced, 0);
+const unattributed = plantProduced - categoryProducedTotal;
+
+// Every pc is either in a category or explicitly unattributed — never silently lost.
+if (unattributed < 0) {
+  throw new Error(`plant-engine: category total exceeds plant total by ${Math.round(-unattributed)} pcs for ${month}`);
+}
+if (unattributed > 0) {
+  caveats.push(
+    `${Math.round(unattributed).toLocaleString()} pcs produced with no matching plan entry — excluded from category totals`
+  );
+}
+```
+
+Return `unattributed` on the bundle so the existing banner can quote the **quantity** as well as the item count. Right now the banner says "213 items"; it has never said "201,637 pcs". That is a materially more useful number and it's already computed.
+
+The `unattributed < 0` case genuinely must throw — categories summing to more than the plant total would mean double-counting, which is a real invariant violation.
+
+## ⚠ `package.json` is in the diff, undeclared
+
++1/−1 at `artifacts/api-server/package.json`, adding `src/lib/plant-engine.test.ts` to the `test` script. Correct and necessary — but the commit was reported as "exactly 3 files" without naming this as one of them, and a `package.json` change is exactly the kind of rider that has slipped through before. List every file next time, including the benign ones.
+
+## Note on the suite count
+
+**129/129** is the API unit suite. The live Plumbing regression workflow is still blocked by Sheets 503/403, so it did not run. Both statements are true; keep them distinct in the record so "129/129 passed" is never read later as "the full verify suite is green".
+
+---
+
+## Suggested reply
+
+> Core fix verified. Positional slices gone, `buildElapsedProductionDays` filters by date and is exported for testing, `elapsedCalendarDays` correctly keeps `requiredCum` on the calendar basis, and `workingDays` / `resolveWorkingDays` / `plant_configs` are untouched. Discarded is zero across all four fixtures. The attainment shift corroborates it precisely: PTMT June 118.16% → 119.84% is +1.428%, and 933,653 ÷ 920,507 = 1.01428 — the recovered quantity is exactly the Sunday production and nothing else moved. Declining to invent a Plumbing June denominator was right; please log the "collapsed zero sales inputs" rejection separately.
+>
+> **One thing to fix before Prompt 3: the category guard asserts something false by design and is breaking the dashboard.**
+>
+> `:325` is `if (!target) continue;` — production for an item with no plan entry never reaches a category. That's the condition your existing banner already reports as *"N produced item(s) have no matching plan entry — excluded from category totals."* So the 201,637 PTMT August pcs aren't a new finding; they're the documented out-of-plan quantity, and the guard now throws on it. `buildPlantBundle` will throw for **any** month with out-of-plan production — i.e. every month — so the PTMT plant dashboard 500s instead of rendering.
+>
+> My Prompt 2 wording was too blunt on this. The rule should be: **throw when the invariant must hold, report when the gap is real and expected.** Loaded-vs-counted must hold → throw, and yours is right. Category-vs-plant cannot hold → report.
+>
+> Please change it to compute `unattributed = plantProduced − categoryProducedTotal`, throw only if that is **negative** (categories exceeding the plant total would be double-counting, a genuine violation), and push a caveat otherwise. Return `unattributed` on the bundle so the banner can quote the quantity as well as the item count — it currently says "213 items" and has never said "201,637 pcs", which is the more useful number and is already computed.
+>
+> Two smaller points: `artifacts/api-server/package.json` is in the diff (+1/−1, adding the new test file to the `test` script) — correct and necessary, but it wasn't named, and an unlisted `package.json` change is the kind of rider that has slipped past before. And please keep "129/129 API unit tests" distinct from the live verify suite in the record, since the latter is still blocked on Sheets 503/403 and didn't run.

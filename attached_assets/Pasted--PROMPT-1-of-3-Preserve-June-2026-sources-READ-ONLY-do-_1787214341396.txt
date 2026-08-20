@@ -1,0 +1,50 @@
+# PROMPT 1 of 3 — Preserve June 2026 sources (READ-ONLY, do this first)
+
+**Do this before any code change.** No source edits, no schema changes, no commits, no push. The only writes permitted are creating **new** copies and export files — nothing existing may be modified, renamed, moved, or deleted.
+
+## Why now
+
+June 2026 is CLOSED (cutoff 2026-07-08) but has **no snapshot** — neither immutable nor legacy — because production still reports `commitSha: (unknown)` and predates the freeze work. Your own diagnostic noted the June Plumbing figures came from a fresh read of a live workbook that "may have changed after June".
+
+So June's numbers currently depend on a spreadsheet that has been editable for seven weeks and remains editable today. We are not ready to freeze June yet — the Sunday and working-day fixes have to land first, or the snapshot preserves wrong figures permanently. This step buys time without freezing anything.
+
+## What to do
+
+**1. Copy both June workbooks in Drive.** New files, originals untouched:
+
+| Source | Copy as |
+|---|---|
+| `Daily Production PTMT JUN ' 2026` (`170xrcWDdTMvTLSJyCw3yGBWxqOOSfZkesGWunqKr8Rw`) | `ARCHIVE 2026-08-20 — Daily Production PTMT JUN ' 2026` |
+| `Daily Production PLUMBING JUN ' 2026` (`10kBMisQ6dNcBLNO0GuD85w1eL1BUm8tKaAb9gl8-38M`) | `ARCHIVE 2026-08-20 — Daily Production PLUMBING JUN ' 2026` |
+
+Report each copy's new file id, byte size, and the **`modifiedTime` of the original at the moment of copying**. That timestamp is the provenance record — it tells us how much editing the original had already absorbed.
+
+**2. Export the PTMT ingestion cache row** for 2026-06 — `plant_ingestion_cache.raw_actuals_json`, snapshot date 2026-06-30, captured 2026-07-08T08:58:39.667Z — to a file. Report the row count, the total quantity, and a SHA-256 of the exported content.
+
+**3. Export the Plumbing June Sheet3 read** you already performed for the diagnostic — the 820 rows / 1,463,741 pcs — as `date, code, qty` to a file, with the same SHA-256.
+
+**4. Re-verify against the diagnostic.** For each of the four archived artefacts, confirm the row count and total quantity match what you reported:
+
+| | Rows | Total qty |
+|---|--:|--:|
+| PTMT June | 2,234 | 933,653 |
+| Plumbing June | 820 | 1,463,741 |
+
+If either differs from your diagnostic figures, **stop and report the difference** — that would mean the source has already changed since you ran it, which is itself the finding.
+
+**5. Do the same for August**, both segments, as they stand today. August is OPEN and still moving, so this is a dated reference point rather than an archive — label it clearly as such:
+
+| | Rows | Total qty | Source through |
+|---|--:|--:|---|
+| PTMT August | 1,058 | 573,456 | Aug 19 |
+| Plumbing August | 440 | 696,179 | Aug 13 (last complete day Aug 12) |
+
+## What NOT to do
+
+- Do not edit, rename, move or delete any original workbook.
+- Do not create a `plant_month_snapshots` row for June. Freezing before the Sunday and working-day fixes land would make the wrong numbers permanent — that is the same ordering constraint as plan-versioning-before-freezing.
+- Do not change any code. Prompts 2 and 3 cover that.
+
+## Report back
+
+The six file ids and sizes, the four row-count/quantity confirmations, the four SHA-256 values, and the original `modifiedTime` for each June workbook at copy time. Then stop and wait — prompt 2 follows.
