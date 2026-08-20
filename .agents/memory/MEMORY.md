@@ -55,3 +55,5 @@
 - [Same-day plan revisions](same-day-plan-revisions.md) — canonicalize duplicate effective dates by source issuance, retain superseded audit data, and reconstruct legacy zeroed weeks.
 - [Combined operations analytics](combined-ops-analytics.md) — compare PTMT demand and Plumbing execution side by side; never fabricate a cross-unit total.
 - [Browser auth and machine routes](auth-machine-route-boundary.md) — classify machine API-key paths before applying the shared browser session guard.
+- [Build commit provenance](build-commit-provenance.md) — production bundles need the commit SHA injected at build time because stripped containers have no .git metadata.
+- [Corrective capacity basis](corrective-capacity-basis.md) — conservative feasibility pairs weekday-only Cap/Day with calendar Mon–Sat remaining days; Sundays stay actuals-only.
