@@ -310,8 +310,10 @@ export function computeCapByCategory(
   const result = new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
   for (const [category, dayMap] of map) {
     // Corrective remaining days are calendar Mon–Sat. Keep Cap/Day on the
-    // same conservative basis rather than multiplying weekday capacity by a
-    // denominator that includes no future Sundays.
+    // same calendar basis rather than multiplying weekday capacity by a
+    // denominator that includes no future Sundays. This aligns the samples
+    // with the forward-looking calendar; it does not guarantee that p90 falls
+    // when a low Sunday sample is removed.
     const vals = [...dayMap.entries()]
       .filter(([date, value]) => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0 && value > 0)
       .map(([, value]) => value)
