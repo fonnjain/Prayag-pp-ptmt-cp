@@ -211,16 +211,16 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
            <div className={`text-3xl font-bold ${colors.text}`}>{fmt(displayPlant.producedToDate)}</div>
           <div className="text-xs text-muted-foreground mt-1">pcs</div>
         </div>
-        <div>
-          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Cumulative Attainment</div>
-           <div className={`text-3xl font-bold ${colors.text}`}>{pct(displayPlant.attainmentCumPct)}</div>
-           <div className="text-xs text-muted-foreground mt-1">vs required cum. ({fmt(displayPlant.requiredCum)} pcs)</div>
-        </div>
-        <div>
-          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Month Attainment</div>
-           <div className={`text-3xl font-bold ${colors.text}`}>{pct(displayPlant.attainmentMonthPct)}</div>
-           <div className="text-xs text-muted-foreground mt-1">vs Max PP ({fmt(displayPlant.targetMax)} pcs)</div>
-        </div>
+         <div>
+           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Target (Max)</div>
+            <div className="text-3xl font-bold">{fmt(displayPlant.targetMax)}</div>
+            <div className="text-xs text-muted-foreground mt-1">pcs for the month</div>
+         </div>
+         <div>
+           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Att %</div>
+            <div className={`text-3xl font-bold ${colors.text}`}>{pct(displayPlant.attainmentCumPct)}</div>
+            <div className="text-xs text-muted-foreground mt-1">vs required cum. ({fmt(displayPlant.requiredCum)} pcs)</div>
+         </div>
         <div>
           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Projected End</div>
            <div className={`text-3xl font-bold ${colors.text}`}>{pct(displayPlant.projectedAttainmentPct)}</div>
@@ -401,10 +401,10 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
           <div className="flex items-center gap-3 mb-2 pb-1 border-b border-border/30">
             <div className="w-44" />
             <div className="flex-1" />
-            <div className="w-14 text-right text-xs text-muted-foreground font-medium">Cum Att%</div>
             <div className="w-24 text-right text-xs text-muted-foreground font-medium">Produced</div>
-            <div className="w-28 text-right text-xs text-muted-foreground font-medium">Projected EOM</div>
             <div className="w-24 text-right text-xs text-muted-foreground font-medium">Target (Max)</div>
+              <div className="w-14 text-right text-xs text-muted-foreground font-medium whitespace-nowrap">Att %</div>
+              <div className="w-28 text-right text-xs text-muted-foreground font-medium">Projected EOM</div>
           </div>
           <div className="space-y-2.5">
             {categories.map((cat) => {
@@ -426,15 +426,16 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
                   }}
                   className="w-full flex items-center gap-3 rounded-md px-2 py-1 -mx-2 hover:bg-muted/50 transition-colors cursor-pointer text-left"
                 >
-                  <div className="w-44 text-sm font-medium truncate">{cat.category}</div>
+                  <div className="w-44 text-sm font-medium truncate" title={cat.category}>{cat.category}</div>
                   <div className="flex-1 bg-muted/40 rounded-full h-2 overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all ${cat.ragBand === "green" ? "bg-emerald-500" : cat.ragBand === "amber" ? "bg-amber-500" : "bg-red-500"}`}
                       style={{ width: `${Math.min(pct_val, 100)}%` }}
                     />
                   </div>
-                  <div className="w-14 text-right text-sm font-mono text-muted-foreground">{pct(cat.attainmentCumPct)}</div>
                   <Badge variant="outline" className={`text-xs w-24 justify-end font-mono ${cc.badge}`}>{fmt(cat.producedToDate)} pcs</Badge>
+                  <div className="w-24 text-right text-xs text-muted-foreground font-mono">{fmt(cat.targetMax)}</div>
+                  <div className="w-14 text-right text-sm font-mono text-muted-foreground">{pct(cat.attainmentCumPct)}</div>
                   <div className={`w-28 text-right text-sm font-mono font-semibold ${projectedPcs === null ? "text-muted-foreground" : projOk ? "text-emerald-600" : "text-red-500"}`}>
                     {projectedPcs !== null ? (
                       <span title={`${projPct?.toFixed(1)}% of target at current pace`}>
@@ -442,7 +443,6 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
                       </span>
                     ) : "–"}
                   </div>
-                  <div className="text-xs text-muted-foreground w-24 text-right">{fmt(cat.targetMax)}</div>
                 </button>
               );
             })}

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Redirect, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -77,6 +77,9 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
     >
       <Switch>
         <Route path="/">
+          <Redirect to="/plant" />
+        </Route>
+        <Route path="/machines">
           <Dashboard month={month} />
         </Route>
         <Route path="/velocity">

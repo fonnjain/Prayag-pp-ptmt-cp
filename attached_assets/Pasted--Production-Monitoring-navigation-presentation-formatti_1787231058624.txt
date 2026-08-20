@@ -1,0 +1,131 @@
+# Production Monitoring — navigation, presentation & formatting review
+
+Reviewed the five screens in `Production_Monitoring.docx`. **Scope is navigation, presentation and formatting only.** No calculation, data-source or metric change is proposed anywhere below, and no figure shown on these screens is being questioned.
+
+Twelve items, grouped by type and ordered by impact.
+
+---
+
+## A. Navigation
+
+### A1. The app lands on Machine Level, not Plant Level ⬤ high
+
+*"First page goes to Machine Level Tab."*
+
+Screen 1 opens on **Machine Dashboard** — `PTMT machine-level performance` — while the sidebar shows only the **PLANT LEVEL** group. So the landing route sits in a section the user cannot see in the nav at that moment.
+
+Compounding it, every KPI on that page is empty: `UTILISATION –`, `OUTPUT (KG) –`, `RUN HOURS – of – · 0/0 machines active`, `No machines match ""`. A first-time user's first impression is a blank screen.
+
+**Default the landing route to Plant Level → Control Board.** That is the page with content, and it matches the sidebar's first entry.
+
+### A2. No active-state on the sidebar ⬤ high
+
+On screen 1 the content is Machine Dashboard, yet **no sidebar item is highlighted**. The user cannot tell where they are.
+
+Screens 4 and 5 have the same problem: the content is Category Breakdown, reached from Control Board, and nothing in the nav indicates that. Apply the selected-state styling already used on the top bar (`Production Monitoring` in orange) to the active sidebar item.
+
+### A3. The sidebar renders empty on one screen ⬤ high
+
+Screen 2 (Control Board) shows the sidebar as a **solid dark panel with no items at all** — no PLANT LEVEL group, no entries. Screens 3, 4 and 5 render it fully.
+
+Whatever the trigger — scroll position, a render race, a collapsed state — the user is left with no navigation at all on that view.
+
+### A4. The MACHINE LEVEL group appears inconsistently ⬤ medium
+
+| Screen | PLANT LEVEL | MACHINE LEVEL |
+|---|---|---|
+| 1 (Machine Dashboard) | shown | **not shown** |
+| 2 (Control Board) | not shown | not shown |
+| 3 (Category Breakdown) | shown | shown |
+| 4 (All Types open) | shown | shown |
+| 5 (Category Breakdown) | shown | shown |
+
+Screen 1 is the worst case: the user is *on* a Machine Level page with the Machine Level group absent. Both groups should render on every view.
+
+---
+
+## B. Layout
+
+### B1. The sticky header overlaps page content when scrolled ⬤ high
+
+On screens 2 and 3 the title *"Production Performance & Monitoring"* is **cut through horizontally** — the top strip of the text is clipped and the segment toggle, type filter, period and month controls sit half-hidden behind it.
+
+The cropped detail confirms it: `Performance &` / `Monitoring` overlaps `PTMT | Plumbing`, `All Types`, `Month`.
+
+The sticky header needs its own opaque background and a `z-index` above the content, with the scroll container padded by the header's height so nothing scrolls underneath.
+
+### B2. A horizontal scrollbar floats over the content ⬤ high
+
+Screens 2, 3, 4 and 5 all show a **grey rounded bar in the middle of the page**, sitting on top of the cards — on screen 3 it lands directly over the `Min PP` value in Category Detail, making the number unreadable.
+
+That is the page's horizontal scrollbar: the layout is wider than the viewport. Either constrain the content width or scope horizontal scrolling to the table that needs it, rather than the whole page.
+
+### B3. The header title wraps to two lines and collides ⬤ medium
+
+`Production Performance & Monitoring` breaks across two lines on screens 2 and 3 and then collides with the controls to its right. It fits on one line on screens 1, 4 and 5.
+
+Give the title a `nowrap` and let the control group wrap below it at narrow widths, or shorten it to `Production Monitoring` — the top nav already carries the full label.
+
+### B4. Account controls are clipped at the right edge ⬤ low
+
+`Users`, `ceo@prayagindia.com` and `Sign out` are cut off on screens 2 and 3, and partly on 5. Reserve their width, or collapse them to an avatar menu below a breakpoint.
+
+---
+
+## C. Charts
+
+### C1. The legend colour does not match the bars ⬤ high
+
+On screens 3, 4 and 5, *Produced vs Target (Max PP) by Category* has a legend reading **`■ Produced to Date`** in **black**, while the bars are **red** and **green**.
+
+`Remaining Gap` correctly shows grey and matches its bars. Only the first series is wrong. Make the swatch take the series colour — or, since bars are conditionally coloured by status, replace the single swatch with a small red/green key and say what each means.
+
+### C2. The Y-axis has a non-uniform top tick ⬤ high
+
+On screen 5, *Cumulative Attainment % by Category* labels its axis:
+
+```
+166.37%
+ 90%
+ 45%
+  0%
+```
+
+Intervals of 45, 45, then **76.37** — but the gridlines are evenly spaced, so the axis reads as linear while it is not. Anyone estimating a value from the chart gets it wrong.
+
+Round the domain up to a clean bound (180% or 200%) and use even ticks. Screen 4 does this correctly with `0 / 30 / 60 / 90 / 120%`.
+
+### C3. Single-category view produces a full-width bar ⬤ low
+
+On screens 3 and 4, filtering to one category leaves a single bar spanning the whole chart with a large empty area below. Cap the bar height when the series has one member, or switch to a compact summary at that point.
+
+---
+
+## D. Tables
+
+### D1. Category names truncate without a tooltip ⬤ medium
+
+`Faucets & Jetsprays & S...` on screen 2, `Faucets & Jets...` and `Cistern & Seat...` on the chart axes. The names are truncated with no way to see the full value.
+
+Widen the column, or add a `title` attribute so hovering reveals it. The Category Detail table on screen 3 shows the full name, so the width is available.
+
+### D2. `Cum Att%` header wraps awkwardly ⬤ low
+
+On screen 2 it breaks as `Cum` / `Att%` across two lines while every neighbouring header stays on one. Widen the column or shorten the label to `Att %`.
+
+### D3. Column order separates the metric from its basis ⬤ low
+
+Screen 2 reads: `Cum Att% · Produced · Projected EOM · Target (Max)`.
+
+The percentage appears before the two numbers it derives from. `Produced · Target (Max) · Cum Att% · Projected EOM` would let a reader verify the percentage against the pair beside it. Presentation only — no value changes.
+
+---
+
+## Suggested order
+
+1. **A1, A2, A3** — landing route, active state, empty sidebar. A user who cannot navigate cannot use the rest.
+2. **B1, B2** — the header overlap and the floating scrollbar both hide content outright.
+3. **C1, C2** — a mismatched legend and a non-linear axis cause misreading, which is worse than looking untidy.
+4. Everything else.
+
+**Explicitly out of scope:** every number on these screens, the attainment thresholds, the red/green banding, the warning counts, and the empty state of the machine KPIs. Those are data and logic questions, untouched here.

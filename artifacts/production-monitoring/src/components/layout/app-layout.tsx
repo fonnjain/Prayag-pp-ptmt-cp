@@ -94,7 +94,7 @@ function UserControls() {
             className="flex items-center gap-1 h-7 px-2 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
             title="User Management"
           >
-            <Users size={13} /> Users
+            <Users size={13} /> <span className="hidden lg:inline">Users</span>
           </a>
         )}
         {user.mustChangePassword && (
@@ -117,7 +117,7 @@ function UserControls() {
           className="h-7 px-2 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex items-center gap-1"
           title="Sign out"
         >
-          <LogOut size={13} /> Sign out
+          <LogOut size={13} /> <span className="hidden lg:inline">Sign out</span>
         </button>
       </div>
       <ChangePasswordDialog
@@ -189,6 +189,7 @@ export function AppLayout({
     { href: "/plant/warnings",         label: "Warnings",         icon: ShieldAlert       },
     { href: "/plant/recommendations",  label: "Recommendations",  icon: ListChecks        },
     { href: "/plant/trend",            label: "Trend",            icon: BarChart2         },
+    { href: "/plant/categories",      label: "Category Breakdown", icon: Tag              },
     { href: "/plant/config",           label: "Config",           icon: SlidersHorizontal },
     { href: "/plant/plan-import",      label: "Plan Import",      icon: Upload            },
     { href: "/plant/reports",          label: "Reports",          icon: FileText          },
@@ -199,7 +200,7 @@ export function AppLayout({
   ];
 
   const machineNavItems = [
-    { href: "/",              label: "Dashboard",    icon: LayoutDashboard },
+    { href: "/machines",      label: "Dashboard",    icon: LayoutDashboard },
     { href: "/velocity",      label: "Velocity",     icon: Activity        },
     { href: "/warnings",      label: "Warnings",     icon: AlertTriangle   },
     { href: "/quality",       label: "Quality",      icon: ActivitySquare  },
@@ -208,7 +209,7 @@ export function AppLayout({
   function navLink(item: { href: string; label: string; icon: React.ElementType }) {
     const active = location === item.href;
     return (
-      <Link key={item.href} href={item.href} className={cn(
+      <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={cn(
         "flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors",
         active
           ? "bg-sidebar-accent text-sidebar-accent-foreground border-l-2 border-sidebar-primary"
@@ -232,16 +233,16 @@ export function AppLayout({
   return (
     <>
     <CrossAppNav />
-    <div className="flex min-h-screen bg-background text-foreground pt-9">
+    <div className="flex min-h-screen overflow-x-hidden bg-background text-foreground pt-9">
       {/* Sidebar */}
-      <div className="w-64 flex-shrink-0 bg-sidebar border-r border-sidebar-border flex flex-col">
+      <div className="sticky top-9 z-20 flex h-[calc(100vh-2.25rem)] w-64 flex-shrink-0 flex-col overflow-hidden bg-sidebar border-r border-sidebar-border">
         <div className="p-6 border-b border-sidebar-border">
           <div className="flex items-center gap-3 font-bold text-sidebar-primary tracking-tight uppercase text-xl">
             <div className="w-4 h-4 bg-sidebar-primary"></div>
             {isPlumbingPage ? "Plumbing Mon" : "PTMT Mon"}
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto py-4 space-y-4">
+        <div className="min-h-0 flex-1 overflow-y-auto py-4 space-y-4">
           {isPlumbingPage ? (
             <>
               <div className="px-3">
@@ -289,90 +290,92 @@ export function AppLayout({
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-16 border-b border-border bg-card shrink-0 sticky top-0 z-10 flex items-center justify-between px-8">
-          <div className="flex items-center gap-4">
-            <h1 className="font-semibold text-lg">Production Performance &amp; Monitoring</h1>
-            {/* PTMT / Plumbing segment toggle */}
-            <div className="flex bg-muted rounded-md p-0.5 gap-0.5 text-sm">
-              <a
-                href="/monitoring/plant"
-                className={cn(
-                  "px-3 py-1 rounded transition-colors",
-                  !isPlumbingPage
-                    ? "bg-background shadow text-foreground font-medium"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >PTMT</a>
-              <a
-                href="/monitoring/plumbing"
-                className={cn(
-                  "px-3 py-1 rounded transition-colors",
-                  isPlumbingPage
-                    ? "bg-background shadow text-foreground font-medium"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >Plumbing</a>
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="relative z-30 min-h-16 shrink-0 border-b border-border bg-card px-4 py-3 shadow-sm sm:px-6 lg:px-8">
+          <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex min-w-0 basis-full items-center gap-3 xl:flex-1 xl:basis-auto">
+              <h1 className="shrink-0 whitespace-nowrap text-base font-semibold sm:text-lg">Production Performance &amp; Monitoring</h1>
+              {/* PTMT / Plumbing segment toggle */}
+              <div className="flex shrink-0 gap-0.5 rounded-md bg-muted p-0.5 text-sm">
+                <a
+                  href="/monitoring/plant"
+                  className={cn(
+                    "rounded px-3 py-1 transition-colors",
+                    !isPlumbingPage
+                      ? "bg-background font-medium text-foreground shadow"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >PTMT</a>
+                <a
+                  href="/monitoring/plumbing"
+                  className={cn(
+                    "rounded px-3 py-1 transition-colors",
+                    isPlumbingPage
+                      ? "bg-background font-medium text-foreground shadow"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >Plumbing</a>
+              </div>
             </div>
-          </div>
 
-          <div className="flex items-center gap-3">
-            {/* Type (category) filter — available for both PTMT and Plumbing plant views */}
-            {(isPlantPage || isPlumbingPage) && categoryOptions.length > 0 && (
-              <Select
-                value={selectedCategory ?? "__all__"}
-                onValueChange={(v) => setSelectedCategory(v === "__all__" ? null : v)}
-              >
-                <SelectTrigger className="w-44 h-8 text-sm">
-                  <Tag className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
-                  <SelectValue placeholder="All Types" />
+            <div className="flex min-w-0 basis-full flex-wrap items-center justify-end gap-2 xl:basis-auto">
+              {/* Type (category) filter — available for both PTMT and Plumbing plant views */}
+              {(isPlantPage || isPlumbingPage) && categoryOptions.length > 0 && (
+                <Select
+                  value={selectedCategory ?? "__all__"}
+                  onValueChange={(v) => setSelectedCategory(v === "__all__" ? null : v)}
+                >
+                  <SelectTrigger className="h-8 w-44 text-sm">
+                    <Tag className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+                    <SelectValue placeholder="All Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All Types</SelectItem>
+                    {categoryOptions.map((cat) => (
+                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
+              {/* Date range dropdown */}
+              <Select value={preset} onValueChange={(v) => setPreset(v as DatePreset)}>
+                <SelectTrigger className="h-8 w-44 text-sm">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__all__">All Types</SelectItem>
-                  {categoryOptions.map((cat) => (
-                    <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                  {(Object.keys(PRESET_LABELS) as DatePreset[]).map((key) => (
+                    <SelectItem key={key} value={key}>
+                      {PRESET_LABELS[key]}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            )}
 
-            {/* Date range dropdown */}
-            <Select value={preset} onValueChange={(v) => setPreset(v as DatePreset)}>
-              <SelectTrigger className="w-44 h-8 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(Object.keys(PRESET_LABELS) as DatePreset[]).map((key) => (
-                  <SelectItem key={key} value={key}>
-                    {PRESET_LABELS[key]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              {/* Month picker — only when "Month" is selected */}
+              {preset === "month" && (
+                <input
+                  type="month"
+                  value={customMonth}
+                  onChange={(e) => setCustomMonth(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                />
+              )}
 
-            {/* Month picker — only when "Month" is selected */}
-            {preset === "month" && (
-              <input
-                type="month"
-                value={customMonth}
-                onChange={(e) => setCustomMonth(e.target.value)}
-                className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-              />
-            )}
+              {/* Date range badge for non-month presets */}
+              {preset !== "month" && (
+                <span className="whitespace-nowrap rounded-md bg-muted px-3 py-1.5 text-xs text-muted-foreground">
+                  {dateRange.start} – {dateRange.end}
+                </span>
+              )}
 
-            {/* Date range badge for non-month presets */}
-            {preset !== "month" && (
-              <span className="text-xs text-muted-foreground bg-muted px-3 py-1.5 rounded-md whitespace-nowrap">
-                {dateRange.start} – {dateRange.end}
-              </span>
-            )}
+              {/* ── User / Auth controls ── */}
+              <UserControls />
+            </div>
           </div>
-
-          {/* ── User / Auth controls ── */}
-          <UserControls />
         </header>
 
-        <main className="flex-1 overflow-auto p-8">{children}</main>
+        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>
       </div>
     </div>
     </>
