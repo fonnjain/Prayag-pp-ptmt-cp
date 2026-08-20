@@ -1,0 +1,96 @@
+# AUDIT — Prompt 5 push (`origin/main` = `6c0ded4`)
+
+The push landed and I verified every mapped remote SHA resolves. The SHA-injection guard is well built. **But the `machine-capacity-engine` change introduced a new bug, and the "no B2 impact" result needs a caveat.**
+
+---
+
+## ✅ Verified
+
+`origin/main` = `6c0ded49b4ca0868bffbcdaf91f94cd02069dc21`. All six remote commits resolve: `559d332`, `34c9608`, `c3b46b6`, `f171bc1`, `51685f1`, `6c0ded4`. The local→remote mapping is documented, which is what the task log needed.
+
+**The SHA guard is stronger than I asked for.** `esbuild.build.mjs` resolves from `origin/main` in production (`:15`), verifies the object exists with `git cat-file -t` (`:28`), **and** cross-checks it against `git ls-remote origin refs/heads/main` (`:32–35`), refusing the build on any failure (`:38`). The `ls-remote` check is the one that actually matters — it catches a stale local `origin/main` ref, which `cat-file` alone would not. Good call.
+
+**The 44-pcs investigation was done properly.** You ran both `7c60825` and `2cd582b` and got 5,371 from each, then reasoned from the fact that B2 doesn't touch the plan-validate route. That establishes it as live-input drift rather than assuming it. Not changing the golden was right — though it should now be tracked as an open input-drift item, not left as a permanently red check.
+
+**The B2 capacity filter is correct.** `corrective-engine.ts:316` uses `new Date(\`${date}T00:00:00Z\`)` — proper UTC parsing, consistent with every other site.
+
+---
+
+## ❌ `machine-capacity-engine.ts:70` — the UTC change made it worse
+
+```javascript
+const date = new Date(year, month - 1, d);   // ← LOCAL-time constructor
+if (date.getUTCDay() !== 0) count++;          // ← UTC getter
+```
+
+Changing the getter without changing the constructor mixes the two clocks. `new Date(2026, 7, 2)` builds **local** midnight; on an IST server that is `2026-08-01T18:30:00Z`, so `getUTCDay()` reports **Saturday** for Sunday 2 August.
+
+The whole month shifts by one day:
+
+| Local date | Actual day | UTC after IST offset | `getUTCDay()` reports |
+|---|---|---|---|
+| Aug 1 | Saturday | Jul 31 | Friday |
+| **Aug 2** | **Sunday** | Aug 1 | **Saturday → counted as a working day** |
+| **Aug 3** | **Monday** | Aug 2 | **Sunday → excluded** |
+
+So on the deployment server the wrong day is excluded every week — Sundays counted, Mondays dropped. Before the change it was consistently local and therefore correct; now it is neither.
+
+**Fix:** use the UTC constructor to match the getter, as every other site does.
+
+```javascript
+const date = new Date(Date.UTC(year, month - 1, d));
+```
+
+Add a test that asserts a known Sunday is excluded — `2026-08-02` — because the current behaviour passes any test that only counts days without checking *which* days.
+
+## ⚠ "B2 caused no shortfall movement" is true, but not for the reason implied
+
+The result is real, and I can show why: `p90(sorted) = sorted[floor(n × 0.9)]`.
+
+| n | index | element |
+|--:|--:|---|
+| 7 | 6 | maximum |
+| 6 | 5 | maximum |
+
+Both select the **maximum**. Sunday output is the *lowest* value in the window (PTMT Aug 2 = 9,683 against 22k–42k on weekdays), so removing it changes the sample size but not the element p90 selects.
+
+Worked example on the PTMT Aug 1–7 window:
+
+```
+with Sunday    n=7  idx=6  → p90 = 42,848
+without Sunday n=6  idx=5  → p90 = 42,848
+```
+
+So "identical output" is correct here — **but it is an artefact of this window, not a general property.** The moment a Sunday's output lands above the p90 element, or a category has 5 days including a Sunday and drops to 4 (crossing the p90 → mean threshold at `:319`), the numbers will move.
+
+Please record it that way. "B2 has no effect" is the wrong lesson to file; the right one is "B2 has no effect when Sunday output is below the p90 element, which held for the 1–7 August window."
+
+Two consequences worth checking:
+- **Any category that had exactly 5 observed days including a Sunday now has 4** and switches from p90 to mean. Did that happen for Cistern (5 days in your A2 table)?
+- The comparison used the **stale 7 August** baseline. A fresh run at 19 August covers three Sundays (2, 9, 16) over a longer window, where the threshold crossings are far more likely.
+
+---
+
+## Outstanding
+
+**Publish.** `/api/healthz` must return `6c0ded49b4ca0868bffbcdaf91f94cd02069dc21` — report it next to `git rev-parse origin/main`. It currently reports `aec4c73…`, a local SHA that does not exist on the remote, which is exactly the failure mode the guard now prevents going forward.
+
+**Fix `machine-capacity-engine.ts:70` before publishing**, or the deployed build carries the day-shift on an IST server.
+
+**June:** your two options are correctly stated, including the `null`-not-zero condition. That needs a team decision, not more engineering.
+
+**The 13-day-stale corrective baseline** (as-of 7 August) is still unaddressed and is now the largest single distortion in the live figures — larger than anything fixed this session.
+
+---
+
+## Suggested reply
+
+> Push verified — `origin/main` = `6c0ded49…`, all six remote commits resolve, mapping documented. The SHA guard is stronger than I asked for: the `git ls-remote` cross-check at `:32–35` catches a stale local `origin/main` ref that `cat-file` alone would miss. And the 44-pcs investigation was done properly — running both commits and reasoning from B2's blast radius establishes drift rather than assuming it. Track it as an open input-drift item rather than a permanently red check.
+>
+> **One regression to fix before publishing.** `machine-capacity-engine.ts:70` now mixes clocks: `new Date(year, month - 1, d)` is a **local** constructor and `getUTCDay()` is a **UTC** getter. On an IST server `new Date(2026, 7, 2)` is `2026-08-01T18:30:00Z`, so Sunday 2 August reports as Saturday and gets counted, while Monday 3 August reports as Sunday and gets dropped. The whole month shifts by one day. It was consistently local before and therefore correct; now it is neither. Use `new Date(Date.UTC(year, month - 1, d))`, and add a test asserting `2026-08-02` is excluded — the current code passes any test that counts days without checking which.
+>
+> **On "B2 caused no movement" — true, but please record why.** `p90(sorted) = sorted[floor(n × 0.9)]`, which is index 6 of 7 and index 5 of 6 — both the maximum. Sunday output is the lowest value in the window (PTMT Aug 2 = 9,683 vs 22k–42k on weekdays), so removing it changes `n` but not the element selected: 42,848 either way. That is an artefact of this window, not a general property. It will move as soon as a Sunday lands above the p90 element, or a category with 5 observed days including a Sunday drops to 4 and crosses the p90→mean threshold at `:319`. Did that happen to Cistern, which your A2 table showed at 5 days? And note the comparison used the stale 7 August baseline; a fresh run at 19 August spans three Sundays and is much more likely to cross.
+>
+> Then publish and report `/healthz commitSha` next to `git rev-parse origin/main` — they must match. It currently reports `aec4c73…`, a local SHA absent from the remote, which is precisely what the new guard prevents.
+>
+> Separately: the corrective baselines are still as of **7 August**, thirteen days stale. That is now the largest distortion in the live figures — bigger than anything we fixed this session.
