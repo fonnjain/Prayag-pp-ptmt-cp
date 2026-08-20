@@ -94,7 +94,9 @@ async function callEndpoint(url: string): Promise<ValidateResponse> {
     if (res.ok) return res.json() as Promise<ValidateResponse>;
     const body = await res.text().catch(() => "");
     lastErr = new Error(`HTTP ${res.status} from ${url}: ${body}`);
-    if (attempt < delays.length && (res.status === 429 || res.status === 500)) {
+    const isSheetsQuotaError = res.status === 429
+      || /quota|RESOURCE_EXHAUSTED|read requests per minute/i.test(body);
+    if (attempt < delays.length && isSheetsQuotaError) {
       const wait = delays[attempt]!;
       console.log(`    ⏳  Got ${res.status} — Sheets quota; retrying in ${wait / 1000}s …`);
       await new Promise((r) => setTimeout(r, wait));
