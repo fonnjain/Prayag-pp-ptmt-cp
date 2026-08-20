@@ -60,14 +60,17 @@ export interface MachineCascadeResult {
 }
 
 /** Calendar Mon–Sat count for each week partition (W1=1–7, W2=8–14, W3=15–21, W4=22–end). */
-function calendarWorkingDaysInWeek(year: number, month: number, weekNum: 1 | 2 | 3 | 4): number {
-  const daysInMonth = new Date(year, month, 0).getDate();
+export function isCalendarWorkingDay(year: number, month: number, day: number): boolean {
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay() !== 0;
+}
+
+export function calendarWorkingDaysInWeek(year: number, month: number, weekNum: 1 | 2 | 3 | 4): number {
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const startDay = weekNum === 1 ? 1 : weekNum === 2 ? 8 : weekNum === 3 ? 15 : 22;
   const endDay = weekNum === 4 ? daysInMonth : startDay + 6;
   let count = 0;
   for (let d = startDay; d <= endDay; d++) {
-    const date = new Date(year, month - 1, d);
-    if (date.getUTCDay() !== 0) count++;
+    if (isCalendarWorkingDay(year, month, d)) count++;
   }
   return count;
 }

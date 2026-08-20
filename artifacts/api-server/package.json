@@ -7,7 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "node esbuild.build.mjs",
     "serve": "node dist/index.js",
-    "test": "tsx --test src/lib/ist-calendar.test.ts src/lib/month-lifecycle.test.ts src/lib/plant-lifecycle.test.ts src/lib/plant-engine.test.ts src/lib/corrective-capacity.test.ts src/routes/corrective.test.ts src/routes/plan-cache.test.ts src/routes/plant-cache.test.ts src/routes/plant-live.test.ts src/lib/plan-vs-actual.test.ts src/routes/auth.test.ts",
+    "test": "tsx --test src/lib/ist-calendar.test.ts src/lib/month-lifecycle.test.ts src/lib/plant-lifecycle.test.ts src/lib/plant-engine.test.ts src/lib/corrective-capacity.test.ts src/lib/machine-capacity.test.ts src/routes/corrective.test.ts src/routes/plan-cache.test.ts src/routes/plant-cache.test.ts src/routes/plant-live.test.ts src/lib/plan-vs-actual.test.ts src/routes/auth.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
