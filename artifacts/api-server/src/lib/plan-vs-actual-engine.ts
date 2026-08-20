@@ -228,9 +228,12 @@ interface ActualsOnlySnapshotRow {
 
 interface ActualsOnlySnapshotPayload {
   kind: "actuals_only";
+  sourceRowCount: number;
   lastDataDate: string | null;
   weeklyProduction: [number, number, number, number];
   totalProduction: number;
+  attainmentPct: null;
+  linearityIndex: null;
   rows: ActualsOnlySnapshotRow[];
 }
 
@@ -1219,8 +1222,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isActualsOnlyPayload(value: unknown): value is ActualsOnlySnapshotPayload {
   if (!isRecord(value) || value.kind !== "actuals_only" || !Array.isArray(value.rows)) return false;
   return typeof value.totalProduction === "number"
+    && typeof value.sourceRowCount === "number"
     && Array.isArray(value.weeklyProduction)
-    && value.weeklyProduction.length === 4;
+    && value.weeklyProduction.length === 4
+    && value.attainmentPct === null
+    && value.linearityIndex === null;
 }
 
 function buildActualsOnlyReport(
@@ -1258,7 +1264,12 @@ function buildActualsOnlyReport(
     unavailableReason: null,
     planStatus: "actuals_only",
     planStatusReason: snapshot.reason,
-    planEvidence: snapshot.evidence,
+    planEvidence: {
+      ...snapshot.evidence,
+      sourceRowCount: payload.sourceRowCount,
+      attainmentPct: payload.attainmentPct,
+      linearityIndex: payload.linearityIndex,
+    },
     linearityIndex: null,
     workingDays,
     workingDaysSource,

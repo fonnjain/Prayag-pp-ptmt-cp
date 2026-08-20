@@ -67,9 +67,12 @@ function aggregate(
 
   return {
     kind: "actuals_only" as const,
+    sourceRowCount: rows.length,
     lastDataDate,
     weeklyProduction,
     totalProduction: weeklyProduction.reduce((sum, value) => sum + value, 0),
+    attainmentPct: null,
+    linearityIndex: null,
     rows: [...byKey.values()].sort((a, b) => b.totalProduction - a.totalProduction),
   };
 }
@@ -137,6 +140,9 @@ async function main() {
   if (ptmt.totalProduction !== 933653) {
     throw new Error(`PTMT June actual total changed: expected 933653, got ${ptmt.totalProduction}`);
   }
+  if (ptmt.sourceRowCount !== 2234) {
+    throw new Error(`PTMT June source row count changed: expected 2234, got ${ptmt.sourceRowCount}`);
+  }
   await upsertSnapshot("PTMT", ptmt, "plant_ingestion_cache:2026-06");
 
   const plumbingRows = await fetchPlumbingSheet3Production(MONTH);
@@ -149,6 +155,9 @@ async function main() {
   );
   if (plumbing.totalProduction !== 1463741) {
     throw new Error(`Plumbing June actual total changed: expected 1463741, got ${plumbing.totalProduction}`);
+  }
+  if (plumbing.sourceRowCount !== 820) {
+    throw new Error(`Plumbing June source row count changed: expected 820, got ${plumbing.sourceRowCount}`);
   }
   await upsertSnapshot("Plumbing", plumbing, "Plumbing Sheet3 actuals captured once");
 
