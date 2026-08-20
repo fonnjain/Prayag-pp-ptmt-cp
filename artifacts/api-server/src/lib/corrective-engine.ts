@@ -304,6 +304,29 @@ function p90(sortedValues: number[]): number {
   return Math.round(sortedValues[Math.floor(sortedValues.length * 0.9)]!);
 }
 
+export function computeCapByCategory(
+  map: Map<string, Map<string, number>>,
+): Map<string, { cap: number; method: "p90" | "mean"; days: number }> {
+  const result = new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
+  for (const [category, dayMap] of map) {
+    // Corrective remaining days are calendar Mon–Sat. Keep Cap/Day on the
+    // same conservative basis rather than multiplying weekday capacity by a
+    // denominator that includes no future Sundays.
+    const vals = [...dayMap.entries()]
+      .filter(([date, value]) => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0 && value > 0)
+      .map(([, value]) => value)
+      .sort((a, b) => a - b);
+    if (vals.length === 0) continue;
+    if (vals.length >= 5) {
+      result.set(category, { cap: p90(vals), method: "p90", days: vals.length });
+    } else {
+      const mean = Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
+      result.set(category, { cap: mean, method: "mean", days: vals.length });
+    }
+  }
+  return result;
+}
+
 // ── Frozen baseline loader ────────────────────────────────────────────────────
 
 /**
@@ -514,27 +537,11 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     (codeCounts.get(`${category}::${normalizeCodeStrict(itemCode)}`) ?? 0) <= 1;
 
   // ── P2: Compute capPerDay from daily production (Plumbing + PTMT) ──────────
-  // p90 needs a demonstrated distribution: with ≥5 distinct production days use
-  // p90; with 1–4 days fall back to the mean of observed days (a category that
-  // HAS produced must never get Cap/Day = 0). Zero only when there is truly no
-  // production for the category — flagged NO_DEMONSTRATED_CAPACITY downstream.
+  // p90 needs a demonstrated weekday distribution: with ≥5 distinct production
+  // days use p90; with 1–4 days fall back to the weekday mean. Sunday-only
+  // production has no demonstrated normal-day capacity and remains zero,
+  // flagged NO_DEMONSTRATED_CAPACITY downstream.
   // dailyByCat is populated for both segments above; the helper below is shared.
-  const computeCapByCategory = (
-    map: Map<string, Map<string, number>>,
-  ): Map<string, { cap: number; method: "p90" | "mean"; days: number }> => {
-    const result = new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
-    for (const [category, dayMap] of map) {
-      const vals = [...dayMap.values()].filter(v => v > 0).sort((a, b) => a - b);
-      if (vals.length === 0) continue;
-      if (vals.length >= 5) {
-        result.set(category, { cap: p90(vals), method: "p90", days: vals.length });
-      } else {
-        const mean = Math.round(vals.reduce((s, v) => s + v, 0) / vals.length);
-        result.set(category, { cap: mean, method: "mean", days: vals.length });
-      }
-    }
-    return result;
-  };
   const plumbingCapByCategory = segment === "Plumbing" ? computeCapByCategory(dailyByCat) : new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
   const ptmtCapByCategory    = segment === "PTMT"     ? computeCapByCategory(dailyByCat) : new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
 
