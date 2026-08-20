@@ -1017,7 +1017,13 @@ function OverviewPlanVsActualWidget({ month, seg, standalone }: { month: string,
         <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{data.workingDays} working days</span>
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard label={data.planStatus === "actuals_only" ? "Plan baseline" : "Total Plan"} value={data.kpis.totalPlan != null ? fmtQty(data.kpis.totalPlan) : "Unavailable"} />
+         <KpiCard
+           label={data.planStatus === "actuals_only" ? "Plan baseline" : "Total Plan (daily rate)"}
+           value={data.kpis.totalPlan != null ? fmtQty(data.kpis.totalPlan) : "Unavailable"}
+           sub={data.planStatus === "issued" && data.kpis.releaseScheduleTotal != null
+             ? `Release schedule: ${fmtQty(data.kpis.releaseScheduleTotal)}`
+             : undefined}
+         />
         <KpiCard label="Production" value={fmtQty(data.kpis.totalProduction)} />
         <KpiCard
           label="Attainment"
@@ -1051,7 +1057,7 @@ function WeeklyBreakdown({ weeks, calendar }: { weeks: any[]; calendar: any[] })
               {window?.label ?? `Week ${index + 1}`}
             </p>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
-              <span className="text-muted-foreground">Plan</span>
+              <span className="text-muted-foreground">Release</span>
               <span className="text-right font-medium text-blue-700">{value(week.plan)}</span>
               <span className="text-muted-foreground">Production</span>
               <span className="text-right font-medium text-emerald-700">{value(week.production)}</span>
@@ -1084,7 +1090,14 @@ function PlanVsActualDetail({ data }: { data: any }) {
     <div className="space-y-6">
       {actualsOnly && <ActualsOnlyBanner data={data} />}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <KpiCard label={actualsOnly ? "Plan baseline" : "Plan"} value={data.kpis.totalPlan != null ? data.kpis.totalPlan.toLocaleString("en-IN") : "Unavailable"} color={actualsOnly ? "hsl(var(--muted-foreground))" : BLUE} />
+         <KpiCard
+           label={actualsOnly ? "Plan baseline" : "Total Plan (daily rate)"}
+           value={data.kpis.totalPlan != null ? data.kpis.totalPlan.toLocaleString("en-IN") : "Unavailable"}
+           color={actualsOnly ? "hsl(var(--muted-foreground))" : BLUE}
+           sub={!actualsOnly && data.kpis.releaseScheduleTotal != null
+             ? `Release schedule: ${data.kpis.releaseScheduleTotal.toLocaleString("en-IN")}`
+             : undefined}
+         />
         <KpiCard label="Production" value={data.kpis.totalProduction?.toLocaleString("en-IN")} color={GREEN} />
         <KpiCard
           label="Attainment"
@@ -1174,7 +1187,7 @@ function PlanVsActualDetail({ data }: { data: any }) {
               <tr className="bg-muted/40 border-b border-border">
                 <th className="px-3 py-2.5 text-left font-semibold sticky left-0 bg-muted/40 z-10 w-8"></th>
                 <th className="px-3 py-2.5 text-left font-semibold sticky left-8 bg-muted/40 z-10">Category / Item</th>
-                <th className="px-3 py-2.5 text-right font-semibold text-blue-700">Plan</th>
+                <th className="px-3 py-2.5 text-right font-semibold text-blue-700">Release schedule</th>
                 <th className="px-3 py-2.5 text-right font-semibold text-green-700">Production</th>
                 <th className="px-3 py-2.5 text-right font-semibold">Variance</th>
                 <th className="px-3 py-2.5 text-right font-semibold">Attainment</th>
@@ -1222,7 +1235,7 @@ function PlanVsActualDetail({ data }: { data: any }) {
                     {isEx && (
                       <tr className="border-b border-border/40 bg-slate-50/70">
                         <td colSpan={8} className="px-4 py-3">
-                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Category weekly detail</p>
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Release schedule by week</p>
                           <WeeklyBreakdown weeks={cat.weeks} calendar={data.weekCalendar} />
                         </td>
                       </tr>

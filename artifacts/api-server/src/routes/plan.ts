@@ -2354,6 +2354,7 @@ export async function computePlumbingMonitoringPayload(month: string) {
     month, lastDataDate, workingDaysElapsed,
     workingDays: workingDaysResolution.workingDays,
     workingDaysSource: workingDaysResolution.workingDaysSource,
+    positiveProductionDates: sheet3Rows.filter((row) => row.qty > 0).map((row) => row.dateStr),
     workedSundayDates,
     idleWeekdayDates,
     weeks, categories, items,

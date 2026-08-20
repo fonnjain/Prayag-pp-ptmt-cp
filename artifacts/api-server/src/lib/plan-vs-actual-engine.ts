@@ -134,8 +134,25 @@ export interface ReportInvariant {
   detail: string;
 }
 
+export function totalPlanDailyRateCapInvariant(
+  totalPlan: number,
+  largestVersionTotal: number,
+  newDemand: number,
+): ReportInvariant {
+  const expected = Math.round(largestVersionTotal + newDemand);
+  return {
+    code: "TOTAL_PLAN_DAILY_RATE_CAP",
+    ok: totalPlan <= expected,
+    expected,
+    actual: totalPlan,
+    detail: `daily-rate TOTAL PLAN must not exceed the largest governing version (${Math.round(largestVersionTotal)}) plus mid-month new demand (${newDemand})`,
+  };
+}
+
 export interface ReportKPIs {
   totalPlan: number | null;
+  /** Sum of the retained W1-W4 release buckets, not the headline plan basis. */
+  releaseScheduleTotal: number | null;
   mappedProduction: number;
   totalProduction: number;
   unmappedProduction: number;
@@ -368,6 +385,93 @@ export function buildVersionAwarePlanMap(
     v.plan = v.w1 + v.w2 + v.w3 + v.w4;
   }
   return byKey;
+}
+
+/**
+ * Calculate the headline plan from one governing version per working day.
+ *
+ * Weekly release buckets are intentionally not used here: they can contain
+ * rescheduled quantities from more than one version of the same item. Each
+ * governed day contributes that version's month total divided by the resolved
+ * working-day count, so a version change replaces the prior daily rate rather
+ * than adding another weekly bucket on top.
+ */
+export function calculateDailyRatePlanTotal(
+  month: string,
+  versionTimeline: PlanVersion[],
+  workingDays: number,
+  positiveProductionDates: readonly string[] = [],
+  includeObservedSundays = true,
+): number {
+  if (versionTimeline.length === 0 || workingDays <= 0) return 0;
+
+  const [year, monthNumber] = month.split("-").map(Number);
+  const calendarDays = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const calendarDates: string[] = [];
+  const nonSundayDates: string[] = [];
+
+  for (let day = 1; day <= calendarDays; day++) {
+    const date = `${year}-${String(monthNumber).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    calendarDates.push(date);
+    if (new Date(`${date}T00:00:00Z`).getUTCDay() !== 0) nonSundayDates.push(date);
+  }
+
+  // When working days are derived, resolveWorkingDays includes positive Sunday
+  // dates in the count. Keep those same dates in the governing sequence so the
+  // version boundary and the denominator match monitoring exactly.
+  const observedSundays = includeObservedSundays
+    ? [...new Set(positiveProductionDates)]
+        .filter((date) => date.startsWith(`${month}-`) && new Date(`${date}T00:00:00Z`).getUTCDay() === 0)
+        .sort()
+    : [];
+  const workingDates = [...nonSundayDates, ...observedSundays].sort();
+  const governedDates = workingDates.length >= workingDays
+    ? workingDates.slice(0, workingDays)
+    : [
+        ...workingDates,
+        ...calendarDates.filter((date) => !workingDates.includes(date)).slice(0, workingDays - workingDates.length),
+      ];
+
+  const total = governedDates.reduce((sum, date) => {
+    const version = versionForDate(versionTimeline, date);
+    if (!version) return sum;
+    const monthTotal = version.targets.reduce((versionSum, target) => {
+      const code = normalizeCode(target.itemCode);
+      if (code === "OPENING STOCK" || code.startsWith("DUMMY")) return versionSum;
+      return versionSum + Math.max(target.maxPcs, 0);
+    }, 0);
+    return sum + monthTotal / workingDays;
+  }, 0);
+
+  return Math.round(total);
+}
+
+function releaseScheduleTotal(categories: ReportCategory[]): number {
+  return categories.reduce((sum, category) => sum + category.plan, 0);
+}
+
+function newDemandAddedMidMonth(versionTimeline: PlanVersion[]): number {
+  let previous = new Map<string, number>();
+  let added = 0;
+
+  for (const version of versionTimeline) {
+    const current = new Map<string, number>();
+    for (const target of version.targets) {
+      const code = normalizeCode(target.itemCode);
+      if (code === "OPENING STOCK" || code.startsWith("DUMMY")) continue;
+      const key = itemKey(target.itemCode, target.colour);
+      current.set(key, (current.get(key) ?? 0) + Math.max(target.maxPcs, 0));
+    }
+
+    if (previous.size > 0) {
+      for (const [key, currentTotal] of current) {
+        added += Math.max(currentTotal - (previous.get(key) ?? 0), 0);
+      }
+    }
+    previous = current;
+  }
+
+  return Math.round(added);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -948,6 +1052,7 @@ function buildInvariants(
   categories: ReportCategory[],
   kpis: ReportKPIs,
   _weekCalendar: WeekCalendarEntry[],
+  versionTimeline: PlanVersion[] = [],
 ): ReportInvariant[] {
   const inv: ReportInvariant[] = [];
 
@@ -961,11 +1066,11 @@ function buildInvariants(
 
   const catPlanSum = categories.reduce((s, c) => s + c.plan, 0);
   inv.push({
-    code: "CAT_PLAN_SUM",
-    ok: catPlanSum === kpis.totalPlan,
-    expected: kpis.totalPlan ?? 0,
+    code: "RELEASE_SCHEDULE_SUM",
+    ok: catPlanSum === kpis.releaseScheduleTotal,
+    expected: kpis.releaseScheduleTotal ?? 0,
     actual: catPlanSum,
-    detail: "sum of category plans equals total plan",
+    detail: "sum of category release schedules equals the W1-W4 release schedule total",
   });
 
   const catProdSum = categories.reduce((s, c) => s + c.production, 0);
@@ -1050,6 +1155,19 @@ function buildInvariants(
     actual: categories.length,
     detail: "distinct categories in report",
   });
+
+  if (kpis.totalPlan !== null && versionTimeline.length > 0) {
+    const versionTotals = versionTimeline.map((version) =>
+      version.targets.reduce((sum, target) => {
+        const code = normalizeCode(target.itemCode);
+        if (code === "OPENING STOCK" || code.startsWith("DUMMY")) return sum;
+        return sum + Math.max(target.maxPcs, 0);
+      }, 0),
+    );
+    const largestVersionTotal = Math.max(...versionTotals, 0);
+    const newDemand = newDemandAddedMidMonth(versionTimeline);
+    inv.push(totalPlanDailyRateCapInvariant(kpis.totalPlan, largestVersionTotal, newDemand));
+  }
 
   if (kpis.totalPlan == null || kpis.variance == null) return inv;
 
@@ -1292,6 +1410,7 @@ function buildActualsOnlyReport(
     weekCalendar,
     kpis: {
       totalPlan: null,
+      releaseScheduleTotal: null,
       mappedProduction: 0,
       totalProduction: payload.totalProduction,
       unmappedProduction: payload.totalProduction,
@@ -1318,7 +1437,7 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
     .select()
     .from(plantConfigsTable)
     .where(eq(plantConfigsTable.month, month));
-  const { workingDays, workingDaysSource } = resolveWorkingDays(month, configRow?.workingDays);
+  let { workingDays, workingDaysSource } = resolveWorkingDays(month, configRow?.workingDays);
 
   const weekCalendar: WeekCalendarEntry[] = buildWeekCalendar(month).map((wk) => ({
     week: wk.week,
@@ -1367,6 +1486,7 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
     weekCalendar,
     kpis: {
       totalPlan: null,
+      releaseScheduleTotal: null,
       mappedProduction: 0,
       totalProduction: 0,
       unmappedProduction: 0,
@@ -1438,6 +1558,22 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
         : "Live plan (no issued versions)";
     productionSource = "PTMT ANUJ Production sheet (daily actuals cache)";
   }
+
+  // Resolve after actuals are loaded so worked Sundays are included exactly as
+  // they are in PTMT monitoring. Closed snapshots use the frozen actual rows.
+  const positiveProductionDates = actuals
+    .filter((row) => row.qty > 0)
+    .map((row) => row.date);
+  const observedLastDataDate = positiveProductionDates.length > 0
+    ? [...positiveProductionDates].sort().at(-1) ?? null
+    : null;
+  ({ workingDays, workingDaysSource } = resolveWorkingDays(
+    month,
+    configRow?.workingDays,
+    positiveProductionDates,
+    observedLastDataDate,
+    lifecycle.state,
+  ));
 
   if (versionTimeline.length === 0) {
     return buildUnavailable("No plan versions issued for this month.");
@@ -1529,7 +1665,14 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
     .filter((r) => r.totalProduction > 0)
     .sort((a, b) => b.totalProduction - a.totalProduction);
 
-  const totalPlan = categories.reduce((s, c) => s + c.plan, 0);
+  const releasePlanTotal = releaseScheduleTotal(categories);
+  const totalPlan = calculateDailyRatePlanTotal(
+    month,
+    versionTimeline,
+    workingDays,
+    positiveProductionDates,
+    workingDaysSource !== "configured",
+  );
   const mappedProduction = categories.reduce((s, c) => s + c.production, 0);
   const unmappedProduction = unmappedByWeek.reduce((s, v) => s + v, 0);
   const totalProduction = mappedProduction + unmappedProduction;
@@ -1541,6 +1684,7 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
 
   const kpis: ReportKPIs = {
     totalPlan,
+    releaseScheduleTotal: releasePlanTotal,
     mappedProduction,
     totalProduction,
     unmappedProduction,
@@ -1571,7 +1715,7 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
           .pop() ?? null
       : null;
 
-  const invariants = buildInvariants(planMap, categories, kpis, weekCalendar);
+  const invariants = buildInvariants(planMap, categories, kpis, weekCalendar, versionTimeline);
 
   return {
     month,
@@ -1619,7 +1763,7 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
     .select()
     .from(plantConfigsTable)
     .where(eq(plantConfigsTable.month, month));
-  const { workingDays, workingDaysSource } = resolveWorkingDays(month, configRow?.workingDays);
+  let { workingDays, workingDaysSource } = resolveWorkingDays(month, configRow?.workingDays);
 
   const weekCalendar: WeekCalendarEntry[] = buildWeekCalendar(month).map((wk) => ({
     week: wk.week,
@@ -1668,6 +1812,7 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
     weekCalendar,
     kpis: {
       totalPlan: null,
+      releaseScheduleTotal: null,
       mappedProduction: 0,
       totalProduction: 0,
       unmappedProduction: 0,
@@ -1706,6 +1851,14 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
   // Cast to the known shape from computePlumbingMonitoringPayload.
   type PlumbingPayload = Awaited<ReturnType<typeof import("../routes/plan").computePlumbingMonitoringPayload>>;
   const payload = rawPayload as PlumbingPayload;
+  const positiveProductionDates = payload.positiveProductionDates ?? [];
+  ({ workingDays, workingDaysSource } = resolveWorkingDays(
+    month,
+    configRow?.workingDays,
+    positiveProductionDates,
+    payload.lastDataDate,
+    lifecycle.state,
+  ));
 
   const orderTotals = orderResult.available ? orderResult.totals : null;
   const saleTotals = saleResult.available ? saleResult.totals : null;
@@ -1819,7 +1972,14 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
       })),
     ].sort((a, b) => b.totalProduction - a.totalProduction);
 
-    const totalPlan = categories.reduce((s, c) => s + c.plan, 0);
+    const releasePlanTotal = releaseScheduleTotal(categories);
+    const totalPlan = calculateDailyRatePlanTotal(
+      month,
+      versionTimeline,
+      workingDays,
+      positiveProductionDates,
+      workingDaysSource !== "configured",
+    );
     const mappedProduction = categories.reduce((s, c) => s + c.production, 0);
     const unmappedProduction = outOfPlan.reduce((sum, row) => sum + row.totalProduction, 0);
     const totalProduction = mappedProduction + unmappedProduction;
@@ -1831,6 +1991,7 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
 
     const kpis: ReportKPIs = {
       totalPlan,
+      releaseScheduleTotal: releasePlanTotal,
       mappedProduction,
       totalProduction,
       unmappedProduction,
@@ -1852,7 +2013,7 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
       auditLabel: buildAuditLabel(v),
     }));
 
-    const invariants = buildInvariants(planMap, categories, kpis, weekCalendar);
+    const invariants = buildInvariants(planMap, categories, kpis, weekCalendar, versionTimeline);
     invariants.push({
       code: "PLUMBING_PRODUCTION_CONSERVATION",
       ok: totalProduction === payload.totalProduced,
@@ -1970,7 +2131,10 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
     ...fallbackOutOfPlan,
   ].sort((a, b) => b.totalProduction - a.totalProduction);
 
-  const totalPlan = categories.reduce((s, c) => s + c.plan, 0);
+  const releasePlanTotal = releaseScheduleTotal(categories);
+  // Without an issued timeline there is no version switch to attribute. A
+  // single fallback plan distributed at the daily rate sums back to itself.
+  const totalPlan = workingDays > 0 ? Math.round(releasePlanTotal) : 0;
   const mappedProduction = categories.reduce((s, c) => s + c.production, 0);
   const unmappedProduction = outOfPlan.reduce((sum, row) => sum + row.totalProduction, 0);
   const totalProduction = mappedProduction + unmappedProduction;
@@ -1982,6 +2146,7 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
 
   const kpis: ReportKPIs = {
     totalPlan,
+    releaseScheduleTotal: releasePlanTotal,
     mappedProduction,
     totalProduction,
     unmappedProduction,

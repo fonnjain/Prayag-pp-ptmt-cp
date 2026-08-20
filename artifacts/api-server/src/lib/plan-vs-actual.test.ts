@@ -21,6 +21,8 @@ import {
   achievementPct,
   isPlumbingUnmatchedGroup,
   buildVersionAwarePlanMap,
+  calculateDailyRatePlanTotal,
+  totalPlanDailyRateCapInvariant,
   fetchOrderDatedTotals,
   fetchSaleDatedTotals,
   type DatedTotals,
@@ -580,6 +582,78 @@ describe("buildVersionAwarePlanMap", () => {
       entry.w1 + entry.w2 + entry.w3 + entry.w4,
       "item total must be derived from its rounded weekly quantities",
     );
+  });
+
+  it("uses one version month total per working day for the headline plan", () => {
+    const v1 = makeVersion(1, "2026-08-01", "2026-08-05", [
+      { itemCode: "RATE-1", colour: "", category: "CAT1", w1: 1000, w2: 0, w3: 0, w4: 0 },
+    ]);
+    const v2 = makeVersion(2, "2026-08-05", null, [
+      { itemCode: "RATE-1", colour: "", category: "CAT1", w1: 2000, w2: 0, w3: 0, w4: 0 },
+    ]);
+
+    // August 2026 has 26 non-Sunday working days. v1 governs 3 of them
+    // (Aug 1, 3, 4); v2 governs the remaining 23.
+    const expected = Math.round((3 * 1000 + 23 * 2000) / 26);
+    assert.equal(calculateDailyRatePlanTotal("2026-08", [v1, v2], 26), expected);
+  });
+
+  it("does not use the sum of repeated weekly release buckets as TOTAL PLAN", () => {
+    const v1 = makeVersion(1, "2026-08-01", "2026-08-05", [
+      { itemCode: "REPEAT-1", colour: "WHITE", category: "CAT1", w1: 1000, w2: 0, w3: 0, w4: 0 },
+    ]);
+    const v2 = makeVersion(2, "2026-08-05", null, [
+      { itemCode: "REPEAT-1", colour: "WHITE", category: "CAT1", w1: 1000, w2: 0, w3: 0, w4: 0 },
+    ]);
+
+    const dailyRateTotal = calculateDailyRatePlanTotal("2026-08", [v1, v2], 26);
+    assert.equal(dailyRateTotal, 1000);
+    assert.equal(1000 + 1000, 2000, "the repeated release buckets are a separate schedule view");
+  });
+
+  it("includes a worked Sunday in the governed working-day sequence", () => {
+    const v1 = makeVersion(1, "2026-08-01", "2026-08-17", [
+      { itemCode: "SUNDAY-1", colour: "", category: "CAT1", w1: 100, w2: 0, w3: 0, w4: 0 },
+    ]);
+    const v2 = makeVersion(2, "2026-08-17", null, [
+      { itemCode: "SUNDAY-1", colour: "", category: "CAT1", w1: 200, w2: 0, w3: 0, w4: 0 },
+    ]);
+
+    const total = calculateDailyRatePlanTotal(
+      "2026-08",
+      [v1, v2],
+      27,
+      ["2026-08-02"],
+    );
+
+    // Aug 2 is Sunday and must use v1; Aug 17 switches to v2.
+    assert.equal(total, Math.round((14 * 100 + 13 * 200) / 27));
+  });
+
+  it("keeps a single governing version equal to its month total", () => {
+    const version = makeVersion(1, "2026-08-01", null, [
+      { itemCode: "SINGLE-1", colour: "", category: "CAT1", w1: 1234, w2: 0, w3: 0, w4: 0 },
+    ]);
+    assert.equal(calculateDailyRatePlanTotal("2026-08", [version], 26), 1234);
+  });
+
+  it("includes genuinely added demand only on dates governed by the new version", () => {
+    const v1 = makeVersion(1, "2026-08-01", "2026-08-15", [
+      { itemCode: "ADDED-1", colour: "", category: "CAT1", w1: 100, w2: 0, w3: 0, w4: 0 },
+    ]);
+    const v2 = makeVersion(2, "2026-08-15", null, [
+      { itemCode: "ADDED-1", colour: "", category: "CAT1", w1: 300, w2: 0, w3: 0, w4: 0 },
+    ]);
+    assert.equal(
+      calculateDailyRatePlanTotal("2026-08", [v1, v2], 26),
+      Math.round((12 * 100 + 14 * 300) / 26),
+    );
+  });
+
+  it("fails the daily-rate cap when the headline total exceeds the allowed basis", () => {
+    const invariant = totalPlanDailyRateCapInvariant(500, 400, 50);
+    assert.equal(invariant.ok, false);
+    assert.equal(invariant.code, "TOTAL_PLAN_DAILY_RATE_CAP");
   });
 });
 

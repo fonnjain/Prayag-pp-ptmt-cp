@@ -106,14 +106,15 @@ export async function generatePlanVsActualXlsx(report: PlanVsActualReport): Prom
     ["Sales Available", report.sources.sales.available ? "Yes" : "No", report.sources.sales.note],
     ["", "", ""],
     ["── KPIs ──", "", ""],
-    ["Total Plan (pcs)", report.kpis.totalPlan, "Sum of all planned items"],
+    ["Total Plan (daily-rate pcs)", report.kpis.totalPlan, "One governing plan version per working day"],
+    ["Release Schedule Total (pcs)", report.kpis.releaseScheduleTotal, "Sum of the retained W1-W4 release buckets; not the headline total"],
     ["Mapped Production (pcs)", report.kpis.mappedProduction, "Production matched to plan items"],
     ["Total Production (pcs)", report.kpis.totalProduction, "Mapped + unmapped"],
     ["Unmapped Production (pcs)", report.kpis.unmappedProduction, "Codes not in plan"],
     ["Order Qty", report.kpis.orderQty ?? "N/A", "null when source unavailable"],
     ["Sale Qty", report.kpis.saleQty ?? "N/A", "null when source unavailable"],
-    ["Variance (pcs)", report.kpis.variance, "Mapped production − plan"],
-    ["Achievement %", report.kpis.achievementPct ?? "N/A", "Mapped production / plan × 100"],
+    ["Variance (pcs)", report.kpis.variance, "Mapped production − daily-rate total plan"],
+    ["Achievement %", report.kpis.achievementPct ?? "N/A", "Mapped production / daily-rate total plan × 100"],
     ["Achievement Remark", report.kpis.achievementRemark ?? "N/A", "UNDER < 80% / ON TARGET 80–110% / OVER > 110%"],
     ["Planned Item Count", report.kpis.plannedItemCount, "Items with plan > 0"],
     ["Category Count", report.kpis.categoryCount, "Distinct categories in report"],
@@ -181,11 +182,11 @@ export async function generatePlanVsActualXlsx(report: PlanVsActualReport): Prom
 
   // Week header row
   const wkHdr1 = wsCat.addRow([
-    "Category", "Items", "Plan", "Production", "Orders", "Sales", "Variance", "Ach %", "Remark",
-    weekHeader(report, 0, "Plan"), weekHeader(report, 0, "Prod"),
-    weekHeader(report, 1, "Plan"), weekHeader(report, 1, "Prod"),
-    weekHeader(report, 2, "Plan"), weekHeader(report, 2, "Prod"),
-    weekHeader(report, 3, "Plan"), weekHeader(report, 3, "Prod"),
+    "Category", "Items", "Release Schedule", "Production", "Orders", "Sales", "Variance", "Ach %", "Remark",
+    weekHeader(report, 0, "Release"), weekHeader(report, 0, "Prod"),
+    weekHeader(report, 1, "Release"), weekHeader(report, 1, "Prod"),
+    weekHeader(report, 2, "Release"), weekHeader(report, 2, "Prod"),
+    weekHeader(report, 3, "Release"), weekHeader(report, 3, "Prod"),
   ]);
   setHeaderRow(wkHdr1);
   wkHdr1.getCell(1).alignment = { horizontal: "left" };
@@ -239,11 +240,11 @@ export async function generatePlanVsActualXlsx(report: PlanVsActualReport): Prom
   ];
 
   const itemHdr = wsItems.addRow([
-    "Category", "Item Code", "Colour", "Plan", "Production", "Orders", "Sales", "Variance", "Ach %", "Remark",
-    weekHeader(report, 0, "Plan"), weekHeader(report, 0, "Prod"),
-    weekHeader(report, 1, "Plan"), weekHeader(report, 1, "Prod"),
-    weekHeader(report, 2, "Plan"), weekHeader(report, 2, "Prod"),
-    weekHeader(report, 3, "Plan"), weekHeader(report, 3, "Prod"),
+    "Category", "Item Code", "Colour", "Release Schedule", "Production", "Orders", "Sales", "Variance", "Ach %", "Remark",
+    weekHeader(report, 0, "Release"), weekHeader(report, 0, "Prod"),
+    weekHeader(report, 1, "Release"), weekHeader(report, 1, "Prod"),
+    weekHeader(report, 2, "Release"), weekHeader(report, 2, "Prod"),
+    weekHeader(report, 3, "Release"), weekHeader(report, 3, "Prod"),
   ]);
   setHeaderRow(itemHdr);
   itemHdr.eachCell((c) => { c.alignment = { horizontal: "left" }; });
