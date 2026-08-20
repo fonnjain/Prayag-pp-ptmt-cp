@@ -1,0 +1,74 @@
+# PROMPT 1b — Corrected: the PTMT archive used the wrong workbook
+
+**Stopping was correct.** The reconciliation check did exactly what it was for. But the mismatch is not drift — it is a source mismatch, and the diagnosis is clean.
+
+---
+
+## The app does not read `Daily Production PTMT JUN ' 2026`
+
+`plant-ingestion.ts:66` → `fetchDailyActuals()`:
+
+```typescript
+rows = await getTabValues(SHEET_IDS.ptmtAnuj, "Production", "A1:F500000");
+```
+
+and `sheets.ts:78`:
+
+```typescript
+export const SHEET_IDS = {
+  ptmtAnuj: "1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw",
+```
+
+PTMT actuals come from **PTMT ANUJ → `Production` tab** — the cumulative multi-year workbook, `1AGmksx4…`. You archived `170xrcWD…` (`Daily Production PTMT JUN ' 2026`) and reconciled its **P-DATA** tab against a cache built from a completely different workbook.
+
+You already had this right elsewhere: your own table lists **"August PTMT current source: `1AGmksx4…`"**. The June row just picked the monthly file by name.
+
+So the archive is invalid for PTMT, and the reconciliation was apples-to-oranges. Plumbing was correct — the resolver genuinely selects the monthly workbook for that segment, and it matched exactly.
+
+## Two independent facts confirm this isn't drift
+
+**The timestamps rule it out.** The PTMT monthly workbook's `modifiedTime` is **2026-07-07T09:16:51Z**; the cache was captured **2026-07-08T08:58:39Z** — a day *later*. That file has not been touched since before the capture, so nothing could have been deleted from it afterwards. Whatever the difference is, it predates the cache.
+
+**The shape of the gap is a whole day, not scatter.** 79 rows / 34,847 pcs is **exactly** PTMT's June 30 from your diagnostic:
+
+| | Rows | Qty |
+|---|--:|--:|
+| Jun 30 (Tue), per the diagnostic | 79 | 34,847 |
+| Archive vs cache difference | 79 | 34,847 |
+
+Drift across a seven-week window would show as scattered edits. A single clean day means the two records simply end on different dates.
+
+---
+
+## A real finding worth raising with the team
+
+The two PTMT records of June 2026 disagree by one full day: **`Daily Production PTMT JUN ' 2026` stops at June 29, while PTMT ANUJ carries June 30.** Both are records of the same month, maintained in parallel, and they don't agree.
+
+Nothing in the app breaks — it reads ANUJ, which has the complete month. But someone reading the monthly sheet sees a June that is 34,847 pcs short. Please flag it; it's a process question, not a code one.
+
+---
+
+## What to do now
+
+**1. Archive the correct PTMT source.** `PTMT ANUJ` = `1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw`.
+
+**2. But a file copy is not enough for this one, and this is the important part.** PTMT ANUJ is **cumulative and live** — its Production tab runs from 1-Apr-2024, and its `modifiedTime` is **2026-08-20**, today. June rows inside it stay editable indefinitely. A copy taken now freezes today's state, but the *original* keeps moving, so a copy alone doesn't tell anyone later which rows were June's at close.
+
+Archive a **filtered June extract** as the authoritative artefact:
+
+- Read `PTMT ANUJ → Production`, filter to dates in 2026-06, export `date, code, colour, qty` to a file.
+- Reconcile against the cache: expect **2,234 rows / 933,653 pcs**.
+- SHA-256 it.
+- Keep the whole-file copy too, as a secondary reference.
+
+**3. Then finish the remaining prompt-1 items** that were correctly blocked:
+- SHA-256 for the Plumbing June export (already reconciled at 820 / 1,463,741 — that one is sound).
+- The two August dated reference exports: PTMT 1,058 / 573,456 (through Aug 19) and Plumbing 440 / 696,179 (through Aug 13, last complete day Aug 12).
+
+## One note on your table
+
+Byte size is not a validity check for Drive copies — Google re-serialises, so your Plumbing archive is 680 bytes *larger* than the original and the PTMT one 10,012 bytes *smaller*. Neither indicates a problem. Row count and total quantity are the right checks, and using them is what caught this.
+
+## Report back
+
+The corrected PTMT June extract with its row count, total quantity and SHA-256; the four SHA-256 values; and confirmation that the June total reconciles to 2,234 / 933,653. Then stop — prompt 2 follows.
