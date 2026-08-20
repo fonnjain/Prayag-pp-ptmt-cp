@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PlantLiveGatedBanner } from "@/components/plant-live-gated-banner";
 import {
   Cpu, RefreshCw, TrendingDown, TrendingUp, AlertTriangle,
   CheckCircle2, Activity, Clock, Search, ArrowUpDown,
@@ -68,6 +69,7 @@ export default function MachineDashboard({ month, plant = "PTMT" }: { month: str
   const overall: PlantLiveMachineMetrics | undefined = d?.overall;
   const period = d?.period;
   const byMachine: Record<string, PlantLiveMachineMetrics> = d?.by_machine ?? {};
+  const figuresGated = d?.figures_gated === true;
 
   const machines: [string, PlantLiveMachineMetrics][] = Object.entries(byMachine).filter(
     ([name]) => !search || name.toLowerCase().includes(search.toLowerCase())
@@ -127,49 +129,51 @@ export default function MachineDashboard({ month, plant = "PTMT" }: { month: str
         </Button>
       </header>
 
+      {figuresGated && <PlantLiveGatedBanner />}
+
       {/* Hero KPI row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className={`border ${overall?.util_available ? "border-primary/20 bg-primary/5" : "border-border/50"}`}>
+        <Card className={`border ${figuresGated ? "border-amber-500/20 bg-amber-500/5" : overall?.util_available ? "border-primary/20 bg-primary/5" : "border-border/50"}`}>
           <CardContent className="p-5">
             <div className="flex items-center gap-2 mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               <Activity className="h-3.5 w-3.5" /> Utilisation
             </div>
-            <div className={`text-3xl font-bold ${ragText(overall?.util_rating)}`}>
-              {overall?.utilisation != null ? `${fmt(overall.utilisation)}%` : "–"}
+            <div className={`text-3xl font-bold ${figuresGated ? "text-muted-foreground/70" : ragText(overall?.util_rating)}`}>
+              {figuresGated ? "–" : overall?.utilisation != null ? `${fmt(overall.utilisation)}%` : "–"}
             </div>
-            <div className="text-xs text-muted-foreground mt-1">{overall?.util_rating?.toUpperCase() ?? "–"}</div>
+            <div className="text-xs text-muted-foreground mt-1">{figuresGated ? "Needs review" : overall?.util_rating?.toUpperCase() ?? "–"}</div>
           </CardContent>
         </Card>
 
-        <Card className="border-border/50">
+        <Card className={`border ${figuresGated ? "border-amber-500/20 bg-amber-500/5" : "border-border/50"}`}>
           <CardContent className="p-5">
             <div className="flex items-center gap-2 mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               <TrendingUp className="h-3.5 w-3.5" /> Output (kg)
             </div>
-            <div className="text-3xl font-bold">{fmtNum(overall?.good_count)}</div>
-            <div className="text-xs text-muted-foreground mt-1">good output · {overall?.unit ?? "kg"}</div>
+            <div className="text-3xl font-bold text-muted-foreground/70">{figuresGated ? "–" : fmtNum(overall?.good_count)}</div>
+            <div className="text-xs text-muted-foreground mt-1">{figuresGated ? "Needs review" : `good output · ${overall?.unit ?? "kg"}`}</div>
           </CardContent>
         </Card>
 
-        <Card className={`border ${(overall?.rejection_pct ?? 0) > 5 ? "border-red-500/20 bg-red-500/5" : "border-border/50"}`}>
+        <Card className={`border ${figuresGated ? "border-amber-500/20 bg-amber-500/5" : (overall?.rejection_pct ?? 0) > 5 ? "border-red-500/20 bg-red-500/5" : "border-border/50"}`}>
           <CardContent className="p-5">
             <div className="flex items-center gap-2 mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               <TrendingDown className="h-3.5 w-3.5" /> Rejection
             </div>
-            <div className={`text-3xl font-bold ${(overall?.rejection_pct ?? 0) > 5 ? "text-red-500" : (overall?.rejection_pct ?? 0) > 2 ? "text-amber-600" : "text-emerald-600"}`}>
-              {fmt(overall?.rejection_pct)}%
+            <div className={`text-3xl font-bold ${figuresGated ? "text-muted-foreground/70" : (overall?.rejection_pct ?? 0) > 5 ? "text-red-500" : (overall?.rejection_pct ?? 0) > 2 ? "text-amber-600" : "text-emerald-600"}`}>
+              {figuresGated ? "–" : `${fmt(overall?.rejection_pct)}%`}
             </div>
-            <div className="text-xs text-muted-foreground mt-1">{fmtNum(overall?.reject_count)} kg rejected</div>
+            <div className="text-xs text-muted-foreground mt-1">{figuresGated ? "Needs review" : `${fmtNum(overall?.reject_count)} kg rejected`}</div>
           </CardContent>
         </Card>
 
-        <Card className="border-border/50">
+        <Card className={`border ${figuresGated ? "border-amber-500/20 bg-amber-500/5" : "border-border/50"}`}>
           <CardContent className="p-5">
             <div className="flex items-center gap-2 mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               <Clock className="h-3.5 w-3.5" /> Run Hours
             </div>
-            <div className="text-3xl font-bold">{fmtNum(overall?.actual_hours)}</div>
-            <div className="text-xs text-muted-foreground mt-1">of {fmtNum(overall?.ideal_hours)} ideal · {activeMachines}/{machines.length} machines active</div>
+            <div className="text-3xl font-bold text-muted-foreground/70">{figuresGated ? "–" : fmtNum(overall?.actual_hours)}</div>
+            <div className="text-xs text-muted-foreground mt-1">{figuresGated ? "Needs review" : `of ${fmtNum(overall?.ideal_hours)} ideal · ${activeMachines}/${machines.length} machines active`}</div>
           </CardContent>
         </Card>
       </div>
@@ -184,7 +188,9 @@ export default function MachineDashboard({ month, plant = "PTMT" }: { month: str
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {topPerformers.map(([name, m]) => (
+            {figuresGated ? (
+              <div className="py-2 text-sm text-muted-foreground">Ranked machine KPIs are withheld until source review is complete.</div>
+            ) : topPerformers.map(([name, m]) => (
               <div key={name} className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
                 <span className="text-sm font-medium">{name}</span>
                 <div className="flex items-center gap-3">
@@ -195,7 +201,7 @@ export default function MachineDashboard({ month, plant = "PTMT" }: { month: str
                 </div>
               </div>
             ))}
-            {topPerformers.length === 0 && <div className="text-muted-foreground text-sm py-2">No data</div>}
+            {!figuresGated && topPerformers.length === 0 && <div className="text-muted-foreground text-sm py-2">No data</div>}
           </CardContent>
         </Card>
 
@@ -207,7 +213,9 @@ export default function MachineDashboard({ month, plant = "PTMT" }: { month: str
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {worstRejection.map(([name, m]) => (
+            {figuresGated ? (
+              <div className="py-2 text-sm text-muted-foreground">Ranked machine KPIs are withheld until source review is complete.</div>
+            ) : worstRejection.map(([name, m]) => (
               <div key={name} className="flex items-center justify-between py-1.5 border-b border-border/30 last:border-0">
                 <span className="text-sm font-medium">{name}</span>
                 <div className="flex items-center gap-3">
@@ -218,7 +226,7 @@ export default function MachineDashboard({ month, plant = "PTMT" }: { month: str
                 </div>
               </div>
             ))}
-            {worstRejection.length === 0 && (
+            {!figuresGated && worstRejection.length === 0 && (
               <div className="flex items-center gap-2 text-sm text-emerald-600 py-2">
                 <CheckCircle2 className="h-4 w-4" /> No rejection recorded
               </div>
@@ -271,30 +279,30 @@ export default function MachineDashboard({ month, plant = "PTMT" }: { month: str
                   <tr key={name} className="hover:bg-muted/20 transition-colors">
                     <td className="py-2.5 px-4 font-medium">{name}</td>
                     <td className="py-2.5 px-3 text-center">
-                      <Badge variant="outline" className={`text-xs ${ragBg(m.headline_rating)}`}>
-                        {m.headline != null ? `${fmt(m.headline)}%` : "–"} {m.headline_label}
+                      <Badge variant="outline" className={`text-xs ${figuresGated ? "border-amber-500/30 text-muted-foreground" : ragBg(m.headline_rating)}`}>
+                        {figuresGated ? "Needs review" : `${m.headline != null ? `${fmt(m.headline)}%` : "–"} ${m.headline_label}`}
                       </Badge>
                     </td>
                     <td className="py-2.5 px-3 text-right">
-                      {m.util_available ? (
+                      {!figuresGated && m.util_available ? (
                         <div className="flex items-center justify-end gap-2">
                           <UtilBar pct={m.utilisation} />
                           <span className={`font-mono font-semibold w-12 text-right ${ragText(m.util_rating)}`}>
                             {fmt(m.utilisation)}%
                           </span>
                         </div>
-                      ) : <span className="text-muted-foreground">–</span>}
+                      ) : <span className="text-muted-foreground/70">–</span>}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono">{fmtNum(m.good_count)}</td>
+                    <td className="py-2.5 px-3 text-right font-mono text-muted-foreground/70">{figuresGated ? "–" : fmtNum(m.good_count)}</td>
                     <td className="py-2.5 px-3 text-right">
-                      {m.rejection_pct != null ? (
+                      {!figuresGated && m.rejection_pct != null ? (
                         <span className={`font-mono font-semibold ${(m.rejection_pct) > 5 ? "text-red-500" : (m.rejection_pct) > 2 ? "text-amber-600" : "text-emerald-600"}`}>
                           {fmt(m.rejection_pct)}%
                         </span>
                       ) : <span className="text-muted-foreground">–</span>}
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono text-muted-foreground text-xs">
-                      {fmt(m.actual_hours, 0)} / {fmt(m.ideal_hours, 0)}
+                      {figuresGated ? "–" : `${fmt(m.actual_hours, 0)} / ${fmt(m.ideal_hours, 0)}`}
                     </td>
                   </tr>
                 ))}
@@ -308,19 +316,19 @@ export default function MachineDashboard({ month, plant = "PTMT" }: { month: str
                   <tr>
                     <td className="py-2.5 px-4 text-muted-foreground text-xs uppercase tracking-wider">Total / Plant</td>
                     <td className="py-2.5 px-3 text-center">
-                      <Badge variant="outline" className={`text-xs ${ragBg(overall.headline_rating)}`}>
-                        {overall.headline != null ? `${fmt(overall.headline)}%` : "–"} {overall.headline_label}
+                      <Badge variant="outline" className={`text-xs ${figuresGated ? "border-amber-500/30 text-muted-foreground" : ragBg(overall.headline_rating)}`}>
+                        {figuresGated ? "Needs review" : `${overall.headline != null ? `${fmt(overall.headline)}%` : "–"} ${overall.headline_label}`}
                       </Badge>
                     </td>
-                    <td className={`py-2.5 px-3 text-right font-mono ${ragText(overall.util_rating)}`}>
-                      {fmt(overall.utilisation)}%
+                    <td className={`py-2.5 px-3 text-right font-mono ${figuresGated ? "text-muted-foreground/70" : ragText(overall.util_rating)}`}>
+                      {figuresGated ? "–" : `${fmt(overall.utilisation)}%`}
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono">{fmtNum(overall.good_count)}</td>
-                    <td className={`py-2.5 px-3 text-right font-mono ${(overall.rejection_pct ?? 0) > 5 ? "text-red-500" : "text-emerald-600"}`}>
-                      {fmt(overall.rejection_pct)}%
+                    <td className="py-2.5 px-3 text-right font-mono text-muted-foreground/70">{figuresGated ? "–" : fmtNum(overall.good_count)}</td>
+                    <td className={`py-2.5 px-3 text-right font-mono ${figuresGated ? "text-muted-foreground/70" : (overall.rejection_pct ?? 0) > 5 ? "text-red-500" : "text-emerald-600"}`}>
+                      {figuresGated ? "–" : `${fmt(overall.rejection_pct)}%`}
                     </td>
                     <td className="py-2.5 px-4 text-right font-mono text-muted-foreground text-xs">
-                      {fmt(overall.actual_hours, 0)} / {fmt(overall.ideal_hours, 0)}
+                      {figuresGated ? "–" : `${fmt(overall.actual_hours, 0)} / ${fmt(overall.ideal_hours, 0)}`}
                     </td>
                   </tr>
                 </tfoot>

@@ -10,6 +10,7 @@ import { exportXlsx } from "@/lib/excel";
 import { WeeklyPlanVersionProvenance } from "@/components/weekly-plan-version-provenance";
 import { PlanVersionHistory, type MonitoringPlanVersion } from "@/components/plan-version-history";
 import { classifyPlantLiveError } from "@/lib/plant-live-error";
+import { PlantLiveGatedBanner } from "@/components/plant-live-gated-banner";
 
 function downloadPdf(month: string, section: string) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -519,6 +520,7 @@ function LiveMachinePanel({
     ? Object.entries<PlantLiveMachineMetrics>(liveData.by_machine).sort((a, b) => a[0].localeCompare(b[0]))
     : [];
   const period = liveData?.period;
+  const figuresGated = liveData?.figures_gated === true;
   const errorCopy = isError
     ? classifyPlantLiveError(
       { message: (error as any)?.message ?? String(error), data: (error as any)?.data },
@@ -548,6 +550,7 @@ function LiveMachinePanel({
         </div>
       </CardHeader>
       <CardContent>
+        {figuresGated && <PlantLiveGatedBanner className="mb-4" />}
         {isLoading ? (
           <div className="text-muted-foreground text-sm py-6 text-center">Loading live data…</div>
         ) : errorCopy ? (
@@ -580,32 +583,32 @@ function LiveMachinePanel({
                   <tr key={name} className="hover:bg-muted/20 transition-colors">
                     <td className="py-2 pr-3 font-medium text-foreground">{name}</td>
                     <td className="py-2 px-3 text-center">
-                      <Badge variant="outline" className={`text-xs ${ragBadge(m.headline_rating)}`}>
-                        {m.headline !== null && m.headline !== undefined ? `${fmtLive(m.headline)}%` : "–"} {m.headline_label}
+                      <Badge variant="outline" className={`text-xs ${figuresGated ? "border-amber-500/30 text-muted-foreground" : ragBadge(m.headline_rating)}`}>
+                        {figuresGated ? "Needs review" : `${m.headline !== null && m.headline !== undefined ? `${fmtLive(m.headline)}%` : "–"} ${m.headline_label}`}
                       </Badge>
                     </td>
                     <td className="py-2 px-3 text-right">
-                      {m.util_available ? (
+                      {!figuresGated && m.util_available ? (
                         <span className={m.util_rating === "green" ? "text-emerald-600" : m.util_rating === "amber" ? "text-amber-600" : "text-red-500"}>
                           {fmtLive(m.utilisation)}%
                         </span>
                       ) : <span className="text-muted-foreground">–</span>}
                     </td>
                     <td className="py-2 px-3 text-right text-muted-foreground">
-                      {m.output_efficiency !== null && m.output_efficiency !== undefined ? `${fmtLive(m.output_efficiency)}%` : "–"}
+                      {figuresGated ? "–" : m.output_efficiency !== null && m.output_efficiency !== undefined ? `${fmtLive(m.output_efficiency)}%` : "–"}
                     </td>
-                    <td className="py-2 px-3 text-right font-mono text-xs">
-                      {m.good_count !== null && m.good_count !== undefined ? Number(m.good_count).toLocaleString() : "–"}
+                    <td className="py-2 px-3 text-right font-mono text-xs text-muted-foreground/70">
+                      {figuresGated ? "–" : m.good_count !== null && m.good_count !== undefined ? Number(m.good_count).toLocaleString() : "–"}
                     </td>
                     <td className="py-2 px-3 text-right">
-                      {m.rejection_pct !== null && m.rejection_pct !== undefined ? (
+                      {!figuresGated && m.rejection_pct !== null && m.rejection_pct !== undefined ? (
                         <span className={(m.rejection_pct ?? 0) > 5 ? "text-red-500" : (m.rejection_pct ?? 0) > 2 ? "text-amber-600" : "text-emerald-600"}>
                           {fmtLive(m.rejection_pct)}%
                         </span>
                       ) : <span className="text-muted-foreground">–</span>}
                     </td>
                     <td className="py-2 pl-3 text-right font-mono text-xs text-muted-foreground">
-                      {fmtLive(m.actual_hours, 0)} / {fmtLive(m.ideal_hours, 0)}
+                      {figuresGated ? "–" : `${fmtLive(m.actual_hours, 0)} / ${fmtLive(m.ideal_hours, 0)}`}
                     </td>
                   </tr>
                 ))}
