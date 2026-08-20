@@ -1,0 +1,102 @@
+{
+  "createdAt": "2026-08-20",
+  "purpose": "Prompt 1b corrected PTMT source preservation and dated reference exports.",
+  "ptmtWholeWorkbookCopy": {
+    "id": "1ZOpA09Rcl73LSxgX6hGaiPA6h9gA2bcsd4brCBw0OP0",
+    "mimeType": "application/vnd.google-apps.spreadsheet",
+    "modifiedTime": "2026-08-20T08:35:32.970Z",
+    "name": "ARCHIVE 2026-08-20 — PTMT ANUJ (whole workbook)",
+    "size": "1"
+  },
+  "ptmtOriginalAtCopy": {
+    "id": "1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw",
+    "mimeType": "application/vnd.google-apps.spreadsheet",
+    "modifiedTime": "2026-08-20T07:49:44.761Z",
+    "name": "PTMT ANUJ",
+    "size": "1659222"
+  },
+  "cacheReconciliation": {
+    "rowCount": 2234,
+    "totalQty": 933653
+  },
+  "reconciliations": {
+    "plumbingAugust": {
+      "firstDate": "2026-08-01",
+      "lastDate": "2026-08-13",
+      "rowCount": 440,
+      "source": "Google Sheets 1XIphSUrftEKRR93GyUF_XsE5yKWQhjeKUKCpx9IeO_U / Sheet3",
+      "totalQty": 696179
+    },
+    "plumbingJune": {
+      "firstDate": "2026-06-01",
+      "lastDate": "2026-06-30",
+      "rowCount": 820,
+      "source": "Google Sheets 10kBMisQ6dNcBLNO0GuD85w1eL1BUm8tKaAb9gl8-38M / Sheet3",
+      "totalQty": 1463741
+    },
+    "ptmtAugust": {
+      "firstDate": "2026-08-01",
+      "lastDate": "2026-08-19",
+      "rowCount": 1058,
+      "source": "Google Sheets 1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw / Production",
+      "totalQty": 573456
+    },
+    "ptmtJune": {
+      "firstDate": "2026-06-01",
+      "lastDate": "2026-06-30",
+      "rowCount": 2234,
+      "source": "Google Sheets 1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw / Production",
+      "totalQty": 933653
+    }
+  },
+  "exports": [
+    {
+      "bytes": 59500,
+      "path": ".agents/outputs/2026-08-20_ptmt-june-authoritative-production.csv",
+      "sha256": "e3651edc4c54a0a7a11572f4a95110c33fc5045ff922f42e0ea6dfbef7e9d0dc",
+      "summary": {
+        "firstDate": "2026-06-01",
+        "lastDate": "2026-06-30",
+        "rowCount": 2234,
+        "source": "Google Sheets 1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw / Production",
+        "totalQty": 933653
+      }
+    },
+    {
+      "bytes": 17014,
+      "path": ".agents/outputs/2026-08-20_plumbing-june-sheet3.csv",
+      "sha256": "b6452a0490c7887b4df38afec855e0b34e5b1c22d3b388974a7df11085232531",
+      "summary": {
+        "firstDate": "2026-06-01",
+        "lastDate": "2026-06-30",
+        "rowCount": 820,
+        "source": "Google Sheets 10kBMisQ6dNcBLNO0GuD85w1eL1BUm8tKaAb9gl8-38M / Sheet3",
+        "totalQty": 1463741
+      }
+    },
+    {
+      "bytes": 28258,
+      "path": ".agents/outputs/2026-08-20_ptmt-august-production.csv",
+      "sha256": "f5f4dd1c1b4b30536381adf8a31e0cd9f61359c4f958a97072c80c14153465f4",
+      "summary": {
+        "firstDate": "2026-08-01",
+        "lastDate": "2026-08-19",
+        "rowCount": 1058,
+        "source": "Google Sheets 1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw / Production",
+        "totalQty": 573456
+      }
+    },
+    {
+      "bytes": 9089,
+      "path": ".agents/outputs/2026-08-20_plumbing-august-sheet3.csv",
+      "sha256": "183725d3a459914b5f9599fd97277c0faf5de2e3c5660848911db83274514459",
+      "summary": {
+        "firstDate": "2026-08-01",
+        "lastDate": "2026-08-13",
+        "rowCount": 440,
+        "source": "Google Sheets 1XIphSUrftEKRR93GyUF_XsE5yKWQhjeKUKCpx9IeO_U / Sheet3",
+        "totalQty": 696179
+      }
+    }
+  ]
+}
