@@ -1,0 +1,89 @@
+# ANALYSIS — Prompt 6 Part A: the June plan workbooks are not usable
+
+Stopping was correct, and the gates did exactly what they were built for. Every figure reported reconciles — I re-derived them independently and they all hold.
+
+**My recommendation: do not seek corrected workbooks. Abandon the retrospective plan and take option 2 — freeze June actuals-only.** The evidence below is why.
+
+---
+
+## The findings are worse than "mismatched counts"
+
+### PTMT — the numbers are not a plan
+
+| | Value |
+|---|--:|
+| Σ `TOTAL PLAN` | 737,106 |
+| **Σ WEEK-1 alone** | **859,916** |
+| Σ Weeks 1–4 | 883,125 |
+| Weeks − Total | **+146,019** |
+| **Σ WEEK-4** | **−14,571** |
+| Rows with negative `TOTAL PLAN` | **889** |
+| Rows failing `ΣW = Total` | **787** |
+
+**Week 1 alone exceeds the entire month's plan by 122,810 pcs**, and Week 4 is *negative*. A quarter of the rows carry a negative monthly plan.
+
+These are not reconciliation gaps. A production plan cannot have a negative quantity, and one week cannot exceed the month. Whatever those columns hold — variances, running balances, a formula range that has drifted since June — **they are not issued plan quantities.** No amount of correction to the item counts would change that.
+
+The 524 missing items are the least of it.
+
+### Plumbing — a different shape, same conclusion
+
+Item counts are close but wrong in a revealing way: **1,142 against 1,120**, with CPVC showing `FITTING 237` *and* `FITTINGs 18` — two spellings of one type. UPVC FITTING reads 264 against an expected 242.
+
+More decisive: the SWR and AGRI blocks have **no Week 1–4 columns at all**, and **SWR totals −19,120**. Overlapping duplicate blocks (SWR D/E 34 rows, AGRI L/M 51 rows) sit on top of the main populations.
+
+So Plumbing's June plan cannot be assembled with a weekly split even if the counts were fixed, and one of its four material families has a negative total.
+
+### The attainment figures confirm it
+
+| | Implied attainment |
+|---|--:|
+| PTMT | **126.66%** |
+| Plumbing | **45.15%** |
+
+A 2.8× spread between two segments in the same month, from the same planning process. That is not two plants performing differently; that is two workbooks whose "plan" columns mean different things.
+
+**Note the A4 gate caught the opposite risk to the one it was designed for.** I wrote it to detect a plan back-filled from actuals — attainment suspiciously near 100%. Instead it found figures nowhere near plausible in either direction, which is a stronger disqualification.
+
+---
+
+## Why not ask for corrected workbooks
+
+Option 1 in your report — "corrected June plan workbooks" — sounds reasonable but I would not pursue it:
+
+1. **The PTMT file was modified 2026-08-07**, two months after the month closed. Someone has already edited it. A "corrected" version produced in late August would be a *reconstruction of a reconstruction*, with no way to distinguish what was issued in June from what was fixed afterwards. That is the fabricated-provenance risk the whole exercise was meant to avoid.
+2. **Negative plan quantities and a Week 1 exceeding the month total are structural**, not transcription slips. Correcting them means *deciding* what the plan should have been — which is inventing a plan, precisely what we ruled out.
+3. **The prize is small.** June gets an attainment percentage and a linearity index. June's *actuals* — 933,653 and 1,463,741 pcs — are already preserved, hashed and committed at `047448e`, reconcilable to the unit. The production record is safe either way; only two derived ratios are at stake.
+4. **The cost is not small.** Every hour on this is an hour not spent on the corrective baselines, which are now **fourteen days stale** and are distorting *current* figures that people are acting on today.
+
+## Recommendation: option 2, and say why in the record
+
+Freeze June actuals-only, with attainment and linearity stored as `null` and rendered as *"No finalized plan for June 2026 — plan reconstruction was attempted and rejected."*
+
+And record the reason, not just the outcome. A future reader finding a null will otherwise assume nobody tried. The note should state: a contemporaneous plan workbook exists (`1Ngy-…`, created 2026-06-03), it was archived at `021ab78`, and it was rejected because its plan columns contain negative quantities and a Week-1 total exceeding the month.
+
+That is a more useful historical record than a fabricated number would have been — and it is evidence you now hold, hashed and committed, rather than an assertion.
+
+## One thing worth raising with the team separately
+
+**These workbooks are the format the new Plan-vs-Actual report is meant to reproduce.** If June's is this inconsistent — negative plans, weeks exceeding months, duplicate blocks, two spellings of `FITTING` — then the July file we based the report spec on may have the same defects, and the report would faithfully reproduce them.
+
+Worth checking the July workbook against the same four gates (item count, `ΣW = Total`, no negatives, no duplicate blocks) before the report is built on its shape. That is a genuinely valuable finding from this exercise, independent of June.
+
+---
+
+## Suggested reply
+
+> Part A verified — I re-derived every figure and they all reconcile. Stopping was right, and the gates did what they were built for.
+>
+> **Do not pursue corrected workbooks. Take option 2: freeze June actuals-only.**
+>
+> The problem isn't mismatched counts. For PTMT, **Week 1 alone (859,916) exceeds the entire month's plan (737,106) by 122,810 pcs**, Week 4 is **negative**, and 889 rows carry a negative `TOTAL PLAN`. Those columns are not issued plan quantities — they're variances, running balances or drifted formulas. No correction to item counts changes that. For Plumbing, SWR totals **−19,120**, the SWR and AGRI blocks have **no weekly columns at all**, and `FITTING` appears under two spellings. And the implied attainments — **126.66% PTMT vs 45.15% Plumbing** — differ by 2.8× in the same month under the same process, which means the two "plan" columns don't mean the same thing.
+>
+> Note the A4 gate caught the opposite of what I designed it for. I wrote it to detect a plan back-filled from actuals (attainment near 100%); it found figures implausible in both directions instead, which disqualifies them more firmly.
+>
+> Corrected workbooks aren't worth chasing: the PTMT file was already edited on 2026-08-07, so anything produced now is a reconstruction of a reconstruction; fixing negative plans means *deciding* what the plan should have been, which is inventing one; and the prize is two derived ratios when June's actuals are already preserved and hashed at `047448e`. Meanwhile the corrective baselines are fourteen days stale and distorting figures people are acting on today.
+>
+> So: freeze June actuals-only, `null` metrics, rendered as *"No finalized plan for June 2026 — plan reconstruction was attempted and rejected."* Record **why** in the memory note — that a contemporaneous workbook exists at `1Ngy-…`, was archived at `021ab78`, and was rejected for negative plan quantities and a Week-1 total exceeding the month. A future reader finding a bare null will otherwise assume nobody tried.
+>
+> **One thing to raise with the team separately:** these workbooks are the format the new Plan-vs-Actual report is meant to reproduce. If June's is this inconsistent, the July file we based the spec on may share the defects — and the report would faithfully reproduce them. Please run the July workbook through the same four gates (item count, `ΣW = Total`, no negatives, no duplicate blocks) before building on its shape.
