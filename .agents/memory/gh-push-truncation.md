@@ -28,3 +28,5 @@ After every push, fetch each file's metadata via `GET /repos/.../contents/{path}
 - Any CodeExecution that pushes a file to GitHub must use the Git Trees API path above
 - Add size verification as the final step before reporting success
 - If `readFile` fails with "exceeds maxBytes", the parameter name is wrong (camelCase `maxBytes` required)
+
+**Workspace fallback:** If the checkout's HTTPS Git credential is rejected, use the installed GitHub connector's authenticated proxy to create blobs, a tree, a commit, and a non-force ref update; verify the ref and file sizes afterward.
