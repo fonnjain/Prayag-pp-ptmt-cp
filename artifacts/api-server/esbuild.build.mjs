@@ -1,15 +1,48 @@
 import * as esbuild from "esbuild";
 import { execSync } from "node:child_process";
 
+function git(command) {
+  return execSync(command, { encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+}
+
 function resolveBuildCommitSha() {
   const injected = process.env.GIT_COMMIT?.trim();
   if (injected) return injected;
   try {
-    return execSync("git rev-parse HEAD", { encoding: "utf-8" }).trim();
+    // Publishing happens after the GitHub push. Prefer the fetched remote
+    // branch so the deployed health identity resolves to a real remote commit,
+    // not to the local commit object that the GitHub API may have rewritten.
+    if (process.env.NODE_ENV === "production") return git("git rev-parse origin/main");
+    return git("git rev-parse HEAD");
   } catch {
     return "(unknown)";
   }
 }
+
+function assertProductionShaResolvesRemotely(sha) {
+  if (process.env.NODE_ENV !== "production") return;
+  if (!/^[0-9a-f]{40}$/i.test(sha)) {
+    throw new Error(`Production build requires a full remote commit SHA, got ${JSON.stringify(sha)}`);
+  }
+  try {
+    const objectType = git(`git cat-file -t ${sha}`);
+    if (objectType !== "commit") {
+      throw new Error(`git cat-file -t ${sha} returned ${JSON.stringify(objectType)}`);
+    }
+    const remoteLine = git("git ls-remote origin refs/heads/main");
+    const remoteSha = remoteLine.split(/\s+/)[0];
+    if (remoteSha !== sha) {
+      throw new Error(`origin/main is ${remoteSha || "(missing)"}, not ${sha}`);
+    }
+  } catch (error) {
+    throw new Error(
+      `Refusing production build: injected commit ${sha} does not resolve to origin/main. ${String(error)}`,
+    );
+  }
+}
+
+const buildCommitSha = resolveBuildCommitSha();
+assertProductionShaResolvesRemotely(buildCommitSha);
 
 await esbuild.build({
   entryPoints: ["src/index.ts"],
@@ -24,7 +57,7 @@ await esbuild.build({
     "*.node",
   ],
   define: {
-    "process.env.GIT_COMMIT": JSON.stringify(resolveBuildCommitSha()),
+    "process.env.GIT_COMMIT": JSON.stringify(buildCommitSha),
   },
 });
 
