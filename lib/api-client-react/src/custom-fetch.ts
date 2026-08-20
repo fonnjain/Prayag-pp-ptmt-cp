@@ -17,6 +17,7 @@ export class ApiError extends Error {
 export const customFetch = async <T>(url: string, options: RequestInit): Promise<T> => {
   const response = await fetch(url, {
     ...options,
+    credentials: "include",
     headers: {
       ...(options.body && !(options.body instanceof FormData)
         ? { "Content-Type": "application/json" }

@@ -1,0 +1,75 @@
+# Replit prompt — READ-ONLY diagnostic: Sunday/holiday production, June & August 2026
+
+**This is a read-only investigation. Do not change any code, do not write to the database, do not commit, do not push.** Report numbers only. If anything below would require an edit to answer, say so instead of editing.
+
+---
+
+## Why
+
+`plant-engine.ts` builds its working-day list by excluding Sundays (`workingDaysInMonth`, `:169–177`), then reads only those dates out of `dailyByDate` (`:227`) and sums that array into `plantProduced` (`:237–238`). `dailyByDate` is keyed by **every** date in the loaded actuals, Sundays included.
+
+So if the factory ran on a Sunday, that output is loaded from the sheet and then dropped — missing from PRODUCED TO DATE, from attainment, from linearity, and from the projection. I need to know whether that has actually happened, and how much.
+
+I could not answer this from the Google Sheets directly: the Drive connector truncates workbooks over roughly 350 KB of extracted text (June Plumbing is 1.15 MB, June PTMT 1.84 MB), CSV export returns only the first tab, and Drive full-text search is token-based — a query for `'Aug 1, 2026'` returned the June and March workbooks, so it cannot distinguish one date from another. The API is the only reliable reader of these tabs.
+
+---
+
+## What I need
+
+For **each of the four combinations** — PTMT × 2026-06, PTMT × 2026-08, Plumbing × 2026-06, Plumbing × 2026-08 — load the actuals exactly as the app does today:
+
+- PTMT → `fetchDailyActuals(month)`
+- Plumbing → `fetchPlumbingSheet3Production(month)`
+
+Then report the following **before** any working-day filtering is applied.
+
+### 1. Every distinct production date
+
+For each date with at least one row: the date, the weekday, the row count, and the total quantity. Full list, not a summary — I want to see the gaps as well as the entries.
+
+### 2. Sunday rows specifically
+
+June 2026 Sundays: **7, 14, 21, 28**
+August 2026 Sundays: **2, 9, 16, 23, 30**
+
+For each of those nine dates: row count and total quantity. State **zero explicitly** where there is none — a missing line is ambiguous, a stated zero is not.
+
+### 3. The discarded quantity
+
+For each segment × month:
+
+```
+totalLoaded    = Σ qty over all rows returned by the fetch
+totalCounted   = Σ qty over rows whose date is a non-Sunday
+discarded      = totalLoaded − totalCounted
+```
+
+`discarded` is the production the plant dashboard is currently throwing away. Report all three numbers, in pcs.
+
+### 4. Weekdays with no production
+
+Non-Sunday dates in the month with **zero** rows — days the calendar counts as working but which produced nothing. These are the flip side: they inflate the working-day count and depress Required/Day. List them with their weekday.
+
+### 5. Working-day reconciliation
+
+| | value |
+|---|---|
+| Calendar non-Sundays | June 26 · August 26 |
+| `plant_configs.working_days` for that month, or `null` if unset | ? |
+| Distinct dates with production > 0 (observed) | ? |
+
+Three numbers per segment × month. Where they disagree, that gap is the measurement error in every pace metric for that month.
+
+### 6. Environment
+
+State plainly: which database (`/healthz` → `dbHostname`), which deployed commit (`commitSha`), and whether each month resolved as OPEN, GRACE or CLOSED. If a month is CLOSED and served from `plant_month_snapshots`, say so and report **both** the snapshot figures and a fresh read of the source sheets — a frozen month captured before this was understood will have the Sunday output already missing, and I need to see whether they differ.
+
+---
+
+## Format
+
+A plain table per segment × month plus the summary numbers. No code changes, no migration, no commit. If the fetch throws for any month — Sheets quota, a missing workbook, a date-parse guard — report the error verbatim rather than substituting zero.
+
+## One caution
+
+`GET /api/plant/bundle` is **not** a valid source for this. Its `dailySeries` is already filtered to non-Sundays, so it will report zero Sundays whether or not any were worked. The numbers must come from the raw fetch, before `workingDaysInMonth` is applied.

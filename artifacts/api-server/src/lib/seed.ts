@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { eq } from "drizzle-orm";
-import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable } from "@workspace/db";
+import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, correctivePlanRunsTable } from "@workspace/db";
 import { logger } from "./logger";
 import { SHEET_LABELS } from "./sheets";
+import { seedBootstrapAdmins } from "./user-auth";
 
 const DEFAULT_BUFFER_CATEGORIES: { name: string; multiplier: number }[] = [
   { name: "Cocks Standard", multiplier: 1.5 },
@@ -257,7 +258,32 @@ async function seedPlumbingMachines(): Promise<void> {
   if (seeded > 0) logger.info({ seeded, total: allMachines.length }, "Seeded Plumbing machine capacity rows");
 }
 
+/**
+ * Pin known regression-golden corrective runs so they cannot be accidentally
+ * deleted by the plant. This is idempotent — safe to run on every startup.
+ *
+ * PTMT run #101 is the PTMT regression golden (July 2026 W3-closed reference).
+ * Add further IDs here as new goldens are recorded.
+ */
+const GOLDEN_CORRECTIVE_RUN_IDS = [101];
+
+async function seedPinnedCorrectiveRuns(): Promise<void> {
+  for (const id of GOLDEN_CORRECTIVE_RUN_IDS) {
+    const result = await db
+      .update(correctivePlanRunsTable)
+      .set({ pinned: true })
+      .where(eq(correctivePlanRunsTable.id, id))
+      .returning({ id: correctivePlanRunsTable.id });
+    if (result.length > 0) {
+      logger.info({ runId: id }, "Pinned corrective golden run");
+    }
+    // If result.length === 0, the run doesn't exist yet in this environment —
+    // that is expected in fresh dev/CI databases and not an error.
+  }
+}
+
 export async function ensureSeedData(): Promise<void> {
+  await seedBootstrapAdmins();
   await seedBufferCategories();
   await seedItemMaster();
   await seedSyncSources();
@@ -268,4 +294,5 @@ export async function ensureSeedData(): Promise<void> {
   const { seedCategoryCapacity } = await import("./capacity-engine");
   await seedCategoryCapacity();
   await seedPlumbingMachines();
+  await seedPinnedCorrectiveRuns();
 }

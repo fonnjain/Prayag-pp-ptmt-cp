@@ -213,7 +213,7 @@ export async function runFullSync(month?: string): Promise<void> {
 // ── Scheduler ──────────────────────────────────────────────────────────────
 
 async function capturePendingClosedMonths(): Promise<void> {
-  const [{ captureUnfrozenClosedPlantMonths }, { invalidatePlantBundleCache }] = await Promise.all([
+  const [{ captureUnfrozenClosedPlantMonths, backfillLegacyPlantMonitoringSnapshots }, { invalidatePlantBundleCache }] = await Promise.all([
     import("../lib/plant-monitoring"),
     import("./plant"),
   ]);
@@ -225,6 +225,12 @@ async function capturePendingClosedMonths(): Promise<void> {
     } else {
       logger.warn({ month, code: result.code, reason: result.reason }, "Closed plant month snapshot unavailable");
     }
+  }
+  const backfills = await backfillLegacyPlantMonitoringSnapshots();
+  for (const backfill of backfills) {
+    if (!backfill.restored) continue;
+    invalidatePlantBundleCache(backfill.month);
+    logger.info({ month: backfill.month }, "Legacy closed-month plan timeline restored from immutable issued snapshots");
   }
 }
 

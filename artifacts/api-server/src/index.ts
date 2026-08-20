@@ -1,6 +1,7 @@
-import { createApp } from "./app";
+import { createApp, setDatabaseReady } from "./app";
 import { logger } from "./lib/logger";
 import { ensureSeedData } from "./lib/seed";
+import { seedBootstrapAdmins } from "./lib/seed-bootstrap";
 import { runMigrations } from "./lib/runMigrations";
 import { startSyncScheduler } from "./routes/sync";
 import { ensureBrowser } from "./lib/ensureBrowser";
@@ -26,8 +27,11 @@ async function main(): Promise<void> {
     try {
       await runMigrations();
       await ensureSeedData();
+      await seedBootstrapAdmins();
+      setDatabaseReady(true);
       logger.info("Database ready");
     } catch (err) {
+      setDatabaseReady(false);
       logger.error({ err }, "Migrations/seeding failed — server continues; DB-backed routes may error until fixed");
     }
 
@@ -46,6 +50,12 @@ async function main(): Promise<void> {
       .then(({ getPlantMonitoringCached }) => getPlantMonitoringCached(month))
       .then(() => logger.info({ month }, "Plant monitoring startup pre-warm complete"))
       .catch((err) => logger.warn({ err, month }, "Plant monitoring startup pre-warm failed"));
+
+    // Warm the live machine summary independently. It is an external API
+    // call, so it must never delay readiness or the Sheets-backed pre-warm.
+    import("./routes/plant-live")
+      .then(({ warmPlantLiveSummary }) => warmPlantLiveSummary(month, "PTMT"))
+      .catch((err) => logger.warn({ err, month }, "Plant-live startup pre-warm could not start"));
   })();
 }
 

@@ -8,6 +8,7 @@ import { useLocation } from "wouter";
 import { fmtDate } from "@/lib/utils";
 import { exportXlsx } from "@/lib/excel";
 import { WeeklyPlanVersionProvenance } from "@/components/weekly-plan-version-provenance";
+import { PlanVersionHistory, type MonitoringPlanVersion } from "@/components/plan-version-history";
 import { classifyPlantLiveError } from "@/lib/plant-live-error";
 
 function downloadPdf(month: string, section: string) {
@@ -84,10 +85,23 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
   const categories = selectedCategory
     ? allCategories.filter((c) => c.category === selectedCategory)
     : allCategories;
+  const selectedCategoryKpis = selectedCategory
+    ? allCategories.find((c) => c.category === selectedCategory)
+    : undefined;
+  // Category selection must scope the headline/KPI cards as well as the
+  // category table. Previously only the lower drill-down changed, which made
+  // the filter appear broken because the prominent numbers stayed plant-wide.
+  const displayPlant = selectedCategoryKpis ?? plant;
+  const categoryItemCodes = selectedCategory
+    ? new Set(bundle.items.filter((item) => item.category === selectedCategory).map((item) => item.itemCode))
+    : null;
+  const scopedWarnings = selectedCategory
+    ? warnings.filter((warning) => warning.scope === selectedCategory || categoryItemCodes?.has(warning.scope))
+    : warnings;
 
-  const colors = ragColors(plant.ragBand);
-  const criticalWarnings = warnings.filter((w) => w.severity === "critical").length;
-  const highWarnings = warnings.filter((w) => w.severity === "high").length;
+  const colors = ragColors(displayPlant.ragBand);
+  const criticalWarnings = scopedWarnings.filter((w) => w.severity === "critical").length;
+  const highWarnings = scopedWarnings.filter((w) => w.severity === "high").length;
 
   const weeklyPlantWeeks: any[] = weekly?.plant?.weeks ?? [];
   const weekCalendar: any[] = weekly?.weekCalendar ?? [];
@@ -162,7 +176,7 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => exportXlsx(`plant-dashboard-${month}`, [
-              { name: "Plant Summary", rows: [{ Month: month, AttainmentCumPct: bundle.plant?.attainmentCumPct, ProducedToDate: bundle.plant?.producedToDate, TargetMax: bundle.plant?.targetMax, TargetMin: bundle.plant?.targetMin, ProjectedAttainmentPct: bundle.plant?.projectedAttainmentPct, RAG: bundle.plant?.ragBand }] },
+              { name: "Plant Summary", rows: [{ Scope: selectedCategory ?? "Plant", Month: month, AttainmentCumPct: displayPlant.attainmentCumPct, ProducedToDate: displayPlant.producedToDate, TargetMax: displayPlant.targetMax, TargetMin: displayPlant.targetMin, ProjectedAttainmentPct: displayPlant.projectedAttainmentPct, RAG: displayPlant.ragBand }] },
               { name: "Categories", rows: categories.map((c: any) => ({ Category: c.category, ProducedToDate: c.producedToDate, TargetMax: c.targetMax, TargetMin: c.targetMin, AttainmentCumPct: c.attainmentCumPct, ProjectedAttainmentPct: c.projectedAttainmentPct, RAG: c.ragBand })) },
             ])}>
               <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
@@ -191,28 +205,35 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
       )}
 
       {/* Monthly hero row */}
-      <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-lg border ${colors.bg}`}>
+       <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-lg border ${colors.bg}`}>
         <div>
           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Produced to Date</div>
-          <div className={`text-3xl font-bold ${colors.text}`}>{fmt(plant.producedToDate)}</div>
+           <div className={`text-3xl font-bold ${colors.text}`}>{fmt(displayPlant.producedToDate)}</div>
           <div className="text-xs text-muted-foreground mt-1">pcs</div>
         </div>
         <div>
           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Cumulative Attainment</div>
-          <div className={`text-3xl font-bold ${colors.text}`}>{pct(plant.attainmentCumPct)}</div>
-          <div className="text-xs text-muted-foreground mt-1">vs required cum. ({fmt(plant.requiredCum)} pcs)</div>
+           <div className={`text-3xl font-bold ${colors.text}`}>{pct(displayPlant.attainmentCumPct)}</div>
+           <div className="text-xs text-muted-foreground mt-1">vs required cum. ({fmt(displayPlant.requiredCum)} pcs)</div>
         </div>
         <div>
           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Month Attainment</div>
-          <div className={`text-3xl font-bold ${colors.text}`}>{pct(plant.attainmentMonthPct)}</div>
-          <div className="text-xs text-muted-foreground mt-1">vs Max PP ({fmt(plant.targetMax)} pcs)</div>
+           <div className={`text-3xl font-bold ${colors.text}`}>{pct(displayPlant.attainmentMonthPct)}</div>
+           <div className="text-xs text-muted-foreground mt-1">vs Max PP ({fmt(displayPlant.targetMax)} pcs)</div>
         </div>
         <div>
           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Projected End</div>
-          <div className={`text-3xl font-bold ${colors.text}`}>{pct(plant.projectedAttainmentPct)}</div>
-          <div className="text-xs text-muted-foreground mt-1">at {fmt(plant.actualPerDay, 0)} pcs/day</div>
+           <div className={`text-3xl font-bold ${colors.text}`}>{pct(displayPlant.projectedAttainmentPct)}</div>
+           <div className="text-xs text-muted-foreground mt-1">at {fmt(displayPlant.actualPerDay, 0)} pcs/day</div>
         </div>
       </div>
+
+      <PlanVersionHistory
+        month={month}
+        versions={(sourceInfo?.planVersions ?? []) as MonitoringPlanVersion[]}
+        weeklyTargetSource={sourceInfo?.weeklyTargetSource}
+        weeklyBandCount={sourceInfo?.weeklyBandSnapshot?.length ?? 0}
+      />
 
       {/* === WEEKLY RELEASE PULSE === */}
       {hasWeeklyData && (
@@ -318,31 +339,31 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
       {/* KPI cards row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
-          <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Required/Day</CardTitle></CardHeader>
-          <CardContent><div className="text-2xl font-bold">{fmt(plant.requiredPerDay)}</div><div className="text-xs text-muted-foreground">pcs/working day</div></CardContent>
+           <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Required/Day</CardTitle></CardHeader>
+           <CardContent><div className="text-2xl font-bold">{fmt(displayPlant.requiredPerDay)}</div><div className="text-xs text-muted-foreground">pcs/working day</div></CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Catch-up/Day</CardTitle></CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${plant.catchUpPerDay !== null && plant.catchUpPerDay > plant.requiredPerDay * 1.2 ? "text-red-500" : ""}`}>{fmt(plant.catchUpPerDay)}</div>
-            <div className="text-xs text-muted-foreground">{plant.catchUpVsPlanPct !== null ? `${plant.catchUpVsPlanPct.toFixed(0)}% of plan/day` : "–"}</div>
+             <div className={`text-2xl font-bold ${displayPlant.catchUpPerDay !== null && displayPlant.catchUpPerDay > displayPlant.requiredPerDay * 1.2 ? "text-red-500" : ""}`}>{fmt(displayPlant.catchUpPerDay)}</div>
+             <div className="text-xs text-muted-foreground">{displayPlant.catchUpVsPlanPct !== null ? `${displayPlant.catchUpVsPlanPct.toFixed(0)}% of plan/day` : "–"}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Days Ahead/Behind</CardTitle></CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold flex items-center gap-1 ${plant.daysAheadBehind !== null && plant.daysAheadBehind < 0 ? "text-red-500" : "text-emerald-600"}`}>
-              {plant.daysAheadBehind !== null ? (plant.daysAheadBehind >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />) : null}
-              {plant.daysAheadBehind !== null ? `${Math.abs(plant.daysAheadBehind).toFixed(1)}d` : "–"}
+             <div className={`text-2xl font-bold flex items-center gap-1 ${displayPlant.daysAheadBehind !== null && displayPlant.daysAheadBehind < 0 ? "text-red-500" : "text-emerald-600"}`}>
+               {displayPlant.daysAheadBehind !== null ? (displayPlant.daysAheadBehind >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />) : null}
+               {displayPlant.daysAheadBehind !== null ? `${Math.abs(displayPlant.daysAheadBehind).toFixed(1)}d` : "–"}
             </div>
-            <div className="text-xs text-muted-foreground">{plant.daysAheadBehind !== null ? (plant.daysAheadBehind >= 0 ? "ahead" : "behind") : "no data"}</div>
+             <div className="text-xs text-muted-foreground">{displayPlant.daysAheadBehind !== null ? (displayPlant.daysAheadBehind >= 0 ? "ahead" : "behind") : "no data"}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Linearity Index</CardTitle></CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${plant.linearityIndex !== null && plant.linearityIndex < 0.6 ? "text-amber-500" : "text-emerald-600"}`}>
-              {plant.linearityIndex !== null ? plant.linearityIndex.toFixed(2) : "–"}
+             <div className={`text-2xl font-bold ${displayPlant.linearityIndex !== null && displayPlant.linearityIndex < 0.6 ? "text-amber-500" : "text-emerald-600"}`}>
+               {displayPlant.linearityIndex !== null ? displayPlant.linearityIndex.toFixed(2) : "–"}
             </div>
             <div className="text-xs text-muted-foreground">1.0 = perfect linearity</div>
           </CardContent>
@@ -353,18 +374,18 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
       <div className="grid grid-cols-3 gap-4">
         <Card>
           <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Max PP (Target)</CardTitle></CardHeader>
-          <CardContent><div className="text-xl font-bold">{fmt(plant.targetMax)}</div><div className="text-xs text-muted-foreground">pcs for the month</div></CardContent>
+           <CardContent><div className="text-xl font-bold">{fmt(displayPlant.targetMax)}</div><div className="text-xs text-muted-foreground">pcs for the month</div></CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Min PP (Floor)</CardTitle></CardHeader>
           <CardContent>
-            <div className={`text-xl font-bold ${plant.projectedMinAttainmentPct !== null && plant.projectedMinAttainmentPct < 100 ? "text-red-500" : ""}`}>{fmt(plant.targetMin)}</div>
-            <div className="text-xs text-muted-foreground">Projected: {pct(plant.projectedMinAttainmentPct)}</div>
+             <div className={`text-xl font-bold ${displayPlant.projectedMinAttainmentPct !== null && displayPlant.projectedMinAttainmentPct < 100 ? "text-red-500" : ""}`}>{fmt(displayPlant.targetMin)}</div>
+             <div className="text-xs text-muted-foreground">Projected: {pct(displayPlant.projectedMinAttainmentPct)}</div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-1"><CardTitle className="text-sm text-muted-foreground">Best Day Output</CardTitle></CardHeader>
-          <CardContent><div className="text-xl font-bold">{fmt(plant.bestDayOutput)}</div><div className="text-xs text-muted-foreground">pcs in best day</div></CardContent>
+           <CardContent><div className="text-xl font-bold">{fmt(displayPlant.bestDayOutput)}</div><div className="text-xs text-muted-foreground">pcs in best day</div></CardContent>
         </Card>
       </div>
 
@@ -430,14 +451,14 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
       </Card>
 
       {/* Warnings banner */}
-      {(criticalWarnings > 0 || highWarnings > 0) && (
+       {(criticalWarnings > 0 || highWarnings > 0) && (
         <Card className="border-red-500/30 bg-red-500/5">
           <CardContent className="pt-4 flex items-center gap-3">
             <AlertTriangle className="h-5 w-5 text-red-500 flex-shrink-0" />
             <div className="text-sm">
               {criticalWarnings > 0 && <span className="text-red-600 font-semibold mr-2">{criticalWarnings} critical</span>}
               {highWarnings > 0 && <span className="text-amber-600 font-semibold mr-2">{highWarnings} high</span>}
-              <span className="text-muted-foreground">warnings — see Warnings page</span>
+               <span className="text-muted-foreground">warnings for {selectedCategory ?? "the plant"} — see Warnings page</span>
             </div>
           </CardContent>
         </Card>

@@ -5,9 +5,10 @@ import {
   planRunsTable,
   plantConfigsTable,
   plantMonitoringSnapshotsTable,
+  plantPlanVersionsTable,
   weeklyReleaseBandsTable,
 } from "@workspace/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { buildPlantBundle, type PlantBundle } from "./plant-engine";
 import {
   fetchDailyActuals,
@@ -16,7 +17,7 @@ import {
   type DailyActualRow,
   type PlantTargetRow,
 } from "./plant-ingestion";
-import type { PlanVersion } from "./plant-plan-timeline";
+import type { PlanVersion, VersionTarget } from "./plant-plan-timeline";
 import { resolvePlantMonthLifecycle, resolveWorkingDays, type PlantMonthLifecycle } from "./plant-lifecycle";
 import { buildPlantWeeklySummary, type PlantWeeklySummary, type WeeklyInputPlanItem } from "./plant-weekly-engine";
 import { buildPlantWarnings, buildPlantWeeklyWarnings, DEFAULT_PLANT_WARNING_THRESHOLDS, type PlantWarningThresholds } from "./plant-warnings";
@@ -57,8 +58,382 @@ export interface PlantSnapshotSourceInfo {
     effectiveFrom: string;
     effectiveTo: string | null;
     targetCount: number;
+    selection: PlanVersion["selection"];
     supersededSameDaySources?: PlanVersion["supersededSameDaySources"];
   }>;
+  /**
+   * Complete issued timeline, including item-level W1-W4 targets, frozen at
+   * capture time for downstream auditable historical reports.
+   */
+  planVersionTimeline?: PlanVersion[];
+  /**
+   * Set only when a pre-timeline monitoring snapshot was restored from the
+   * immutable issued-version rows named in its own captured provenance.
+   */
+  planVersionTimelineBackfilledAt?: string;
+  planVersionTimelineSource?: "issued_plan_version_snapshot";
+}
+
+export interface LegacyWeeklyResult {
+  itemCode: string;
+  colour: string;
+  category: string;
+  productionPlan: number;
+  minProduction: number;
+  bufferReq: number;
+}
+
+export interface LegacyWeeklyInput {
+  itemCode: string;
+  colour: string;
+  avg3MoSale: number;
+  stock: number;
+  pendingLastMonth: number;
+  pendingCurrent: number;
+}
+
+export interface LegacyWeeklyBand {
+  categoryName: string;
+  w1Upper: number;
+  w2Upper: number;
+  w3Upper: number;
+  w4Upper: number;
+}
+
+type SnapshotPlanVersionReference = {
+  kind: PlanVersion["kind"];
+  sourceId: number;
+  sourceLabel: string | null;
+  effectiveFrom: string;
+  effectiveTo: string | null;
+  targetCount: number;
+  selection?: PlanVersion["selection"];
+  supersededSameDaySources?: PlanVersion["supersededSameDaySources"];
+};
+
+export type LegacySnapshotTimelineBackfillResult = {
+  snapshot: typeof plantMonitoringSnapshotsTable.$inferSelect | null;
+  restored: boolean;
+  reason: string | null;
+};
+
+const PLAN_VERSION_KINDS = new Set<PlanVersion["kind"]>(["run", "import", "corrective"]);
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const pendingLegacySnapshotBackfills = new Map<string, Promise<LegacySnapshotTimelineBackfillResult>>();
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isSnapshotPlanVersionReference(value: unknown, month: string): value is SnapshotPlanVersionReference {
+  if (!isRecord(value)) return false;
+  return PLAN_VERSION_KINDS.has(value.kind as PlanVersion["kind"])
+    && typeof value.sourceId === "number"
+    && Number.isInteger(value.sourceId)
+    && (typeof value.sourceLabel === "string" || value.sourceLabel === null)
+    && typeof value.effectiveFrom === "string"
+    && ISO_DATE_RE.test(value.effectiveFrom)
+    && value.effectiveFrom.slice(0, 7) === month
+    && (value.effectiveTo === null || (
+      typeof value.effectiveTo === "string"
+      && ISO_DATE_RE.test(value.effectiveTo)
+      && value.effectiveTo.slice(0, 7) === month
+    ))
+    && typeof value.targetCount === "number"
+    && Number.isInteger(value.targetCount)
+    && value.targetCount >= 0;
+}
+
+function isVersionTarget(value: unknown): value is VersionTarget {
+  if (!isRecord(value)) return false;
+  return typeof value.itemCode === "string"
+    && typeof value.colour === "string"
+    && typeof value.category === "string"
+    && ["maxPcs", "minPcs", "w1", "w2", "w3", "w4"]
+      .every((field) => typeof value[field] === "number" && Number.isFinite(value[field] as number));
+}
+
+function legacyTimelineReferences(
+  sourceInfo: unknown,
+  month: string,
+): { refs: SnapshotPlanVersionReference[]; reason: string | null } {
+  if (!isRecord(sourceInfo) || !Array.isArray(sourceInfo.planVersions) || sourceInfo.planVersions.length === 0) {
+    return {
+      refs: [],
+      reason: "The frozen snapshot predates item-level plan-version retention and has no captured issued-version provenance to restore it safely.",
+    };
+  }
+  if (!sourceInfo.planVersions.every((version) => isSnapshotPlanVersionReference(version, month))) {
+    return {
+      refs: [],
+      reason: "The frozen snapshot has incomplete issued-version provenance, so its item-level weekly plan cannot be proven.",
+    };
+  }
+  const refs = sourceInfo.planVersions as SnapshotPlanVersionReference[];
+  if (refs.length !== 1 || refs[0]?.kind !== "run") {
+    return {
+      refs: [],
+      reason: "The frozen snapshot contains multiple issued plan revisions without captured item-level evidence for each revision, so its historical weekly plan remains unavailable.",
+    };
+  }
+  const sourceKeys = new Set(refs.map((version) => `${version.kind}:${version.sourceId}`));
+  if (sourceKeys.size !== refs.length) {
+    return {
+      refs: [],
+      reason: "The frozen snapshot has duplicate issued-version provenance, so its governing plan sequence is ambiguous.",
+    };
+  }
+  if (new Set(refs.map((version) => version.effectiveFrom)).size !== refs.length) {
+    return {
+      refs: [],
+      reason: "The frozen snapshot has same-day issued versions without a captured canonical selection, so its governing plan sequence is ambiguous.",
+    };
+  }
+  for (let index = 0; index < refs.length; index++) {
+    const expectedEnd = refs[index + 1]?.effectiveFrom ?? null;
+    if (refs[index]!.effectiveTo !== expectedEnd) {
+      return {
+        refs: [],
+        reason: "The frozen snapshot has an incomplete issued-version date range, so its weekly plan sequence cannot be proven.",
+      };
+    }
+  }
+  return { refs, reason: null };
+}
+
+function withBackfilledSourceInfo(
+  sourceInfo: Record<string, unknown>,
+  timeline: PlanVersion[],
+  restoredAt: string,
+): PlantSnapshotSourceInfo {
+  return {
+    ...(sourceInfo as unknown as PlantSnapshotSourceInfo),
+    planVersionTimeline: timeline,
+    planVersionTimelineSource: "issued_plan_version_snapshot",
+    planVersionTimelineBackfilledAt: restoredAt,
+  };
+}
+
+function withBackfilledBundle(
+  bundleJson: unknown,
+  sourceInfo: PlantSnapshotSourceInfo,
+): unknown {
+  if (!isRecord(bundleJson) || !isRecord(bundleJson.context)) return bundleJson;
+  return {
+    ...bundleJson,
+    context: {
+      ...bundleJson.context,
+      sourceInfo,
+    },
+  };
+}
+
+function frozenTargetsMatchIssuedRun(
+  snapshotTargets: unknown,
+  issuedTargets: VersionTarget[],
+): boolean {
+  if (!Array.isArray(snapshotTargets)) return false;
+  const snapshotByKey = new Map<string, { maxPcs: number; minPcs: number }>();
+  for (const target of snapshotTargets) {
+    if (!isRecord(target)
+      || typeof target.itemCode !== "string"
+      || typeof target.colour !== "string"
+      || typeof target.category !== "string"
+      || typeof target.maxPcs !== "number"
+      || !Number.isFinite(target.maxPcs)
+      || typeof target.minPcs !== "number"
+      || !Number.isFinite(target.minPcs)) {
+      return false;
+    }
+    snapshotByKey.set(
+      `${target.itemCode}::${target.colour}::${target.category}`,
+      { maxPcs: target.maxPcs, minPcs: target.minPcs },
+    );
+  }
+  if (snapshotByKey.size !== issuedTargets.length) return false;
+  return issuedTargets.every((target) => {
+    const frozen = snapshotByKey.get(`${target.itemCode}::${target.colour}::${target.category}`);
+    return frozen?.maxPcs === target.maxPcs && frozen.minPcs === target.minPcs;
+  });
+}
+
+async function restoreLegacySnapshotTimeline(
+  snapshot: typeof plantMonitoringSnapshotsTable.$inferSelect,
+): Promise<LegacySnapshotTimelineBackfillResult> {
+  const existingSourceInfo = snapshot.sourceInfoJson;
+  if (isRecord(existingSourceInfo)
+    && Array.isArray(existingSourceInfo.planVersionTimeline)
+    && existingSourceInfo.planVersionTimeline.length > 0) {
+    return { snapshot, restored: false, reason: null };
+  }
+
+  const { refs, reason } = legacyTimelineReferences(existingSourceInfo, snapshot.month);
+  if (reason) return { snapshot, restored: false, reason };
+
+  // This reads only the immutable issued-version snapshots explicitly named by
+  // the original monitoring snapshot. It deliberately does not call the live
+  // timeline hydrator, rebuild a plan, or read editable release-band settings.
+  const immutableRows = await db
+    .select()
+    .from(plantPlanVersionsTable)
+    .where(and(
+      eq(plantPlanVersionsTable.month, snapshot.month),
+      eq(plantPlanVersionsTable.segment, "PTMT"),
+    ));
+  const immutableBySource = new Map(immutableRows.map((row) => [`${row.kind}:${row.sourceId}`, row]));
+  const timeline: PlanVersion[] = [];
+  let capturedFinalRunTargets: VersionTarget[] | null = null;
+
+  for (const ref of refs) {
+    const immutable = immutableBySource.get(`${ref.kind}:${ref.sourceId}`);
+    if (!immutable
+      || immutable.kind !== ref.kind
+      || immutable.effectiveFrom !== ref.effectiveFrom
+      || immutable.createdAt.getTime() > snapshot.capturedAt.getTime()) {
+      return {
+        snapshot,
+        restored: false,
+        reason: "The frozen snapshot's captured plan-version provenance has no matching immutable issued snapshot from the time of capture.",
+      };
+    }
+    const targets = immutable.targetsJson;
+    if (!Array.isArray(targets) || targets.length !== ref.targetCount || !targets.every(isVersionTarget)) {
+      return {
+        snapshot,
+        restored: false,
+        reason: "The matching immutable issued snapshot does not contain complete item-level W1–W4 targets.",
+      };
+    }
+    if (ref.kind === "run" && ref.sourceId === snapshot.planRunId) {
+      capturedFinalRunTargets = targets;
+    }
+    timeline.push({
+      kind: ref.kind,
+      sourceId: ref.sourceId,
+      sourceLabel: ref.sourceLabel,
+      effectiveFrom: ref.effectiveFrom,
+      effectiveTo: ref.effectiveTo,
+      targets,
+      ...(ref.selection ? { selection: ref.selection } : {}),
+      ...(ref.supersededSameDaySources ? { supersededSameDaySources: ref.supersededSameDaySources } : {}),
+    });
+  }
+  if (!capturedFinalRunTargets || !frozenTargetsMatchIssuedRun(snapshot.targetsJson, capturedFinalRunTargets)) {
+    return {
+      snapshot,
+      restored: false,
+      reason: "The immutable issued plan does not match the final target roster frozen in this snapshot, so its item-level weekly detail cannot be proven.",
+    };
+  }
+
+  const restoredAt = new Date().toISOString();
+  const sourceInfo = withBackfilledSourceInfo(existingSourceInfo as Record<string, unknown>, timeline, restoredAt);
+  const [saved] = await db
+    .update(plantMonitoringSnapshotsTable)
+    .set({
+      sourceInfoJson: sourceInfo,
+      bundleJson: withBackfilledBundle(snapshot.bundleJson, sourceInfo),
+    })
+    // A request and the scheduler can both discover the legacy row. Only the
+    // first writer may attach a timeline; later callers reload that winner.
+    .where(and(
+      eq(plantMonitoringSnapshotsTable.month, snapshot.month),
+      sql`coalesce(${plantMonitoringSnapshotsTable.sourceInfoJson} -> 'planVersionTimeline', '[]'::jsonb) = '[]'::jsonb`,
+    ))
+    .returning();
+  if (saved) return { snapshot: saved, restored: true, reason: null };
+
+  const [winner] = await db
+    .select()
+    .from(plantMonitoringSnapshotsTable)
+    .where(eq(plantMonitoringSnapshotsTable.month, snapshot.month));
+  const winnerSourceInfo = winner?.sourceInfoJson;
+  if (isRecord(winnerSourceInfo)
+    && Array.isArray(winnerSourceInfo.planVersionTimeline)
+    && winnerSourceInfo.planVersionTimeline.length > 0) {
+    return { snapshot: winner, restored: false, reason: null };
+  }
+  return {
+    snapshot: winner ?? snapshot,
+    restored: false,
+    reason: "The frozen snapshot changed while its immutable plan timeline was being restored. It was left unavailable rather than overwrite concurrent data.",
+  };
+}
+
+/**
+ * Restore a legacy closed-month snapshot only when its own captured version
+ * provenance can be matched to immutable item-level issued snapshots. This is
+ * intentionally narrower than getPlanVersionTimeline(): it never hydrates from
+ * mutable current source tables or substitutes today's plan history.
+ */
+export async function backfillLegacyPlantMonitoringSnapshot(
+  month: string,
+): Promise<LegacySnapshotTimelineBackfillResult> {
+  const pending = pendingLegacySnapshotBackfills.get(month);
+  if (pending) return pending;
+  const work = (async () => {
+    const snapshot = await loadSavedSnapshot(month);
+    if (!snapshot) return { snapshot: null, restored: false, reason: "No frozen monitoring snapshot exists for this closed month." };
+    return restoreLegacySnapshotTimeline(snapshot);
+  })().finally(() => pendingLegacySnapshotBackfills.delete(month));
+  pendingLegacySnapshotBackfills.set(month, work);
+  return work;
+}
+
+/** Backfill every eligible legacy PTMT monitoring snapshot without recapturing data. */
+export async function backfillLegacyPlantMonitoringSnapshots(): Promise<Array<{
+  month: string;
+  restored: boolean;
+  reason: string | null;
+}>> {
+  const snapshots = await db.select({ month: plantMonitoringSnapshotsTable.month }).from(plantMonitoringSnapshotsTable);
+  const outcomes: Array<{ month: string; restored: boolean; reason: string | null }> = [];
+  for (const snapshot of snapshots) {
+    const result = await backfillLegacyPlantMonitoringSnapshot(snapshot.month);
+    outcomes.push({ month: snapshot.month, restored: result.restored, reason: result.reason });
+  }
+  return outcomes;
+}
+
+/**
+ * Legacy plan-run result rows did not persist W1–W4. Reconstruct their
+ * release from the immutable inputs captured with the run and the retained
+ * release-band source, never from today's live plan.
+ */
+export function reconstructLegacyWeeklyPlanItems(
+  results: LegacyWeeklyResult[],
+  inputs: LegacyWeeklyInput[],
+  bands: LegacyWeeklyBand[],
+): WeeklyInputPlanItem[] {
+  const inputByKey = new Map(inputs.map((item) => [`${item.itemCode}::${item.colour}`, item]));
+  const legacyItems: CalcPlanItem[] = results.map((item) => {
+    const input = inputByKey.get(`${item.itemCode}::${item.colour}`);
+    const avg3MoSale = input?.avg3MoSale ?? 0;
+    const stock = input?.stock ?? 0;
+    return {
+      itemCode: item.itemCode,
+      colour: item.colour,
+      category: item.category,
+      avg3MoSale,
+      stock,
+      stockNeedsReview: false,
+      bufferReq: item.bufferReq,
+      minProduction: item.minProduction,
+      maxProduction: item.productionPlan,
+      pendingOrderLastMonth: input?.pendingLastMonth ?? 0,
+      pendingOrder: input?.pendingCurrent ?? 0,
+      order: 0,
+      achievementPct: null,
+      cover: avg3MoSale > 0 ? stock / avg3MoSale : "OS",
+      week: null,
+      w1: 0,
+      w2: 0,
+      w3: 0,
+      w4: 0,
+    };
+  });
+  annotateWeeklyRelease(legacyItems, new Map(bands.map((band) => [band.categoryName, band])));
+  return legacyItems;
 }
 
 function loadThresholds(row: { thresholdsJson?: unknown } | null): PlantWarningThresholds {
@@ -133,35 +508,7 @@ async function loadFinalizedTargets(month: string): Promise<{
       db.select().from(planRunInputsTable).where(eq(planRunInputsTable.runId, run.id)),
       db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "PTMT")),
     ]);
-    const inputByKey = new Map(inputs.map((item) => [`${item.itemCode}::${item.colour}`, item]));
-    const legacyItems: CalcPlanItem[] = results.map((item) => {
-      const input = inputByKey.get(`${item.itemCode}::${item.colour}`);
-      const avg3MoSale = input?.avg3MoSale ?? 0;
-      const stock = input?.stock ?? 0;
-      return {
-        itemCode: item.itemCode,
-        colour: item.colour,
-        category: item.category,
-        avg3MoSale,
-        stock,
-        stockNeedsReview: false,
-        bufferReq: item.bufferReq,
-        minProduction: item.minProduction,
-        maxProduction: item.productionPlan,
-        pendingOrderLastMonth: input?.pendingLastMonth ?? 0,
-        pendingOrder: input?.pendingCurrent ?? 0,
-        order: 0,
-        achievementPct: null,
-        cover: avg3MoSale > 0 ? stock / avg3MoSale : "OS",
-        week: null,
-        w1: 0,
-        w2: 0,
-        w3: 0,
-        w4: 0,
-      };
-    });
-    annotateWeeklyRelease(legacyItems, new Map(bands.map((band) => [band.categoryName, band])));
-    planItems = legacyItems;
+    planItems = reconstructLegacyWeeklyPlanItems(results, inputs, bands);
     weeklyTargetSource = "legacy_frozen_inputs";
     weeklyBandSnapshot = bands
       .map((band) => ({
@@ -390,8 +737,10 @@ export async function captureClosedPlantMonth(
       effectiveFrom: version.effectiveFrom,
       effectiveTo: version.effectiveTo,
       targetCount: version.targets.length,
+      selection: version.selection,
       supersededSameDaySources: version.supersededSameDaySources,
     })),
+    planVersionTimeline: finalized.versionTimeline,
   };
   const { bundle, snapshotDate } = await buildReadyBundle(
     month,
@@ -497,9 +846,11 @@ export async function computeLifecyclePlantMonitoring(
       planVersions: finalized.versionTimeline.map((version) => ({
         kind: version.kind,
         sourceId: version.sourceId,
+        sourceLabel: version.sourceLabel,
         effectiveFrom: version.effectiveFrom,
         effectiveTo: version.effectiveTo,
         targetCount: version.targets.length,
+        selection: version.selection,
         supersededSameDaySources: version.supersededSameDaySources,
       })),
     };
@@ -527,9 +878,11 @@ export async function computeLifecyclePlantMonitoring(
       planVersions: versionTimeline.map((version) => ({
         kind: version.kind,
         sourceId: version.sourceId,
+        sourceLabel: version.sourceLabel,
         effectiveFrom: version.effectiveFrom,
         effectiveTo: version.effectiveTo,
         targetCount: version.targets.length,
+        selection: version.selection,
         supersededSameDaySources: version.supersededSameDaySources,
       })),
     };

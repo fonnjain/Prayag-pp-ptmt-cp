@@ -52,7 +52,17 @@ export default function MachineDashboard({ month, plant = "PTMT" }: { month: str
 
   const { data: raw, isLoading, isRefetching, refetch } = useGetPlantLiveSummary(
     { period: month, plant },
-    { query: { queryKey: getGetPlantLiveSummaryQueryKey({ period: month, plant }), staleTime: 5 * 60 * 1000 } as any }
+    {
+      query: {
+        queryKey: getGetPlantLiveSummaryQueryKey({ period: month, plant }),
+        staleTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
+        // Keep the previous month visible while the new upstream period is
+        // loading. This avoids replacing a usable dashboard with an empty
+        // shell during a slow plant-service request.
+        placeholderData: (previous: unknown) => previous,
+      } as any,
+    }
   );
   const d = raw as any;
   const overall: PlantLiveMachineMetrics | undefined = d?.overall;

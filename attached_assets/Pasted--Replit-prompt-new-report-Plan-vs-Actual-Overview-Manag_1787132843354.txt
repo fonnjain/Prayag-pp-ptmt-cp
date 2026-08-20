@@ -1,0 +1,117 @@
+# Replit prompt — new report: **Plan vs Actual** (Overview + Management Reports, PTMT & Plumbing)
+
+A new report in **Ops Dashboard → Overview** and **Management Reports**, for **both segments**.
+
+The attached workbook (`3__PTMT_PLAN___ACTUAL_-_JULY-26.xlsx`) is a **format reference only**. Its numbers are not authoritative and must not be imported, hardcoded, or reconciled against. **Every figure is computed by the webapp from our own data.** Match the shape and the derivations; ignore the values.
+
+---
+
+## A. Summary KPI block — the `SUMM` sheet
+
+These are the headline numbers, rendered as cards in the UI **and** as the first block of the export.
+
+Reference values for July-26 PTMT, with the derivation I reverse-engineered from the workbook. All four averages divide by the month's **working days** (27 in the sample — use our `resolveWorkingDays(month, configured)`, and show `workingDaysSource`).
+
+| Row | Sample | Derivation |
+|---|--:|---|
+| Working days | 27 | `resolveWorkingDays(month)` |
+| TOTAL PLAN | 717,097 | Σ planned qty over items **that have a plan entry** |
+| TOTAL PRODUCTION | 734,133 | Σ produced over those same planned items |
+| **% ACHIEVEMENT** | 1.0238 | `TOTAL PRODUCTION ÷ TOTAL PLAN` |
+| Out-of-plan production | 262,506 | Σ produced for item codes with **no** plan entry |
+| AVG PRODUCTION ACC. TO PLAN | 26,559 | `TOTAL PLAN ÷ working days` |
+| AVG PLANNED PRODUCTION | 27,190 | `TOTAL PRODUCTION ÷ working days` |
+| AVG TOTAL PRODUCTION | 36,913 | `(TOTAL PRODUCTION + out-of-plan) ÷ working days` |
+| AVG UNPLANNED | 9,722 | `out-of-plan ÷ working days` |
+| PROJECTED PRODUCTION (planned) | 734,133 | equals TOTAL PRODUCTION in the sample |
+| PROJECTED PRODUCTION (incl. unplanned) | 996,639 | `734,133 + 262,506` — verified exactly |
+| UNDERPERFORMERS | 394 | count of items with `% achieved < 0.80` |
+| ON TARGET | 91 | count with `0.80 ≤ % achieved ≤ 1.10` |
+| OVERACHIEVERS | 197 | count with `% achieved > 1.10` |
+| OUT OF PLAN ITEMS | 295 | distinct item+colour produced with no plan entry |
+| OPENING STOCK | 368,266 | see open question 2 |
+| DUMMY | 137,939 | see open question 2 |
+
+I derived the **0.80 / 1.10** thresholds empirically from the `REPORT-NEW` sheet — the three buckets partition cleanly: UNDER max 0.7982, ON TARGET 0.8012–1.1000, OVER min 1.1015. Please confirm these are the intended bands before hardcoding them, and put them in one named constant, not inline.
+
+Note the two "PROJECTED PRODUCTION" rows have identical labels in the source. **Rename them** — e.g. *"Projected — planned items"* and *"Projected — incl. unplanned"*. Two cards with the same name and different numbers is exactly the ambiguity we removed from the corrective exports.
+
+## B. Item detail — the `REPORT-NEW` / `REPORT 1` sheets
+
+One row per **item code + colour** (the workbook keys on the concatenation, e.g. `1375-SIVORY` — use a proper composite key, not string concatenation).
+
+**Base columns**
+
+`ITEM CODE · ITEM COLOR · TOTAL PLAN · TOTAL PROD · TOTAL ORDER · TOTAL SALE · VARIANCE · % ACHIEVED · REMARKS`
+
+- `VARIANCE = TOTAL PROD − TOTAL PLAN` (signed)
+- `% ACHIEVED = TOTAL PROD ÷ TOTAL PLAN`
+- `REMARKS` ∈ `UNDER` / `ON TARGET` / `OVER` per the bands above
+- When `TOTAL PLAN = 0`, `% ACHIEVED` must be **null**, not 0 and not ∞. Render as `—`. Those rows belong in the out-of-plan section, not here.
+
+**Weekly block** (from `REPORT 1`) — four groups of four columns:
+
+```
+WEEK-1 (1st–7th)   PLANNED · PRODUCED · ORDER · SALE
+WEEK-2 (8th–14th)  PLANNED · PRODUCED · ORDER · SALE
+WEEK-3 (15th–21st) PLANNED · PRODUCED · ORDER · SALE
+WEEK-4 (22nd–EOM)  PLANNED · PRODUCED · ORDER · SALE
+```
+
+Week boundaries in the sample are **1–7, 8–14, 15–21, 22–31** — fixed day-of-month, W4 absorbing the remainder. This matches our existing weekly banding; reuse the same calendar helper so the report and the monitoring pages can never disagree about which week a date falls in.
+
+Print the actual date range in each week header, as the source does (`2026-07-01 … 2026-07-07`).
+
+**Invariants to assert, not assume:**
+- `Σ(W1..W4 PLANNED) = TOTAL PLAN` per row
+- `Σ(W1..W4 PRODUCED) = TOTAL PROD` per row
+- column totals = the KPI block's TOTAL PLAN / TOTAL PRODUCTION
+
+Any row failing these should be flagged in the export, not silently rounded away.
+
+## C. Out-of-plan section — the `OUT OF PLAN` sheet
+
+`ITEM CODE · COLOR · PRODUCTION · ORDER · SALE`, for every item produced with **no** matching plan entry. Sample totals: 262,506 / 141,454 / 142,310 across 295 items.
+
+This already exists as a banner on the monitoring dashboard (*"213 produced item(s) have no matching plan entry — excluded from category totals"*). **Use the same matching logic** — if the two disagree about what counts as unmatched, that is a bug in one of them.
+
+## D. Sectioning
+
+The workbook splits the detail across `REPORT 1`–`REPORT 9` (357 / 94 / 54 / 62 / 24 / 9 / 17 / 14 / 17 items — 648 total), each with its own totals row. That is **not** our 7 PTMT categories, and I can't tell from the file what the grouping key is.
+
+**Please don't guess.** Group by **category** (7 for PTMT, 12 for Plumbing), which is what the rest of the app uses, and ask the team whether the REPORT 1–9 split needs preserving. If it does, we need the mapping from them.
+
+---
+
+## Open questions — please answer before building
+
+1. **`OPENING STOCK` (368,266) and `DUMMY` (137,939)** — I cannot derive either from anything else in the workbook. What are they, and which of our tables holds them? If we have no source, they must be omitted rather than shown as zero.
+2. **Are the 0.80 / 1.10 bands correct?** Derived empirically; needs confirming.
+3. **What is the `REPORT 1`–`9` grouping?** See section D.
+4. **`TOTAL ORDER` and `TOTAL SALE`** — which source? The workbook has `ORDER` and `SALE` sheets. For us, orders come from the pending-orders upload and sales from the 3-year sale master. Confirm this is the same basis, since the report puts them beside production.
+5. **Plumbing equivalent** — the sample is PTMT-only. Confirm Plumbing uses the same columns; it has 12 categories and its own item roster (1,120 items), and its release plan is a different shape.
+
+---
+
+## Which plan?
+
+**Critical, given the versioning work just landed.** "TOTAL PLAN" must come from the **issued plan version timeline**, not from a live rebuild:
+
+- For a **closed** month, read `plant_month_snapshots`.
+- For an **open** month, use the version in force for each week — `versionForDate` — exactly as the monitoring pages now do.
+- Print the governing plan version(s) in the report header, as the corrective exports print their baseline run.
+
+A report titled "Plan vs Actual" that silently uses a rebuilt plan would reintroduce the whole problem we just fixed.
+
+---
+
+## Deliverables
+
+1. `GET /api/reports/plan-vs-actual?month=YYYY-MM&segment=PTMT|Plumbing` returning the KPI block, item detail, and out-of-plan list.
+2. Excel export matching the layout above — KPI block, then per-category detail with weekly columns, then out-of-plan.
+3. UI: KPI cards in **Overview**, full table in **Management Reports**, segment toggle honouring the existing PTMT / Plumbing / Combined selector.
+4. Tests: the three invariants in section B, the band boundaries at exactly 0.80 and 1.10, and `% ACHIEVED = null` when plan is 0.
+
+## Reporting back
+
+Answer the five open questions first. Then report files and line numbers changed, diffstat, confirmation that nothing else is in the diff, `tsc --noEmit` clean, and a byte-size match before pushing.

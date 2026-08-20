@@ -1,11 +1,186 @@
+import { useEffect, useState } from "react";
 import { useGetPlantLiveSummary, getGetPlantLiveSummaryQueryKey } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, TrendingUp, Activity } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { RefreshCw, TrendingUp, Activity, AlertTriangle } from "lucide-react";
+import { classifyPlantLiveError } from "@/lib/plant-live-error";
 
 function fmt(n: number | null | undefined, dec = 0): string {
   if (n == null) return "–";
   return Number(n).toLocaleString("en-IN", { maximumFractionDigits: dec });
+}
+
+interface PlumbingMonitoringWeek {
+  week: number;
+  label: string;
+  release: number;
+  mapped: number;
+  unmapped: number;
+  actual: number;
+  cumRelease: number;
+  cumMapped: number;
+  cumAttPct: number | null;
+}
+
+interface PlumbingMonitoringCategory {
+  category: string;
+  w1Release: number;
+  w1Actual: number;
+  w2Release: number;
+  w2Actual: number;
+  totalRelease: number;
+  totalActual: number;
+  notStarted?: boolean;
+}
+
+interface PlumbingMonitoringData {
+  lastDataDate: string | null;
+  workingDaysElapsed: number;
+  weeks: PlumbingMonitoringWeek[];
+  categories: PlumbingMonitoringCategory[];
+  plant?: {
+    produced?: number;
+    mapped?: number;
+    unmapped?: number;
+    runRatePerDay?: number;
+  };
+}
+
+function MonitoringFallback({ data, month }: { data: PlumbingMonitoringData; month: string }) {
+  const weeks = data.weeks ?? [];
+  const categories = data.categories ?? [];
+  const mappedActual = data.plant?.mapped ?? weeks.reduce((sum, week) => sum + week.mapped, 0);
+  const totalProduced = data.plant?.produced ?? weeks.reduce((sum, week) => sum + week.actual, 0);
+  const totalReleased = weeks.reduce((sum, week) => sum + week.release, 0);
+  const attainment = totalReleased > 0 ? (mappedActual / totalReleased) * 100 : null;
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-blue-500/20">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Monthly Monitoring — Sheet3</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Plumbing production monitoring remains available for {month}
+            {data.lastDataDate ? ` · data through ${data.lastDataDate}` : ""}
+            {data.workingDaysElapsed ? ` · ${data.workingDaysElapsed} working days` : ""}
+          </p>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-lg border bg-muted/20 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total Produced</div>
+            <div className="mt-1 text-2xl font-bold tabular-nums">{fmt(totalProduced)}</div>
+            <div className="text-xs text-muted-foreground">pcs from Sheet3</div>
+          </div>
+          <div className="rounded-lg border bg-muted/20 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Mapped Actual</div>
+            <div className="mt-1 text-2xl font-bold tabular-nums">{fmt(mappedActual)}</div>
+            <div className="text-xs text-muted-foreground">pcs counted against plan</div>
+          </div>
+          <div className="rounded-lg border bg-muted/20 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Run Rate</div>
+            <div className="mt-1 text-2xl font-bold tabular-nums">{fmt(data.plant?.runRatePerDay)}</div>
+            <div className="text-xs text-muted-foreground">pcs / working day</div>
+          </div>
+          <div className="rounded-lg border bg-muted/20 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cum. Attainment</div>
+            <div className={`mt-1 text-2xl font-bold tabular-nums ${
+              attainment == null ? "text-muted-foreground" : attainment >= 95 ? "text-emerald-600" : attainment >= 85 ? "text-amber-600" : "text-red-500"
+            }`}>
+              {attainment == null ? "–" : `${attainment.toFixed(1)}%`}
+            </div>
+            <div className="text-xs text-muted-foreground">mapped actual ÷ released</div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Weekly Monitoring</CardTitle>
+          <p className="text-xs text-muted-foreground">Sheet3 actuals against the Plumbing weekly release plan.</p>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {weeks.map((week) => (
+            <div key={week.week} className="rounded-lg border p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide">{week.label}</span>
+                {week.cumAttPct != null && (
+                  <Badge variant="outline" className={`text-[10px] ${
+                    week.cumAttPct >= 95 ? "border-emerald-500/40 text-emerald-600"
+                      : week.cumAttPct >= 85 ? "border-amber-500/40 text-amber-600"
+                      : "border-red-500/40 text-red-500"
+                  }`}>
+                    {week.cumAttPct.toFixed(1)}%
+                  </Badge>
+                )}
+              </div>
+              <div className="mt-2 space-y-1 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Released</span>
+                  <span className="font-mono font-medium">{fmt(week.release)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Mapped actual</span>
+                  <span className="font-mono font-medium">{fmt(week.mapped)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total produced</span>
+                  <span className="font-mono">{fmt(week.actual)}</span>
+                </div>
+                {week.unmapped > 0 && (
+                  <div className="flex justify-between text-amber-600">
+                    <span>Unmapped</span>
+                    <span className="font-mono">{fmt(week.unmapped)}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Category Monitoring</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-y bg-muted/30 text-xs text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium">Category</th>
+                  <th className="px-3 py-2 text-right font-medium">W1 Release</th>
+                  <th className="px-3 py-2 text-right font-medium">W1 Actual</th>
+                  <th className="px-3 py-2 text-right font-medium">W2 Release</th>
+                  <th className="px-3 py-2 text-right font-medium">W2 Actual</th>
+                  <th className="px-4 py-2 text-right font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/30">
+                {categories.map((category) => (
+                  <tr key={category.category} className={category.notStarted ? "bg-red-50/60" : "hover:bg-muted/20"}>
+                    <td className="px-4 py-2 font-medium">{category.category}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">{fmt(category.w1Release)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">{fmt(category.w1Actual)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">{fmt(category.w2Release)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-xs">{fmt(category.w2Actual)}</td>
+                    <td className="px-4 py-2 text-right text-xs">
+                      {category.notStarted
+                        ? <Badge variant="destructive" className="text-[10px]">NOT STARTED</Badge>
+                        : <span className="font-medium text-emerald-600">In progress</span>}
+                    </td>
+                  </tr>
+                ))}
+                {categories.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No category monitoring data available for {month}.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 export default function PlumbingVelocity({ month }: { month: string }) {
@@ -13,6 +188,28 @@ export default function PlumbingVelocity({ month }: { month: string }) {
     { period: month, plant: "PIPE" },
     { query: { queryKey: getGetPlantLiveSummaryQueryKey({ period: month, plant: "PIPE" }), staleTime: 5 * 60 * 1000 } as any }
   );
+  const [monitoring, setMonitoring] = useState<PlumbingMonitoringData | null>(null);
+  const [monitoringLoading, setMonitoringLoading] = useState(true);
+  const [monitoringError, setMonitoringError] = useState<string | null>(null);
+
+  async function loadMonitoring() {
+    setMonitoringLoading(true);
+    setMonitoringError(null);
+    try {
+      const response = await fetch(`/api/monitoring/dashboard?month=${encodeURIComponent(month)}&segment=Plumbing`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      setMonitoring(await response.json() as PlumbingMonitoringData);
+    } catch (err) {
+      setMonitoringError(err instanceof Error ? err.message : "Failed to load monthly monitoring data");
+    } finally {
+      setMonitoringLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadMonitoring();
+  }, [month]);
+
   const d = raw as any;
   const overall = d?.overall;
   const byDate: Record<string, any> = d?.by_date ?? {};
@@ -35,7 +232,12 @@ export default function PlumbingVelocity({ month }: { month: string }) {
   const totalGood  = overall?.good_count ?? 0;
   const totalIdeal = overall?.ideal_output ?? 0;
 
-  if (isLoading) return (
+  const refreshAll = () => {
+    void refetch();
+    void loadMonitoring();
+  };
+
+  if (isLoading && monitoringLoading) return (
     <div className="space-y-4 animate-pulse">
       <div className="h-24 bg-muted/40 rounded-xl" />
       <div className="h-64 bg-muted/40 rounded-xl" />
@@ -94,12 +296,45 @@ export default function PlumbingVelocity({ month }: { month: string }) {
             Daily output pace · {month} · {activeDays} active days
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isRefetching} className="gap-2">
-          <RefreshCw className={`h-3.5 w-3.5 ${isRefetching ? "animate-spin" : ""}`} />
-          {isRefetching ? "Refreshing…" : "Refresh"}
+        <Button size="sm" variant="outline" onClick={refreshAll} disabled={isRefetching || monitoringLoading} className="gap-2">
+          <RefreshCw className={`h-3.5 w-3.5 ${isRefetching || monitoringLoading ? "animate-spin" : ""}`} />
+          {isRefetching || monitoringLoading ? "Refreshing…" : "Refresh"}
         </Button>
       </header>
 
+      {isError && (() => {
+        const { heading, detail, hint } = classifyPlantLiveError(
+          { message: (error as any)?.message ?? String(error), data: (error as any)?.data },
+          month,
+        );
+        return (
+          <div className="space-y-3">
+            <div className="flex items-start gap-3 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-4 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+              <div className="space-y-1">
+                <p className="font-semibold text-red-600">{heading}</p>
+                <p className="text-red-600/80">{detail}</p>
+                <p className="pt-1 text-xs text-red-600/60">{hint}</p>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" onClick={refreshAll} disabled={isRefetching || monitoringLoading} className="gap-2">
+              <RefreshCw className={`h-3.5 w-3.5 ${isRefetching || monitoringLoading ? "animate-spin" : ""}`} />
+              {isRefetching || monitoringLoading ? "Retrying…" : "Retry live data"}
+            </Button>
+          </div>
+        );
+      })()}
+
+      {monitoringError && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          Monthly monitoring data could not be loaded ({monitoringError}).
+        </div>
+      )}
+
+      {isError && monitoring && <MonitoringFallback data={monitoring} month={month} />}
+
+      {!isError && (
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-5">
@@ -134,8 +369,9 @@ export default function PlumbingVelocity({ month }: { month: string }) {
           </CardContent>
         </Card>
       </div>
+      )}
 
-      <Card>
+      {!isError && <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Daily Output Log</CardTitle>
         </CardHeader>
@@ -193,11 +429,11 @@ export default function PlumbingVelocity({ month }: { month: string }) {
             </table>
           </div>
         </CardContent>
-      </Card>
+      </Card>}
 
-      <p className="text-xs text-muted-foreground text-right">
+      {!isError && <p className="text-xs text-muted-foreground text-right">
         Live data from prayag-plant.com · PIPE plant only (fitting/solvent excluded) · cached 5 min
-      </p>
+      </p>}
     </div>
   );
 }

@@ -3,12 +3,15 @@ import {
   plantPlanVersionsTable,
   planRunsTable,
   planRunResultsTable,
+  planRunInputsTable,
   plantPlanUploadsTable,
   plantPlanItemsTable,
   correctivePlanRunsTable,
   correctivePlanItemsTable,
+  weeklyReleaseBandsTable,
 } from "@workspace/db";
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { annotateWeeklyRelease, type CalcPlanItem } from "./calc";
 
 export type PlanVersionKind = "run" | "import" | "corrective";
 
@@ -31,12 +34,30 @@ export interface PlanVersion {
   effectiveFrom: string;
   effectiveTo: string | null;
   targets: VersionTarget[];
-  /** Legacy same-day source records retained for audit, but superseded by this revision. */
+  /** Compatibility summary of same-day legacy sources superseded by this revision. */
   supersededSameDaySources?: Array<{
     kind: PlanVersionKind;
     sourceId: number;
     sourceLabel: string | null;
   }>;
+  /**
+   * Legacy history can contain more than one issued source for a single
+   * effective date. We retain every row in storage, but expose the exact
+   * deterministic choice made for monitoring and audit consumers.
+   */
+  selection?: {
+    candidateCount: number;
+    reason: "only_issued_version_for_date" | "latest_source_issuance" | "source_id_tiebreaker";
+    canonicalIssuedAt: string | null;
+    canonicalIssuedAtSource: "plan_created_at" | "upload_timestamp" | "corrective_created_at" | "snapshot_created_at";
+    superseded: Array<{
+      kind: PlanVersionKind;
+      sourceId: number;
+      sourceLabel: string | null;
+      issuedAt: string | null;
+      issuedAtSource: "plan_created_at" | "upload_timestamp" | "corrective_created_at" | "snapshot_created_at";
+    }>;
+  };
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -48,6 +69,81 @@ export function monthStart(month: string): string {
 function legacyEffectiveFrom(month: string, value: string | null | undefined, createdAt: Date): string | null {
   const candidate = value ?? createdAt.toISOString().slice(0, 10);
   return candidate.startsWith(`${month}-`) ? candidate : null;
+}
+
+function targetKey(target: Pick<VersionTarget, "itemCode" | "colour" | "category">): string {
+  return `${target.itemCode}|${target.colour}|${target.category}`;
+}
+
+function hasNoWeeklyAllocation(targets: VersionTarget[]): boolean {
+  return targets.length > 0 && targets.every((target) =>
+    target.w1 === 0 && target.w2 === 0 && target.w3 === 0 && target.w4 === 0,
+  );
+}
+
+/**
+ * Legacy run-result rows predate persisted W1–W4 columns. Rebuild an
+ * allocation only for a zeroed legacy snapshot, using the immutable run input
+ * rows and the retained release-band configuration. The returned values
+ * override the monitoring timeline only; source history remains untouched.
+ */
+async function reconstructLegacyWeeklyTargets(
+  runIds: number[],
+  segment: string,
+): Promise<Map<number, Map<string, Pick<VersionTarget, "w1" | "w2" | "w3" | "w4">>>> {
+  if (runIds.length === 0) return new Map();
+  const [results, inputs, bands] = await Promise.all([
+    db.select().from(planRunResultsTable).where(inArray(planRunResultsTable.runId, runIds)),
+    db.select().from(planRunInputsTable).where(inArray(planRunInputsTable.runId, runIds)),
+    db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
+  ]);
+  const inputsByRunAndKey = new Map(inputs.map((input) => [
+    `${input.runId}|${input.itemCode}|${input.colour}`,
+    input,
+  ]));
+  const bandsByCategory = new Map(bands.map((band) => [band.categoryName, band]));
+  const rowsByRun = new Map<number, typeof results>();
+  for (const result of results) {
+    const rows = rowsByRun.get(result.runId) ?? [];
+    rows.push(result);
+    rowsByRun.set(result.runId, rows);
+  }
+
+  const output = new Map<number, Map<string, Pick<VersionTarget, "w1" | "w2" | "w3" | "w4">>>();
+  for (const [runId, runResults] of rowsByRun) {
+    const items: CalcPlanItem[] = runResults.map((result) => {
+      const input = inputsByRunAndKey.get(`${runId}|${result.itemCode}|${result.colour}`);
+      const avg3MoSale = input?.avg3MoSale ?? 0;
+      const stock = input?.stock ?? 0;
+      return {
+        itemCode: result.itemCode,
+        colour: result.colour,
+        category: result.category,
+        avg3MoSale,
+        stock,
+        stockNeedsReview: false,
+        bufferReq: result.bufferReq,
+        minProduction: result.minProduction,
+        maxProduction: result.productionPlan,
+        pendingOrderLastMonth: input?.pendingLastMonth ?? 0,
+        pendingOrder: input?.pendingCurrent ?? 0,
+        order: 0,
+        achievementPct: null,
+        cover: avg3MoSale > 0 ? stock / avg3MoSale : "OS",
+        week: null,
+        w1: 0,
+        w2: 0,
+        w3: 0,
+        w4: 0,
+      };
+    });
+    annotateWeeklyRelease(items, bandsByCategory);
+    output.set(runId, new Map(items.map((item) => [
+      targetKey(item),
+      { w1: item.w1, w2: item.w2, w3: item.w3, w4: item.w4 },
+    ])));
+  }
+  return output;
 }
 
 export function assertEffectiveDate(month: string, value: unknown): string {
@@ -92,14 +188,10 @@ export async function savePlanVersionSnapshot(input: {
       sourceLabel: input.sourceLabel ?? null,
       targetsJson: input.targets,
     })
-    .onConflictDoUpdate({
-      target: [plantPlanVersionsTable.kind, plantPlanVersionsTable.sourceId],
-      set: {
-        effectiveFrom: input.effectiveFrom,
-        sourceLabel: input.sourceLabel ?? null,
-        targetsJson: input.targets,
-      },
-    });
+    // A source ID represents one issued plan revision. Its item-level target
+    // content must never be rewritten, because closed monitoring snapshots may
+    // later cite this exact row as their immutable historical evidence.
+    .onConflictDoNothing();
 }
 
 /**
@@ -139,39 +231,136 @@ export async function getPlanVersionTimeline(month: string, segment: string): Pr
         .map((row) => row.id),
     );
 
-  // Legacy data may contain same-day repeat recomputes. New writes are rejected
-  // by validateNewVersionDate; retain the last stored snapshot for the date and
-  // carry the earlier source IDs into provenance so the choice is auditable.
-  const byDate = new Map<string, Array<typeof snapshots[number]>>();
+  // Legacy data can contain several issued revisions on one effective date.
+  // New writes are rejected by validateNewVersionDate, but source history must
+  // remain intact. Select the source issued latest on that day rather than
+  // relying on the order in which version-table backfill happened.
+  const runIdsForAudit = snapshots.filter((row) => row.kind === "run").map((row) => row.sourceId);
+  const importIdsForAudit = snapshots.filter((row) => row.kind === "import").map((row) => row.sourceId);
+  const correctiveIdsForAudit = snapshots.filter((row) => row.kind === "corrective").map((row) => row.sourceId);
+  const [runsForAudit, importsForAudit, correctivesForAudit] = await Promise.all([
+    runIdsForAudit.length
+      ? db.select({
+        id: planRunsTable.id,
+        createdAt: planRunsTable.createdAt,
+        weeklyReleaseVersion: planRunsTable.weeklyReleaseVersion,
+      }).from(planRunsTable).where(inArray(planRunsTable.id, runIdsForAudit))
+      : Promise.resolve([]),
+    importIdsForAudit.length
+      ? db.select({
+        id: plantPlanUploadsTable.id,
+        uploadedAt: plantPlanUploadsTable.uploadedAt,
+      }).from(plantPlanUploadsTable).where(inArray(plantPlanUploadsTable.id, importIdsForAudit))
+      : Promise.resolve([]),
+    correctiveIdsForAudit.length
+      ? db.select({
+        id: correctivePlanRunsTable.id,
+        createdAt: correctivePlanRunsTable.createdAt,
+      }).from(correctivePlanRunsTable).where(inArray(correctivePlanRunsTable.id, correctiveIdsForAudit))
+      : Promise.resolve([]),
+  ]);
+  type IssuedAtSource = NonNullable<PlanVersion["selection"]>["canonicalIssuedAtSource"];
+  const sourceIssuedAt = new Map<string, { value: Date; source: IssuedAtSource }>();
+  for (const run of runsForAudit) {
+    sourceIssuedAt.set(`run:${run.id}`, {
+      value: run.createdAt,
+      source: "plan_created_at",
+    });
+  }
+  for (const upload of importsForAudit) {
+    sourceIssuedAt.set(`import:${upload.id}`, { value: upload.uploadedAt, source: "upload_timestamp" });
+  }
+  for (const run of correctivesForAudit) {
+    sourceIssuedAt.set(`corrective:${run.id}`, { value: run.createdAt, source: "corrective_created_at" });
+  }
+  const runWeeklyReleaseVersion = new Map(runsForAudit.map((run) => [run.id, run.weeklyReleaseVersion]));
+  const legacyRunsNeedingReconstruction = snapshots
+    .filter((snapshot) =>
+      snapshot.kind === "run"
+      && (runWeeklyReleaseVersion.get(snapshot.sourceId) ?? 1) < 1
+      && hasNoWeeklyAllocation(snapshot.targetsJson as VersionTarget[]),
+    )
+    .map((snapshot) => snapshot.sourceId);
+  const reconstructedLegacyWeeks = await reconstructLegacyWeeklyTargets(
+    [...new Set(legacyRunsNeedingReconstruction)],
+    segment,
+  );
+
+  const candidatesByDate = new Map<string, Array<{
+    row: typeof snapshots[number];
+    issuedAt: Date;
+    issuedAtSource: IssuedAtSource;
+  }>>();
   for (const row of snapshots) {
     if (row.kind === "run" && !finalizedRunIds.has(row.sourceId)) continue;
-    const revisions = byDate.get(row.effectiveFrom) ?? [];
-    revisions.push(row);
-    byDate.set(row.effectiveFrom, revisions);
+    const source = sourceIssuedAt.get(`${row.kind}:${row.sourceId}`);
+    const candidate = {
+      row,
+      issuedAt: source?.value ?? row.createdAt,
+      issuedAtSource: source?.source ?? "snapshot_created_at",
+    };
+    const candidates = candidatesByDate.get(row.effectiveFrom) ?? [];
+    candidates.push(candidate);
+    candidatesByDate.set(row.effectiveFrom, candidates);
   }
-  const ordered = [...byDate.entries()]
-    .sort(([dateA], [dateB]) => dateA.localeCompare(dateB))
-    .map(([effectiveFrom, revisions]) => {
-      const canonical = revisions.at(-1)!;
+  const selected = [...candidatesByDate.entries()]
+    .map(([effectiveFrom, candidates]) => {
+      const orderedCandidates = [...candidates].sort((a, b) =>
+        a.issuedAt.getTime() - b.issuedAt.getTime()
+        || a.row.sourceId - b.row.sourceId
+        || a.row.id - b.row.id,
+      );
+      const canonical = orderedCandidates.at(-1)!;
+      const hasSameSourceTime = orderedCandidates.length > 1
+        && orderedCandidates.at(-2)!.issuedAt.getTime() === canonical.issuedAt.getTime();
       return {
-        canonical,
         effectiveFrom,
-        supersededSameDaySources: revisions.slice(0, -1).map((row) => ({
-          kind: row.kind as PlanVersionKind,
-          sourceId: row.sourceId,
-          sourceLabel: row.sourceLabel,
-        })),
+        canonical,
+        selection: {
+          candidateCount: orderedCandidates.length,
+          reason: (orderedCandidates.length === 1
+            ? "only_issued_version_for_date"
+            : hasSameSourceTime
+              ? "source_id_tiebreaker"
+              : "latest_source_issuance") as NonNullable<PlanVersion["selection"]>["reason"],
+          canonicalIssuedAt: canonical.issuedAt.toISOString(),
+          canonicalIssuedAtSource: canonical.issuedAtSource,
+          superseded: orderedCandidates.slice(0, -1).map((candidate) => ({
+            kind: candidate.row.kind as PlanVersionKind,
+            sourceId: candidate.row.sourceId,
+            sourceLabel: candidate.row.sourceLabel,
+            issuedAt: candidate.issuedAt.toISOString(),
+            issuedAtSource: candidate.issuedAtSource,
+          })),
+        },
       };
-    });
-  return ordered.map(({ canonical, effectiveFrom, supersededSameDaySources }, index) => ({
-    kind: canonical.kind as PlanVersionKind,
-    sourceId: canonical.sourceId,
-    sourceLabel: canonical.sourceLabel,
-    effectiveFrom,
-    effectiveTo: ordered[index + 1]?.effectiveFrom ?? null,
-    targets: canonical.targetsJson as VersionTarget[],
-    ...(supersededSameDaySources.length > 0 ? { supersededSameDaySources } : {}),
-  }));
+    })
+    .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
+  return selected.map(({ canonical, selection }, index) => {
+    const legacyWeeks = canonical.row.kind === "run"
+      ? reconstructedLegacyWeeks.get(canonical.row.sourceId)
+      : undefined;
+    const targets = (canonical.row.targetsJson as VersionTarget[]).map((target) => ({
+      ...target,
+      ...(legacyWeeks?.get(targetKey(target)) ?? {}),
+    }));
+    return {
+      kind: canonical.row.kind as PlanVersionKind,
+      sourceId: canonical.row.sourceId,
+      sourceLabel: canonical.row.sourceLabel,
+      effectiveFrom: canonical.row.effectiveFrom,
+      effectiveTo: selected[index + 1]?.effectiveFrom ?? null,
+      targets,
+      selection,
+      ...(selection.superseded.length > 0 ? {
+        supersededSameDaySources: selection.superseded.map(({ kind, sourceId, sourceLabel }) => ({
+          kind,
+          sourceId,
+          sourceLabel,
+        })),
+      } : {}),
+    };
+  });
 }
 
 const pendingLegacyHydrations = new Map<string, Promise<void>>();

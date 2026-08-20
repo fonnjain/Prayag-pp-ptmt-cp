@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import {
@@ -8,9 +9,14 @@ import {
   Wrench,
   ChevronRight,
   RefreshCw,
+  LogOut,
+  Users,
+  KeyRound,
 } from "lucide-react";
 import { useSegment, type Segment } from "@/contexts/segment-context";
 import { useListBufferCategories, type BufferCategory } from "@workspace/api-client-react";
+import { useAuth } from "@/contexts/auth-context";
+import { ChangePasswordDialog } from "@/components/change-password-dialog";
 
 import { categorySlug } from "@/lib/category-slug";
 
@@ -104,6 +110,70 @@ function SegmentToggle() {
   );
 }
 
+// ─── Sidebar user section ─────────────────────────────────────────────────────
+function SidebarUserSection() {
+  const { user, logout } = useAuth();
+  const [showChangePwd, setShowChangePwd] = useState(false);
+
+  if (!user) return null;
+
+  return (
+    <>
+      <div className="border-t border-sidebar-border px-3 py-3 space-y-1.5">
+        {/* Admin: user management link */}
+        {user.role === "admin" && (
+          <Link href="/admin/users">
+            <span className="flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-sidebar-accent cursor-pointer transition-colors">
+              <Users size={13} /> User Management
+            </span>
+          </Link>
+        )}
+
+        {/* Must-change-password warning */}
+        {user.mustChangePassword && (
+          <button
+            onClick={() => setShowChangePwd(true)}
+            className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md text-xs text-amber-600 hover:bg-amber-500/10 cursor-pointer transition-colors"
+          >
+            <KeyRound size={12} /> ⚠ Change password
+          </button>
+        )}
+
+        {/* User email */}
+        <div className="px-2">
+          <p className="text-[11px] text-muted-foreground truncate" title={user.email}>{user.email}</p>
+          <p className="text-[10px] text-muted-foreground/50 capitalize">{user.role}</p>
+        </div>
+
+        {/* Actions row */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowChangePwd(true)}
+            className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
+            title="Change password"
+          >
+            <KeyRound size={11} /> Change password
+          </button>
+          <div className="flex-1" />
+          <button
+            onClick={() => void logout()}
+            className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
+            title="Sign out"
+          >
+            <LogOut size={11} /> Sign out
+          </button>
+        </div>
+      </div>
+
+      <ChangePasswordDialog
+        open={showChangePwd || user.mustChangePassword}
+        onOpenChange={setShowChangePwd}
+        required={user.mustChangePassword}
+      />
+    </>
+  );
+}
+
 // ─── Cross-App Nav ────────────────────────────────────────────────────────────
 function CrossAppNav() {
   const path = window.location.pathname;
@@ -184,9 +254,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </SidebarGroup>
           </nav>
 
-          <div className="px-4 py-3 border-t border-sidebar-border">
-            <p className="text-[10px] text-muted-foreground/60 select-none">{segment} Daily Planning</p>
-          </div>
+          {/* ── User / Auth controls ── */}
+          <SidebarUserSection />
         </aside>
 
         <main className="ml-56 flex-1 min-h-screen">

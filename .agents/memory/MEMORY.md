@@ -20,7 +20,7 @@
 - [Ops dashboard month normalizer](ops-month-normalizer.md) — Order Sheet "Month" col returns "Apr-26" not "Apr"; normalizeMonth() maps prefix-3/numeric→short name; ytdValue from allRows directly, not monthly array.
 - [Prod bundle startup](prod-bundle-startup.md) — CJS bundle (dist/index.cjs) + NODE_ENV=production required; pino safe to inline when NODE_ENV=production; exceljs must stay external but lazy-required inside functions.
 - [Prod API build command](prod-api-build.md) — pnpm build step in artifact.toml takes ~32s in prod (healthchecks fail); use direct esbuild instead.
-- [Prod startup blocking — lazy init](prod-startup-blocking.md) — top-level `new ReplitConnectors()` and `import puppeteer` block module load for ~30s in prod; both must be lazy-initialized.
+- [API startup readiness](api-startup-readiness.md) — listen early for healthchecks, but hold DB-backed routes behind readiness and let clients retry during migrations/seeding.
 - [Plan runs + pending order source](plan-runs-system.md) — THREE uploads required (current_stock/pending_orders/last_month_pending); current pending MUST come from DATA.xlsx upload NOT live sheet (drifts daily); plan_runs schema in 003_plan_runs.sql; last_month_pending reads PTMT tab; F.G. STOCK reads F.G Sheet only.
 - [Segment discriminator pattern](segment-discriminator.md) — `segment TEXT NOT NULL DEFAULT 'PTMT'` on all planning tables; Plumbing upload kinds prefixed `plumbing_`; ERP GROUP filter "PLUMBING"; SegmentContext + sidebar toggle; categories sidebar is dynamic from API, not static list.
 - [Capacity segment isolation fix](capacity-segment-fix.md) — GET /capacity/categories and recompute POST must pass ?segment=; seedCategoryCapacity is idempotent per-category (seeds 7 PTMT + 12 Plumbing); Plumbing actuals not yet wired so all Plumbing capacity starts thin-data.
@@ -52,4 +52,6 @@
 - [Plumbing monitoring cache](plumbing-monitoring-cache.md) — always use the shared SWR-cached getter, never computePlumbingMonitoringPayload directly; sync invalidates+pre-warms; startup pre-warms in parallel with sync.
 - [Prod plan runs creation](prod-plan-runs-creation.md) — plan_run rows created in dev never reach production on publish; must POST to the prod API explicitly after any output-affecting fix.
 - [Plant monitoring version freeze](plant-monitoring-version-freeze.md) — completed months are immutable; versioned reporting must retain historical items and show each week’s governing plans.
+- [Same-day plan revisions](same-day-plan-revisions.md) — canonicalize duplicate effective dates by source issuance, retain superseded audit data, and reconstruct legacy zeroed weeks.
 - [Combined operations analytics](combined-ops-analytics.md) — compare PTMT demand and Plumbing execution side by side; never fabricate a cross-unit total.
+- [Browser auth and machine routes](auth-machine-route-boundary.md) — classify machine API-key paths before applying the shared browser session guard.

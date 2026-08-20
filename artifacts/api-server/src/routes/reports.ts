@@ -7,6 +7,8 @@ import { generatePlantPdf } from "../lib/reports-plant-pdf";
 import { generateCeoPdf } from "../lib/reports-ceo-pdf";
 import { generatePlantXlsx } from "../lib/reports-plant-xlsx";
 import { logger } from "../lib/logger";
+import { computePlanVsActualReport } from "../lib/plan-vs-actual-engine";
+import { generatePlanVsActualXlsx } from "../lib/plan-vs-actual-excel";
 
 const router: IRouter = Router();
 
@@ -179,6 +181,60 @@ router.get("/reports/history", async (req, res): Promise<void> => {
   } catch (err) {
     logger.error({ err }, "reports/history failed");
     res.status(500).json({ error: "Failed to load report history" });
+  }
+});
+
+// --- GET /reports/plan-vs-actual ---
+router.get("/reports/plan-vs-actual", async (req, res): Promise<void> => {
+  const month = String(req.query.month ?? "");
+  const segmentRaw = String(req.query.segment ?? "");
+
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    res.status(400).json({ error: "month query param required (YYYY-MM)" });
+    return;
+  }
+  if (segmentRaw !== "PTMT" && segmentRaw !== "Plumbing") {
+    res.status(400).json({ error: 'segment must be "PTMT" or "Plumbing"' });
+    return;
+  }
+
+  try {
+    const report = await computePlanVsActualReport(month, segmentRaw as "PTMT" | "Plumbing");
+    res.json(report);
+  } catch (err) {
+    logger.error({ err, month, segment: segmentRaw }, "reports/plan-vs-actual failed");
+    res.status(500).json({ error: "Failed to compute Plan vs Actual report" });
+  }
+});
+
+// --- GET /reports/plan-vs-actual/excel ---
+router.get("/reports/plan-vs-actual/excel", async (req, res): Promise<void> => {
+  const month = String(req.query.month ?? "");
+  const segmentRaw = String(req.query.segment ?? "");
+
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    res.status(400).json({ error: "month query param required (YYYY-MM)" });
+    return;
+  }
+  if (segmentRaw !== "PTMT" && segmentRaw !== "Plumbing") {
+    res.status(400).json({ error: 'segment must be "PTMT" or "Plumbing"' });
+    return;
+  }
+
+  try {
+    const report = await computePlanVsActualReport(month, segmentRaw as "PTMT" | "Plumbing");
+    const xlsx = await generatePlanVsActualXlsx(report);
+    const filename = `PlanVsActual_${segmentRaw}_${month}_${exportTimestamp()}.xlsx`;
+    logger.info({ month, segment: segmentRaw }, "plan-vs-actual excel generated");
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(xlsx);
+  } catch (err) {
+    logger.error({ err, month, segment: segmentRaw }, "reports/plan-vs-actual/excel failed");
+    res.status(500).json({ error: "Failed to generate Plan vs Actual Excel" });
   }
 });
 

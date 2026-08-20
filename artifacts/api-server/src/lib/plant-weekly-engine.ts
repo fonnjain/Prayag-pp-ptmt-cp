@@ -97,6 +97,17 @@ export interface WeeklyInputActual {
   qty: number;
 }
 
+export function formatPlanVersionAuditLabel(version: PlanVersion): string {
+  const label = version.sourceLabel ?? `${version.kind} #${version.sourceId}`;
+  if (!version.selection || version.selection.candidateCount <= 1) {
+    return `${label} · effective ${version.effectiveFrom}`;
+  }
+  const reason = version.selection.reason === "latest_source_issuance"
+    ? "latest source issuance"
+    : "source-id tie-breaker after equal issuance time";
+  return `${label} · effective ${version.effectiveFrom} · canonical: ${reason}; ${version.selection.superseded.length} same-day revision superseded`;
+}
+
 function buildWeeklyStats(
   targets: [number, number, number, number],
   actuals: [number, number, number, number],
@@ -216,7 +227,7 @@ export function buildPlantWeeklySummary(
               versionForDate(versionTimeline, date)?.kind === version.kind) dates.push(date);
         }
         if (dates.length === 0) continue;
-        planVersionsByWeek[weekIndex].add(`${version.sourceLabel} · effective ${version.effectiveFrom}`);
+        planVersionsByWeek[weekIndex].add(formatPlanVersionAuditLabel(version));
         const ratio = dates.length / (week.endDay - week.startDay + 1);
         for (const target of version.targets) {
           const release = [target.w1, target.w2, target.w3, target.w4][weekIndex] ?? 0;

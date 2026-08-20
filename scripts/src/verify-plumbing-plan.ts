@@ -23,6 +23,42 @@ const PTMT_MONTH     = process.env["PLAN_MONTH"] ?? "2026-07";
 // July-only and must not be asserted against August data (month-rollover rule).
 const PTMT_PLAN_MONTH = process.env["PTMT_PLAN_MONTH"] ?? "2026-08";
 
+// The regression suite exercises browser-facing API routes. Establish one
+// short-lived session up front instead of weakening those routes for tooling.
+let regressionCookie = "";
+const nativeFetch = globalThis.fetch.bind(globalThis);
+globalThis.fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+  const headers = new Headers(init?.headers);
+  if (regressionCookie) headers.set("cookie", regressionCookie);
+  const response = await nativeFetch(input, { ...init, headers });
+  const setCookie = response.headers.get("set-cookie");
+  if (setCookie?.includes("prayag_session=")) {
+    regressionCookie = setCookie.split(";")[0] ?? "";
+  }
+  return response;
+};
+
+async function establishRegressionSession(): Promise<void> {
+  const email = process.env["REGRESSION_AUTH_EMAIL"]
+    ?? process.env["INITIAL_ADMIN_EMAILS"]?.split(",")[1]?.trim();
+  const password = process.env["REGRESSION_AUTH_PASSWORD"]
+    ?? process.env["BOOTSTRAP_ADMIN_PASSWORD"];
+  if (!email || !password) {
+    throw new Error("Regression auth requires REGRESSION_AUTH_EMAIL/REGRESSION_AUTH_PASSWORD or the configured bootstrap admin settings");
+  }
+  const response = await nativeFetch(`${API_BASE}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!response.ok) {
+    throw new Error(`Regression auth login failed with HTTP ${response.status}`);
+  }
+  const setCookie = response.headers.get("set-cookie");
+  regressionCookie = setCookie?.split(";")[0] ?? "";
+  if (!regressionCookie) throw new Error("Regression auth login returned no session cookie");
+}
+
 type CheckResult = {
   name: string;
   expected: number;
@@ -204,6 +240,7 @@ function runAsOfDateUnitTests(): boolean {
 }
 
 async function main(): Promise<void> {
+  await establishRegressionSession();
   // Identify the database host so environment-sensitive results are traceable.
   // Strips credentials; prints only the hostname (e.g. ep-xxx.neon.tech) or
   // "(not set)" when DATABASE_URL is absent.

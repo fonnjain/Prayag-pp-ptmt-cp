@@ -2174,6 +2174,7 @@ export async function computePlumbingMonitoringPayload(month: string) {
   const itemActual = new Map<string, [number, number, number, number]>();
   const unmappedByWeek: [number, number, number, number] = [0, 0, 0, 0];
   const unmappedCodeQty = new Map<string, number>();
+  const unmappedCodeByWeek = new Map<string, [number, number, number, number]>();
 
   for (const row of sheet3Rows) {
     const cat = codeToCategory.get(row.normCode);
@@ -2181,6 +2182,9 @@ export async function computePlumbingMonitoringPayload(month: string) {
     if (!cat) {
       unmappedByWeek[wi] += row.qty;
       unmappedCodeQty.set(row.rawCode, (unmappedCodeQty.get(row.rawCode) ?? 0) + row.qty);
+      const wkArr = unmappedCodeByWeek.get(row.rawCode) ?? [0, 0, 0, 0];
+      wkArr[wi] += row.qty;
+      unmappedCodeByWeek.set(row.rawCode, wkArr);
       continue;
     }
     const arr = catActual.get(cat) ?? [0, 0, 0, 0];
@@ -2310,9 +2314,15 @@ export async function computePlumbingMonitoringPayload(month: string) {
     };
   }).sort((a, b) => b.totalRelease - a.totalRelease || a.itemCode.localeCompare(b.itemCode));
 
-  // Unmapped top codes
-  const topCodes = [...unmappedCodeQty.entries()]
-    .sort((a, b) => b[1] - a[1]).slice(0, 20).map(([code, qty]) => ({ code, qty }));
+  // Keep the complete by-code set for audited downstream reconciliation. The
+  // monitoring UI still receives its concise top-20 view separately.
+  const allCodes = [...unmappedCodeQty.entries()]
+    .sort((a, b) => b[1] - a[1]).map(([code, qty]) => ({
+      code,
+      qty,
+      byWeek: [...(unmappedCodeByWeek.get(code) ?? [0, 0, 0, 0])] as [number, number, number, number],
+    }));
+  const topCodes = allCodes.slice(0, 20);
 
   const totalUnmapped = unmappedByWeek.reduce((s, v) => s + v, 0);
   const totalMapped   = plantMapped.reduce((s, v) => s + v, 0);
@@ -2322,7 +2332,7 @@ export async function computePlumbingMonitoringPayload(month: string) {
   return {
     month, lastDataDate, workingDaysElapsed,
     weeks, categories, items,
-    unmapped: { byWeek: [...unmappedByWeek], total: totalUnmapped, topCodes },
+    unmapped: { byWeek: [...unmappedByWeek], total: totalUnmapped, topCodes, allCodes },
     totalProduced, totalMapped, totalUnmapped, runRatePerDay,
   };
 }

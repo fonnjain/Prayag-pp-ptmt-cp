@@ -26,3 +26,10 @@ A small difference between a pre-version live dashboard figure and a later froze
 **Why:** Live monitoring used to rebuild from uploads as they changed, while a plan-run snapshot preserves the issued values. Comparing the two conflates different point-in-time sources and can create a false discrepancy.
 
 **How to apply:** Label live-rebuild and frozen-plan figures distinctly in audits and reports. Reconcile historical reporting to the governing frozen version; never overwrite a frozen value just to match a previously observed live rebuild.
+
+Closed-month report snapshots must retain the complete item-level plan-version timeline, including W1-W4 targets; provenance summaries and a final run ID are not enough to recreate historical weekly attribution.
+
+**Why:** Reading the current timeline for a closed snapshot makes later plan edits rewrite history. Older snapshots contain frozen actuals and high-level provenance but cannot prove every governing item/week target.
+
+**How to apply:** Persist the full timeline in the snapshot at capture time and use only that copy for closed Plan-versus-Actual reports. A legacy snapshot may be restored only when its captured provenance names exactly one finalized run, that run's append-only issued targets predate capture, and its frozen item roster matches the snapshot. Multi-version or partial legacy evidence stays explicitly unavailable; never substitute live mutable history.
+**How to apply:** Label live-rebuild and frozen-plan figures distinctly in audits and reports. Reconcile historical reporting to the governing frozen version; never overwrite a frozen value just to match a previously observed live rebuild.

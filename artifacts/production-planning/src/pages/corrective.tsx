@@ -3,12 +3,15 @@ import {
   useRunCorrectiveReplan,
   useListCorrectiveRuns,
   useGetCorrectiveRun,
+  useDeleteCorrectiveRun,
+  usePinCorrectiveRun,
   type CorrectiveReplanResult,
   type CorrectiveItemResult,
   type CorrectiveWeekStat,
   type CorrectiveWarning,
   type CorrectivePlanRunSummary,
 } from "@workspace/api-client-react";
+import { ApiError } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { useSegment } from "@/contexts/segment-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -823,12 +826,114 @@ function HeaderSummary({ result }: { result: CorrectiveReplanResult }) {
   );
 }
 
+// ─── Baseline Drift Banner ────────────────────────────────────────────────────
+
+function BaselineDriftBanner({
+  items,
+  frozenPlanGrandMax,
+}: {
+  items: CorrectiveItemResult[];
+  frozenPlanGrandMax: number | null | undefined;
+}) {
+  // frozenPlanGrandMax === undefined means the field is not present at all
+  // (e.g. freshly returned live replan result that predates migration 022).
+  if (frozenPlanGrandMax === undefined) return null;
+
+  // Legacy run: column was null when the run was created.
+  if (frozenPlanGrandMax === null) {
+    return (
+      <div className="rounded-md bg-gray-50 border border-gray-200 px-3 py-2 text-xs text-gray-500">
+        ℹ Baseline integrity column was not recorded for this run (legacy run — predates drift tracking).
+      </div>
+    );
+  }
+
+  const grandOrigComputed = items.reduce(
+    (s, i) => s + Math.round(Number(i.originalPlan ?? 0)),
+    0,
+  );
+  const drift = Math.abs(grandOrigComputed - frozenPlanGrandMax);
+
+  if (drift <= 200) return null;
+
+  const sign = grandOrigComputed > frozenPlanGrandMax ? "+" : "−";
+  const absDrift = Math.abs(grandOrigComputed - frozenPlanGrandMax);
+
+  return (
+    <div className="rounded-md bg-amber-50 border border-amber-300 px-3 py-2.5 text-sm text-amber-900">
+      <div className="font-semibold mb-0.5">
+        ⚠ Baseline drift detected
+      </div>
+      <div>
+        Corrective items sum to{" "}
+        <span className="font-medium tabular-nums">{grandOrigComputed.toLocaleString("en-IN")} pcs</span>
+        {" "}but the frozen plan run recorded{" "}
+        <span className="font-medium tabular-nums">{frozenPlanGrandMax.toLocaleString("en-IN")} pcs</span>
+        {" "}({sign}{absDrift.toLocaleString("en-IN")} pcs).
+      </div>
+      <div className="text-xs text-amber-700 mt-1">
+        The original-plan column in this corrective run does not match the frozen plan run's grand total.
+        This may indicate the plan run was updated after this corrective was saved, or a rounding discrepancy.
+      </div>
+    </div>
+  );
+}
+
 // ─── Run History Sidebar ──────────────────────────────────────────────────────
 
 function RunHistory({ month, segment, selectedRunId, onSelect }: { month: string; segment: string; selectedRunId: number | null; onSelect: (id: number) => void }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data, isLoading } = useListCorrectiveRuns({ month, segment } as any);
+  const { data, isLoading, refetch } = useListCorrectiveRuns({ month, segment } as any);
   const runs = (data as unknown as CorrectivePlanRunSummary[] | undefined) ?? [];
+  const deleteRun = useDeleteCorrectiveRun();
+  const pinRun = usePinCorrectiveRun();
+  const { toast } = useToast();
+
+  function handleDelete(e: React.MouseEvent, run: CorrectivePlanRunSummary) {
+    e.stopPropagation();
+    if (!confirm(`Delete corrective run #${run.id}? This cannot be undone.`)) return;
+    deleteRun.mutate(
+      { id: run.id },
+      {
+        onSuccess: () => {
+          toast({ title: `Run #${run.id} deleted` });
+          refetch();
+        },
+        onError: (err) => {
+          // customFetch throws ApiError for all non-2xx; TError=void but runtime type is ApiError
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const apiErr = err as any;
+          if (apiErr instanceof ApiError && apiErr.status === 409) {
+            const body = apiErr.data as { error?: string };
+            toast({
+              title: "Cannot delete pinned run",
+              description: body?.error ?? `Run #${run.id} is pinned and cannot be deleted. Unpin it first.`,
+              variant: "destructive",
+            });
+          } else {
+            toast({ title: `Failed to delete run #${run.id}`, variant: "destructive" });
+          }
+        },
+      },
+    );
+  }
+
+  function handleTogglePin(e: React.MouseEvent, run: CorrectivePlanRunSummary) {
+    e.stopPropagation();
+    const newPinned = !run.pinned;
+    pinRun.mutate(
+      { id: run.id, data: { pinned: newPinned } },
+      {
+        onSuccess: () => {
+          toast({ title: newPinned ? `Run #${run.id} pinned` : `Run #${run.id} unpinned` });
+          refetch();
+        },
+        onError: () => {
+          toast({ title: "Failed to update pin status", variant: "destructive" });
+        },
+      },
+    );
+  }
 
   if (isLoading) return <p className="text-xs text-gray-400">Loading history…</p>;
   if (runs.length === 0) return <p className="text-xs text-gray-400">No runs yet for {month}</p>;
@@ -836,29 +941,60 @@ function RunHistory({ month, segment, selectedRunId, onSelect }: { month: string
   return (
     <div className="space-y-1.5">
       {runs.map(run => (
-        <button
+        <div
           key={run.id}
           onClick={() => onSelect(run.id)}
           className={cn(
-            "w-full text-left rounded-md border px-3 py-2 text-xs transition-colors",
+            "w-full text-left rounded-md border px-3 py-2 text-xs transition-colors cursor-pointer",
             selectedRunId === run.id
               ? "border-indigo-300 bg-indigo-50 text-indigo-800"
               : "border-gray-200 bg-white hover:bg-gray-50",
           )}
         >
           <div className="flex items-center justify-between mb-0.5">
-            <span className="font-semibold">
+            <span className="font-semibold flex items-center gap-1">
+              {run.pinned && (
+                <span title="Pinned — protected from deletion" className="text-amber-600">📌</span>
+              )}
               {(run as unknown as { note?: string | null }).note ?? `W${run.weekClosed}`} — Run #{run.id}
             </span>
-            {(run.warnings as CorrectiveWarning[]).some(w => w.severity === "critical") && (
-              <span className="text-red-700 font-bold">!</span>
-            )}
+            <div className="flex items-center gap-1">
+              {(run.warnings as CorrectiveWarning[]).some(w => w.severity === "critical") && (
+                <span className="text-red-700 font-bold">!</span>
+              )}
+              <button
+                onClick={(e) => handleTogglePin(e, run)}
+                disabled={pinRun.isPending}
+                title={run.pinned ? "Unpin this run" : "Pin to protect from deletion"}
+                className={cn(
+                  "px-1 py-0.5 rounded text-xs transition-colors",
+                  run.pinned
+                    ? "text-amber-600 hover:text-amber-800 hover:bg-amber-50"
+                    : "text-gray-400 hover:text-amber-600 hover:bg-amber-50",
+                )}
+              >
+                {run.pinned ? "📌" : "📎"}
+              </button>
+              <button
+                onClick={(e) => handleDelete(e, run)}
+                disabled={deleteRun.isPending}
+                title={run.pinned ? "Pinned — unpin first to delete" : "Delete this run"}
+                className={cn(
+                  "px-1 py-0.5 rounded text-xs transition-colors",
+                  run.pinned
+                    ? "text-gray-300 cursor-not-allowed"
+                    : "text-gray-400 hover:text-red-600 hover:bg-red-50",
+                )}
+              >
+                🗑
+              </button>
+            </div>
           </div>
           <div className="text-gray-500">{fmtDt(String(run.createdAt))}</div>
           <div className="text-gray-400 mt-0.5">
             Revised: {fmtPcs(run.revisedMonthTotal)} pcs
           </div>
-        </button>
+        </div>
       ))}
     </div>
   );
@@ -1041,6 +1177,12 @@ export default function CorrectivePage() {
               <>
                 {/* Header */}
                 <HeaderSummary result={displayResult} />
+
+                {/* Baseline drift */}
+                <BaselineDriftBanner
+                  items={displayResult.items}
+                  frozenPlanGrandMax={displayResult.frozenPlanGrandMax}
+                />
 
                 {/* Warnings */}
                 <Card>

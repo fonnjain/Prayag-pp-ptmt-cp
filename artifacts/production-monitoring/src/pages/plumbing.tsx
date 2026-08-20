@@ -1,8 +1,16 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, RefreshCw, TrendingUp, Package, Unlink } from "lucide-react";
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+  TrendingUp,
+  Package,
+  Unlink,
+} from "lucide-react";
 
 const CATEGORY_ORDER = [
   "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
@@ -46,12 +54,28 @@ interface CategoryRow {
   notStarted: boolean;
 }
 
+interface ItemRow {
+  itemCode: string;
+  category: string;
+  w1Release: number;
+  w1Actual: number;
+  w2Release: number;
+  w2Actual: number;
+  w3Release: number;
+  w3Actual: number;
+  w4Release: number;
+  w4Actual: number;
+  totalRelease: number;
+  totalActual: number;
+}
+
 interface MonitoringData {
   month: string;
   lastDataDate: string | null;
   workingDaysElapsed: number;
   weeks: WeekRow[];
   categories: CategoryRow[];
+  items: ItemRow[];
   unmapped: { byWeek: number[]; total: number; topCodes: { code: string; qty: number }[] };
   totalProduced: number;
   totalMapped: number;
@@ -66,10 +90,11 @@ function ragClass(pct: number | null): string {
   return "text-red-500 font-semibold";
 }
 
-export default function PlumbingMonitoring({ month }: { month: string }) {
+export default function PlumbingMonitoring({ month, selectedCategory }: { month: string; selectedCategory?: string | null }) {
   const [data, setData]       = useState<MonitoringData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState<string | null>(null);
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -88,7 +113,10 @@ export default function PlumbingMonitoring({ month }: { month: string }) {
     }
   };
 
-  useEffect(() => { load(); }, [month]);
+  useEffect(() => {
+    setExpandedCategory(null);
+    load();
+  }, [month]);
 
   const today = new Date().toISOString().slice(0, 10);
   const elapsedWeeks = data?.weeks.filter((w) => today > w.endDate) ?? [];
@@ -99,7 +127,9 @@ export default function PlumbingMonitoring({ month }: { month: string }) {
   const demonstratedWeeklyCapacity = data ? Math.round(data.runRatePerDay * 7) : 0;
 
   const orderedCategories = data
-    ? CATEGORY_ORDER.map((name) => data.categories.find((c) => c.category === name)).filter(Boolean) as CategoryRow[]
+    ? CATEGORY_ORDER
+      .filter((name) => !selectedCategory || name === selectedCategory)
+      .map((name) => data.categories.find((c) => c.category === name)).filter(Boolean) as CategoryRow[]
     : [];
 
   const notStarted = orderedCategories.filter((c) => c.notStarted);
@@ -328,28 +358,94 @@ export default function PlumbingMonitoring({ month }: { month: string }) {
                   <tbody className="divide-y divide-border/20">
                     {orderedCategories.map((cat) => {
                       const isSolvent = cat.category.includes("Solvent");
+                      const isExpanded = expandedCategory === cat.category;
+                      const categoryItems = (data.items ?? []).filter(
+                        (item) => item.category === cat.category,
+                      );
                       return (
-                        <tr
-                          key={cat.category}
-                          className={`text-right ${cat.notStarted ? "bg-red-50/60" : ""} ${isSolvent ? "opacity-60" : ""}`}
-                        >
-                          <td className="py-2 pr-4 text-left font-medium">{cat.category}</td>
-                          <td className="py-2 pr-3 font-mono text-xs text-muted-foreground">{fmtN(cat.w1Release)}</td>
-                          <td className={`py-2 pr-3 font-mono text-xs ${cat.w1Actual > 0 ? "" : "text-muted-foreground/50"}`}>
-                            {cat.w1Actual > 0 ? fmtN(cat.w1Actual) : "0"}
-                          </td>
-                          <td className="py-2 pr-3 font-mono text-xs text-muted-foreground border-l border-border/20">{fmtN(cat.w2Release)}</td>
-                          <td className={`py-2 pr-3 font-mono text-xs ${cat.w2Actual > 0 ? "" : "text-muted-foreground/50"}`}>
-                            {cat.w2Actual > 0 ? fmtN(cat.w2Actual) : "0"}
-                          </td>
-                          <td className="py-2 text-xs">
-                            {cat.notStarted ? (
-                              <Badge variant="destructive" className="text-[10px] px-1.5">NOT STARTED</Badge>
-                            ) : (
-                              <span className="text-emerald-600 font-medium">In progress</span>
-                            )}
-                          </td>
-                        </tr>
+                        <Fragment key={cat.category}>
+                          <tr
+                            className={`text-right cursor-pointer select-none hover:bg-muted/20 ${
+                              cat.notStarted ? "bg-red-50/60" : ""
+                            } ${isSolvent ? "opacity-60" : ""}`}
+                            role="button"
+                            tabIndex={0}
+                            aria-expanded={isExpanded}
+                            aria-label={`${isExpanded ? "Collapse" : "Expand"} ${cat.category} product rows`}
+                            onClick={() => setExpandedCategory(isExpanded ? null : cat.category)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                setExpandedCategory(isExpanded ? null : cat.category);
+                              }
+                            }}
+                          >
+                            <td className="py-2 pr-4 text-left font-medium">
+                              <span className="inline-flex items-center gap-1.5">
+                                {isExpanded
+                                  ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                                  : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                                {cat.category}
+                              </span>
+                            </td>
+                            <td className="py-2 pr-3 font-mono text-xs text-muted-foreground">{fmtN(cat.w1Release)}</td>
+                            <td className={`py-2 pr-3 font-mono text-xs ${cat.w1Actual > 0 ? "" : "text-muted-foreground/50"}`}>
+                              {cat.w1Actual > 0 ? fmtN(cat.w1Actual) : "0"}
+                            </td>
+                            <td className="py-2 pr-3 font-mono text-xs text-muted-foreground border-l border-border/20">{fmtN(cat.w2Release)}</td>
+                            <td className={`py-2 pr-3 font-mono text-xs ${cat.w2Actual > 0 ? "" : "text-muted-foreground/50"}`}>
+                              {cat.w2Actual > 0 ? fmtN(cat.w2Actual) : "0"}
+                            </td>
+                            <td className="py-2 text-xs">
+                              {cat.notStarted ? (
+                                <Badge variant="destructive" className="text-[10px] px-1.5">NOT STARTED</Badge>
+                              ) : (
+                                <span className="text-emerald-600 font-medium">In progress</span>
+                              )}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-muted/15">
+                              <td colSpan={6} className="px-4 py-2">
+                                <div className="rounded-md border border-border/50 overflow-x-auto">
+                                  <table className="w-full text-xs">
+                                    <thead className="bg-muted/30">
+                                      <tr className="border-b border-border/40 text-right text-muted-foreground">
+                                        <th className="text-left py-2 px-3 font-medium">Product Code</th>
+                                        <th className="py-2 px-2 font-medium">W1 Release</th>
+                                        <th className="py-2 px-2 font-medium">W1 Actual</th>
+                                        <th className="py-2 px-2 font-medium">W2 Release</th>
+                                        <th className="py-2 px-2 font-medium">W2 Actual</th>
+                                        <th className="py-2 px-2 font-medium">Total Release</th>
+                                        <th className="py-2 px-3 font-medium">Total Actual</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border/30">
+                                      {categoryItems.map((item) => (
+                                        <tr key={`${item.category}-${item.itemCode}`} className="hover:bg-muted/20">
+                                          <td className="py-1.5 px-3 text-left font-mono font-medium">{item.itemCode}</td>
+                                          <td className="py-1.5 px-2 text-right font-mono">{fmtN(item.w1Release)}</td>
+                                          <td className="py-1.5 px-2 text-right font-mono">{fmtN(item.w1Actual)}</td>
+                                          <td className="py-1.5 px-2 text-right font-mono">{fmtN(item.w2Release)}</td>
+                                          <td className="py-1.5 px-2 text-right font-mono">{fmtN(item.w2Actual)}</td>
+                                          <td className="py-1.5 px-2 text-right font-mono font-semibold">{fmtN(item.totalRelease)}</td>
+                                          <td className="py-1.5 px-3 text-right font-mono font-semibold">{fmtN(item.totalActual)}</td>
+                                        </tr>
+                                      ))}
+                                      {categoryItems.length === 0 && (
+                                        <tr>
+                                          <td colSpan={7} className="py-3 px-3 text-center text-muted-foreground">
+                                            No product detail available for this category.
+                                          </td>
+                                        </tr>
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
                       );
                     })}
                   </tbody>

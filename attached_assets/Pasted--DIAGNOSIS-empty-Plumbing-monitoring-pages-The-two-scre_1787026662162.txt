@@ -1,0 +1,85 @@
+# DIAGNOSIS — empty Plumbing monitoring pages
+
+The two screens fail for **different reasons**, and neither can tell you which. Both render "no data" identically whether the data is genuinely zero, the API returned an error, or a key is missing.
+
+---
+
+## Velocity — reads an external service, not your database
+
+`plumbing-velocity.tsx:12` calls `useGetPlantLiveSummary({ period: month, plant: "PIPE" })` → `GET /api/plant-live/summary?period=2026-08&plant=PIPE` → proxied to **`https://prayag-plant.com/data-api/v1/summary`** (`plant-live.ts:7`, `:87`).
+
+**This is not the planning database.** Nothing on this page comes from `plan_runs`, `corrective_plan_runs` or the uploads. So the zeros say nothing about the planning system, and none of the fixes from this session would change them.
+
+The proxy fails in three distinct ways, and the page shows the same thing for all of them:
+
+| Cause | API returns | Page shows |
+|---|---|---|
+| `PRAYAG_PLANT_API_KEY` not set in the production environment | **503** | 0 / 0 / 0 |
+| Upstream error or auth rejection | **502** | 0 / 0 / 0 |
+| 20 s timeout (`UPSTREAM_TIMEOUT_MS`) | **502** | 0 / 0 / 0 |
+| Upstream genuinely has no August 2026 data | 200, empty | 0 / 0 / 0 |
+
+`plumbing-velocity.tsx` has **zero references to `isError`** — it destructures only `data`, `isLoading`, `isRefetching`, `refetch`, then reads `d?.overall` with `?? 0` fallbacks. A 503 renders as a confident "0 kg good".
+
+Given a fresh Replit deployment, **an unset `PRAYAG_PLANT_API_KEY` is the first thing to rule out** — deploy environments don't inherit dev secrets automatically.
+
+### Diagnose in 30 seconds
+
+```
+GET /api/plant-live/periods        ← lists the months upstream actually holds
+GET /api/plant-live/summary?period=2026-08&plant=PIPE
+```
+
+`/plant-live/periods` is purpose-built for this — its description is *"Valid period tokens and months holding data"*. If `2026-08` isn't in that list, that is your answer and nothing else needs investigating.
+
+Note also `plant: "PIPE"` is hardcoded, so this page only ever shows the **pipe extrusion plant** — fittings and solvent output are excluded by design. Worth confirming that's what you expect from a page reached via "Plumbing".
+
+## Recommendations — the error is being swallowed
+
+`plumbing-recommendations.tsx:16–19`:
+
+```typescript
+const res = await fetch(`/api/monitoring/dashboard?month=${month}&segment=Plumbing`);
+if (!res.ok) throw new Error(`${res.status}`);
+setData(await res.json());
+} catch { /* silent */ }
+```
+
+The throw is caught and **discarded**. `data` stays `null`, `loading` goes false in the `finally`, and the page renders its container with `cats = []` — the empty grey blocks in your screenshot. The HTTP status that would tell you what happened is thrown away.
+
+Three more pages do the same: **`plumbing-config.tsx`, `plumbing-reports.tsx`, `plumbing-trend.tsx`**. And `plumbing-attainment.tsx` and `plumbing-trend.tsx` hit the same `/api/monitoring/dashboard` endpoint — so if that endpoint is failing, four Plumbing screens go blank simultaneously with no explanation on any of them.
+
+### Diagnose
+
+```
+GET /api/monitoring/dashboard?month=2026-08&segment=Plumbing
+```
+
+The status code separates the cases immediately. Open DevTools → Network on the Recommendations page and the failing request is right there — the page just isn't telling you.
+
+## Relevant context
+
+The last production suite run reported `Deployed commit: (unknown)`, meaning production was running a bundle predating `d1af19c` — before the `commitSha` field existed. If that publish still hasn't happened, production is serving a build from before this entire session's work, which is worth confirming before debugging anything else. `GET /healthz` now returns both `dbHostname` and `commitSha`; check it first.
+
+---
+
+## What I'd change
+
+1. **Surface errors instead of rendering zeros.** `useGetPlantLiveSummary` already returns `isError` and `error` — use them. A 503 should read *"Plant live API not configured"*, not *"0 kg good"*. This is the same class as the silent-zero lesson in HANDOVER §7, now in the UI layer: an unresolved value taking a plausible-looking default.
+2. **Replace `catch { /* silent */ }` in all four pages** with a stored error and a visible message carrying the status code.
+3. **Distinguish "no data" from "not loaded"** — an empty state that says *"No production recorded for August 2026"* is a different screen from a failed fetch, and right now they're identical.
+
+---
+
+## Suggested prompt for Replit
+
+> The two empty Plumbing monitoring screens have different causes, and neither page can tell us which — both render "no data" for genuine zeros, HTTP errors, and missing config alike.
+>
+> **Velocity** (`/monitoring/plumbing/velocity`) reads `useGetPlantLiveSummary({ period, plant: "PIPE" })` → `/api/plant-live/summary` → **`https://prayag-plant.com/data-api/v1/summary`**. That's an external service, not our DB — no plan or corrective data feeds it. `plant-live.ts` returns **503** if `PRAYAG_PLANT_API_KEY` is unset and **502** on upstream error or 20 s timeout, and `plumbing-velocity.tsx` has no `isError` handling at all — it reads `d?.overall` with `?? 0`, so a 503 renders as "0 kg good".
+> Please check, in this order: (a) is `PRAYAG_PLANT_API_KEY` set in the **production** environment (deploys don't inherit dev secrets); (b) `GET /api/plant-live/periods` — does it list `2026-08`; (c) `GET /api/plant-live/summary?period=2026-08&plant=PIPE` — what status. Also confirm `plant: "PIPE"` is intended, since it's hardcoded and excludes fitting/solvent output.
+>
+> **Recommendations** is a swallowed error. `plumbing-recommendations.tsx:16–19` throws on `!res.ok` and then `catch { /* silent */ }` discards it — `data` stays null and the page renders empty blocks. Please run `GET /api/monitoring/dashboard?month=2026-08&segment=Plumbing` and report the status. Note **`plumbing-attainment.tsx` and `plumbing-trend.tsx` call the same endpoint**, so if it's failing, four screens are blank for one reason. `plumbing-config.tsx` and `plumbing-reports.tsx` have the same silent catch.
+>
+> Then three fixes: use `isError` on the velocity page and show the real cause; replace `catch { /* silent */ }` in all four pages with a visible message including the status code; and make "no data for this month" a distinct empty state from "request failed". This is the silent-zero lesson from §7 showing up in the UI — an unresolved value taking a plausible default.
+>
+> One more thing to confirm first: the last suite run reported `Deployed commit: (unknown)`, i.e. production predates `d1af19c`. Check `GET /healthz` — if the publish still hasn't happened, production is serving a build from before this whole session and that may explain more than these two pages.

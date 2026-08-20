@@ -44,3 +44,10 @@ uri = "file://reports/Plant_Plan_Import_Feature_Documentation.docx"
 type = "word_document"
 title = "Plant Plan Import — Feature Documentation"
 description = "Complete documentation of the new Excel import: where to find it, how to use it, expected file format, what's stored, summary view, history, API endpoints, and verified test results."
+
+[[outputs]]
+id = "0Mo7XxXVq2xaHSb5YQVdX"
+uri = "file://docs/plant-velocity-data-explanation.md"
+type = "text"
+title = "Plant Velocity data and calculation guide"
+description = "Plain-language explanation of the PTMT Plant Velocity screen, its spreadsheet sources, logic, and formulas."

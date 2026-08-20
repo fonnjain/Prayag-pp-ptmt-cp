@@ -1,0 +1,58 @@
+Goldens verified — NC20a === 20, NC20b 617,711 ±200, NC21a === 21, NC21b 2,331,647 ±200, NC22b run #21 / 1,120 items. No #44 or 2,447,633 left anywhere. Three things before you publish:
+
+1. The Database: header will lie on the production run. It reads the local DATABASE_URL (verify-plumbing-plan.ts:210), but the checks go over HTTP to API_BASE. API_BASE=https://prayag-pp-ptmt-cp.replit.app pnpm run verify from your dev shell will query production and print Database: helium. Add the hostname (and the deployed commit SHA) to /healthz — routes/index.ts:26 — and have the suite read it from the API. Until then, relabel the line Local DATABASE_URL (NOT the DB under test).
+
+2. Two of the reported fixes aren't on main. The three :id routes already filtered by id at 2f5ac4e — the diff only drops .limit(1) and rewords the 404. And corrective.ts at 2f5ac4e has zero module-level references to items and typechecks clean, so the ReferenceError wasn't there either. Both bugs were real in the deployed bundle, which means production is running code that was never pushed. Before publishing, confirm the publish builds from main at 865c59e and not from the workspace — otherwise the crashed code may survive the publish. Confirm the deployed commit afterwards.
+
+3. The suite can never be green on dev now. Ids are environmental, totals aren't. Suggest: assert structurally that the baseline is the highest finalized id for month+segment (catches the original "#18" bug anywhere), assert the totals exactly, and gate the === 20 / === 21 id equality on the production host from /healthz, skipped with a note elsewhere. Two caveats on the GET /api/plan/runs call NC22b already makes: it sorts createdAt DESC with no status filter while auto-select uses id DESC filtered to finalized, and its segment filter is still an unnormalised exact eq() (plan-runs.ts:161) — a casing typo returns [] and reads as "run not found".
+
+Also: the bundle-freshness check only sees the local dist/index.cjs. Production serving a stale bundle has now been the failure three times and this check has never been able to detect it — the deployed SHA in /healthz fixes that too.
+
+Project content
+Production Planning for all
+Created by you
+Add PDFs, documents, or other text to reference in this project.
+Content
+files.zip
+
+ZIP
+
+files (1).zip
+
+ZIP
+
+files (2).zip
+
+ZIP
+
+files (3).zip
+
+ZIP
+
+files (4).zip
+
+ZIP
+
+files (5).zip
+
+ZIP
+
+files (6).zip
+
+ZIP
+
+Plumbing_Corrective_Plan_2026-08_Detail (3).xlsx
+
+XLSX
+
+Plumbing_Corrective_Plan_2026-08_Standard (3).xlsx
+
+XLSX
+
+PTMT_Corrective_Plan_2026-08_Detail (5).xlsx
+
+XLSX
+
+PTMT_Corrective_Plan_2026-08_Standard (3).xlsx
+
+XLSX

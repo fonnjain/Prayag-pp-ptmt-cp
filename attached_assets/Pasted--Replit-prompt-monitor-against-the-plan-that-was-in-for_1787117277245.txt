@@ -1,0 +1,111 @@
+# Replit prompt — monitor against the plan that was in force, not the latest one
+
+## The requirement
+
+A month has a **sequence of plans**, not one plan:
+
+1. **Run Plan** creates the first plan (`plan_runs` + `plan_run_results`, immutable once finalized).
+2. **Plan Import** uploads a revised plan (`plant_plan_uploads` + items).
+3. **Recompute** produces a corrective (`corrective_plan_runs` + items).
+4. Steps 2 and 3 can repeat, in any order.
+
+Monitoring must measure each day's production **against the plan that was in force on that day** — not against the first plan for the whole month, and not against the latest plan retro-applied to the whole month.
+
+Concretely: if plan v1 runs 1–14 Aug and v2 takes effect 15 Aug, then W1 and W2 are scored against v1's releases, W3 and W4 against v2's. Changing the plan on the 15th must not retroactively alter W1's attainment.
+
+---
+
+## What happens today
+
+**Monitoring does not read any frozen plan at all.** `grep planRunsTable` across `routes/plant.ts`, `routes/monitoring.ts` and `lib/plant-ingestion.ts` returns **nothing**.
+
+`plant-ingestion.ts:118–128`:
+
+```typescript
+export async function fetchMonthlyTargets(month: string) {
+  if (month >= currentMonthStr()) {
+    const planItems = await buildPlanItems(month);   // live rebuild from CURRENT uploads
+```
+
+So the current month's targets are rebuilt from whatever the inputs say **at the moment of the request**. That is neither v1 nor the version in force on any given day — it is a fourth thing, and it changes under you every time an upload lands.
+
+The consequence is visible in the screenshot: **W1 (8/1–7) Released 489,790** against **Actual 153,980** → RED, while **W2 Released 47,194** and **W3 Released 64,922**. A 10× swing between W1 and W2 releases is not a plan shape anyone issued; it is the current inputs' weekly split being applied backwards over a month whose plan has since changed. `CUMULATIVE ATTAINMENT 150.1%` alongside `MONTH ATTAINMENT 77.8%` is the same artefact.
+
+`plant-weekly-engine.ts:100–125` already carries unmet release forward correctly (`carryover`, `effectiveTarget = target + carryover`) — that mechanism is sound. The problem is upstream: the four weekly targets it receives come from a single live rebuild rather than from whichever plan governed each week.
+
+---
+
+## What to build
+
+### 1. A plan-version timeline per (month, segment)
+
+The three sources already carry timestamps:
+
+| Source | Table | Timestamp available |
+|---|---|---|
+| Run Plan | `plan_runs` | `createdAt`, plus `status = finalized` |
+| Plan Import | `plant_plan_uploads` | `uploadedAt` |
+| Recompute | `corrective_plan_runs` | `createdAt`, **and `asOfDate` / `weekClosed`** |
+
+Build a single ordered view:
+
+```typescript
+interface PlanVersion {
+  kind: "run" | "import" | "corrective";
+  sourceId: number;
+  effectiveFrom: string;      // YYYY-MM-DD, inclusive
+  effectiveTo: string | null; // exclusive; null = still in force
+}
+```
+
+**`effectiveFrom` must be an explicit stored column, not inferred from the timestamp.** Add it to all three tables (nullable, defaulting to the creation date). The reason: a plan imported on the 17th is very often intended to take effect from the 15th — the start of W3 — and `corrective_plan_runs.asOfDate` already encodes exactly this intent. Inferring from `createdAt` would silently misdate every plan uploaded a day or two late. Let the user set it at import/recompute time, defaulting to the creation date.
+
+Version 1 always has `effectiveFrom` = the 1st of the month, regardless of when the run was created.
+
+### 2. Attribute each actual to its governing version
+
+Actuals are daily rows with dates. For a production row on date `d`, the governing version is the one where `effectiveFrom <= d < effectiveTo`. Then:
+
+- **Weekly released** — a week fully inside one version takes that version's release for the week. A week straddling a boundary is **split by day**: days before the switch use the old version's daily release, days from the switch use the new one. Do not assign a straddling week wholesale to either side.
+- **Required cumulative** — sum per day of that day's governing version's daily target, not `targetMax / workingDays × elapsed` against a single plan.
+- **Max PP for MONTH ATTAINMENT** — decide explicitly and document it: either the *latest* version's month total (what we are now trying to hit) or a day-weighted blend. I would use the latest version and label the card *"vs Max PP (v3, effective 15 Aug)"*, because the month target is a forward-looking commitment. But it must be stated, not implicit.
+- **Carry-over across a version boundary** — `plant-weekly-engine.ts:119` carries the unmet gap into the next week. Decide whether a new plan version **absorbs** the outstanding carry-over (the revised plan already accounts for the shortfall) or whether it stacks on top. Getting this wrong double-counts the gap. My reading is that a recompute already accounts for it, so carry-over should **reset to zero** at a version boundary — but confirm against how the corrective computes `remaining`.
+
+### 3. Show the timeline in the UI
+
+The Weekly Release Pulse should mark where the plan changed — e.g. a divider between W2 and W3 reading *"Plan v2 effective 15 Aug (import: revised-plan-aug.xlsx)"*. Each week card should name which version it was scored against.
+
+Without this, two people looking at the same W1 number on different days will disagree about what it means, and neither will be able to tell why.
+
+### 4. Immutability
+
+Once a day is attributed to a version, that attribution must not change. Adding v3 on the 22nd must leave W1–W3 numbers **byte-identical**. This pairs with the month-freeze work: within an open month, past *weeks* are already effectively closed once a newer version supersedes them.
+
+---
+
+## Before writing code, please report
+
+1. `GET /api/plan/runs?month=2026-08&segment=PTMT` — how many runs, ids, statuses, `createdAt`.
+2. `SELECT id, month, segment, filename, uploaded_at, item_count FROM plant_plan_uploads WHERE month = '2026-08'` — how many imports, and when.
+3. `SELECT id, month, segment, week_closed, as_of_date, created_at, plan_run_id FROM corrective_plan_runs WHERE month = '2026-08' ORDER BY id` — how many recomputes, and their `asOfDate`s.
+4. For August: what does `buildPlanItems("2026-08")` currently return as the W1 total, and how does that compare with plan run v1's W1 total? The screenshot's 489,790 for W1 should be reconcilable against one of them — knowing which tells us how far the live rebuild has drifted.
+
+Those four answers determine how many versions August actually has and whether `asOfDate` is populated well enough to seed `effectiveFrom` without manual entry. Please send them before the design is fixed.
+
+---
+
+## Tests to add
+
+1. Two versions, boundary mid-week → the straddling week's release equals (days before × v1 daily) + (days after × v2 daily), not either version's full week.
+2. Adding v3 leaves all weeks before its `effectiveFrom` **byte-identical**.
+3. `effectiveFrom` of v1 is the 1st of the month even when `plan_runs.createdAt` is later.
+4. A version whose `effectiveFrom` precedes the previous version's is rejected — the timeline must be strictly ordered, with no overlaps and no gaps.
+5. Sum of per-version day counts equals the month's day count — no day unattributed, no day counted twice.
+
+---
+
+## Reporting back
+
+Files and line numbers changed, diffstat, and confirmation that nothing else is in the diff. `tsc --noEmit` clean and a byte-size match before pushing.
+
+**Do not start this before the month-freeze work lands** — the two overlap in `fetchMonthlyTargets` and `computePlantBundle`, and doing them in separate passes over the same functions is how undeclared riders have crept in before. If you would rather do them together, say so and I will combine the prompts.

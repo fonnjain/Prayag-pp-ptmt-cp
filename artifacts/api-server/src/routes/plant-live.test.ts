@@ -24,12 +24,27 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import express from "express";
 import plantLiveRouter from "./plant-live.js";
+import { requireAppUser } from "./user-auth-middleware.js";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 /** Spin up a disposable HTTP server around the plant-live router. */
 async function startTestServer(): Promise<{ url: string; close: () => Promise<void> }> {
   const app = express();
+  app.use("/api", plantLiveRouter);
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as { port: number }).port;
+  return {
+    url: `http://127.0.0.1:${port}/api`,
+    close: () => new Promise<void>((res, rej) => server.close((e) => (e ? rej(e) : res()))),
+  };
+}
+
+/** Spin up the browser-facing router behind the same session guard as production. */
+async function startProtectedTestServer(): Promise<{ url: string; close: () => Promise<void> }> {
+  const app = express();
+  app.use(requireAppUser);
   app.use("/api", plantLiveRouter);
   const server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -58,6 +73,19 @@ function httpGet(url: string): Promise<{ status: number; body: unknown }> {
     req.on("error", reject);
   });
 }
+
+test("plant-live browser reads require an app session", async () => {
+  const { url, close } = await startProtectedTestServer();
+  try {
+    for (const path of ["plants", "periods", "summary?period=2026-08&plant=PTMT"]) {
+      const { status, body } = await httpGet(`${url}/plant-live/${path}`);
+      assert.equal(status, 401, `${path} should reject anonymous callers`);
+      assert.equal((body as any).code, "AUTH_REQUIRED");
+    }
+  } finally {
+    await close();
+  }
+});
 
 // ── upstream timeout → 504 ────────────────────────────────────────────────────
 

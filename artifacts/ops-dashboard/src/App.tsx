@@ -6,11 +6,11 @@ import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import { useState, useMemo, Fragment, useRef, useCallback, useEffect } from "react";
+import { useState, useMemo, Fragment, useRef, useCallback, useEffect, createContext, useContext } from "react";
 import {
   LayoutDashboard, ShoppingCart, Factory, TrendingUp, Database,
   RefreshCw, ChevronRight, AlertCircle, Loader2, Layers, ChevronDown, ChevronUp,
-  ClipboardList, Download, KeyRound, Plus, Trash2, Copy, Check,
+  ClipboardList, Download, KeyRound, Plus, Trash2, Copy, Check, LogOut, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import SEED from "./data/seed.json";
@@ -18,7 +18,13 @@ import SEED from "./data/seed.json";
 // ─── Query Client ─────────────────────────────────────────────────────────────
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 5 * 60 * 1000, refetchOnWindowFocus: false, retry: 1 },
+    queries: {
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
+      retry: 4,
+      retryOnMount: true,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
+    },
   },
 });
 
@@ -31,6 +37,168 @@ const PURPLE = "hsl(262 72% 58%)";
 const CHART_COLORS = [AMBER, GREEN, BLUE, RED, PURPLE, "#f59e0b", "#10b981", "#3b82f6"];
 const FISCAL_MONTHS = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"];
 const FY_OPTIONS = ["2026-27","2025-26","2024-25","2023-24"];
+
+// ─── Shared browser authentication ────────────────────────────────────────────
+interface AuthUser {
+  id: number;
+  email: string;
+  role: "admin" | "user";
+  isActive: boolean;
+  mustChangePassword: boolean;
+}
+interface AuthContextValue {
+  user: AuthUser | null;
+  isLoading: boolean;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => Promise<void>;
+  refresh: () => Promise<void>;
+}
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+function useAuth(): AuthContextValue {
+  const value = useContext(AuthContext);
+  if (!value) throw new Error("useAuth must be used inside AuthProvider");
+  return value;
+}
+
+function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    try {
+      const response = await fetch("/api/auth/me", { credentials: "include" });
+      setUser(response.ok ? await response.json() as AuthUser : null);
+    } catch {
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  const login = async (email: string, password: string) => {
+    const response = await fetch("/api/auth/login", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { error?: string };
+      throw new Error(body.error ?? "Login failed");
+    }
+    setUser(await response.json() as AuthUser);
+  };
+
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    setUser(null);
+  };
+
+  return <AuthContext.Provider value={{ user, isLoading, login, logout, refresh }}>{children}</AuthContext.Provider>;
+}
+
+function LoginScreen() {
+  const { login } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [working, setWorking] = useState(false);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setWorking(true);
+    setError(null);
+    try {
+      await login(email, password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Login failed");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <form onSubmit={(event) => { void submit(event); }} className="w-full max-w-sm rounded-xl border border-card-border bg-card p-7 shadow-md space-y-4">
+        <div className="text-center mb-6">
+          <div className="text-3xl font-bold" style={{ color: AMBER }}>prayag</div>
+          <p className="text-sm text-muted-foreground mt-1">India Operations Dashboard</p>
+        </div>
+        <label className="block text-sm font-medium">Email address
+          <input className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" />
+        </label>
+        <label className="block text-sm font-medium">Password
+          <input className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
+        </label>
+        {error && <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">{error}</p>}
+        <button className="w-full rounded-md bg-primary text-primary-foreground py-2 text-sm font-medium disabled:opacity-50" disabled={working}>
+          {working ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function AccountControls() {
+  const { user, logout, refresh } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  if (!user) return null;
+
+  const changePassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (next.length < 8) { setMessage("New password must be at least 8 characters."); return; }
+    try {
+      const response = await fetch("/api/auth/change-password", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: current, newPassword: next }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? "Password change failed");
+      }
+      setCurrent(""); setNext(""); setMessage("Password changed.");
+      await refresh();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Password change failed");
+    }
+  };
+
+  return (
+    <div className="fixed top-9 right-4 z-40 flex items-start gap-2">
+      {user.role === "admin" && <a href="/admin/users" className="mt-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"><Users size={13} /> Users</a>}
+      <div className="rounded-md border border-border bg-card shadow-sm">
+        <div className="flex items-center gap-2 px-2 py-1">
+          <span className="max-w-[180px] truncate text-xs text-muted-foreground" title={user.email}>{user.email}</span>
+          {user.mustChangePassword && <span className="text-[10px] text-amber-600">Change password</span>}
+          <button onClick={() => setOpen((value) => !value)} className="p-1 text-muted-foreground hover:text-foreground" title="Change password"><KeyRound size={13} /></button>
+          <button onClick={() => void logout()} className="p-1 text-muted-foreground hover:text-foreground" title="Sign out"><LogOut size={13} /></button>
+        </div>
+        {(open || user.mustChangePassword) && (
+          <form onSubmit={(event) => { void changePassword(event); }} className="border-t border-border p-2 space-y-2 w-64">
+            <input className="w-full rounded border border-input bg-background px-2 py-1 text-xs" type="password" placeholder="Current password" required value={current} onChange={(e) => setCurrent(e.target.value)} />
+            <input className="w-full rounded border border-input bg-background px-2 py-1 text-xs" type="password" placeholder="New password (8+ characters)" required minLength={8} value={next} onChange={(e) => setNext(e.target.value)} />
+            {message && <p className="text-[11px] text-muted-foreground">{message}</p>}
+            <button className="w-full rounded bg-primary text-primary-foreground py-1 text-xs">Change password</button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">Loading…</div>;
+  if (!user) return <LoginScreen />;
+  return <>{children}</>;
+}
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 function fmtCr(value: number): string {
@@ -265,20 +433,21 @@ const CAT_SHORT: Record<string, string> = {
 
 function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Combined" }) {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["ops-overview", fy],
+    queryKey: ["ops-overview", fy, seg],
     queryFn: async () => {
-      const res = await fetch(`/api/ops/overview?fy=${fy}`);
+      const res = await fetch(`/api/ops/overview?fy=${fy}&segment=${encodeURIComponent(seg)}`);
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
   });
   const { data: orders, isLoading: ordersLoading } = useQuery({
-    queryKey: ["ops-orders", fy],
+    queryKey: ["ops-orders", fy, seg],
     queryFn: async () => {
       const res = await fetch(`/api/ops/orders?fy=${fy}`);
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
+    enabled: seg !== "Plumbing",
   });
 
   // Current month for management summary + plan summary
@@ -288,12 +457,13 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
   }, []);
 
   const { data: mgmtSummary, isLoading: mgmtLoading } = useQuery({
-    queryKey: ["mgmt-summary", currentMonth],
+    queryKey: ["mgmt-summary", currentMonth, seg],
     queryFn: async () => {
       const res = await fetch(`/api/ops/management-summary?month=${currentMonth}`);
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
+    enabled: seg !== "Plumbing",
     staleTime: 10 * 60 * 1000,
   });
 
@@ -441,7 +611,13 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
         </div>
       )}
 
+      <OverviewPlanVsActual seg={seg} month={currentMonth} />
       {/* KPIs — live data gated, seed KPIs always show */}
+      {seg === "Plumbing" ? (
+        <div className="mb-8 rounded-lg border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-xs text-emerald-900">
+          Plumbing order and sales feeds are not part of the PTMT Order Sheet. Use the Plumbing plan and Plan vs Actual sections above for the current Plumbing operating view.
+        </div>
+      ) : (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {isLoading || error ? (
           <>
@@ -460,9 +636,10 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
         <KpiCard label="PTMT Plan (25-26)" value={fmtQty(SEED.production_ptmt.fy_plan_units["2025-26"])}
           sub="Seed · daily production sheets" color={BLUE} />
       </div>
+      )}
 
       {/* Management Report card — with live charts */}
-      {(() => {
+      {seg !== "Plumbing" && (() => {
         const d = new Date();
         const mNum = d.getMonth() + 1;
         const yr = d.getFullYear();
@@ -606,7 +783,7 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
         );
       })()}
 
-      {data && (
+      {seg !== "Plumbing" && data && (
         <>
 
           {/* PTMT Combined trend — the key insight */}
@@ -721,257 +898,400 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
 }
 
 // ─── Management Reports Page ──────────────────────────────────────────────────
+// ─── Management Reports Page (Plan vs Actual) ──────────────────────────────────
 function defaultMgmtMonth(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-const MGMT_CATEGORIES = [
-  "Cocks Standard","Cocks Premium","Faucets & Jetsprays & Shower",
-  "Accessories","Cistern & Seat Cover","Cabinet","Ball Cock",
-];
-
-function fmtN(v: number) { return Math.round(v).toLocaleString("en-IN"); }
-
-function PtmtManagementReportsPage() {
-  const [month, setMonth] = useState(defaultMgmtMonth);
-  const [activeCategory, setActiveCategory] = useState(MGMT_CATEGORIES[0]);
-  const [search, setSearch] = useState("");
-
-  const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["mgmt-view", month],
-    queryFn: async () => {
-      const res = await fetch(`/api/ops/management-view?month=${month}`);
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error ?? "Failed"); }
-      return res.json();
-    },
-    enabled: /^\d{4}-\d{2}$/.test(month),
-    staleTime: 10 * 60 * 1000,
-  });
-
-  const catData = data?.categories?.find((c: any) => c.name === activeCategory);
-  const filteredItems = useMemo(() => {
-    const rows: any[] = catData?.items ?? [];
-    if (!search.trim()) return rows;
-    const q = search.trim().toUpperCase();
-    return rows.filter((r: any) =>
-      r.itemCode?.toUpperCase().includes(q) || r.colour?.toUpperCase().includes(q)
+function OverviewPlanVsActual({ seg, month }: { seg: "PTMT" | "Plumbing" | "Combined", month: string }) {
+  if (seg === "Combined") {
+    return (
+      <div className="mb-8">
+        <h2 className="text-sm font-semibold text-foreground mb-3 uppercase tracking-wide">
+          Plan vs Actual · {month} · Both Segments
+        </h2>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          <OverviewPlanVsActualWidget month={month} seg="PTMT" />
+          <OverviewPlanVsActualWidget month={month} seg="Plumbing" />
+        </div>
+      </div>
     );
-  }, [catData, search]);
-
-  const hdrs = data?.meta?.headers;
+  }
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+    <div className="mb-8">
+      <h2 className="text-sm font-semibold text-foreground mb-3 uppercase tracking-wide">
+        {seg} Plan vs Actual · {month}
+      </h2>
+      <OverviewPlanVsActualWidget month={month} seg={seg} standalone />
+    </div>
+  );
+}
+
+function reportRemarkColor(remark: string | null | undefined): string {
+  if (remark === "OVER") return BLUE;
+  if (remark === "ON TARGET") return GREEN;
+  return RED;
+}
+
+function reportRemarkClass(remark: string | null | undefined): string {
+  if (remark === "OVER") return "bg-blue-50 text-blue-700 border-blue-200";
+  if (remark === "ON TARGET") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (remark === "UNDER") return "bg-red-50 text-red-700 border-red-200";
+  return "bg-muted text-muted-foreground border-border";
+}
+
+function ReportUnavailableState({ data, compact = false }: { data: any; compact?: boolean }) {
+  return (
+    <div className={cn(
+      "border border-amber-200 bg-amber-50/70 text-amber-900 rounded-lg",
+      compact ? "px-3 py-3" : "px-5 py-5",
+    )}>
+      <div className="flex items-start gap-2.5">
+        <AlertCircle size={compact ? 15 : 18} className="mt-0.5 shrink-0 text-amber-600" />
         <div>
-          <h1 className="text-2xl font-bold text-foreground">PTMT Management Reports</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            PTMT sales seasonality &amp; history · columns E–I per item
-          </p>
+          <p className="font-semibold text-sm">{data.segment} report is not available</p>
+          <p className="text-xs mt-1 leading-relaxed">{data.unavailableReason ?? "No reportable plan and production data were found for this month."}</p>
+          {!compact && (
+            <p className="text-[11px] mt-2 text-amber-800/80">
+              Lifecycle: {String(data.lifecycle ?? "unknown").toUpperCase()} · Working days: {data.workingDays} ({data.workingDaysSource})
+            </p>
+          )}
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Planning Month</label>
-            <input
-              type="month"
-              value={month}
-              onChange={e => setMonth(e.target.value)}
-              className="text-sm bg-background border border-border rounded-md px-2 py-1.5 text-foreground"
-            />
+      </div>
+    </div>
+  );
+}
+
+function OverviewPlanVsActualWidget({ month, seg, standalone }: { month: string, seg: "PTMT" | "Plumbing", standalone?: boolean }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["plan-vs-actual", month, seg],
+    queryFn: async () => {
+      const res = await fetch(`/api/reports/plan-vs-actual?month=${month}&segment=${seg}`);
+      if (!res.ok) throw new Error("Failed to load");
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  if (isLoading) return <LoadingState label={`Loading ${seg} Plan vs Actual...`} />;
+  if (error) return <ErrorState message={(error as Error).message} />;
+  if (!data) return null;
+  if (!data.dataAvailable) {
+    const unavailable = <ReportUnavailableState data={data} compact />;
+    return standalone
+      ? unavailable
+      : <div className="bg-card border border-card-border rounded-lg p-4">{unavailable}</div>;
+  }
+
+  const content = (
+    <>
+      <div className="flex justify-between items-start mb-3">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{seg}</p>
+        <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">{data.workingDays} working days</span>
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard label="Total Plan" value={fmtQty(data.kpis.totalPlan)} />
+        <KpiCard label="Production" value={fmtQty(data.kpis.totalProduction)} />
+        <KpiCard
+          label="Attainment"
+          value={data.kpis.achievementPct != null ? `${data.kpis.achievementPct.toFixed(1)}%` : "—"}
+          sub={data.kpis.achievementRemark ?? "No plan baseline"}
+          color={reportRemarkColor(data.kpis.achievementRemark)}
+        />
+        <KpiCard label="Orders" value={data.kpis.orderQty != null ? fmtQty(data.kpis.orderQty) : "Unavailable"} color={data.kpis.orderQty != null ? undefined : "hsl(var(--muted-foreground))"} />
+      </div>
+    </>
+  );
+
+  if (standalone) {
+    return content;
+  }
+
+  return <div className="bg-card border border-card-border rounded-lg p-4">{content}</div>;
+}
+
+function WeeklyBreakdown({ weeks, calendar }: { weeks: any[]; calendar: any[] }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2">
+      {[0, 1, 2, 3].map((index) => {
+        const week = weeks?.[index] ?? {};
+        const window = calendar?.[index];
+        const value = (amount: number | null | undefined) =>
+          amount == null ? "Unavailable" : Number(amount).toLocaleString("en-IN");
+        return (
+          <div key={index} className="rounded-md border border-border bg-background/80 p-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+              {window?.label ?? `Week ${index + 1}`}
+            </p>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
+              <span className="text-muted-foreground">Plan</span>
+              <span className="text-right font-medium text-blue-700">{value(week.plan)}</span>
+              <span className="text-muted-foreground">Production</span>
+              <span className="text-right font-medium text-emerald-700">{value(week.production)}</span>
+              <span className="text-muted-foreground">Orders</span>
+              <span className="text-right font-medium">{value(week.orders)}</span>
+              <span className="text-muted-foreground">Sales</span>
+              <span className="text-right font-medium">{value(week.sales)}</span>
+            </div>
           </div>
-          <button
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-border rounded-md text-muted-foreground hover:bg-muted transition-colors"
-          >
-            <RefreshCw size={12} className={isFetching ? "animate-spin" : ""} />
-            Refresh
-          </button>
-          <a
-            href={`/api/plan/export/excel?month=${month}`}
-            download={`planning-report-${month}.xlsx`}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md font-medium transition-colors bg-green-600 text-white hover:bg-green-700"
-          >
-            <Download size={12} />
-            Planning Report
-          </a>
-          <a
-            href={`/api/ops/management-view/excel?month=${month}`}
-            download={`mgmt-view-${month}.xlsx`}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md font-medium transition-colors bg-amber-500 text-white hover:bg-amber-600"
-          >
-            <Download size={12} />
-            Export Excel
-          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+function PlanVsActualDetail({ data }: { data: any }) {
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
+  const toggle = (cat: string) => setExpanded(p => ({ ...p, [cat]: !p[cat] }));
+  const toggleItem = (key: string) => setExpandedItems(p => ({ ...p, [key]: !p[key] }));
+
+  const outOfPlanFiltered = (data.outOfPlan ?? []).filter((op: any) => op.category !== "Opening Stock" && op.category !== "DUMMY" && op.itemCode !== "DUMMY");
+  const categoriesFiltered = (data.categories ?? []).filter((c: any) => c.category !== "Opening Stock" && c.category !== "DUMMY");
+  const failedInvariants = (data.invariants ?? []).filter((inv: any) => !inv.ok);
+
+  if (!data.dataAvailable) return <ReportUnavailableState data={data} />;
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        <KpiCard label="Plan" value={data.kpis.totalPlan?.toLocaleString("en-IN")} color={BLUE} />
+        <KpiCard label="Production" value={data.kpis.totalProduction?.toLocaleString("en-IN")} color={GREEN} />
+        <KpiCard
+          label="Attainment"
+          value={data.kpis.achievementPct != null ? `${data.kpis.achievementPct.toFixed(1)}%` : "—"}
+          sub={data.kpis.achievementRemark ?? "No plan baseline"}
+          color={reportRemarkColor(data.kpis.achievementRemark)}
+        />
+        <KpiCard label="Orders" value={data.kpis.orderQty != null ? data.kpis.orderQty.toLocaleString("en-IN") : "Unavailable"} color={data.kpis.orderQty != null ? undefined : "hsl(var(--muted-foreground))"} />
+        <KpiCard label="Sales" value={data.kpis.saleQty != null ? data.kpis.saleQty.toLocaleString("en-IN") : "Unavailable"} color={data.kpis.saleQty != null ? undefined : "hsl(var(--muted-foreground))"} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="bg-card border border-card-border rounded-lg p-4 text-xs">
+          <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2"><Database size={14} className="text-blue-500" /> Plan Provenance</h4>
+          <div className="space-y-1.5">
+            <p className="text-muted-foreground"><span className="font-medium text-foreground">Working Days:</span> {data.workingDays} <span className="opacity-70">({data.workingDaysSource})</span></p>
+            <p className="text-muted-foreground"><span className="font-medium text-foreground">Production Data Through:</span> {data.lastDataDate ?? "N/A"}</p>
+            <p className="text-muted-foreground"><span className="font-medium text-foreground">Plan Source:</span> {data.sources?.plan ?? "Unavailable"}</p>
+            <p className="text-muted-foreground"><span className="font-medium text-foreground">Production Source:</span> {data.sources?.production ?? "Unavailable"}</p>
+            <div className="grid grid-cols-1 gap-1.5 pt-1">
+              {(["orders", "sales"] as const).map(source => {
+                const details = data.sources?.[source];
+                return (
+                  <div key={source} className={cn(
+                    "rounded border px-2 py-1.5",
+                    details?.available ? "border-border bg-muted/30" : "border-amber-200 bg-amber-50 text-amber-900",
+                  )}>
+                    <span className="font-medium capitalize">{source}:</span>{" "}
+                    <span className="text-muted-foreground">{details?.note ?? "Unavailable"}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-2 pt-2 border-t border-border">
+              {data.planVersions?.length === 0 && (
+                <p className="text-muted-foreground">No issued plan-version timeline is available for this report.</p>
+              )}
+              {data.planVersions?.map((v: any, i: number) => (
+                <div key={i} className="mt-1.5 flex items-start gap-2">
+                  <span className="shrink-0 bg-muted px-1.5 py-0.5 rounded text-[10px] font-medium mt-0.5">{v.kind}</span>
+                  <div className="text-muted-foreground flex flex-col">
+                    <span className="text-foreground font-medium">{v.sourceLabel ?? `${v.kind} ${v.sourceId}`}</span>
+                    <span className="opacity-80">{v.auditLabel}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {data.invariants?.length > 0 && (
+           <div className={cn(
+             "bg-card border rounded-lg p-4 text-xs",
+             failedInvariants.length > 0 ? "border-red-400 ring-2 ring-red-100" : "border-card-border",
+           )}>
+              <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2">
+                <AlertCircle size={14} className={failedInvariants.length > 0 ? "text-red-600" : "text-emerald-600"} />
+                Reconciliation checks · {failedInvariants.length > 0 ? `${failedInvariants.length} failed` : "all passed"}
+              </h4>
+             <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1">
+               {data.invariants.map((inv: any, i: number) => (
+                 <div key={i} className={cn("p-2 rounded-md border", inv.ok ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-red-50 border-red-200 text-red-800")}>
+                   <div className="flex items-center gap-1.5 font-semibold mb-0.5">
+                     {inv.ok ? <Check size={12} /> : <AlertCircle size={12} />}
+                     {inv.code}
+                   </div>
+                   <p className="opacity-90 leading-snug">{inv.detail}</p>
+                 </div>
+               ))}
+             </div>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-card border border-card-border rounded-lg overflow-hidden shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-muted/40 border-b border-border">
+                <th className="px-3 py-2.5 text-left font-semibold sticky left-0 bg-muted/40 z-10 w-8"></th>
+                <th className="px-3 py-2.5 text-left font-semibold sticky left-8 bg-muted/40 z-10">Category / Item</th>
+                <th className="px-3 py-2.5 text-right font-semibold text-blue-700">Plan</th>
+                <th className="px-3 py-2.5 text-right font-semibold text-green-700">Production</th>
+                <th className="px-3 py-2.5 text-right font-semibold">Variance</th>
+                <th className="px-3 py-2.5 text-right font-semibold">Attainment</th>
+                <th className="px-3 py-2.5 text-right font-semibold">Orders</th>
+                <th className="px-3 py-2.5 text-right font-semibold">Sales</th>
+              </tr>
+            </thead>
+            <tbody>
+              {categoriesFiltered.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-sm text-muted-foreground">
+                    No planned categories are available for this report.
+                  </td>
+                </tr>
+              )}
+              {categoriesFiltered.map((cat: any) => {
+                const isEx = expanded[cat.category];
+                return (
+                  <Fragment key={cat.category}>
+                    <tr className="border-b border-border/50 hover:bg-muted/30 cursor-pointer transition-colors" onClick={() => toggle(cat.category)}>
+                      <td className="px-3 py-2 sticky left-0 bg-card z-10 text-muted-foreground group-hover:text-foreground transition-colors">
+                        <button type="button" aria-label={`${isEx ? "Collapse" : "Expand"} ${cat.category}`}>
+                          {isEx ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2 font-semibold text-foreground sticky left-8 bg-card z-10 whitespace-nowrap">
+                        {cat.category} <span className="text-muted-foreground font-normal ml-1 bg-muted px-1.5 py-0.5 rounded-full text-[10px]">{cat.itemCount}</span>
+                      </td>
+                      <td className="px-3 py-2 text-right text-blue-700 font-medium">{cat.plan?.toLocaleString("en-IN")}</td>
+                      <td className="px-3 py-2 text-right text-green-700 font-medium">{cat.production?.toLocaleString("en-IN")}</td>
+                      <td className={cn("px-3 py-2 text-right font-medium", cat.variance < 0 ? "text-red-600" : "text-emerald-600")}>
+                        {cat.variance > 0 ? "+" : ""}{cat.variance?.toLocaleString("en-IN")}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="inline-flex flex-col items-end gap-1">
+                          <span className="font-medium">{cat.achievementPct != null ? `${cat.achievementPct.toFixed(1)}%` : "—"}</span>
+                          <span className={cn("text-[9px] font-semibold border rounded-full px-1.5 py-0.5", reportRemarkClass(cat.achievementRemark))}>
+                            {cat.achievementRemark ?? "NO PLAN"}
+                          </span>
+                        </div>
+                      </td>
+                      <td className={cn("px-3 py-2 text-right", cat.orders == null && "text-muted-foreground")}>{cat.orders != null ? cat.orders.toLocaleString("en-IN") : "Unavailable"}</td>
+                      <td className={cn("px-3 py-2 text-right", cat.sales == null && "text-muted-foreground")}>{cat.sales != null ? cat.sales.toLocaleString("en-IN") : "Unavailable"}</td>
+                    </tr>
+                    {isEx && (
+                      <tr className="border-b border-border/40 bg-slate-50/70">
+                        <td colSpan={8} className="px-4 py-3">
+                          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Category weekly detail</p>
+                          <WeeklyBreakdown weeks={cat.weeks} calendar={data.weekCalendar} />
+                        </td>
+                      </tr>
+                    )}
+                    {isEx && cat.items.filter((item:any) => item.itemCode !== "DUMMY").map((item: any) => {
+                      const rowKey = `${cat.category}::${item.itemCode}::${item.colour ?? ""}`;
+                      const itemExpanded = expandedItems[rowKey];
+                      return (
+                        <Fragment key={rowKey}>
+                          <tr
+                            className="border-b border-border/30 bg-muted/10 hover:bg-muted/30 transition-colors cursor-pointer"
+                            onClick={() => toggleItem(rowKey)}
+                          >
+                            <td className="px-3 py-1.5 sticky left-0 bg-muted/10 z-10 text-muted-foreground">
+                              <button type="button" aria-label={`${itemExpanded ? "Collapse" : "Expand"} ${item.itemCode} weekly detail`}>
+                                {itemExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                              </button>
+                            </td>
+                            <td className="px-3 py-1.5 font-mono text-muted-foreground pl-6 sticky left-8 bg-muted/10 z-10 whitespace-nowrap">
+                              {item.itemCode} {item.colour ? <span className="text-[10px] opacity-70 ml-1 border border-border/50 px-1 rounded">{item.colour}</span> : ""}
+                            </td>
+                            <td className="px-3 py-1.5 text-right opacity-90">{item.plan?.toLocaleString("en-IN")}</td>
+                            <td className="px-3 py-1.5 text-right font-medium opacity-90">{item.production?.toLocaleString("en-IN")}</td>
+                            <td className={cn("px-3 py-1.5 text-right opacity-90", item.variance < 0 ? "text-red-500/80" : "text-emerald-500/80")}>
+                              {item.variance > 0 ? "+" : ""}{item.variance?.toLocaleString("en-IN")}
+                            </td>
+                            <td className="px-3 py-1.5 text-right">
+                              <div className="inline-flex flex-col items-end gap-1">
+                                <span className="opacity-80">{item.achievementPct != null ? `${item.achievementPct.toFixed(1)}%` : "—"}</span>
+                                <span className={cn("text-[9px] font-semibold border rounded-full px-1.5 py-0.5", reportRemarkClass(item.achievementRemark))}>
+                                  {item.achievementRemark ?? "NO PLAN"}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-1.5 text-right opacity-80">{item.orders != null ? item.orders.toLocaleString("en-IN") : "Unavailable"}</td>
+                            <td className="px-3 py-1.5 text-right opacity-80">{item.sales != null ? item.sales.toLocaleString("en-IN") : "Unavailable"}</td>
+                          </tr>
+                          {itemExpanded && (
+                            <tr className="border-b border-border/40 bg-background">
+                              <td colSpan={8} className="px-4 py-3">
+                                <WeeklyBreakdown weeks={item.weeks} calendar={data.weekCalendar} />
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* Meta banner */}
-      {data?.meta && (
-        <div className="mb-5 flex flex-wrap gap-3">
-          {[
-            { label: "Planning Month", value: month },
-            { label: "Current FY", value: data.meta.currentFy },
-            { label: "Prior FY (E/F/G)", value: data.meta.priorFy },
-            { label: "N-Split", value: `N=${data.meta.N} → ${data.meta.N}/${12 - data.meta.N}` },
-            { label: "Last Month (I)", value: data.meta.lastMonthName },
-          ].map(({ label, value }) => (
-            <div key={label} className="bg-card border border-card-border rounded-md px-3 py-2 text-xs">
-              <span className="text-muted-foreground mr-1.5">{label}</span>
-              <span className="font-semibold text-foreground">{value}</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Dynamic header legend */}
-      {hdrs && (
-        <div className="mb-5 bg-amber-50/50 border border-amber-200/60 rounded-lg p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-amber-700/70 mb-2">Column Headers for {month}</p>
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 text-xs">
-            {(["E","F","G","H","I"] as const).map(col => (
-              <div key={col}>
-                <span className="font-bold text-foreground">{col}: </span>
-                <span className="text-muted-foreground">{hdrs[col]}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Loading / Error */}
-      {isLoading && (
-        <div className="flex flex-col items-center py-20 gap-3">
-          <Loader2 size={28} className="animate-spin text-amber-500" />
-          <p className="text-sm text-muted-foreground">Loading management view — fetching sale sheets…</p>
-          <p className="text-xs text-muted-foreground/60">First load may take 20–30 seconds (3 sheet reads)</p>
-        </div>
-      )}
-      {error && !isLoading && (
-        <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-3 mb-5">
-          <AlertCircle size={15} />
-          {(error as Error).message}
-        </div>
-      )}
-
-      {/* Category tabs + table */}
-      {data && !isLoading && (
-        <>
-          {/* Category tab bar */}
-          <div className="flex gap-1.5 flex-wrap mb-4">
-            {MGMT_CATEGORIES.map(cat => {
-              const catObj = data.categories?.find((c: any) => c.name === cat);
-              const count = catObj?.items?.length ?? 0;
-              return (
-                <button
-                  key={cat}
-                  onClick={() => { setActiveCategory(cat); setSearch(""); }}
-                  className={cn(
-                    "px-3 py-1.5 rounded-md text-xs font-medium transition-colors border",
-                    activeCategory === cat
-                      ? "bg-amber-500 text-white border-amber-500"
-                      : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  {cat} <span className={cn("ml-1 opacity-60", activeCategory === cat && "opacity-80")}>({count})</span>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Search */}
-          <div className="mb-3">
-            <input
-              type="text"
-              placeholder="Filter by item code or colour…"
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="text-sm bg-background border border-border rounded-md px-3 py-1.5 w-full max-w-xs text-foreground placeholder:text-muted-foreground"
-            />
-          </div>
-
-          {/* Table */}
-          <div className="bg-card border border-card-border rounded-lg overflow-auto">
-            <table className="w-full text-xs border-collapse min-w-[700px]">
+      {outOfPlanFiltered.length > 0 && (
+        <div className="bg-card border border-card-border rounded-lg p-4">
+          <h4 className="font-semibold text-foreground text-sm mb-3 flex items-center gap-2"><Factory size={14} className="text-amber-500" /> Out of Plan Production</h4>
+          <div className="overflow-x-auto border border-border rounded-md">
+            <table className="w-full text-xs border-collapse min-w-[760px]">
               <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  <th className="text-left px-3 py-2 font-semibold text-foreground sticky left-0 bg-muted/40">Item Code</th>
-                  <th className="text-left px-3 py-2 font-semibold text-foreground">Colour</th>
-                  <th className="text-right px-3 py-2 font-semibold text-amber-700 whitespace-nowrap">
-                    E · {hdrs?.E ?? "AVG SALE"}
-                  </th>
-                  <th className="text-right px-3 py-2 font-semibold text-blue-700 whitespace-nowrap">
-                    F · {hdrs?.F ?? "N-Month"}
-                  </th>
-                  <th className="text-right px-3 py-2 font-semibold text-purple-700 whitespace-nowrap">
-                    G · {hdrs?.G ?? "Rem Months"}
-                  </th>
-                  <th className="text-right px-3 py-2 font-semibold text-green-700 whitespace-nowrap">
-                    H · Last 3Mo Avg
-                  </th>
-                  <th className="text-right px-3 py-2 font-semibold text-foreground whitespace-nowrap">
-                    I · Last Month
-                  </th>
+                <tr className="bg-muted/40 border-b border-border">
+                  <th className="px-3 py-2 text-left font-semibold">Item Code</th>
+                  <th className="px-3 py-2 text-left font-semibold">Category</th>
+                  <th className="px-3 py-2 text-right font-semibold">Total Production</th>
+                  {[0, 1, 2, 3].map(index => (
+                    <th key={index} className="px-3 py-2 text-right font-semibold whitespace-nowrap">
+                      {data.weekCalendar?.[index]?.label ?? `W${index + 1}`}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {filteredItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={7} className="text-center text-muted-foreground py-10">
-                      {search ? "No items match filter." : "No items in this category."}
-                    </td>
-                  </tr>
-                ) : filteredItems.map((item: any, idx: number) => (
-                  <tr key={`${item.itemCode}::${item.colour}::${idx}`}
-                    className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                    <td className="px-3 py-1.5 font-mono font-medium text-foreground sticky left-0 bg-card">{item.itemCode}</td>
-                    <td className="px-3 py-1.5 text-muted-foreground">{item.colour || "—"}</td>
-                    <td className="px-3 py-1.5 text-right text-amber-800">{fmtN(item.E)}</td>
-                    <td className="px-3 py-1.5 text-right text-blue-800">{fmtN(item.F)}</td>
-                    <td className="px-3 py-1.5 text-right text-purple-800">{fmtN(item.G)}</td>
-                    <td className="px-3 py-1.5 text-right text-green-800 font-medium">{fmtN(item.H)}</td>
-                    <td className="px-3 py-1.5 text-right font-semibold text-foreground">{fmtN(item.I)}</td>
+                {outOfPlanFiltered.map((op: any, i: number) => (
+                  <tr key={i} className="border-b border-border/50 hover:bg-muted/30">
+                    <td className="px-3 py-1.5 font-mono text-muted-foreground whitespace-nowrap">{op.itemCode} {op.colour ? <span className="text-[10px] opacity-70 ml-1 border border-border/50 px-1 rounded">{op.colour}</span> : ""}</td>
+                    <td className="px-3 py-1.5">{op.category || "—"}</td>
+                    <td className="px-3 py-1.5 text-right font-medium text-amber-600">{op.totalProduction?.toLocaleString("en-IN")}</td>
+                    {[0, 1, 2, 3].map(index => (
+                      <td key={index} className="px-3 py-1.5 text-right">
+                        {Number(op.weeks?.[index] ?? 0).toLocaleString("en-IN")}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
-              {filteredItems.length > 0 && (
-                <tfoot>
-                  <tr className="border-t-2 border-border bg-muted/40 font-semibold">
-                    <td className="px-3 py-1.5 sticky left-0 bg-muted/40">Total ({filteredItems.length})</td>
-                    <td className="px-3 py-1.5" />
-                    {(["E","F","G","H","I"] as const).map(col => (
-                      <td key={col} className="px-3 py-1.5 text-right">
-                        {fmtN(filteredItems.reduce((s: number, r: any) => s + (r[col] ?? 0), 0))}
-                      </td>
-                    ))}
-                  </tr>
-                </tfoot>
-              )}
             </table>
           </div>
-          <p className="text-xs text-muted-foreground mt-2">
-            E/F/G = prior-FY averages · H = current-FY last-3-month avg · I = last month sale · all figures are monthly averages (not totals)
-          </p>
-        </>
+        </div>
       )}
     </div>
   );
 }
 
-function PlumbingManagementReportsPage() {
+function PlanVsActualPage({ seg }: { seg: "PTMT" | "Plumbing" }) {
   const [month, setMonth] = useState(defaultMgmtMonth);
-  const [activeCategory, setActiveCategory] = useState("");
-  const [search, setSearch] = useState("");
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["plumbing-management-view", month],
+    queryKey: ["plan-vs-actual", month, seg],
     queryFn: async () => {
-      const res = await fetch(`/api/plan/plumbing-monitoring?month=${month}`);
+      const res = await fetch(`/api/reports/plan-vs-actual?month=${month}&segment=${seg}`);
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "Failed to load Plumbing management data");
+        const err = await res.json().catch(()=>({}));
+        throw new Error(err.error || "Failed to load Plan vs Actual");
       }
       return res.json();
     },
@@ -979,338 +1299,155 @@ function PlumbingManagementReportsPage() {
     staleTime: 5 * 60 * 1000,
   });
 
-  const categories: any[] = data?.categories ?? [];
-  const categoryNames = categories.map((category) => category.category).join("|");
-  useEffect(() => {
-    if (!categories.some((category) => category.category === activeCategory)) {
-      setActiveCategory(categories[0]?.category ?? "");
-      setSearch("");
-    }
-  }, [categoryNames, activeCategory]);
-
-  const activeItems = useMemo(() => {
-    const rows: any[] = (data?.items ?? [])
-      .filter((item: any) => item.category === activeCategory);
-    if (!search.trim()) return rows;
-    const query = search.trim().toUpperCase();
-    return rows.filter((item: any) => item.itemCode?.toUpperCase().includes(query));
-  }, [data?.items, activeCategory, search]);
-
-  const totalRelease = categories.reduce((sum, category) => sum + (category.totalRelease ?? 0), 0);
-  const mappedActual = categories.reduce((sum, category) => sum + (category.totalActual ?? 0), 0);
-  const attainment = totalRelease > 0 ? mappedActual / totalRelease * 100 : null;
-  const totalGap = Math.max(totalRelease - mappedActual, 0);
-
   return (
-    <div>
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Plumbing Management Reports</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Plumbing release plan versus Sheet3 production · item-code level
-          </p>
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <ClipboardList className="text-primary" size={24} />
+            {seg} Management Report
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">Detailed Plan-versus-Actual Analysis</p>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Planning Month</label>
-          <input
-            type="month"
-            value={month}
-            onChange={(event) => setMonth(event.target.value)}
-            className="text-sm bg-background border border-border rounded-md px-2 py-1.5 text-foreground"
-          />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 bg-card border border-border rounded-md px-2 py-1 shadow-sm">
+            <label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Month</label>
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="text-sm bg-transparent border-none focus:outline-none text-foreground outline-none"
+            />
+          </div>
+          <a
+            href={`/api/reports/plan-vs-actual/excel?month=${month}&segment=${seg}`}
+            download={`plan-vs-actual-${seg}-${month}.xlsx`}
+            className="flex items-center gap-1.5 text-xs px-3 py-2 bg-green-600/10 text-green-700 dark:bg-green-500/20 dark:text-green-400 border border-green-600/20 rounded-md font-semibold hover:bg-green-600 hover:text-white transition-all whitespace-nowrap shadow-sm"
+          >
+            <Download size={14} />
+            Export Excel
+          </a>
           <button
             onClick={() => refetch()}
             disabled={isFetching}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-border rounded-md text-muted-foreground hover:bg-muted transition-colors"
+            className="flex items-center gap-1.5 text-xs px-3 py-2 border border-border bg-card shadow-sm rounded-md text-foreground hover:bg-muted transition-all disabled:opacity-50"
           >
-            <RefreshCw size={12} className={isFetching ? "animate-spin" : ""} />
+            <RefreshCw size={14} className={isFetching ? "animate-spin" : ""} />
             Refresh
           </button>
         </div>
       </div>
 
-      {data && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-          <KpiCard label="Released Plan" value={fmtQty(totalRelease)} sub="pcs across Plumbing" color={BLUE} />
-          <KpiCard label="Mapped Production" value={fmtQty(mappedActual)} sub={`through ${data.lastDataDate ?? "latest sync"}`} color={GREEN} />
-          <KpiCard label="Plan Attainment" value={attainment === null ? "—" : `${attainment.toFixed(1)}%`} sub="mapped actual ÷ release" color={attainment !== null && attainment >= 85 ? GREEN : AMBER} />
-          <KpiCard label="Open Gap" value={fmtQty(totalGap)} sub="pcs still to produce" color={totalGap > 0 ? RED : GREEN} />
-          <KpiCard label="Unmapped Production" value={fmtQty(data.totalUnmapped ?? 0)} sub="pcs outside plan roster" color={(data.totalUnmapped ?? 0) > 0 ? AMBER : GREEN} />
+      {isLoading && (
+        <div className="py-12 flex flex-col items-center justify-center text-muted-foreground border border-dashed border-border rounded-lg bg-card/50">
+          <Loader2 size={24} className="animate-spin mb-3 text-primary" />
+          <p className="text-sm font-medium">Loading {seg} Plan vs Actual for {month}...</p>
         </div>
       )}
 
-      {isLoading && <LoadingState label="Loading Plumbing plan and Sheet3 actuals…" />}
-      {error && <ErrorState message={(error as Error).message} />}
+      {error && (
+        <div className="py-8 px-6 border border-destructive/20 bg-destructive/5 rounded-lg flex items-start gap-3 text-destructive">
+          <AlertCircle size={20} className="mt-0.5 shrink-0" />
+          <div>
+            <h3 className="font-semibold text-sm">Report Unavailable</h3>
+            <p className="text-xs mt-1 opacity-90">{(error as Error).message}</p>
+          </div>
+        </div>
+      )}
 
       {data && !isLoading && (
-        <>
-          <div className="mb-5 bg-card border border-card-border rounded-lg p-4">
-            <div className="flex flex-wrap gap-3 text-xs">
-              <span><strong className="text-foreground">Source:</strong> Plumbing daily-production workbook + Sheet3 actuals</span>
-              <span className="text-muted-foreground">·</span>
-              <span><strong className="text-foreground">Data through:</strong> {data.lastDataDate ?? "No production rows"}</span>
-              <span className="text-muted-foreground">·</span>
-              <span><strong className="text-foreground">Run rate:</strong> {fmtQty(data.runRatePerDay)} pcs / working day</span>
-            </div>
-          </div>
-
-          <div className="flex gap-1.5 flex-wrap mb-4">
-            {categories.map((category) => (
-              <button
-                key={category.category}
-                onClick={() => { setActiveCategory(category.category); setSearch(""); }}
-                className={cn(
-                  "px-3 py-1.5 rounded-md text-xs font-medium transition-colors border",
-                  activeCategory === category.category
-                    ? "bg-amber-500 text-white border-amber-500"
-                    : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {category.category} <span className="ml-1 opacity-60">({(data.items ?? []).filter((item: any) => item.category === category.category).length})</span>
-              </button>
-            ))}
-          </div>
-
-          <div className="mb-3">
-            <input
-              type="text"
-              placeholder="Filter Plumbing item code…"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="text-sm bg-background border border-border rounded-md px-3 py-1.5 w-full max-w-xs text-foreground placeholder:text-muted-foreground"
-            />
-          </div>
-
-          <div className="bg-card border border-card-border rounded-lg overflow-auto">
-            <table className="w-full text-xs border-collapse min-w-[820px]">
-              <thead>
-                <tr className="border-b border-border bg-muted/40">
-                  <th className="text-left px-3 py-2 font-semibold text-foreground sticky left-0 bg-muted/40">Item Code</th>
-                  <th className="text-right px-3 py-2 font-semibold text-blue-700">W1 Release</th>
-                  <th className="text-right px-3 py-2 font-semibold text-foreground">W1 Actual</th>
-                  <th className="text-right px-3 py-2 font-semibold text-blue-700">W2 Release</th>
-                  <th className="text-right px-3 py-2 font-semibold text-foreground">W2 Actual</th>
-                  <th className="text-right px-3 py-2 font-semibold text-blue-700">Total Release</th>
-                  <th className="text-right px-3 py-2 font-semibold text-foreground">Total Actual</th>
-                  <th className="text-right px-3 py-2 font-semibold text-foreground">Attainment</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeItems.length === 0 ? (
-                  <tr><td colSpan={8} className="text-center text-muted-foreground py-10">No Plumbing item codes match this filter.</td></tr>
-                ) : activeItems.map((item: any) => {
-                  const itemAttainment = item.totalRelease > 0 ? item.totalActual / item.totalRelease * 100 : null;
-                  return (
-                    <tr key={`${item.category}-${item.itemCode}`} className="border-b border-border/50 hover:bg-muted/30 transition-colors">
-                      <td className="px-3 py-1.5 font-mono font-medium text-foreground sticky left-0 bg-card">{item.itemCode}</td>
-                      <td className="px-3 py-1.5 text-right text-blue-800">{fmtN(item.w1Release)}</td>
-                      <td className="px-3 py-1.5 text-right">{fmtN(item.w1Actual)}</td>
-                      <td className="px-3 py-1.5 text-right text-blue-800">{fmtN(item.w2Release)}</td>
-                      <td className="px-3 py-1.5 text-right">{fmtN(item.w2Actual)}</td>
-                      <td className="px-3 py-1.5 text-right text-blue-800 font-semibold">{fmtN(item.totalRelease)}</td>
-                      <td className="px-3 py-1.5 text-right font-semibold">{fmtN(item.totalActual)}</td>
-                      <td className={cn("px-3 py-1.5 text-right font-semibold", itemAttainment !== null && itemAttainment >= 85 ? "text-emerald-600" : "text-amber-600")}>
-                        {itemAttainment === null ? "—" : `${itemAttainment.toFixed(1)}%`}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <p className="text-xs text-muted-foreground mt-2">
-            Release is the issued Plumbing plan. Actual is matched Sheet3 production; unmapped codes remain visible in the KPI above and are not folded into plan attainment.
-          </p>
-        </>
+        <PlanVsActualDetail data={data} />
       )}
     </div>
   );
 }
 
-function CombinedMajorAnalyticsPage() {
-  const [month, setMonth] = useState(defaultMgmtMonth);
-  const ptmtQuery = useQuery({
-    queryKey: ["combined-ptmt-management", month],
+function CombinedSegmentView({ seg, month }: { seg: "PTMT" | "Plumbing", month: string }) {
+  const { data, isLoading, error, refetch, isFetching } = useQuery({
+    queryKey: ["plan-vs-actual", month, seg],
     queryFn: async () => {
-      const res = await fetch(`/api/ops/management-view?month=${month}`);
-      if (!res.ok) throw new Error("Failed to load PTMT commercial data");
-      return res.json();
-    },
-    enabled: /^\d{4}-\d{2}$/.test(month),
-    staleTime: 10 * 60 * 1000,
-  });
-  const plumbingQuery = useQuery({
-    queryKey: ["combined-plumbing-monitoring", month],
-    queryFn: async () => {
-      const res = await fetch(`/api/plan/plumbing-monitoring?month=${month}`);
-      if (!res.ok) throw new Error("Failed to load Plumbing operations data");
+      const res = await fetch(`/api/reports/plan-vs-actual?month=${month}&segment=${seg}`);
+      if (!res.ok) {
+        const err = await res.json().catch(()=>({}));
+        throw new Error(err.error || "Failed to load");
+      }
       return res.json();
     },
     enabled: /^\d{4}-\d{2}$/.test(month),
     staleTime: 5 * 60 * 1000,
   });
 
-  const ptmt = ptmtQuery.data;
-  const plumbing = plumbingQuery.data;
-  const ptmtAnalytics = useMemo(() => {
-    const codes = new Map<string, any>();
-    for (const category of ptmt?.categories ?? []) {
-      for (const item of category.items ?? []) {
-        if (!codes.has(item.itemCode)) codes.set(item.itemCode, item);
-      }
-    }
-    const rows = [...codes.values()];
-    return {
-      codes: rows.length,
-      priorAvg: rows.reduce((sum, item) => sum + (item.E ?? 0), 0),
-      last3moAvg: rows.reduce((sum, item) => sum + (item.H ?? 0), 0),
-      lastMonth: rows.reduce((sum, item) => sum + (item.I ?? 0), 0),
-      currentMonth: rows.reduce((sum, item) => sum + (item.J ?? 0), 0),
-    };
-  }, [ptmt]);
-  const plumbingAnalytics = useMemo(() => {
-    const categories: any[] = plumbing?.categories ?? [];
-    const released = categories.reduce((sum, category) => sum + (category.totalRelease ?? 0), 0);
-    const actual = categories.reduce((sum, category) => sum + (category.totalActual ?? 0), 0);
-    return {
-      released,
-      actual,
-      attainment: released > 0 ? actual / released * 100 : null,
-      gap: Math.max(released - actual, 0),
-      unmapped: plumbing?.totalUnmapped ?? 0,
-      categories,
-    };
-  }, [plumbing]);
+  if (isLoading) return <div className="py-8 flex justify-center"><Loader2 className="animate-spin text-muted-foreground" size={20} /></div>;
 
-  const loading = ptmtQuery.isLoading || plumbingQuery.isLoading;
-  const error = ptmtQuery.error ?? plumbingQuery.error;
+  if (error) return (
+    <div className="py-4 px-4 border border-destructive/20 bg-destructive/5 rounded-lg flex items-center gap-2 text-destructive text-sm">
+      <AlertCircle size={16} /> {(error as Error).message}
+    </div>
+  );
+
+  if (!data) return null;
 
   return (
-    <div>
+    <div className="animate-in fade-in duration-500">
+      <div className="flex justify-end mb-4">
+          <a
+            href={`/api/reports/plan-vs-actual/excel?month=${month}&segment=${seg}`}
+            download={`plan-vs-actual-${seg}-${month}.xlsx`}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-green-600/10 text-green-700 dark:bg-green-500/20 dark:text-green-400 border border-green-600/20 rounded-md font-medium hover:bg-green-600 hover:text-white transition-all whitespace-nowrap"
+          >
+            <Download size={12} />
+            Export {seg} Excel
+          </a>
+      </div>
+      <PlanVsActualDetail data={data} />
+    </div>
+  );
+}
+
+function CombinedPlanVsActualPage() {
+  const [month, setMonth] = useState(defaultMgmtMonth);
+
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Combined Major Analytics</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Leadership view across PTMT commercial demand and Plumbing production execution
-          </p>
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <ClipboardList className="text-primary" size={24} />
+            Combined Management Reports
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">PTMT & Plumbing Plan-versus-Actual Analysis</p>
         </div>
-        <div className="flex items-center gap-3">
-          <label className="text-xs font-medium text-muted-foreground">Planning Month</label>
-          <input type="month" value={month} onChange={(event) => setMonth(event.target.value)}
-            className="text-sm bg-background border border-border rounded-md px-2 py-1.5 text-foreground" />
-          <button
-            onClick={() => { ptmtQuery.refetch(); plumbingQuery.refetch(); }}
-            disabled={ptmtQuery.isFetching || plumbingQuery.isFetching}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-border rounded-md text-muted-foreground hover:bg-muted transition-colors"
-          >
-            <RefreshCw size={12} className={ptmtQuery.isFetching || plumbingQuery.isFetching ? "animate-spin" : ""} /> Refresh
-          </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 bg-card border border-border rounded-md px-2 py-1 shadow-sm">
+            <label className="text-xs font-medium text-muted-foreground whitespace-nowrap">Month</label>
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="text-sm bg-transparent border-none focus:outline-none text-foreground outline-none"
+            />
+          </div>
         </div>
       </div>
 
-      {loading && <LoadingState label="Loading major analytics for both segments…" />}
-      {error && <ErrorState message={(error as Error).message} />}
-
-      {!loading && !error && (
-        <>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
-            <div className="bg-card border border-card-border rounded-lg p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">PTMT · Commercial demand</p>
-                  <p className="text-xs text-muted-foreground mt-1">Sales-history analytics; monthly quantities</p>
-                </div>
-                <Badge label={`${ptmtAnalytics.codes} codes`} variant="blue" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <KpiCard label="Last 3-Month Avg" value={fmtQty(ptmtAnalytics.last3moAvg)} sub="units / month" color={BLUE} />
-                <KpiCard label="Last Completed Month" value={fmtQty(ptmtAnalytics.lastMonth)} sub="units sold" />
-                <KpiCard label="Prior FY Avg" value={fmtQty(ptmtAnalytics.priorAvg)} sub="units / month" />
-                <KpiCard label="Current Month" value={fmtQty(ptmtAnalytics.currentMonth)} sub="live sales units" color={GREEN} />
-              </div>
-            </div>
-
-            <div className="bg-card border border-card-border rounded-lg p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700">Plumbing · Production execution</p>
-                  <p className="text-xs text-muted-foreground mt-1">Issued release plan versus matched Sheet3 output</p>
-                </div>
-                <Badge label={`${plumbingAnalytics.categories.length} categories`} variant="green" />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <KpiCard label="Released Plan" value={fmtQty(plumbingAnalytics.released)} sub="pcs" color={GREEN} />
-                <KpiCard label="Mapped Actual" value={fmtQty(plumbingAnalytics.actual)} sub="pcs" />
-                <KpiCard label="Plan Attainment" value={plumbingAnalytics.attainment === null ? "—" : `${plumbingAnalytics.attainment.toFixed(1)}%`} sub="actual ÷ release" color={plumbingAnalytics.attainment !== null && plumbingAnalytics.attainment >= 85 ? GREEN : AMBER} />
-                <KpiCard label="Unmapped Output" value={fmtQty(plumbingAnalytics.unmapped)} sub="pcs outside roster" color={plumbingAnalytics.unmapped > 0 ? AMBER : GREEN} />
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <div className="bg-card border border-card-border rounded-lg p-5">
-              <h2 className="text-sm font-semibold text-foreground mb-1">Executive signals</h2>
-              <p className="text-xs text-muted-foreground mb-4">Comparable signals are shown within their own units; sales and production are never combined into a false total.</p>
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between gap-4 border-b border-border/50 pb-3">
-                  <span className="text-muted-foreground">PTMT demand momentum</span>
-                  <span className={cn("font-semibold", ptmtAnalytics.priorAvg > 0 && ptmtAnalytics.last3moAvg >= ptmtAnalytics.priorAvg ? "text-emerald-600" : "text-amber-600")}>
-                    {ptmtAnalytics.priorAvg > 0 ? `${(ptmtAnalytics.last3moAvg / ptmtAnalytics.priorAvg * 100).toFixed(1)}% of prior-FY average` : "No baseline"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-4 border-b border-border/50 pb-3">
-                  <span className="text-muted-foreground">Plumbing production gap</span>
-                  <span className={cn("font-semibold", plumbingAnalytics.gap > 0 ? "text-amber-600" : "text-emerald-600")}>{fmtQty(plumbingAnalytics.gap)} pcs</span>
-                </div>
-                <div className="flex items-center justify-between gap-4">
-                  <span className="text-muted-foreground">Plumbing data freshness</span>
-                  <span className="font-semibold text-foreground">{plumbing?.lastDataDate ?? "No Sheet3 production date"}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-card border border-card-border rounded-lg overflow-auto">
-              <div className="px-5 py-4 border-b border-border">
-                <h2 className="text-sm font-semibold text-foreground">Plumbing category execution</h2>
-                <p className="text-xs text-muted-foreground mt-1">The highest-priority production gaps this month</p>
-              </div>
-              <table className="w-full text-xs">
-                <thead className="bg-muted/30 border-b border-border">
-                  <tr>
-                    <th className="text-left px-4 py-2 font-medium text-muted-foreground">Category</th>
-                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Release</th>
-                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Actual</th>
-                    <th className="text-right px-4 py-2 font-medium text-muted-foreground">Gap</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/40">
-                  {[...plumbingAnalytics.categories]
-                    .sort((a, b) => (b.totalRelease - b.totalActual) - (a.totalRelease - a.totalActual))
-                    .slice(0, 6)
-                    .map((category) => (
-                      <tr key={category.category}>
-                        <td className="px-4 py-2 font-medium">{category.category}</td>
-                        <td className="px-3 py-2 text-right font-mono">{fmtN(category.totalRelease)}</td>
-                        <td className="px-3 py-2 text-right font-mono">{fmtN(category.totalActual)}</td>
-                        <td className="px-4 py-2 text-right font-mono font-semibold text-amber-600">{fmtN(Math.max(category.totalRelease - category.totalActual, 0))}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </>
-      )}
+      <div className="space-y-10">
+        <div className="bg-card border border-card-border p-5 rounded-xl shadow-sm">
+          <h2 className="text-lg font-bold border-b border-border pb-3 mb-5 flex items-center gap-2"><Factory className="text-blue-500" size={18} /> PTMT Plan-vs-Actual</h2>
+          <CombinedSegmentView seg="PTMT" month={month} />
+        </div>
+        <div className="bg-card border border-card-border p-5 rounded-xl shadow-sm">
+          <h2 className="text-lg font-bold border-b border-border pb-3 mb-5 flex items-center gap-2"><Factory className="text-emerald-500" size={18} /> Plumbing Plan-vs-Actual</h2>
+          <CombinedSegmentView seg="Plumbing" month={month} />
+        </div>
+      </div>
     </div>
   );
 }
 
 function ManagementReportsPage({ seg }: { seg: "PTMT" | "Plumbing" | "Combined" }) {
-  if (seg === "Plumbing") return <PlumbingManagementReportsPage />;
-  if (seg === "Combined") return <CombinedMajorAnalyticsPage />;
-  return <PtmtManagementReportsPage />;
+  if (seg === "Combined") return <CombinedPlanVsActualPage />;
+  return <PlanVsActualPage seg={seg} />;
 }
-
 // ─── Orders Page ──────────────────────────────────────────────────────────────
 function OrdersPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Combined" }) {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
@@ -1497,15 +1634,99 @@ function OrdersPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Combi
   );
 }
 
+// ─── Plumbing production view ────────────────────────────────────────────────
+function PlumbingProductionPanel({ month, plan }: { month: string; plan: any }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["plumbing-production-monitoring", month],
+    queryFn: async () => {
+      const res = await fetch(`/api/plan/plumbing-monitoring?month=${month}`);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const weekly = (data?.weeks ?? []).map((week: any) => ({
+    label: `W${week.week}`,
+    Released: Math.round(week.release ?? 0),
+    Produced: Math.round(week.actual ?? 0),
+  }));
+  const categories = data?.categories ?? [];
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-card border border-card-border rounded-lg p-5">
+        <h3 className="text-sm font-semibold text-foreground mb-1">Plumbing Production Plan · {month}</h3>
+        <p className="text-xs text-muted-foreground mb-4">
+          {plan?.categories?.length ?? 0} categories · live Plumbing plan and Sheet3 production
+        </p>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+          <KpiCard label="Planned" value={fmtQty(plan?.totalPcs)} sub="pieces" color={GREEN} />
+          <KpiCard label="Plan Weight" value={fmtQty(plan?.totalKg)} sub="kg" />
+          <KpiCard label="Produced" value={fmtQty(data?.totalProduced)} sub="Sheet3 actuals" />
+          <KpiCard label="Unmapped" value={fmtQty(data?.totalUnmapped)} sub="needs review" />
+        </div>
+        {isLoading ? <LoadingState label="Loading Plumbing production actuals…" /> :
+          error ? <ErrorState message="Could not load live Plumbing production actuals." /> :
+          <ResponsiveContainer width="100%" height={230}>
+            <BarChart data={weekly} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => fmtQty(v)} />
+              <Tooltip content={<CustomTooltip formatter={(v: number) => fmtQty(v)} />} />
+              <Legend />
+              <Bar dataKey="Released" fill={BLUE} radius={[3, 3, 0, 0]} />
+              <Bar dataKey="Produced" fill={GREEN} radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        }
+      </div>
+
+      <div className="bg-card border border-card-border rounded-lg p-5">
+        <h3 className="text-sm font-semibold text-foreground mb-4">Plumbing Production by Category</h3>
+        {isLoading ? <LoadingState label="Loading category actuals…" /> :
+          error ? <ErrorState message="Category actuals are unavailable." /> :
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-border bg-muted/40">
+                  <th className="text-left px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Category</th>
+                  <th className="text-right px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Released</th>
+                  <th className="text-right px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Produced</th>
+                  <th className="text-right px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Gap</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categories.map((category: any) => {
+                  const gap = Math.max((category.totalRelease ?? 0) - (category.totalActual ?? 0), 0);
+                  return (
+                    <tr key={category.category} className="border-b border-border/50 hover:bg-muted/20">
+                      <td className="px-3 py-2 font-medium text-foreground">{category.category}</td>
+                      <td className="px-3 py-2 text-right font-mono text-foreground">{Math.round(category.totalRelease ?? 0).toLocaleString("en-IN")}</td>
+                      <td className="px-3 py-2 text-right font-mono text-emerald-700">{Math.round(category.totalActual ?? 0).toLocaleString("en-IN")}</td>
+                      <td className="px-3 py-2 text-right font-mono text-amber-700">{Math.round(gap).toLocaleString("en-IN")}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    </div>
+  );
+}
+
 // ─── Production Page ──────────────────────────────────────────────────────────
 function ProductionPage({ seg }: { seg: "PTMT" | "Plumbing" | "Combined" }) {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["ops-production"],
+    queryKey: ["ops-production", seg],
     queryFn: async () => {
       const res = await fetch(`/api/ops/production`);
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
+    enabled: seg !== "Plumbing",
   });
 
   const currentMonth = useMemo(() => {
@@ -1562,13 +1783,27 @@ function ProductionPage({ seg }: { seg: "PTMT" | "Plumbing" | "Combined" }) {
   const totalMonths = data?.length ?? 0;
   const avgMonthly = data ? Math.round(data.reduce((s: number, m: any) => s + m.total, 0) / Math.max(totalMonths, 1)) : 0;
 
+  if (seg === "Plumbing") {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">Plumbing Production</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">Plumbing · monthly plan, weekly release, and live production actuals</p>
+          </div>
+        </div>
+        <PlumbingProductionPanel month={currentMonth} plan={plumbingPlan} />
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-foreground">Production Planning</h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {seg === "Plumbing" ? "Plumbing" : seg === "Combined" ? "PTMT + Plumbing" : "PTMT"} · Annual plan trend + live monthly breakdown
+            {seg === "Combined" ? "PTMT + Plumbing" : "PTMT"} · Annual plan trend + live monthly breakdown
           </p>
         </div>
         <button onClick={() => refetch()} disabled={isFetching}
@@ -1579,7 +1814,7 @@ function ProductionPage({ seg }: { seg: "PTMT" | "Plumbing" | "Combined" }) {
       </div>
 
       {/* Plumbing plan summary — shown when Plumbing or Combined */}
-      {(seg === "Plumbing" || seg === "Combined") && plumbingPlan && (
+      {seg === "Combined" && plumbingPlan && (
         <div className="bg-card border border-card-border rounded-lg p-5 mb-6">
           <h3 className="text-sm font-semibold text-foreground mb-1">
             Plumbing Production Plan · {currentMonth}
@@ -2609,9 +2844,14 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <AppRouter />
-        </WouterRouter>
+        <AuthProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <AuthGate>
+              <AccountControls />
+              <AppRouter />
+            </AuthGate>
+          </WouterRouter>
+        </AuthProvider>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

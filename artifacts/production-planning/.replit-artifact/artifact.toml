@@ -42,6 +42,9 @@ run = "pnpm --filter @workspace/api-server run dev"
 build = [ "sh", "-c", "cd artifacts/api-server && node esbuild.build.mjs" ]
 run = "node artifacts/api-server/dist/index.cjs"
 
+[services.production.health.startup]
+path = "/api/healthz"
+
 [services.env]
 PORT = "8080"
 NODE_ENV = "production"

@@ -1,0 +1,130 @@
+# Replit prompt — month lifecycle: close and freeze past months
+
+Two problems on `/monitoring/plant`, and they share one root cause: **the system has no concept of a month being over.** Every month is rendered as if it were in progress.
+
+Screenshot: **July 2026** selected, on 19 August. The page shows *"4/25 working days elapsed · snapshot 05-07-2026"*, W1–W4 all labelled **"upcoming"**, `Monthly target (Max PP) is zero`, and `1726 produced item(s) have no matching plan entry`.
+
+---
+
+## Diagnosis
+
+**The month filter is working.** It passed `2026-07` correctly — the subtitle says so. What's broken is everything downstream of it.
+
+### Why "4/25 elapsed" and "upcoming"
+
+`monitoring-calc.ts:16` — `countWorkingDaysElapsed(month, throughDateIso)` counts non-Sunday days from the 1st **through `snapshotDate`**. And `plant.ts:63`:
+
+```typescript
+const snapshotDate = row?.snapshotDate ?? (actuals.length > 0 ? [...actuals].map(r => r.date).sort().pop()! : null);
+```
+
+`snapshotDate` is either pinned in `plant_configs.snapshot_date` for that month, or the max date present in the actuals. Here it resolves to **2026-07-05**. July 2026 starts on a Wednesday, so 1–4 July are working days and the 5th is a Sunday → `elapsed = 4`. That matches exactly.
+
+Everything else follows: `remaining = 25 − 4 = 21`, the weekly pulse compares each week against a 5 July cursor and calls W1–W4 "upcoming", and the pace metrics project from a 4-day base.
+
+**Nothing here knows that July ended seven weeks ago.**
+
+### Why "Max PP is zero" and 1,726 unmatched items
+
+`plant-ingestion.ts:118–135`:
+
+```typescript
+export async function fetchMonthlyTargets(month: string) {
+  if (month >= currentMonthStr()) {
+    const planItems = await buildPlanItems(month);      // live rebuild from CURRENT uploads
+    …
+  }
+  const [src] = await db.select().from(plantSourceConfigsTable).where(eq(plantSourceConfigsTable.month, month));
+  if (!src) {
+    logger.warn({ month }, "no master file ID for historical month; returning empty targets");
+    return [];                                          // ← July almost certainly lands here
+  }
+  return fetchTargetsFromMasterSheet(src.fileId, month);
+}
+```
+
+For a past month the targets come from a per-month **master file ID** in `plant_source_configs`. If no row exists for `2026-07`, it returns `[]` — hence Max PP zero, hence all 1,726 produced items unmatched, hence attainment `–`.
+
+Meanwhile `computePlantBundle` at `plant.ts:61` calls `buildPlanItems(month)` for the weekly-release warnings, which rebuilds from **today's** uploads. Those uploads are August's. July's plan cannot be reconstructed that way at all.
+
+**So historical months are being served by two paths that both assume "now": a live plan rebuild, and a snapshot cursor that was never advanced to month end.**
+
+---
+
+## What to build
+
+A month lifecycle, matching the rule you described:
+
+| State | When | Behaviour |
+|---|---|---|
+| **OPEN** | the current month | live — recompute on every request, as today |
+| **GRACE** | the previous month, until the **7th** of the current month | live — late data entry still lands |
+| **CLOSED** | from the 7th onward, and every month before that | **frozen** — served from a stored snapshot, never recomputed |
+
+### 1. Resolve the state
+
+One helper, used everywhere a month is handled:
+
+```typescript
+export type MonthState = "open" | "grace" | "closed";
+
+/** Closed from the 7th of the month AFTER the target month. */
+export function resolveMonthState(month: string, today = new Date()): MonthState {
+  const cur = `${today.getUTCFullYear()}-${String(today.getUTCMonth() + 1).padStart(2, "0")}`;
+  if (month > cur)  return "open";     // future month — treat as open
+  if (month === cur) return "open";
+  const [y, m] = month.split("-").map(Number);
+  const cutoff = new Date(Date.UTC(y, m, 7));   // 7th of the following month, 00:00 UTC
+  return today < cutoff ? "grace" : "closed";
+}
+```
+
+Unit-test the boundaries explicitly: `2026-07` is `grace` on 2026-08-06, `closed` on 2026-08-07, and `closed` on 2026-08-19 (today). Put those in the regression suite.
+
+### 2. Freeze on close
+
+When a month first transitions to CLOSED, persist a snapshot — plan targets, actuals, category KPIs, weekly release — into a `plant_month_snapshots` table keyed by `(month, segment)`. Store the computing commit SHA and a `closedAt` timestamp alongside it.
+
+After that, **every read for a closed month serves the snapshot.** No `buildPlanItems`, no Sheets call, no recompute. That also fixes the fragility: a closed month must not depend on Google Sheets quota, on current uploads, or on a master file ID that may never have been configured.
+
+You already have the right precedent — `plan_runs` / `plan_run_results` is an immutable frozen snapshot, and `frozenPlanGrandMax` exists precisely so the corrective can cite a frozen baseline instead of rebuilding. Reuse that thinking: **for a closed month, resolve targets from the finalized `plan_run` for that month**, not from `buildPlanItems`.
+
+### 3. Fix the calendar for closed months
+
+For a CLOSED month, `snapshotDate` must be the **last working day of the month**, not the last date that happens to appear in the actuals. Then:
+
+- `elapsed === workingDays` (July: 25/25, not 4/25)
+- `remaining === 0`
+- no week is ever "upcoming" — W1–W4 are all complete
+- `catchUpPerDay` is `null` rather than a division by `remaining = 0`
+- `projectedMonthEnd` equals actual, since there is nothing left to project
+
+Please check every consumer of `context.remaining` and `context.elapsed` for a divide-by-zero or a nonsensical projection once `remaining = 0`. `plant-engine.ts:106–119` is the block to review.
+
+### 4. Show the state in the UI
+
+The header should say which state it's in — e.g. `July 2026 · CLOSED (frozen 2026-08-07)` versus `August 2026 · OPEN (live)`. A frozen month that looks identical to a live one is how someone ends up treating a stale number as current. Same principle as the `Deployed commit` line in the suite header.
+
+### 5. Do not silently show zeros for a closed month with no snapshot
+
+July has no snapshot yet, and there may be no `plant_source_configs` row either. **Do not render `Max PP = 0` and call it attainment.** Show a named state: *"July 2026 is closed but no snapshot was captured — targets unavailable."* That is the silent-zero rule from `HANDOVER §7`: an unresolved value must never take a plausible-looking default.
+
+For months already past with no snapshot, provide a **backfill path** — a one-off job that builds the snapshot from the finalized `plan_run` for that month plus the stored actuals, and marks it `backfilledAt` so it is distinguishable from one captured at close time.
+
+---
+
+## Before writing code, please report
+
+1. `GET /api/plan/runs?month=2026-07&segment=PTMT` — do finalized July plan runs exist? If so, that is the target source for the July snapshot.
+2. `SELECT month, working_days, snapshot_date FROM plant_configs WHERE month IN ('2026-06','2026-07','2026-08')` — is `2026-07-05` pinned in config, or just the last actual?
+3. `SELECT month, file_id FROM plant_source_configs` — which months have a master file ID? That determines how many months can be backfilled from Sheets versus from `plan_runs`.
+4. How far do the July actuals actually run — is 5 July the true last data date, or is the cursor stale?
+
+Answers 1 and 3 decide whether the backfill source is `plan_runs` or the master sheets, so I'd rather see them before the design is fixed.
+
+## Reporting back
+
+State the files and line numbers changed, the diffstat, and confirm nothing else is in the diff. `tsc --noEmit` clean and a byte-size match before pushing.
+
+Also still open from the last round and not yet on `main`:
+- `plumbing-attainment.tsx` — `CUM. ATTAINMENT` divides `plant.produced` (mapped + unmapped) by a mapped-only release, so attainment is overstated and improves as unmapped codes increase. Same construction in `plumbing-recommendations.tsx`.

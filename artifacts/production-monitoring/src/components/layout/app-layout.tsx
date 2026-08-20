@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { 
   LayoutDashboard, 
@@ -19,7 +20,12 @@ import {
   Cpu,
   Tag,
   Upload,
+  LogOut,
+  Users,
+  KeyRound,
 } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
+import { ChangePasswordDialog } from "@/components/change-password-dialog";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -61,8 +67,67 @@ const PLUMBING_PATHS = new Set([
   "/plumbing", "/plumbing/velocity", "/plumbing/attainment", "/plumbing/warnings",
   "/plumbing/recommendations", "/plumbing/trend", "/plumbing/config", "/plumbing/reports",
   "/plumbing/plan-import", "/plumbing/machine-release", "/plumbing/machines",
-  "/plumbing/quality",
+  "/plumbing/quality", "/plumbing/actions", "/plumbing/backlog", "/plumbing/ai-analytics",
+  "/plumbing/settings",
 ]);
+
+const PLUMBING_CATEGORIES = [
+  "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
+  "UPVC Pipe", "UPVC Fitting", "UPVC Solvent",
+  "SWR Pipe", "SWR Fitting", "SWR Solvent",
+  "AGRI Pipe", "AGRI Fitting", "AGRI Solvent",
+];
+
+// ─── User controls (top-right of header) ─────────────────────────────────────
+function UserControls() {
+  const { user, logout } = useAuth();
+  const [showChangePwd, setShowChangePwd] = useState(false);
+
+  if (!user) return null;
+
+  return (
+    <>
+      <div className="flex items-center gap-1.5 ml-2 shrink-0">
+        {user.role === "admin" && (
+          <a
+            href="/monitoring/admin/users"
+            className="flex items-center gap-1 h-7 px-2 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title="User Management"
+          >
+            <Users size={13} /> Users
+          </a>
+        )}
+        {user.mustChangePassword && (
+          <span className="text-[11px] text-amber-600 bg-amber-500/10 rounded px-2 py-0.5 whitespace-nowrap">
+            ⚠ Change password
+          </span>
+        )}
+        <button
+          onClick={() => setShowChangePwd(true)}
+          className="h-7 px-2 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex items-center gap-1"
+          title="Change password"
+        >
+          <KeyRound size={13} />
+        </button>
+        <span className="text-xs text-muted-foreground max-w-[140px] truncate hidden sm:block" title={user.email}>
+          {user.email}
+        </span>
+        <button
+          onClick={() => void logout()}
+          className="h-7 px-2 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors flex items-center gap-1"
+          title="Sign out"
+        >
+          <LogOut size={13} /> Sign out
+        </button>
+      </div>
+      <ChangePasswordDialog
+        open={showChangePwd || user.mustChangePassword}
+        onOpenChange={setShowChangePwd}
+        required={user.mustChangePassword}
+      />
+    </>
+  );
+}
 
 // ─── Cross-App Nav ────────────────────────────────────────────────────────────
 function CrossAppNav() {
@@ -104,7 +169,18 @@ export function AppLayout({
     { query: { queryKey: getGetPlantBundleQueryKey({ month }), enabled: isPlantPage } }
   ) as { data: unknown };
   const bundle = bundleRaw as PlantBundle | undefined;
-  const categoryOptions: string[] = bundle?.categories?.map((c) => c.category) ?? [];
+  const categoryOptions: string[] = isPlumbingPage
+    ? PLUMBING_CATEGORIES
+    : bundle?.categories?.map((c) => c.category) ?? [];
+
+  // The filter is shared across both segments. Do not keep a PTMT category
+  // selected after navigating to Plumbing (or vice versa), otherwise every
+  // page receives a category that does not exist in its current data set.
+  useEffect(() => {
+    if (selectedCategory && categoryOptions.length > 0 && !categoryOptions.includes(selectedCategory)) {
+      setSelectedCategory(null);
+    }
+  }, [selectedCategory, setSelectedCategory, categoryOptions.join("|")]);
 
   const plantNavItems = [
     { href: "/plant",                  label: "Control Board",    icon: Factory           },
@@ -180,10 +256,10 @@ export function AppLayout({
                   {navLink({ href: "/plumbing/config",            label: "Config",           icon: SlidersHorizontal })}
                   {navLink({ href: "/plumbing/plan-import",       label: "Plan Import",      icon: Upload            })}
                   {navLink({ href: "/plumbing/reports",           label: "Reports",          icon: FileText          })}
-                  {navLink({ href: "/actions",                    label: "Actions",          icon: CheckSquare       })}
-                  {navLink({ href: "/backlog",                    label: "Backlog",          icon: PackageMinus      })}
-                  {navLink({ href: "/ai-analytics",               label: "AI Analytics",     icon: Sparkles          })}
-                  {navLink({ href: "/settings",                   label: "Settings",         icon: Settings          })}
+                   {navLink({ href: "/plumbing/actions",            label: "Actions",          icon: CheckSquare       })}
+                   {navLink({ href: "/plumbing/backlog",            label: "Backlog",          icon: PackageMinus      })}
+                   {navLink({ href: "/plumbing/ai-analytics",       label: "AI Analytics",     icon: Sparkles          })}
+                   {navLink({ href: "/plumbing/settings",            label: "Settings",         icon: Settings          })}
                 </nav>
               </div>
               <div className="px-3">
@@ -191,6 +267,8 @@ export function AppLayout({
                 <nav className="space-y-1">
                   {navLink({ href: "/plumbing/machine-release", label: "Machine Release", icon: SlidersHorizontal })}
                   {navLink({ href: "/plumbing/machines",        label: "Dashboard",       icon: LayoutDashboard   })}
+                   {navLink({ href: "/plumbing/velocity",         label: "Velocity",        icon: Activity          })}
+                   {navLink({ href: "/plumbing/warnings",         label: "Warnings",        icon: AlertTriangle     })}
                   {navLink({ href: "/plumbing/quality",         label: "Quality",         icon: ActivitySquare    })}
                 </nav>
               </div>
@@ -239,8 +317,8 @@ export function AppLayout({
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Type (category) filter — only on plant pages */}
-            {isPlantPage && categoryOptions.length > 0 && (
+            {/* Type (category) filter — available for both PTMT and Plumbing plant views */}
+            {(isPlantPage || isPlumbingPage) && categoryOptions.length > 0 && (
               <Select
                 value={selectedCategory ?? "__all__"}
                 onValueChange={(v) => setSelectedCategory(v === "__all__" ? null : v)}
@@ -289,6 +367,9 @@ export function AppLayout({
               </span>
             )}
           </div>
+
+          {/* ── User / Auth controls ── */}
+          <UserControls />
         </header>
 
         <main className="flex-1 overflow-auto p-8">{children}</main>

@@ -5,7 +5,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/app-layout";
 import { useDateFilter } from "@/hooks/use-date-filter";
+import { AuthProvider, useAuth } from "@/contexts/auth-context";
 import NotFound from "@/pages/not-found";
+import LoginPage from "@/pages/login";
+import AdminUsersPage from "@/pages/admin-users";
 
 import Dashboard from "@/pages/dashboard";
 import Velocity from "@/pages/velocity";
@@ -35,6 +38,7 @@ import PlumbingRecommendations from "@/pages/plumbing-recommendations";
 import PlumbingTrend from "@/pages/plumbing-trend";
 import PlumbingConfig from "@/pages/plumbing-config";
 import PlumbingReports from "@/pages/plumbing-reports";
+import PlumbingOperations from "@/pages/plumbing-operations";
 import PlanImport from "@/pages/plant/plan-import";
 
 const queryClient = new QueryClient({
@@ -58,6 +62,8 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
   selectedCategory: string | null;
   setSelectedCategory: (c: string | null) => void;
 }) {
+  const { user } = useAuth();
+
   return (
     <AppLayout
       month={month}
@@ -122,7 +128,7 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
           <PlantCategories month={month} selectedCategory={selectedCategory} />
         </Route>
         <Route path="/plumbing">
-          <PlumbingMonitoring month={month} />
+          <PlumbingMonitoring month={month} selectedCategory={selectedCategory} />
         </Route>
         <Route path="/plumbing/machine-release">
           <PlumbingMachineRelease month={month} />
@@ -142,6 +148,18 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
         <Route path="/plumbing/recommendations">
           <PlumbingRecommendations month={month} />
         </Route>
+        <Route path="/plumbing/actions">
+          <PlumbingOperations month={month} mode="actions" />
+        </Route>
+        <Route path="/plumbing/backlog">
+          <PlumbingOperations month={month} mode="backlog" />
+        </Route>
+        <Route path="/plumbing/ai-analytics">
+          <PlumbingOperations month={month} mode="ai" />
+        </Route>
+        <Route path="/plumbing/settings">
+          <PlumbingOperations month={month} mode="settings" />
+        </Route>
         <Route path="/plumbing/trend">
           <PlumbingTrend month={month} />
         </Route>
@@ -160,10 +178,35 @@ function Router({ month, preset, customMonth, dateRange, setPreset, setCustomMon
         <Route path="/plumbing/plan-import">
           <PlanImport month={month} />
         </Route>
+        {/* Admin-only: user management */}
+        <Route path="/admin/users">
+          {user?.role === "admin"
+            ? <AdminUsersPage />
+            : <div className="p-8 text-center text-muted-foreground text-sm">Access denied.</div>
+          }
+        </Route>
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
   );
+}
+
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-sm text-muted-foreground animate-pulse">Loading…</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <LoginPage />;
+  }
+
+  return <>{children}</>;
 }
 
 function App() {
@@ -173,18 +216,22 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-          <Router
-            month={month}
-            preset={preset}
-            customMonth={customMonth}
-            dateRange={dateRange}
-            setPreset={setPreset}
-            setCustomMonth={setCustomMonth}
-            selectedCategory={selectedCategory}
-            setSelectedCategory={setSelectedCategory}
-          />
-        </WouterRouter>
+        <AuthProvider>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <AuthGate>
+              <Router
+                month={month}
+                preset={preset}
+                customMonth={customMonth}
+                dateRange={dateRange}
+                setPreset={setPreset}
+                setCustomMonth={setCustomMonth}
+                selectedCategory={selectedCategory}
+                setSelectedCategory={setSelectedCategory}
+              />
+            </AuthGate>
+          </WouterRouter>
+        </AuthProvider>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

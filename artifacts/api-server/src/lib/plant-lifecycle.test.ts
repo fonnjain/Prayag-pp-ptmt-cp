@@ -3,19 +3,25 @@ import assert from "node:assert/strict";
 import { and, eq } from "drizzle-orm";
 import {
   db,
+  correctivePlanRunsTable,
   planRunResultsTable,
+  planRunInputsTable,
   planRunsTable,
   plantIngestionCacheTable,
   plantMonitoringSnapshotsTable,
   plantPlanVersionsTable,
+  weeklyReleaseBandsTable,
 } from "@workspace/db";
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "./plant-lifecycle";
-import { getPlanVersionTimeline } from "./plant-plan-timeline";
+import { getPlanVersionTimeline, savePlanVersionSnapshot } from "./plant-plan-timeline";
+import { buildVersionAwarePlanMap, computePlanVsActualReport } from "./plan-vs-actual-engine";
 import { buildPlantBundle } from "./plant-engine";
-import { buildPlantWeeklySummary } from "./plant-weekly-engine";
+import { buildPlantWeeklySummary, formatPlanVersionAuditLabel } from "./plant-weekly-engine";
 import {
+  backfillLegacyPlantMonitoringSnapshot,
   captureClosedPlantMonth,
   computeLifecyclePlantMonitoring,
+  reconstructLegacyWeeklyPlanItems,
   selectUnfrozenClosedMonths,
 } from "./plant-monitoring";
 import { runMigrations } from "./runMigrations";
@@ -73,55 +79,161 @@ test("legacy finalized plans hydrate without requiring a linked corrective run",
   }
 });
 
-test("same-day legacy revisions keep the last snapshot and expose superseded provenance", async () => {
+test("same-day legacy revisions select the latest source issuance and retain an audit trail", async () => {
   await runMigrations();
   const month = "1996-02";
-  const targets = [{
-    itemCode: "REV-A",
-    colour: "",
-    category: "Revision Test",
-    maxPcs: 100,
-    minPcs: 80,
-    w1: 100,
-    w2: 0,
-    w3: 0,
-    w4: 0,
-  }];
   await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
+  await db.delete(correctivePlanRunsTable).where(and(eq(correctivePlanRunsTable.month, month), eq(correctivePlanRunsTable.segment, "PTMT")));
 
   try {
-    await db.insert(plantPlanVersionsTable).values([
-      {
-        month,
-        segment: "PTMT",
-        kind: "corrective",
-        sourceId: 990001,
-        effectiveFrom: `${month}-10`,
-        sourceLabel: "First same-day revision",
-        targetsJson: targets,
-      },
-      {
-        month,
-        segment: "PTMT",
-        kind: "corrective",
-        sourceId: 990002,
-        effectiveFrom: `${month}-10`,
-        sourceLabel: "Final same-day revision",
-        targetsJson: [{ ...targets[0], maxPcs: 120 }],
-      },
-    ]);
+    const [earlier] = await db.insert(correctivePlanRunsTable).values({
+      month,
+      segment: "PTMT",
+      effectiveFrom: `${month}-08`,
+      asOfDate: `${month}-08`,
+      createdAt: new Date("1996-02-08T10:00:00.000Z"),
+    }).returning();
+    const [later] = await db.insert(correctivePlanRunsTable).values({
+      month,
+      segment: "PTMT",
+      effectiveFrom: `${month}-08`,
+      asOfDate: `${month}-08`,
+      createdAt: new Date("1996-02-08T11:00:00.000Z"),
+    }).returning();
 
-    const timeline = await getPlanVersionTimeline(month, "PTMT");
-    assert.equal(timeline.length, 1);
-    assert.equal(timeline[0]?.sourceId, 990002);
-    assert.equal(timeline[0]?.targets[0]?.maxPcs, 120);
-    assert.deepEqual(timeline[0]?.supersededSameDaySources, [{
+    // Save in reverse order to prove snapshot backfill order cannot choose the
+    // governing revision.
+    await savePlanVersionSnapshot({
+      month, segment: "PTMT", kind: "corrective", sourceId: later.id,
+      effectiveFrom: `${month}-08`, sourceLabel: "Later correction",
+      targets: [{ itemCode: "A", colour: "", category: "Test", maxPcs: 120, minPcs: 0, w1: 0, w2: 120, w3: 0, w4: 0 }],
+    });
+    await savePlanVersionSnapshot({
+      month, segment: "PTMT", kind: "corrective", sourceId: earlier.id,
+      effectiveFrom: `${month}-08`, sourceLabel: "Earlier correction",
+      targets: [{ itemCode: "A", colour: "", category: "Test", maxPcs: 100, minPcs: 0, w1: 0, w2: 100, w3: 0, w4: 0 }],
+    });
+
+    const [version] = await getPlanVersionTimeline(month, "PTMT");
+    assert.equal(version?.sourceId, later.id);
+    assert.deepEqual(version?.selection, {
+      candidateCount: 2,
+      reason: "latest_source_issuance",
+      canonicalIssuedAt: "1996-02-08T11:00:00.000Z",
+      canonicalIssuedAtSource: "corrective_created_at",
+      superseded: [{
+        kind: "corrective",
+        sourceId: earlier.id,
+        sourceLabel: "Earlier correction",
+        issuedAt: "1996-02-08T10:00:00.000Z",
+        issuedAtSource: "corrective_created_at",
+      }],
+    });
+    assert.deepEqual(version?.supersededSameDaySources, [{
       kind: "corrective",
-      sourceId: 990001,
-      sourceLabel: "First same-day revision",
+      sourceId: earlier.id,
+      sourceLabel: "Earlier correction",
     }]);
+    assert.match(formatPlanVersionAuditLabel(version!), /canonical: latest source issuance; 1 same-day revision superseded/);
   } finally {
     await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
+    await db.delete(correctivePlanRunsTable).where(and(eq(correctivePlanRunsTable.month, month), eq(correctivePlanRunsTable.segment, "PTMT")));
+  }
+});
+
+test("legacy weekly allocation reconstructs Week 1 from frozen inputs and bands, not zeroed result columns", () => {
+  const allocation = reconstructLegacyWeeklyPlanItems(
+    [{
+      itemCode: "A",
+      colour: "",
+      category: "Test",
+      productionPlan: 100,
+      minProduction: 80,
+      bufferReq: 150,
+    }],
+    [{
+      itemCode: "A",
+      colour: "",
+      avg3MoSale: 100,
+      stock: 10,
+      pendingLastMonth: 0,
+      pendingCurrent: 0,
+    }],
+    [{ categoryName: "Test", w1Upper: 0.3, w2Upper: 0.8, w3Upper: 1.5, w4Upper: 3 }],
+  );
+
+  assert.deepEqual(allocation.map((item) => [item.w1, item.w2, item.w3, item.w4]), [[100, 0, 0, 0]]);
+});
+
+test("weekly monitoring uses reconstructed legacy allocation when timeline week columns are zero", async () => {
+  await runMigrations();
+  const month = "1996-03";
+  const category = "Legacy Weekly Timeline";
+  await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
+  await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
+  await db.delete(weeklyReleaseBandsTable).where(and(eq(weeklyReleaseBandsTable.segment, "PTMT"), eq(weeklyReleaseBandsTable.categoryName, category)));
+
+  try {
+    const [run] = await db.insert(planRunsTable).values({
+      month,
+      segment: "PTMT",
+      status: "finalized",
+      effectiveFrom: `${month}-01`,
+      weeklyReleaseVersion: 0,
+    }).returning();
+    await db.insert(planRunResultsTable).values({
+      runId: run.id,
+      itemCode: "LEGACY-W1",
+      colour: "",
+      category,
+      productionPlan: 100,
+      minProduction: 80,
+      bufferReq: 150,
+      w1: 0,
+      w2: 0,
+      w3: 0,
+      w4: 0,
+    });
+    await db.insert(planRunInputsTable).values({
+      runId: run.id,
+      itemCode: "LEGACY-W1",
+      colour: "",
+      avg3MoSale: 100,
+      stock: 10,
+      pendingCurrent: 0,
+      pendingLastMonth: 0,
+    });
+    await db.insert(weeklyReleaseBandsTable).values({
+      segment: "PTMT",
+      categoryName: category,
+      w1Upper: 0.3,
+      w2Upper: 0.8,
+      w3Upper: 1.5,
+      w4Upper: 3,
+    });
+
+    const timeline = await getPlanVersionTimeline(month, "PTMT");
+    assert.deepEqual(timeline[0]?.targets[0] && [
+      timeline[0].targets[0].w1,
+      timeline[0].targets[0].w2,
+      timeline[0].targets[0].w3,
+      timeline[0].targets[0].w4,
+    ], [100, 0, 0, 0]);
+
+    const weekly = buildPlantWeeklySummary(
+      month,
+      [],
+      [],
+      [{ itemCode: "LEGACY-W1", colour: "", category }],
+      `${month}-31`,
+      true,
+      timeline,
+    );
+    assert.equal(weekly.plant.weeks[0]?.target, 100);
+  } finally {
+    await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
+    await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
+    await db.delete(weeklyReleaseBandsTable).where(and(eq(weeklyReleaseBandsTable.segment, "PTMT"), eq(weeklyReleaseBandsTable.categoryName, category)));
   }
 });
 
@@ -406,6 +518,222 @@ test("a captured closed-month snapshot stays byte-for-byte stable after source r
   } finally {
     await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
     await db.delete(plantIngestionCacheTable).where(eq(plantIngestionCacheTable.month, month));
+    await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
+  }
+});
+
+test("legacy frozen snapshot restores its captured immutable item timeline and preserves weekly totals", async () => {
+  await runMigrations();
+  const month = "1998-03";
+  await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+  await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
+  await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
+
+  try {
+    const [run] = await db.insert(planRunsTable).values({
+      month,
+      segment: "PTMT",
+      status: "finalized",
+      effectiveFrom: `${month}-01`,
+      weeklyReleaseVersion: 1,
+    }).returning();
+    const target = {
+      itemCode: "BACKFILL-A",
+      colour: "RED",
+      category: "Backfill Test",
+      maxPcs: 100,
+      minPcs: 80,
+      w1: 30,
+      w2: 30,
+      w3: 20,
+      w4: 20,
+    };
+    await db.insert(planRunResultsTable).values({
+      runId: run.id,
+      itemCode: target.itemCode,
+      colour: target.colour,
+      category: target.category,
+      productionPlan: target.maxPcs,
+      minProduction: target.minPcs,
+      bufferReq: 0,
+      releaseWeek: 1,
+      w1: target.w1,
+      w2: target.w2,
+      w3: target.w3,
+      w4: target.w4,
+    });
+    await savePlanVersionSnapshot({
+      month,
+      segment: "PTMT",
+      kind: "run",
+      sourceId: run.id,
+      effectiveFrom: `${month}-01`,
+      sourceLabel: "March issued plan",
+      targets: [target],
+    });
+    await db.insert(plantMonitoringSnapshotsTable).values({
+      month,
+      planRunId: run.id,
+      actualsJson: [{ date: `${month}-02`, itemCode: target.itemCode, colour: target.colour, qty: 40, group: "PTMT" }],
+      targetsJson: [{ itemCode: target.itemCode, colour: target.colour, category: target.category, maxPcs: 100, minPcs: 80 }],
+      bundleJson: { context: { sourceInfo: { planVersions: [] } } },
+      weeklyJson: {},
+      sourceInfoJson: {
+        planVersions: [{
+          kind: "run",
+          sourceId: run.id,
+          sourceLabel: "March issued plan",
+          effectiveFrom: `${month}-01`,
+          effectiveTo: null,
+          targetCount: 1,
+        }],
+      },
+      // Always later than the test's issued-version write, proving the backfill
+      // can only use a source that existed when this snapshot was captured.
+      capturedAt: new Date("2099-01-01T00:00:00.000Z"),
+    });
+
+    const restored = await backfillLegacyPlantMonitoringSnapshot(month);
+    assert.equal(restored.restored, true);
+    const sourceInfo = restored.snapshot?.sourceInfoJson as Record<string, unknown>;
+    const timeline = sourceInfo.planVersionTimeline as import("./plant-plan-timeline").PlanVersion[];
+    assert.equal(sourceInfo.planVersionTimelineSource, "issued_plan_version_snapshot");
+    assert.equal(timeline.length, 1);
+    assert.deepEqual(timeline[0]?.targets, [target]);
+
+    // Item, category, and monthly totals are rebuilt from the immutable W1–W4
+    // timeline and satisfy the same sums the report invariants enforce.
+    const planMap = buildVersionAwarePlanMap(month, timeline);
+    const item = planMap.get("BACKFILL-A::RED");
+    assert.deepEqual(item && [item.w1, item.w2, item.w3, item.w4, item.plan], [30, 30, 20, 20, 100]);
+    const weekly = buildPlantWeeklySummary(
+      month,
+      [{ date: `${month}-02`, itemCode: target.itemCode, colour: target.colour, qty: 40 }],
+      [],
+      [{ itemCode: target.itemCode, colour: target.colour, category: target.category }],
+      `${month}-31`,
+      true,
+      timeline,
+    );
+    const categoryWeeks = weekly.categories.find((row) => row.category === target.category)?.weeks ?? [];
+    assert.equal(categoryWeeks.reduce((sum, week) => sum + week.target, 0), 100);
+    assert.equal(categoryWeeks.reduce((sum, week) => sum + week.actual, 0), 40);
+
+    const retry = await backfillLegacyPlantMonitoringSnapshot(month);
+    assert.equal(retry.restored, false, "a restored snapshot is never rewritten on later reads");
+    assert.deepEqual(retry.snapshot?.sourceInfoJson, restored.snapshot?.sourceInfoJson);
+  } finally {
+    await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+    await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
+    await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
+  }
+});
+
+test("legacy frozen snapshot without a matching immutable issued timeline remains explicitly unavailable", async () => {
+  await runMigrations();
+  const month = "1998-04";
+  await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+  await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
+
+  try {
+    await db.insert(plantMonitoringSnapshotsTable).values({
+      month,
+      actualsJson: [],
+      targetsJson: [],
+      bundleJson: {},
+      weeklyJson: {},
+      sourceInfoJson: {
+        planVersions: [{
+          kind: "run",
+          sourceId: 987654321,
+          sourceLabel: "Missing immutable plan",
+          effectiveFrom: `${month}-01`,
+          effectiveTo: null,
+          targetCount: 1,
+        }],
+      },
+      capturedAt: new Date("2099-01-01T00:00:00.000Z"),
+    });
+
+    const restored = await backfillLegacyPlantMonitoringSnapshot(month);
+    assert.equal(restored.restored, false);
+    assert.match(restored.reason ?? "", /no matching immutable issued snapshot/i);
+
+    const report = await computePlanVsActualReport(month, "PTMT", new Date("2026-08-19T12:00:00.000Z"));
+    assert.equal(report.dataAvailable, false);
+    assert.match(report.unavailableReason ?? "", /no matching immutable issued snapshot/i);
+  } finally {
+    await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+    await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
+  }
+});
+
+test("legacy backfill refuses an immutable version whose final targets do not match the snapshot roster", async () => {
+  await runMigrations();
+  const month = "1998-05";
+  await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+  await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
+  await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
+
+  try {
+    const [run] = await db.insert(planRunsTable).values({
+      month,
+      segment: "PTMT",
+      status: "finalized",
+      effectiveFrom: `${month}-01`,
+      weeklyReleaseVersion: 1,
+    }).returning();
+    const frozenTarget = {
+      itemCode: "MUTATED-A",
+      colour: "",
+      category: "Mutation Test",
+      maxPcs: 100,
+      minPcs: 80,
+      w1: 100,
+      w2: 0,
+      w3: 0,
+      w4: 0,
+    };
+    await savePlanVersionSnapshot({
+      month,
+      segment: "PTMT",
+      kind: "run",
+      sourceId: run.id,
+      effectiveFrom: `${month}-01`,
+      targets: [{ ...frozenTarget, maxPcs: 999, w1: 999 }],
+    });
+    await db.insert(plantMonitoringSnapshotsTable).values({
+      month,
+      planRunId: run.id,
+      actualsJson: [],
+      targetsJson: [{
+        itemCode: frozenTarget.itemCode,
+        colour: frozenTarget.colour,
+        category: frozenTarget.category,
+        maxPcs: frozenTarget.maxPcs,
+        minPcs: frozenTarget.minPcs,
+      }],
+      bundleJson: {},
+      weeklyJson: {},
+      sourceInfoJson: {
+        planVersions: [{
+          kind: "run",
+          sourceId: run.id,
+          sourceLabel: null,
+          effectiveFrom: `${month}-01`,
+          effectiveTo: null,
+          targetCount: 1,
+        }],
+      },
+      capturedAt: new Date("2099-01-01T00:00:00.000Z"),
+    });
+
+    const restored = await backfillLegacyPlantMonitoringSnapshot(month);
+    assert.equal(restored.restored, false);
+    assert.match(restored.reason ?? "", /does not match the final target roster/i);
+  } finally {
+    await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+    await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
     await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
   }
 });
