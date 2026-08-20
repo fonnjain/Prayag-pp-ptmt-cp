@@ -51,3 +51,10 @@ uri = "file://docs/plant-velocity-data-explanation.md"
 type = "text"
 title = "Plant Velocity data and calculation guide"
 description = "Plain-language explanation of the PTMT Plant Velocity screen, its spreadsheet sources, logic, and formulas."
+
+[[outputs]]
+id = "ldwU_YvdACC0mWHlrmVtQ"
+uri = "file://docs/plant-attainment-data-explanation.md"
+type = "text"
+title = "PTMT Plant Attainment Data Guide"
+description = "Plain-English explanation of the PTMT August 2026 Plan vs Actual Attainment chart, including spreadsheet names, data flow, formulas, matching rules, and refresh behavior."
