@@ -1,0 +1,130 @@
+# PROMPT 3 (revised) — Derive working days from observed production
+
+**Supersedes the earlier Prompt 3.** Re-checked against the code as it now stands at `d0a7c9a`; three things changed. Read all of it before starting.
+
+**Separate commit, after `d0a7c9a` is verified.** This changes every pace metric, so it must be reviewable alone.
+
+---
+
+## 1. The problem
+
+June 2026 is complete, so it measures cleanly:
+
+| | Intended | App derives | **Actually worked** | Required/Day error |
+|---|--:|--:|--:|--:|
+| PTMT | 25 | 26 | **29** | **+11.5%** |
+| Plumbing | 25 | 26 | **27** | **+3.8%** |
+
+`requiredPerDay = targetMax ÷ workingDays`. Dividing by 26 when the plant worked 29 makes Required/Day 11.5% too high for PTMT June, and required cumulative, days ahead/behind, catch-up per day and the linearity denominator all inherit it.
+
+`d0a7c9a` fixed the numerator. This fixes the denominator. Note also that **no `plant_configs` row exists for June or August**, so 26 is a silent default indistinguishable from a deliberately configured 26.
+
+## 2. ⚠ Correction to the rule I gave you earlier
+
+The original prompt said `workingDays = count of distinct dates with production > 0`. **That is wrong** — it would let an idle weekday shrink the denominator and thereby *improve* Required/Day, rewarding a lost day.
+
+The correct rule keeps the calendar as the base and adds days actually worked outside it:
+
+```
+workingDays = |calendar non-Sundays| + |non-calendar days with production > 0|
+```
+
+Checks out against the archived evidence:
+
+| | Calendar non-Sundays | Sundays worked | Total | Observed |
+|---|--:|--:|--:|--:|
+| PTMT June | 26 | 3 (7, 14, 28) | **29** | 29 ✓ |
+| Plumbing June | 26 | 1 (7) | **27** | 27 ✓ |
+
+An idle weekday still counts against the plant — which is correct, and is why "1 weekday with no production — Aug 15 (Sat)" is something to **report**, not to remove from the denominator.
+
+## 3. ⚠ An open month needs a projection, not a running count
+
+For a month in progress, `workingDays` cannot simply be days observed so far — that makes `remaining` always zero and `requiredPerDay` climb as the month goes on.
+
+Split it: **past from actuals, future from calendar.**
+
+```
+workingDays(open)   = |elapsedDays| + |calendar non-Sundays after snapshotDate|
+workingDays(closed) = |calendar non-Sundays| + |non-calendar days with production|
+```
+
+For PTMT August at snapshot Aug 19: 18 elapsed days (16 calendar non-Sundays through the 19th, including the idle Aug 15, plus Sundays 2 and 9) + 10 remaining calendar non-Sundays = **28**. If a further Sunday is worked, it rises then — which is correct, not a bug.
+
+## 4. Reuse what `d0a7c9a` already built
+
+`buildElapsedProductionDays(month, dailyByDate, snapshotDate)` is exported and already returns exactly the set you need. For an open month:
+
+```typescript
+const elapsed = elapsedDays.length;
+```
+
+No new logic — the function that fixed the drop also gives the correct elapsed count.
+
+**But mind the ordering inside `buildPlantBundle`.** Today `elapsed` is computed at `:205–207`, *before* `dailyByDate` exists (`:221`) and before `elapsedDays` is built. You must reorder:
+
+```
+dailyByDate  →  elapsedDays  →  elapsed = elapsedDays.length  →  workingDays  →  buildCalendarModel
+```
+
+Getting this wrong produces an `elapsed` that silently lags the day list — the same class of mismatch as the positional slice.
+
+Note `:205–206` already sets `elapsed = workingDays` for a **closed or grace** month. That stays correct and needs no change: once `workingDays` becomes observed, a closed month's elapsed follows automatically.
+
+## 5. Resolution order
+
+| Priority | Source | When |
+|---|---|---|
+| 1 | `configured` | a `plant_configs.working_days` row exists — explicit override always wins |
+| 2 | `observed` | the month has production data |
+| 3 | `derived` | no data yet → calendar non-Sundays |
+
+Extend `workingDaysSource` in `plant-lifecycle.ts:70–75` to `"configured" | "observed" | "derived"` and surface it in the UI beside the count. A number whose provenance is invisible is how 26 was mistaken for correct.
+
+## 6. Cover both segments
+
+`countWorkingDaysElapsed` is also called at **`monitoring.ts:251–252`** — the Plumbing monitoring path. Apply the same treatment there, or state explicitly why not. PTMT-gets-the-fix-and-Plumbing-doesn't has recurred repeatedly in this project; don't add another instance.
+
+## 7. Surface the exceptions
+
+Operationally useful and currently invisible:
+
+- `"3 Sundays worked in June — 7, 14, 28"`
+- `"1 weekday with no production — 15 Aug (Sat)"`
+
+## 8. Small UI item to fold in
+
+`d0a7c9a` added `unattributedPcs` to the bundle, but nothing consumes it. `plant-warnings.tsx:243` still reads *"These produced items have no matching plan entry — excluded from category attainment totals"* with no quantity. Add it: 201,637 pcs is what tells someone whether unmatched production is a nuisance or a third of the month. One line, no separate commit needed.
+
+## 9. A decision needed from the team before you build
+
+When the plant works 29 days against a plan built for 25, is Required/Day `target ÷ 29` — the same monthly target spread over the days actually worked — or do the extra Sundays count as production **above** plan?
+
+This prompt assumes the first, which is arithmetically right for pace measurement. **Confirm with the team before implementing.** It changes what "on target" means in a Sunday-working month, and it must not be picked by default.
+
+## 10. Tests
+
+1. PTMT June fixture → `workingDays = 29`, `source = "observed"`.
+2. Plumbing June fixture → `workingDays = 27`, `source = "observed"`.
+3. A `plant_configs` row of 25 → `workingDays = 25`, `source = "configured"`, even with 29 observed.
+4. A future month with no data → calendar non-Sundays, `source = "derived"`.
+5. **An idle weekday does NOT reduce `workingDays`** — the correction in §2, tested directly.
+6. An open month at mid-month → `workingDays` = elapsed observed + remaining calendar, and `remaining > 0`.
+7. `elapsed ≤ workingDays` always; `requiredPerDay × workingDays === targetMax` within rounding, for all three sources.
+8. `elapsed === elapsedDays.length` for an open month — catches the ordering hazard in §4.
+
+## 11. Expect attainment to fall — that is the fix working
+
+`d0a7c9a` raised PTMT June to **119.84%** by correcting the numerator. This raises the denominator from 26 to 29, which brings it back down roughly **10%**, to about 107–108%.
+
+That lands as a visible drop in a headline metric. Tell whoever watches the dashboard before it happens, and record both steps together so the net effect is legible rather than looking like a regression.
+
+**Do not adjust the 0.60 linearity threshold in this commit.** It was calibrated against an index depressed from both directions. Recalibrate afterwards, as a separate decision, with the corrected numbers in hand.
+
+## 12. Report back
+
+Files and line numbers, diffstat, confirmation nothing else is in the diff — **name every file, including `package.json` if the test script changes**. `tsc --noEmit` clean, test count, byte-size match.
+
+Then, per segment for June: `workingDays`, `workingDaysSource`, Required/Day, cumulative attainment and **linearity**, before and after.
+
+**Then, and only then**, publish and capture the June snapshot from the archives committed at `047448e`, marked as backfilled from a live source rather than frozen at close, with the archive file ids recorded as provenance.
