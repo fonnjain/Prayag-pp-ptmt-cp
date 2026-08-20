@@ -67,7 +67,7 @@ function calendarWorkingDaysInWeek(year: number, month: number, weekNum: 1 | 2 |
   let count = 0;
   for (let d = startDay; d <= endDay; d++) {
     const date = new Date(year, month - 1, d);
-    if (date.getDay() !== 0) count++;
+    if (date.getUTCDay() !== 0) count++;
   }
   return count;
 }
