@@ -2,10 +2,13 @@ import { execSync } from "child_process";
 
 /**
  * SHA of the git commit that produced this running process.
- * Computed once at module load (both dev tsx and production CJS).
- * Falls back to "(unknown)" when .git is absent (e.g. inside a stripped container).
+ * Production builds inject GIT_COMMIT because stripped deployment artefacts do
+ * not contain .git. The git fallback keeps local tsx development convenient.
  */
 function resolveCommitSha(): string {
+  const injected = process.env.GIT_COMMIT?.trim();
+  if (injected) return injected;
+
   try {
     return execSync("git rev-parse HEAD", {
       encoding: "utf-8",

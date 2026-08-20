@@ -12,7 +12,7 @@ import {
   plantPlanVersionsTable,
   weeklyReleaseBandsTable,
 } from "@workspace/db";
-import { resolvePlantMonthLifecycle, resolveWorkingDays } from "./plant-lifecycle";
+import { lastProductionDay, resolvePlantMonthLifecycle, resolveWorkingDays } from "./plant-lifecycle";
 import { getPlanVersionTimeline, savePlanVersionSnapshot } from "./plant-plan-timeline";
 import { buildVersionAwarePlanMap, computePlanVsActualReport } from "./plan-vs-actual-engine";
 import { buildPlantBundle } from "./plant-engine";
@@ -38,6 +38,12 @@ test("UTC lifecycle boundaries include grace through the 7th and close on the 8t
 test("working days are derived from the UTC calendar only when configuration is absent", () => {
   assert.deepEqual(resolveWorkingDays("2026-08", 25), { workingDays: 25, workingDaysSource: "configured" });
   assert.deepEqual(resolveWorkingDays("2026-08", null), { workingDays: 26, workingDaysSource: "derived" });
+});
+
+test("month-end snapshot includes a worked Sunday but keeps the calendar fallback", () => {
+  assert.equal(lastProductionDay("2026-05"), "2026-05-30");
+  assert.equal(lastProductionDay("2026-05", ["2026-05-31"]), "2026-05-31");
+  assert.equal(lastProductionDay("2026-05", ["2026-04-30", "2026-05-31", "2026-06-01"]), "2026-05-31");
 });
 
 test("observed working-day resolution adds worked Sundays for closed months", () => {

@@ -18,7 +18,12 @@ import {
   type PlantTargetRow,
 } from "./plant-ingestion";
 import type { PlanVersion, VersionTarget } from "./plant-plan-timeline";
-import { resolvePlantMonthLifecycle, resolveWorkingDays, type PlantMonthLifecycle } from "./plant-lifecycle";
+import {
+  lastProductionDay,
+  resolvePlantMonthLifecycle,
+  resolveWorkingDays,
+  type PlantMonthLifecycle,
+} from "./plant-lifecycle";
 import { buildPlantWeeklySummary, type PlantWeeklySummary, type WeeklyInputPlanItem } from "./plant-weekly-engine";
 import { buildPlantWarnings, buildPlantWeeklyWarnings, DEFAULT_PLANT_WARNING_THRESHOLDS, type PlantWarningThresholds } from "./plant-warnings";
 import { buildPlantRecommendations } from "./plant-recommendations";
@@ -629,7 +634,13 @@ async function buildReadyBundle(
   versionTimeline: PlanVersion[] = [],
 ) {
   const { row, config } = await loadConfig(month);
-  const snapshotDate = config.snapshotDate ?? (actuals.length ? actuals.map((r) => r.date).sort().pop()! : null);
+  const observedDates = actuals.map((row) => row.date);
+  const latestObservedDate = actuals.length ? observedDates.sort().at(-1)! : null;
+  const snapshotDate = config.snapshotDate ?? (
+    lifecycle.state === "closed" || lifecycle.state === "grace"
+      ? (actuals.length ? lastProductionDay(month, observedDates) : null)
+      : latestObservedDate
+  );
   const base = buildPlantBundle(month, actuals, targets, {
     ...config,
     snapshotDate,

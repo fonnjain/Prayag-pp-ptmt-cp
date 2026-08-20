@@ -33,14 +33,27 @@ export function derivedWorkingDays(month: string): number {
   return countWorkingDaysInMonth(month);
 }
 
-export function lastWorkingDay(month: string): string {
+/**
+ * Returns the last day that belongs in a month-end snapshot.
+ *
+ * Calendar non-Sundays are the base. A worked Sunday is also eligible so a
+ * closed month cannot permanently lose production recorded on its final day.
+ */
+export function lastProductionDay(month: string, observedProductionDates: string[] = []): string {
   const [year, mon] = month.split("-").map(Number);
   const lastDay = new Date(Date.UTC(year, mon, 0)).getUTCDate();
+  const worked = new Set(observedProductionDates.filter((date) => date.startsWith(month)));
   for (let day = lastDay; day >= 1; day--) {
-    const date = new Date(Date.UTC(year, mon - 1, day));
-    if (date.getUTCDay() !== 0) return `${month}-${String(day).padStart(2, "0")}`;
+    const iso = `${month}-${String(day).padStart(2, "0")}`;
+    const date = new Date(`${iso}T00:00:00Z`);
+    if (date.getUTCDay() !== 0 || worked.has(iso)) return iso;
   }
   return `${month}-01`;
+}
+
+/** Backward-compatible name for callers that only need the calendar fallback. */
+export function lastWorkingDay(month: string, observedProductionDates: string[] = []): string {
+  return lastProductionDay(month, observedProductionDates);
 }
 
 /** The monitoring lifecycle is deliberately UTC-based so it is stable across deployments. */
