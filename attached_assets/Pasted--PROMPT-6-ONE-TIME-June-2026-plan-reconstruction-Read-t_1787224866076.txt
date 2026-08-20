@@ -1,0 +1,119 @@
+# PROMPT 6 — ONE-TIME June 2026 plan reconstruction
+
+## ⛔ Read this first — the hard boundary
+
+This is a **one-time historical data-recovery exercise for June 2026 only.**
+
+The `PLAN & ACTUAL` workbooks are **not** a data source for this application. They must never become one.
+
+**Hard no, no exceptions:**
+
+- **No runtime code may read these workbooks.** Not `fetchMonthlyTargets`, not `getPlanVersionTimeline`, not the plan builder, not the corrective engine, not monitoring, not the reports. Nothing on a request path.
+- **No `SHEET_IDS` entry, no `plant_source_configs` row, no resolver rule, no scheduled job** referencing them.
+- **No fallback** of the form "if no plan run exists, read the workbook." That is exactly how a one-time import becomes a permanent dependency.
+- The app continues to **compute** every plan from its own inputs — item master, buffer multipliers, weekly bands, avg-3-month sale, pending orders, stock — via `buildPlanItems` and the plan-run/version machinery, for June and every month after it.
+
+These workbooks will keep being produced going forward. That is precisely why this boundary matters: the moment the app can read one, someone will wire it in as a shortcut and the computed plan becomes decorative.
+
+**Implementation form:** a standalone script under `scripts/` — for example `scripts/src/one-time-june-2026-plan-import.ts` — run manually once, **not** wired into any route, service, workflow, or startup path. Name it so its scope is obvious. When it has run and June is captured, say so and we will decide whether to delete it or keep it as a documented artefact.
+
+If any part of the work below seems to require touching a runtime code path, **stop and ask** rather than proceeding.
+
+---
+
+## Why June is the exception
+
+June 2026 is CLOSED but has no snapshot, and production has no finalized June `plan_runs` for either segment. Without a plan denominator, June freezes with no attainment and no linearity — permanently, since snapshots are immutable.
+
+A contemporaneous plan document exists:
+
+| File | Drive ID | Created | Last modified |
+|---|---|---|---|
+| `2. PTMT PLAN & ACTUAL - JUN-26` | `1Ngy-aCa5yAXmVwiEpdZ6h_CLnDJChonq-f0D3m6RUNU` | **2026-06-03** | 2026-08-07 |
+| `2. PIPE PLAN & ACTUAL - JUN-26` | `17aazUDPSni2Iz_60oYwRP4SgMY_pbk63OU-C2xubkwE` | **2026-06-03** | 2026-06-03 |
+
+Created during the month, not after it. So this is reconstruction from a genuine issued artefact, not fabrication. That is the only reason it is acceptable at all.
+
+`2. CP PLAN & ACTUAL - Jun-26` is a different product family — it matches the `C P` / `CP ACCESSORIES` GROUP values from the order/sale question — and is almost certainly **not** one of our two segments. Ignore it unless the team says otherwise.
+
+---
+
+## ⚠ The trap that would void the whole exercise
+
+**Do not derive the June plan from June actuals.**
+
+The archived files at `047448e` are **production**, not plan. Building a plan from them makes attainment 100% by construction and linearity meaningless — a number that looks like a measurement and is a tautology.
+
+**And do not call `buildPlanItems("2026-06")`.** It rebuilds from *current* uploads, which are August's. That is the original defect from the start of this workstream.
+
+Every plan figure must come from the plan workbook. If a value isn't in the workbook, it is missing — not zero, not inferred.
+
+---
+
+## PART A — READ-ONLY. Report before importing anything.
+
+### A1. Archive and hash both workbooks
+
+Same pattern as `047448e`. Copy each in Drive under `ARCHIVE 2026-08-21 — <original title>`, export the plan tab(s) to CSV, SHA-256 each, and commit the CSVs plus a manifest.
+
+**Record each original's `modifiedTime` at copy time.** The PTMT file was modified **2026-08-07**, two months after creation — someone edited it, and we need to know we captured it before any further change. The PIPE file is untouched since 3 June and has cleaner provenance.
+
+### A2. Report the structure
+
+For each workbook: tab names, and for the tab carrying the plan, the header row and row count.
+
+The July equivalent you have seen carries `ITEM CODE · COLOR · MAX PRODUCTION · WEEK 1 · WEEK 2 · WEEK 3 · WEEK 4` per item. Confirm June matches, and report the exact column names — do not assume.
+
+### A3. Reconcile item counts — this is the gate
+
+| Segment | Expected |
+|---|--:|
+| PTMT | **3,636** |
+| Plumbing | **1,120**, split CPVC 40/244/9 · UPVC 52/242/30 · SWR 160/134/3 · AGRI 123/82/1 |
+
+**`PIPE` is 93 KB against PTMT's 517 KB.** Plumbing has 1,120 items across Pipe, Fitting and Solvent; that size suggests the file may cover **pipes only** (375 items). If it does not reconcile to 1,120 with the per-category split, **Plumbing's June plan is incomplete — stop and report.** Do not import a partial Plumbing plan; a plan missing two thirds of its items would make June attainment look catastrophic for reasons that have nothing to do with the plant.
+
+PTMT can proceed independently of whatever Plumbing turns out to be.
+
+### A4. Report the totals
+
+Per segment: Σ MAX PRODUCTION, and Σ of each of WEEK 1–4. Assert `Σ(W1..W4) = Σ MAX` per item and in total; report any row that fails rather than rounding it away.
+
+Then compare Σ MAX against the archived June actuals — PTMT 933,653 pcs, Plumbing 1,463,741 — and state the implied attainment. If it lands at or very near 100%, that is a signal the workbook's "plan" column has been back-filled from actuals; **stop and report** rather than importing.
+
+---
+
+## PART B — Import, after Part A is reported and approved
+
+### B1. Create the plan runs
+
+One `plan_runs` row per segment for `2026-06`, with `plan_run_results` from the workbook rows. Then:
+
+- **`effectiveFrom = 2026-06-01`** — the versioning work supports this, and it must not default to the creation date.
+- **`note`** must state plainly what this is: *"Retrospectively reconstructed on 2026-08-21 from `2. PTMT PLAN & ACTUAL - JUN-26` (Drive `1Ngy-…`, created 2026-06-03, archived at <commit>). Not a contemporaneous plan run."*
+- Set `status = finalized` only after A3 and A4 pass.
+
+**Note the id ordering.** A June run created now gets an id **above** August's #20/#21. Auto-select and NC20e/NC21e are month-scoped so nothing breaks — but confirm that, and make sure nothing anywhere infers chronology from `plan_runs.id`.
+
+### B2. Capture the June snapshot
+
+From the plan runs above plus the actuals archived at `047448e`. The snapshot must record:
+
+- `backfilled: true`
+- `capturedAt` = now, `closedAt` = 2026-07-08
+- the plan run ids **and** their retrospective note
+- the archive commit `047448e` and the new plan-workbook archive commit, as provenance
+
+### B3. Label it in the UI
+
+June must display that its plan was reconstructed after the fact — e.g. *"Plan reconstructed 2026-08-21 from the issued June plan workbook; not captured at month close."*
+
+June's attainment and linearity are a retrospective reconstruction, not a measurement taken at the time. A reader six months from now must be able to see that without digging.
+
+---
+
+## Report back
+
+Part A first, as data only — archive ids, hashes, `modifiedTime` values, tab structure, item counts against 3,636 / 1,120, the totals, and the implied attainment.
+
+Then, for Part B: files and line numbers, diffstat with every file named, `tsc --noEmit` clean, test count, byte-size match, and **explicit confirmation that no runtime code path reads these workbooks** — that the only new code is the standalone one-time script.
