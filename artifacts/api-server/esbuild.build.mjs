@@ -6,6 +6,16 @@ function git(command) {
 }
 
 function resolveBuildCommitSha() {
+  if (process.env.NODE_ENV === "production") {
+    try {
+      const remoteLine = git("git ls-remote origin refs/heads/main");
+      const remoteSha = remoteLine.split(/\s+/)[0];
+      if (remoteSha) return remoteSha;
+    } catch {
+      // Fall through to an explicitly injected SHA so local production
+      // probes can still explain the failure in the assertion below.
+    }
+  }
   const injected = process.env.GIT_COMMIT?.trim();
   if (injected) return injected;
   try {
