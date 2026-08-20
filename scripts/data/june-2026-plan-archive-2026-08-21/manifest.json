@@ -1,0 +1,156 @@
+{
+  "archiveDate": "2026-08-21",
+  "purpose": "Part A read-only evidence archive for one-time June 2026 plan reconstruction",
+  "runtimeBoundary": "These CSVs are archival evidence only; no runtime code may read the source workbooks.",
+  "books": [
+    {
+      "segment": "PTMT",
+      "source": {
+        "id": "1Ngy-aCa5yAXmVwiEpdZ6h_CLnDJChonq-f0D3m6RUNU",
+        "name": "2. PTMT PLAN & ACTUAL - JUN-26",
+        "mimeType": "application/vnd.google-apps.spreadsheet",
+        "parents": [
+          "1KT2INUE0rugr41MFcmRXsKwjN1rqxvPi"
+        ],
+        "webViewLink": "https://docs.google.com/spreadsheets/d/1Ngy-aCa5yAXmVwiEpdZ6h_CLnDJChonq-f0D3m6RUNU/edit?usp=drivesdk",
+        "createdTime": "2026-06-03T10:27:29.446Z",
+        "modifiedTime": "2026-08-07T08:06:44.144Z",
+        "size": "516651"
+      },
+      "sourceModifiedTimeAtCopy": "2026-08-07T08:06:44.144Z",
+      "archive": {
+        "id": "1C8jR5nDl2oD9BxoI2sj8GeegyG6gmipjffZkLtjuQBg",
+        "name": "ARCHIVE 2026-08-21 — 2. PTMT PLAN & ACTUAL - JUN-26",
+        "mimeType": "application/vnd.google-apps.spreadsheet",
+        "parents": [
+          "1KT2INUE0rugr41MFcmRXsKwjN1rqxvPi"
+        ],
+        "webViewLink": "https://docs.google.com/spreadsheets/d/1C8jR5nDl2oD9BxoI2sj8GeegyG6gmipjffZkLtjuQBg/edit?usp=drivesdk",
+        "createdTime": "2026-08-20T11:25:01.588Z",
+        "modifiedTime": "2026-08-20T11:25:01.588Z",
+        "size": "1"
+      },
+      "archiveName": "ARCHIVE 2026-08-21 — 2. PTMT PLAN & ACTUAL - JUN-26",
+      "planTabs": [
+        {
+          "title": "REPORT 1",
+          "localPath": "data/june-2026-plan-archive-2026-08-21/ptmt-report-1.csv",
+          "bytes": 129019,
+          "sha256": "d42b415b2d21ea97cd614407962ff3733dec96f8342511f8eb39c45f0c07b0da",
+          "csvRows": 2139
+        },
+        {
+          "title": "REPORT 2",
+          "localPath": "data/june-2026-plan-archive-2026-08-21/ptmt-report-2.csv",
+          "bytes": 52848,
+          "sha256": "b7531bba49be0e053fd263606d5d04864f4e1102bcbfd916c38fc36829b01ad2",
+          "csvRows": 1003
+        },
+        {
+          "title": "REPORT 3",
+          "localPath": "data/june-2026-plan-archive-2026-08-21/ptmt-report-3.csv",
+          "bytes": 39495,
+          "sha256": "ecf3e8218b3457f050b1e758459d39250ecfb9cc31d90ab731416c4ea89da343",
+          "csvRows": 1003
+        },
+        {
+          "title": "REPORT 4",
+          "localPath": "data/june-2026-plan-archive-2026-08-21/ptmt-report-4.csv",
+          "bytes": 40346,
+          "sha256": "de0475b50adaa46ab13797890b07478ec41399711d2000a8e4e83fecff29148a",
+          "csvRows": 1003
+        },
+        {
+          "title": "REPORT 5",
+          "localPath": "data/june-2026-plan-archive-2026-08-21/ptmt-report-5.csv",
+          "bytes": 37303,
+          "sha256": "d44ae9c1030f95e378793f09972967ca588be3965968e4460b6cbdc52136e023",
+          "csvRows": 1003
+        },
+        {
+          "title": "REPORT 6",
+          "localPath": "data/june-2026-plan-archive-2026-08-21/ptmt-report-6.csv",
+          "bytes": 49025,
+          "sha256": "5d8fe1c0f61afee6307fe3b25dafb6afe71a579e664b358e8a043cb14230fb90",
+          "csvRows": 1003
+        },
+        {
+          "title": "REPORT 7",
+          "localPath": "data/june-2026-plan-archive-2026-08-21/ptmt-report-7.csv",
+          "bytes": 38645,
+          "sha256": "555668eb39fea842a504350a38bc1858de2c34d84587c38b9b0c50bc2c765761",
+          "csvRows": 1003
+        },
+        {
+          "title": "REPORT 8",
+          "localPath": "data/june-2026-plan-archive-2026-08-21/ptmt-report-8.csv",
+          "bytes": 34231,
+          "sha256": "26e72dcd09a815d8c05266fbf4d742a7130677a288b379ba949412ceeb753848",
+          "csvRows": 1003
+        },
+        {
+          "title": "REPORT 9",
+          "localPath": "data/june-2026-plan-archive-2026-08-21/ptmt-report-9.csv",
+          "bytes": 46920,
+          "sha256": "fbb35281d1c672aea7c917253207e783ebb3dda2180dd7fff514586fa8f5968d",
+          "csvRows": 1003
+        }
+      ],
+      "exportMethod": "Export archived native Google Sheet as XLSX, then convert each named tab to CSV locally; Drive CSV gid parameter was not tab-specific."
+    },
+    {
+      "segment": "Plumbing",
+      "source": {
+        "id": "17aazUDPSni2Iz_60oYwRP4SgMY_pbk63OU-C2xubkwE",
+        "name": "2. PIPE PLAN & ACTUAL - JUN-26",
+        "mimeType": "application/vnd.google-apps.spreadsheet",
+        "parents": [
+          "1XnBfbSdcpj3CQeASqjGKaMSGbPDMtlaq"
+        ],
+        "webViewLink": "https://docs.google.com/spreadsheets/d/17aazUDPSni2Iz_60oYwRP4SgMY_pbk63OU-C2xubkwE/edit?usp=drivesdk",
+        "createdTime": "2026-06-03T10:43:29.495Z",
+        "modifiedTime": "2026-06-03T11:30:37.302Z",
+        "size": "93364"
+      },
+      "sourceModifiedTimeAtCopy": "2026-06-03T11:30:37.302Z",
+      "archive": {
+        "id": "1eRS5tx1kRfK1DJeDsFfxktj73CBE-9LxYxswJwUMjc0",
+        "name": "ARCHIVE 2026-08-21 — 2. PIPE PLAN & ACTUAL - JUN-26",
+        "mimeType": "application/vnd.google-apps.spreadsheet",
+        "parents": [
+          "1XnBfbSdcpj3CQeASqjGKaMSGbPDMtlaq"
+        ],
+        "webViewLink": "https://docs.google.com/spreadsheets/d/1eRS5tx1kRfK1DJeDsFfxktj73CBE-9LxYxswJwUMjc0/edit?usp=drivesdk",
+        "createdTime": "2026-08-20T11:25:13.614Z",
+        "modifiedTime": "2026-08-20T11:25:13.614Z",
+        "size": "1"
+      },
+      "archiveName": "ARCHIVE 2026-08-21 — 2. PIPE PLAN & ACTUAL - JUN-26",
+      "planTabs": [
+        {
+          "title": "CPVC",
+          "localPath": "data/june-2026-plan-archive-2026-08-21/plumbing-cpvc.csv",
+          "bytes": 36419,
+          "sha256": "edcc628b8a455b0192e40f03d1b37ca76eb8f6436fd8d89cbac28793e7164f50",
+          "csvRows": 1001
+        },
+        {
+          "title": "UPVC",
+          "localPath": "data/june-2026-plan-archive-2026-08-21/plumbing-upvc.csv",
+          "bytes": 36104,
+          "sha256": "f5c36eda3ca743338464a08ab7efc84fc16350df010d2876793b7131a2fa0f1c",
+          "csvRows": 1001
+        },
+        {
+          "title": "SHEET",
+          "localPath": "data/june-2026-plan-archive-2026-08-21/plumbing-sheet.csv",
+          "bytes": 8141,
+          "sha256": "89aab0d8e9a7156f4b42db3415e08ae29d0d931da3d8cb1d2a813a276b46c49f",
+          "csvRows": 301
+        }
+      ],
+      "exportMethod": "Export archived native Google Sheet as XLSX, then convert each named tab to CSV locally; Drive CSV gid parameter was not tab-specific."
+    }
+  ],
+  "archiveEvidence": "Part A only; no plan_runs, snapshots, runtime readers, routes, jobs, or fallbacks created."
+}
