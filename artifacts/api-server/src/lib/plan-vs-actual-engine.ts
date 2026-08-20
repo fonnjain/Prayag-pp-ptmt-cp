@@ -29,6 +29,7 @@ import {
   plantMonitoringSnapshotsTable,
   plantConfigsTable,
 } from "@workspace/db";
+import type { WorkingDaysSource } from "./plant-lifecycle";
 import { eq } from "drizzle-orm";
 import { logger as rootLogger } from "./logger";
 import {
@@ -159,7 +160,7 @@ export interface PlanVsActualReport {
   dataAvailable: boolean;
   unavailableReason: string | null;
   workingDays: number;
-  workingDaysSource: "configured" | "derived";
+  workingDaysSource: WorkingDaysSource;
   lastDataDate: string | null;
   planVersions: PlanVersionSummary[];
   sources: {
