@@ -7,6 +7,37 @@ import { startSyncScheduler } from "./routes/sync";
 import { ensureBrowser } from "./lib/ensureBrowser";
 
 const port = Number(process.env.PORT ?? 8080);
+const INITIAL_DB_RETRY_DELAY_MS = 5_000;
+const MAX_DB_RETRY_DELAY_MS = 60_000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function bootstrapDatabase(): Promise<void> {
+  let attempt = 0;
+  let retryDelayMs = INITIAL_DB_RETRY_DELAY_MS;
+
+  while (true) {
+    attempt++;
+    try {
+      await runMigrations();
+      await ensureSeedData();
+      await seedBootstrapAdmins();
+      setDatabaseReady(true);
+      logger.info({ attempt }, "Database ready");
+      return;
+    } catch (err) {
+      setDatabaseReady(false);
+      logger.error(
+        { err, attempt, retryDelayMs },
+        "Migrations/seeding failed — retrying while the database is unavailable",
+      );
+      await sleep(retryDelayMs);
+      retryDelayMs = Math.min(retryDelayMs * 2, MAX_DB_RETRY_DELAY_MS);
+    }
+  }
+}
 
 async function main(): Promise<void> {
   const app = createApp();
@@ -20,20 +51,11 @@ async function main(): Promise<void> {
     });
   });
 
-  // Run migrations + seeding in the background, non-fatally.
-  // Any failure is logged; the server stays alive so healthchecks keep passing.
-  // DB-backed routes will start working once this completes.
+  // Run migrations + seeding in the background. The database can be restarted
+  // independently of the app, so keep retrying transient startup failures
+  // instead of leaving every DB-backed route at 503 forever.
   (async () => {
-    try {
-      await runMigrations();
-      await ensureSeedData();
-      await seedBootstrapAdmins();
-      setDatabaseReady(true);
-      logger.info("Database ready");
-    } catch (err) {
-      setDatabaseReady(false);
-      logger.error({ err }, "Migrations/seeding failed — server continues; DB-backed routes may error until fixed");
-    }
+    await bootstrapDatabase();
 
     // Install Chrome for PDF export (non-blocking; runs in background).
     ensureBrowser().catch((err) => logger.error({ err }, "ensureBrowser failed"));
