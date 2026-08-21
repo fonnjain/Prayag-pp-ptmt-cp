@@ -35,13 +35,14 @@ function assertProductionShaResolvesRemotely(sha) {
     throw new Error(`Production build requires a full remote commit SHA, got ${JSON.stringify(sha)}`);
   }
   try {
+    const objectType = git(`git cat-file -t ${sha}`);
+    if (objectType !== "commit") {
+      throw new Error(`git cat-file -t ${sha} returned ${JSON.stringify(objectType)}`);
+    }
     const remoteLine = git("git ls-remote origin refs/heads/main");
     const remoteSha = remoteLine.split(/\s+/)[0];
-    if (!remoteSha) {
-      throw new Error("origin/main is missing");
-    }
     if (remoteSha !== sha) {
-      throw new Error(`origin/main is ${remoteSha}, not ${sha}`);
+      throw new Error(`origin/main is ${remoteSha || "(missing)"}, not ${sha}`);
     }
   } catch (error) {
     throw new Error(

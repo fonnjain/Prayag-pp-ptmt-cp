@@ -71,7 +71,6 @@ test("closed and grace months prefer observed working days over configured value
     { workingDays: 25, workingDaysSource: "configured" },
   );
 });
-
 test("open observed working days project future calendar non-Sundays and configured values still win", () => {
   assert.deepEqual(
     resolveWorkingDays("2026-08", null, ["2026-08-02", "2026-08-09"], "2026-08-19", "open"),

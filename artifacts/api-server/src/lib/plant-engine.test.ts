@@ -198,7 +198,6 @@ test("closed-month observed working days override configured values", () => {
   assert.equal(bundle.context.workingDays, 29);
   assert.equal(bundle.context.workingDaysSource, "observed");
 });
-
 test("open-month projection includes remaining calendar non-Sundays without shrinking for idle weekdays", () => {
   const bundle = buildFixtureBundle("ptmtAugust");
   const elapsedDays = buildElapsedProductionDays(
