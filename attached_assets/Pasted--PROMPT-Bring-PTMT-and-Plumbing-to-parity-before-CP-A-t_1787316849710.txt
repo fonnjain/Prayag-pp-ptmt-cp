@@ -1,0 +1,125 @@
+# PROMPT — Bring PTMT and Plumbing to parity (before CP)
+
+A third segment (CP) is coming. Before it arrives, PTMT and Plumbing must be on the same footing — otherwise CP gets added as a **third hard-wired copy** of the most error-prone part of the system, and every future bug needs finding and fixing three times.
+
+This session alone had several fixes land for PTMT and not Plumbing — the `?? 27` working-days default, the attainment basis, Sunday handling across different files. Each cost an extra round to catch. With three copies that becomes three chances to miss.
+
+**Scope: PTMT and Plumbing only. Do not add CP in this work.** The goal is one engine driven by configuration, so that adding CP later is a data change.
+
+Work in the order below. **Each numbered item is its own commit**, reported separately.
+
+---
+
+## 1. `plant_monitoring_snapshots` cannot hold two segments ⬤ do this first
+
+```typescript
+// lib/db/src/schema/plant-monitoring-snapshots.ts:7
+month: text("month").primaryKey(),
+```
+
+`month` is the **primary key**, and there is no segment column. One row per month, full stop. PTMT files its July snapshot and Plumbing has nowhere to put its own — it would fail or overwrite.
+
+Snapshots are immutable by design, so a wrong or missing one is permanent.
+
+**Why now:** production holds **exactly one snapshot row** (PTMT 2026-07). Fixing this today costs one row to re-capture. After three segments have been closing months, it costs dozens — each needing its original source data still intact, when some of those sources are live spreadsheets people keep editing. August closes on 8 September.
+
+**Do:**
+- Migration adding `segment TEXT NOT NULL DEFAULT 'PTMT'`, moving the primary key to `(month, segment)`. Backfill the one existing row as PTMT.
+- **Then decide the two-table question and record the decision.** `plant_month_snapshots` is already `(month, segment)` and already carries `closed_at`, `captured_at`, `captured_commit_sha`, `backfilled`, `plan_status`, `plan_status_reason`, `plan_evidence_json` — but **nothing on a live request path writes it**. `plant_monitoring_snapshots` is what the running code uses and has none of those fields.
+  Converging on `plant_month_snapshots` is the better end state — the provenance work is already built there — but it is a real migration. **State which you are doing and why before writing code.** Do not maintain both.
+- The existing July PTMT snapshot was captured **2026-08-19**, the day before the Sunday fix (`d0a7c9a`, 2026-08-20). Its `bundle_json` KPIs are pre-fix. **Invalidate and re-capture it** once the table is right — but see item 4 first, because re-capturing before the working-days precedence is settled would freeze a 12%-wrong denominator immutably for the second time.
+
+## 2. Plant monitoring is PTMT-only — make it segment-driven
+
+Five hard filters in `plant-monitoring.ts`:
+
+```
+:286   eq(plantPlanVersionsTable.segment, "PTMT")
+:487   eq(planRunsTable.segment, "PTMT")
+:514   eq(weeklyReleaseBandsTable.segment, "PTMT")
+:548   eq(planRunsTable.segment, "PTMT")
+:946   eq(planRunsTable.segment, "PTMT")
+```
+
+Every one takes `segment` as a parameter instead. `plant-engine.ts`, `plant-lifecycle.ts` and `plant-weekly-engine.ts` already accept segment-agnostic inputs, so this is mostly threading a parameter through — but check each call site rather than assuming.
+
+Result: **Plumbing gets plant-level monitoring, including the month freeze it has never had.** Closed Plumbing months currently recompute live from spreadsheets every time, which is the drift problem the freeze exists to prevent.
+
+## 3. `plant_configs` and the other month-only tables
+
+```typescript
+// lib/db/src/schema/plant-configs.ts:4
+month: text("month").primaryKey(),
+```
+
+Working days, shifts, shift hours and snapshot date are **per month, shared across segments**. PTMT and Plumbing cannot have different working days for the same month — and they genuinely do, since June observed 29 for PTMT and 27 for Plumbing.
+
+Same pattern in `plant_ingestion_cache`, `plant_source_configs`, `monitoring_config`, `monitoring_thresholds`, `item_weights`, `ideal_hours_overrides`.
+
+**Report each one before changing it.** Some may legitimately be global — thresholds might be a company-wide policy. Say which are which and why; don't add a segment column reflexively.
+
+## 4. Working-days precedence for closed months ⬤ decision needed
+
+Production has `2026-07` with `working_days = 25` configured, while July observed **28** (27 calendar non-Sundays plus worked Sunday 5 July). `configured` beats `observed` unconditionally, so `requiredPerDay = target ÷ 25` — **12% too high**.
+
+An override entered before the month was worked cannot know how many days were worked. For a **closed** month, observed is strictly better information.
+
+**Decide and record:** either `observed` wins over `configured` for closed months, or July's config row is corrected. Then re-capture July, per item 1.
+
+## 5. Retire the duplicate segment code
+
+Two overlapping monitoring stacks exist:
+
+| | Pages | API |
+|---|---|---|
+| System A | `src/pages/plant/*` (12 pages) | `/api/plant/*` |
+| System B | `src/pages/plumbing-*.tsx` (11 pages) | `/api/monitoring/dashboard` |
+
+They do overlapping jobs — attainment, velocity, warnings, recommendations, trend, config, reports exist in both. That duplication is why fixes keep landing on one side only.
+
+Once items 1–3 land, System A serves both segments and most of System B is redundant.
+
+**Do not delete anything in this commit.** Report which System B pages and endpoints become redundant, which have unique functionality worth keeping (`plumbing-machine-release`, `plumbing-operations` and `plumbing-quality` look segment-specific), and propose a retirement plan. Deletion is a separate decision.
+
+Also fold in the type unions, which are the useful lever — `plan-vs-actual-engine.ts:159`, `:1187`, `:1234` all declare `segment: "PTMT" | "Plumbing"`, and `sheet-config.ts:83` rejects anything else. **Replace them with a `Segment` type sourced from a single registry.** When CP is added, the compiler then enumerates every remaining site.
+
+## 6. The segment registry — the point of the whole exercise
+
+Introduce one place that describes a segment:
+
+```typescript
+interface SegmentProfile {
+  code: string;                 // "PTMT" | "Plumbing" | later "CP"
+  label: string;
+  categories: string[];
+  bufferMultipliers: Record<string, number>;
+  weeklyBands: "per-category" | "uniform" | "none";
+  sources: { production: SheetRef; orders: SheetRef; … };
+  rosterSize: number;           // 3636 | 1120 — for reconciliation
+  units: "pcs" | "pcs+kg";
+}
+```
+
+Every engine takes a profile instead of branching on a string. Populate it for PTMT and Plumbing from what is already in `seed.ts` and `sheets.ts` — **no behaviour change**, just relocation.
+
+That is the deliverable that makes CP a configuration entry rather than a build.
+
+---
+
+## Constraints throughout
+
+**No behaviour changes.** Every PTMT number must be byte-identical before and after. This is a restructuring, not a recalculation.
+
+**Segment-specific test data stays segment-specific.** Share the machinery, never the expected values — shared goldens are how a PTMT-shaped bug hides in Plumbing. Keep the archived fixtures at `047448e` (PTMT June 933,653 / Plumbing June 1,463,741) as separate assertions.
+
+**Add a parity test** asserting that for every segment in the registry, the same set of endpoints returns a well-formed payload. That is the check that stops a future fix landing for one segment only — the failure mode this whole piece of work exists to end.
+
+---
+
+## Report back, per commit
+
+Files and line numbers, diffstat with **every file named including `package.json`**, `tsc --noEmit` clean, test count, byte-size match, and confirmation that nothing else is in the diff.
+
+Plus, for items 1–3: **the before/after figures for PTMT June, PTMT August, Plumbing June and Plumbing August** against the archived fixtures. Any movement is a regression and must be explained, not absorbed.
+
+**Do not publish between commits 1 and 4.** Item 1 changes the snapshot table and item 4 changes the denominator; the intermediate state is visibly wrong in production.
