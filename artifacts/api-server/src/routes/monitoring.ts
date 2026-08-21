@@ -52,7 +52,10 @@ async function loadWeightMap(): Promise<ItemWeightMap> {
 }
 
 async function loadConfig(month: string) {
-  const [row] = await db.select().from(monitoringConfigTable).where(eq(monitoringConfigTable.month, month));
+  const [row] = await db.select().from(monitoringConfigTable).where(and(
+    eq(monitoringConfigTable.month, month),
+    eq(monitoringConfigTable.segment, "PTMT"),
+  ));
   const workingDaysConfig = resolveWorkingDays(month, row?.workingDays);
   return {
     workingDays: workingDaysConfig.workingDays,
@@ -690,21 +693,45 @@ router.put("/monitoring/thresholds", async (req, res): Promise<void> => {
 
 router.get("/monitoring/config", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");
+  const segment = String(req.query.segment ?? "PTMT");
   if (!month) {
     res.status(400).json({ error: "month is required" });
     return;
   }
-  const config = await loadConfig(month);
-  res.json({ month, ...config });
+  if (segment !== "PTMT" && segment !== "Plumbing") {
+    res.status(400).json({ error: "segment must be PTMT or Plumbing" });
+    return;
+  }
+  const [row] = await db.select().from(monitoringConfigTable).where(and(
+    eq(monitoringConfigTable.month, month),
+    eq(monitoringConfigTable.segment, segment),
+  ));
+  const workingDaysConfig = resolveWorkingDays(month, row?.workingDays);
+  res.json({
+    month,
+    segment,
+    workingDays: workingDaysConfig.workingDays,
+    workingDaysSource: workingDaysConfig.workingDaysSource,
+    shiftsPerDay: row?.shiftsPerDay ?? 2,
+    shiftHours: row?.shiftHours ?? 12,
+    snapshotDate: row?.snapshotDate ?? null,
+  });
 });
 
 router.put("/monitoring/config", async (req, res): Promise<void> => {
-  const { month, workingDays, shiftsPerDay, shiftHours, snapshotDate } = req.body ?? {};
+  const { month, segment = "PTMT", workingDays, shiftsPerDay, shiftHours, snapshotDate } = req.body ?? {};
   if (!month) {
     res.status(400).json({ error: "month is required" });
     return;
   }
-  const [existing] = await db.select().from(monitoringConfigTable).where(eq(monitoringConfigTable.month, month));
+  if (segment !== "PTMT" && segment !== "Plumbing") {
+    res.status(400).json({ error: "segment must be PTMT or Plumbing" });
+    return;
+  }
+  const [existing] = await db.select().from(monitoringConfigTable).where(and(
+    eq(monitoringConfigTable.month, month),
+    eq(monitoringConfigTable.segment, segment),
+  ));
   const values = {
     workingDays: workingDays ?? existing?.workingDays ?? null,
     shiftsPerDay: shiftsPerDay ?? existing?.shiftsPerDay ?? 2,
@@ -713,9 +740,12 @@ router.put("/monitoring/config", async (req, res): Promise<void> => {
     updatedAt: new Date(),
   };
   if (existing) {
-    await db.update(monitoringConfigTable).set(values).where(eq(monitoringConfigTable.month, month));
+    await db.update(monitoringConfigTable).set(values).where(and(
+      eq(monitoringConfigTable.month, month),
+      eq(monitoringConfigTable.segment, segment),
+    ));
   } else {
-    await db.insert(monitoringConfigTable).values({ month, ...values });
+    await db.insert(monitoringConfigTable).values({ month, segment, ...values });
   }
   res.json({ ok: true });
 });

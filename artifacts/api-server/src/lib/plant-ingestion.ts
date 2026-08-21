@@ -1,5 +1,5 @@
 import { db, plantIngestionCacheTable, plantSourceConfigsTable, itemMasterTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getTabValues, SHEET_IDS, itemKey, normalizeCode } from "./sheets";
 import { logger } from "./logger";
 import { buildPlanItems } from "../routes/plan";
@@ -55,7 +55,18 @@ export async function loadStoredDailyActuals(month: string): Promise<{
   snapshotDate: string | null;
   cachedAt: Date | null;
 }> {
-  const [cached] = await db.select().from(plantIngestionCacheTable).where(eq(plantIngestionCacheTable.month, month));
+  return loadStoredDailyActualsForSegment(month, "PTMT");
+}
+
+export async function loadStoredDailyActualsForSegment(month: string, segment = "PTMT"): Promise<{
+  actuals: DailyActualRow[];
+  snapshotDate: string | null;
+  cachedAt: Date | null;
+}> {
+  const [cached] = await db.select().from(plantIngestionCacheTable).where(and(
+    eq(plantIngestionCacheTable.month, month),
+    eq(plantIngestionCacheTable.segment, segment),
+  ));
   return {
     actuals: cached ? cached.rawActualsJson as DailyActualRow[] : [],
     snapshotDate: cached?.snapshotDate || null,
@@ -66,8 +77,12 @@ export async function loadStoredDailyActuals(month: string): Promise<{
 export async function fetchDailyActuals(
   month: string,
   options: { forceRefresh?: boolean; requireFresh?: boolean } = {},
+  segment = "PTMT",
 ): Promise<DailyActualRow[]> {
-  const [cached] = await db.select().from(plantIngestionCacheTable).where(eq(plantIngestionCacheTable.month, month));
+  const [cached] = await db.select().from(plantIngestionCacheTable).where(and(
+    eq(plantIngestionCacheTable.month, month),
+    eq(plantIngestionCacheTable.segment, segment),
+  ));
   if (cached) {
     const age = Date.now() - new Date(cached.cachedAt).getTime();
     if (!options.forceRefresh && (month < currentMonthStr() || age < CACHE_TTL_MS)) {
@@ -130,9 +145,12 @@ export async function fetchDailyActuals(
   if (cached) {
     await db.update(plantIngestionCacheTable)
       .set({ snapshotDate: lastDate, rawActualsJson: result, cachedAt: new Date() })
-      .where(eq(plantIngestionCacheTable.month, month));
+      .where(and(
+        eq(plantIngestionCacheTable.month, month),
+        eq(plantIngestionCacheTable.segment, segment),
+      ));
   } else {
-    await db.insert(plantIngestionCacheTable).values({ month, snapshotDate: lastDate, rawActualsJson: result });
+    await db.insert(plantIngestionCacheTable).values({ month, segment, snapshotDate: lastDate, rawActualsJson: result });
   }
 
   logger.info({ month, rowCount: result.length, lastDate }, "plant-ingestion: fetched actuals from PTMT ANUJ");
@@ -164,7 +182,10 @@ export async function fetchMonthlyTargets(month: string): Promise<PlantTargetRow
     }));
   }
 
-  const [src] = await db.select().from(plantSourceConfigsTable).where(eq(plantSourceConfigsTable.month, month));
+  const [src] = await db.select().from(plantSourceConfigsTable).where(and(
+    eq(plantSourceConfigsTable.month, month),
+    eq(plantSourceConfigsTable.segment, "PTMT"),
+  ));
   if (!src) {
     logger.warn({ month }, "plant-ingestion: no master file ID for historical month; returning empty targets");
     return [];

@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { launchBrowser } from "../lib/browser";
 import { exportTimestamp } from "../lib/export-filename";
 import { db, plantConfigsTable, plantSourceConfigsTable, plantIngestionCacheTable, plantMonthSnapshotsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { DEFAULT_PLANT_WARNING_THRESHOLDS, type PlantWarningThresholds } from "../lib/plant-warnings";
 import { captureClosedPlantMonth, computeLifecyclePlantMonitoring } from "../lib/plant-monitoring";
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "../lib/plant-lifecycle";
@@ -84,8 +84,11 @@ export async function getPlantMonitoringCached(month: string): Promise<PlantMoni
   return promise;
 }
 
-async function loadPlantConfigRow(month: string) {
-  const [row] = await db.select().from(plantConfigsTable).where(eq(plantConfigsTable.month, month));
+async function loadPlantConfigRow(month: string, segment = "PTMT") {
+  const [row] = await db.select().from(plantConfigsTable).where(and(
+    eq(plantConfigsTable.month, month),
+    eq(plantConfigsTable.segment, segment),
+  ));
   return row ?? null;
 }
 
@@ -294,16 +297,22 @@ ${section === "control-board" ? `
 // --- GET /plant/config ---
 router.get("/plant/config", async (req, res) => {
   const month = String(req.query.month ?? "");
+  const segment = String(req.query.segment ?? "PTMT");
   if (!/^\d{4}-\d{2}$/.test(month)) {
     res.status(400).json({ error: "month required" });
     return;
   }
-  const row = await loadPlantConfigRow(month);
+  if (segment !== "PTMT" && segment !== "Plumbing") {
+    res.status(400).json({ error: "segment must be PTMT or Plumbing" });
+    return;
+  }
+  const row = await loadPlantConfigRow(month, segment);
   const calendar = resolveWorkingDays(month, row?.workingDays);
-  const sourceConfigs = await db.select().from(plantSourceConfigsTable);
+  const sourceConfigs = await db.select().from(plantSourceConfigsTable).where(eq(plantSourceConfigsTable.segment, segment));
   const thresholds = loadThresholds(row);
   res.json({
     month,
+    segment,
     workingDays: calendar.workingDays,
     workingDaysSource: calendar.workingDaysSource,
     shiftsPerDay: row?.shiftsPerDay ?? 2,
@@ -316,8 +325,9 @@ router.get("/plant/config", async (req, res) => {
 
 // --- PUT /plant/config (kept for backward compat) + PATCH /plant/config ---
 async function handleConfigUpdate(req: import("express").Request, res: import("express").Response) {
-  const { month, workingDays, shiftsPerDay, shiftHours, snapshotDate, thresholds } = req.body as {
+  const { month, segment = "PTMT", workingDays, shiftsPerDay, shiftHours, snapshotDate, thresholds } = req.body as {
     month: string;
+    segment?: string;
     workingDays?: number | null;
     shiftsPerDay?: number;
     shiftHours?: number;
@@ -328,7 +338,11 @@ async function handleConfigUpdate(req: import("express").Request, res: import("e
     res.status(400).json({ error: "month required" });
     return;
   }
-  const existing = await loadPlantConfigRow(month);
+  if (segment !== "PTMT" && segment !== "Plumbing") {
+    res.status(400).json({ error: "segment must be PTMT or Plumbing" });
+    return;
+  }
+  const existing = await loadPlantConfigRow(month, segment);
   if (existing) {
     await db.update(plantConfigsTable).set({
       ...(workingDays !== undefined ? { workingDays } : {}),
@@ -337,10 +351,14 @@ async function handleConfigUpdate(req: import("express").Request, res: import("e
       ...(snapshotDate !== undefined ? { snapshotDate } : {}),
       ...(thresholds !== undefined ? { thresholdsJson: thresholds } : {}),
       updatedAt: new Date(),
-    }).where(eq(plantConfigsTable.month, month));
+    }).where(and(
+      eq(plantConfigsTable.month, month),
+      eq(plantConfigsTable.segment, segment),
+    ));
   } else {
     await db.insert(plantConfigsTable).values({
       month,
+      segment,
       workingDays: workingDays ?? null,
       shiftsPerDay: shiftsPerDay ?? 2,
       shiftHours: shiftHours ?? 12,
@@ -379,13 +397,17 @@ router.post("/plant/snapshots/backfill", async (req, res) => {
 
 // --- PUT /plant/source-config ---
 router.put("/plant/source-config", async (req, res) => {
-  const { month, fileId, notes } = req.body as { month: string; fileId: string; notes?: string };
+  const { month, segment = "PTMT", fileId, notes } = req.body as { month: string; segment?: string; fileId: string; notes?: string };
   if (!month || !fileId) {
     res.status(400).json({ error: "month and fileId required" });
     return;
   }
-  await db.insert(plantSourceConfigsTable).values({ month, fileId, notes: notes ?? null }).onConflictDoUpdate({
-    target: plantSourceConfigsTable.month,
+  if (segment !== "PTMT" && segment !== "Plumbing") {
+    res.status(400).json({ error: "segment must be PTMT or Plumbing" });
+    return;
+  }
+  await db.insert(plantSourceConfigsTable).values({ month, segment, fileId, notes: notes ?? null }).onConflictDoUpdate({
+    target: [plantSourceConfigsTable.month, plantSourceConfigsTable.segment],
     set: { fileId, notes: notes ?? null },
   });
   invalidatePlantBundleCache(month);
@@ -395,13 +417,17 @@ router.put("/plant/source-config", async (req, res) => {
 // --- POST /plant/cache/invalidate ---
 router.post("/plant/cache/invalidate", async (req, res) => {
   const month = String(req.body?.month ?? req.query.month ?? "");
+  const segment = String(req.body?.segment ?? req.query.segment ?? "PTMT");
   if (!/^\d{4}-\d{2}$/.test(month)) {
     res.status(400).json({ error: "month required (YYYY-MM)" });
     return;
   }
   const lifecycle = resolvePlantMonthLifecycle(month);
   if (lifecycle.state !== "closed") {
-    await db.delete(plantIngestionCacheTable).where(eq(plantIngestionCacheTable.month, month));
+    await db.delete(plantIngestionCacheTable).where(and(
+      eq(plantIngestionCacheTable.month, month),
+      eq(plantIngestionCacheTable.segment, segment),
+    ));
   }
   invalidatePlantBundleCache(month);
   logger.info({ month, lifecycle: lifecycle.state }, "plant cache invalidated");
