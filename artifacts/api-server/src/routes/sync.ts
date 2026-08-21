@@ -202,10 +202,13 @@ export async function runFullSync(month?: string): Promise<void> {
   import("./plant")
     .then(({ invalidatePlantBundleCache, getPlantMonitoringCached }) => {
       invalidatePlantBundleCache(m);
-      return getPlantMonitoringCached(m);
+      return Promise.all([
+        getPlantMonitoringCached(m, "PTMT"),
+        getPlantMonitoringCached(m, "Plumbing"),
+      ]);
     })
-    .then(() => logger.info({ month: m }, "PTMT monitoring pre-warm after sync complete"))
-    .catch((err) => logger.warn({ err, month: m }, "PTMT monitoring pre-warm after sync failed"));
+    .then(() => logger.info({ month: m }, "PTMT and Plumbing monitoring pre-warm after sync complete"))
+    .catch((err) => logger.warn({ err, month: m }, "Plant monitoring pre-warm after sync failed"));
 
   logger.info({ month: m }, "Full sync complete");
 }

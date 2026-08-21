@@ -194,8 +194,8 @@ export async function fetchMonthlyTargets(month: string): Promise<PlantTargetRow
 }
 
 /** Immutable issued-plan versions used by monitoring calculations. */
-export async function fetchMonitoringPlanTimeline(month: string): Promise<PlanVersion[]> {
-  return getPlanVersionTimeline(month, "PTMT");
+export async function fetchMonitoringPlanTimeline(month: string, segment = "PTMT"): Promise<PlanVersion[]> {
+  return getPlanVersionTimeline(month, segment);
 }
 
 async function fetchTargetsFromMasterSheet(fileId: string, month: string): Promise<PlantTargetRow[]> {

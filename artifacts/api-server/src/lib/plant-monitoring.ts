@@ -13,7 +13,7 @@ import { buildPlantBundle, type PlantBundle } from "./plant-engine";
 import {
   fetchDailyActuals,
   fetchMonitoringPlanTimeline,
-  loadStoredDailyActuals,
+  loadStoredDailyActualsForSegment,
   type DailyActualRow,
   type PlantTargetRow,
 } from "./plant-ingestion";
@@ -29,8 +29,10 @@ import { buildPlantWarnings, buildPlantWeeklyWarnings, DEFAULT_PLANT_WARNING_THR
 import { buildPlantRecommendations } from "./plant-recommendations";
 import { buildPlanItems } from "../routes/plan";
 import { annotateWeeklyRelease, type CalcPlanItem } from "./calc";
+import { fetchPlumbingSheet3Production } from "./sheets";
 
 export type MonitoringStatus = "live" | "grace" | "frozen" | "unavailable" | "future";
+export type MonitoringSegment = "PTMT" | "Plumbing";
 
 export interface LifecyclePlantBundle extends PlantBundle {
   monitoringStatus: MonitoringStatus;
@@ -53,7 +55,7 @@ export interface PlantSnapshotSourceInfo {
     w3Upper: number;
     w4Upper: number;
   }> | null;
-  actualsSource: "plant_ingestion_cache";
+  actualsSource: "plant_ingestion_cache" | "plumbing_sheet3";
   actualsCachedAt: string;
   sourceSnapshotDate: string | null;
   planVersions: Array<{
@@ -311,7 +313,7 @@ async function restoreLegacySnapshotTimeline(
     .from(plantPlanVersionsTable)
     .where(and(
       eq(plantPlanVersionsTable.month, snapshot.month),
-      eq(plantPlanVersionsTable.segment, "PTMT"),
+      eq(plantPlanVersionsTable.segment, snapshot.segment),
     ));
   const immutableBySource = new Map(immutableRows.map((row) => [`${row.kind}:${row.sourceId}`, row]));
   const timeline: PlanVersion[] = [];
@@ -417,32 +419,36 @@ async function restoreLegacySnapshotTimeline(
  */
 export async function backfillLegacyPlantMonitoringSnapshot(
   month: string,
+  segment: MonitoringSegment = "PTMT",
 ): Promise<LegacySnapshotTimelineBackfillResult> {
-  const pending = pendingLegacySnapshotBackfills.get(month);
+  const key = `${month}:${segment}`;
+  const pending = pendingLegacySnapshotBackfills.get(key);
   if (pending) return pending;
   const work = (async () => {
-    const snapshot = await loadSavedSnapshot(month);
+    const snapshot = await loadSavedSnapshot(month, segment);
     if (!snapshot) return { snapshot: null, restored: false, reason: "No frozen monitoring snapshot exists for this closed month." };
     return restoreLegacySnapshotTimeline(snapshot);
-  })().finally(() => pendingLegacySnapshotBackfills.delete(month));
-  pendingLegacySnapshotBackfills.set(month, work);
+  })().finally(() => pendingLegacySnapshotBackfills.delete(key));
+  pendingLegacySnapshotBackfills.set(key, work);
   return work;
 }
 
 /** Backfill every eligible legacy PTMT monitoring snapshot without recapturing data. */
 export async function backfillLegacyPlantMonitoringSnapshots(): Promise<Array<{
   month: string;
+  segment: MonitoringSegment;
   restored: boolean;
   reason: string | null;
 }>> {
   const snapshots = await db
-    .select({ month: plantMonthSnapshotsTable.month })
+    .select({ month: plantMonthSnapshotsTable.month, segment: plantMonthSnapshotsTable.segment })
     .from(plantMonthSnapshotsTable)
     .where(eq(plantMonthSnapshotsTable.planStatus, "monitoring"));
-  const outcomes: Array<{ month: string; restored: boolean; reason: string | null }> = [];
+  const outcomes: Array<{ month: string; segment: MonitoringSegment; restored: boolean; reason: string | null }> = [];
   for (const snapshot of snapshots) {
-    const result = await backfillLegacyPlantMonitoringSnapshot(snapshot.month);
-    outcomes.push({ month: snapshot.month, restored: result.restored, reason: result.reason });
+    if (snapshot.segment !== "PTMT" && snapshot.segment !== "Plumbing") continue;
+    const result = await backfillLegacyPlantMonitoringSnapshot(snapshot.month, snapshot.segment);
+    outcomes.push({ month: snapshot.month, segment: snapshot.segment, restored: result.restored, reason: result.reason });
   }
   return outcomes;
 }
@@ -505,8 +511,11 @@ function loadThresholds(row: { thresholdsJson?: unknown } | null): PlantWarningT
   };
 }
 
-async function loadConfig(month: string) {
-  const [row] = await db.select().from(plantConfigsTable).where(eq(plantConfigsTable.month, month));
+async function loadConfig(month: string, segment: MonitoringSegment = "PTMT") {
+  const [row] = await db.select().from(plantConfigsTable).where(and(
+    eq(plantConfigsTable.month, month),
+    eq(plantConfigsTable.segment, segment),
+  ));
   const calendar = resolveWorkingDays(month, row?.workingDays);
   return {
     row: row ?? null,
@@ -520,7 +529,33 @@ async function loadConfig(month: string) {
   };
 }
 
-async function loadFinalizedTargets(month: string): Promise<{
+async function fetchSegmentActuals(
+  month: string,
+  segment: MonitoringSegment,
+  options: { forceRefresh?: boolean; requireFresh?: boolean } = {},
+): Promise<DailyActualRow[]> {
+  if (segment === "PTMT") return fetchDailyActuals(month, options, segment);
+  const rows = await fetchPlumbingSheet3Production(month);
+  return rows.map((row) => ({
+    date: row.dateStr,
+    itemCode: row.rawCode,
+    colour: "",
+    qty: row.qty,
+    group: "PLUMBING",
+  }));
+}
+
+async function loadSegmentActuals(month: string, segment: MonitoringSegment) {
+  if (segment === "PTMT") return loadStoredDailyActualsForSegment(month, segment);
+  const actuals = await fetchSegmentActuals(month, segment);
+  return {
+    actuals,
+    snapshotDate: actuals.length ? [...actuals].sort((a, b) => a.date.localeCompare(b.date)).at(-1)?.date ?? null : null,
+    cachedAt: actuals.length ? new Date() : null,
+  };
+}
+
+async function loadFinalizedTargets(month: string, segment: MonitoringSegment = "PTMT"): Promise<{
   run: typeof planRunsTable.$inferSelect;
   targets: PlantTargetRow[];
   planItems: WeeklyInputPlanItem[];
@@ -531,13 +566,13 @@ async function loadFinalizedTargets(month: string): Promise<{
   const [run] = await db
     .select()
     .from(planRunsTable)
-    .where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT"), eq(planRunsTable.status, "finalized")))
+    .where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, segment), eq(planRunsTable.status, "finalized")))
     .orderBy(desc(planRunsTable.id))
     .limit(1);
   if (!run) return null;
   const [results, versionTimeline] = await Promise.all([
     db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, run.id)),
-    fetchMonitoringPlanTimeline(month),
+    fetchMonitoringPlanTimeline(month, segment),
   ]);
   if (results.length === 0) return null;
   let planItems: WeeklyInputPlanItem[];
@@ -558,7 +593,7 @@ async function loadFinalizedTargets(month: string): Promise<{
   } else {
     const [inputs, bands] = await Promise.all([
       db.select().from(planRunInputsTable).where(eq(planRunInputsTable.runId, run.id)),
-      db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "PTMT")),
+      db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
     ]);
     planItems = reconstructLegacyWeeklyPlanItems(results, inputs, bands);
     weeklyTargetSource = "legacy_frozen_inputs";
@@ -588,11 +623,11 @@ async function loadFinalizedTargets(month: string): Promise<{
   };
 }
 
-async function hasFinalizedTargets(month: string): Promise<boolean> {
+async function hasFinalizedTargets(month: string, segment: MonitoringSegment = "PTMT"): Promise<boolean> {
   const [run] = await db
     .select({ id: planRunsTable.id })
     .from(planRunsTable)
-    .where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT"), eq(planRunsTable.status, "finalized")))
+    .where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, segment), eq(planRunsTable.status, "finalized")))
     .orderBy(desc(planRunsTable.id))
     .limit(1);
   if (!run) return false;
@@ -679,8 +714,9 @@ async function buildReadyBundle(
   sourceInfo: Record<string, unknown> | null,
   capturedAt: string | null,
   versionTimeline: PlanVersion[] = [],
+  segment: MonitoringSegment = "PTMT",
 ) {
-  const { row, config } = await loadConfig(month);
+  const { row, config } = await loadConfig(month, segment);
   const observedDates = actuals.map((row) => row.date);
   const latestObservedDate = actuals.length ? observedDates.sort().at(-1)! : null;
   const snapshotDate = config.snapshotDate ?? (
@@ -730,13 +766,13 @@ function graceActualsUnavailableBundle(
   return decorateBundle(base, "grace", configRow, true, reason, false);
 }
 
-async function loadSavedSnapshot(month: string) {
+async function loadSavedSnapshot(month: string, segment: MonitoringSegment = "PTMT") {
   const [snapshot] = await db
     .select()
     .from(plantMonthSnapshotsTable)
     .where(and(
       eq(plantMonthSnapshotsTable.month, month),
-      eq(plantMonthSnapshotsTable.segment, "PTMT"),
+      eq(plantMonthSnapshotsTable.segment, segment),
       eq(plantMonthSnapshotsTable.planStatus, "monitoring"),
     ));
   return snapshot ?? null;
@@ -746,6 +782,7 @@ export async function captureClosedPlantMonth(
   month: string,
   now = new Date(),
   options: { refreshActuals?: boolean } = {},
+  segment: MonitoringSegment = "PTMT",
 ): Promise<
   | { ok: true; bundle: LifecyclePlantBundle; weekly: PlantWeeklySummary; capturedAt: string }
   | { ok: false; reason: string; code: "MONTH_NOT_CLOSED" | "FINALIZED_PLAN_MISSING" | "ACTUALS_REFRESH_FAILED" | "ACTUALS_SNAPSHOT_MISSING" }
@@ -754,7 +791,7 @@ export async function captureClosedPlantMonth(
   if (lifecycle.state !== "closed") {
     return { ok: false, code: "MONTH_NOT_CLOSED", reason: "Only closed months can be frozen." };
   }
-  const existing = await loadSavedSnapshot(month);
+  const existing = await loadSavedSnapshot(month, segment);
   if (existing) {
     const payload = snapshotPayload(existing);
     return {
@@ -764,13 +801,13 @@ export async function captureClosedPlantMonth(
       capturedAt: existing.capturedAt.toISOString(),
     };
   }
-  const finalized = await loadFinalizedTargets(month);
+  const finalized = await loadFinalizedTargets(month, segment);
   if (!finalized) {
-    return { ok: false, code: "FINALIZED_PLAN_MISSING", reason: "Targets unavailable — no finalized PTMT plan was issued for this month." };
+    return { ok: false, code: "FINALIZED_PLAN_MISSING", reason: `Targets unavailable — no finalized ${segment} plan was issued for this month.` };
   }
   if (options.refreshActuals !== false) {
     try {
-      await fetchDailyActuals(month, { forceRefresh: true, requireFresh: true });
+      await fetchSegmentActuals(month, segment, { forceRefresh: true, requireFresh: true });
     } catch {
       return {
         ok: false,
@@ -779,7 +816,7 @@ export async function captureClosedPlantMonth(
       };
     }
   }
-  const stored = await loadStoredDailyActuals(month);
+  const stored = await loadSegmentActuals(month, segment);
   if (!stored.cachedAt) {
     return { ok: false, code: "ACTUALS_SNAPSHOT_MISSING", reason: "Historical actuals unavailable — no stored production snapshot exists for this month." };
   }
@@ -790,7 +827,7 @@ export async function captureClosedPlantMonth(
     planAsOfAt: finalized.run.asOfAt.toISOString(),
     weeklyTargetSource: finalized.weeklyTargetSource,
     weeklyBandSnapshot: finalized.weeklyBandSnapshot,
-    actualsSource: "plant_ingestion_cache",
+    actualsSource: segment === "PTMT" ? "plant_ingestion_cache" : "plumbing_sheet3",
     actualsCachedAt: stored.cachedAt.toISOString(),
     sourceSnapshotDate: stored.snapshotDate,
     planVersions: finalized.versionTimeline.map((version) => ({
@@ -810,9 +847,10 @@ export async function captureClosedPlantMonth(
     stored.actuals,
     finalized.targets,
     lifecycle,
-    { ...sourceInfo },
+    { ...sourceInfo, segment },
     capturedAt.toISOString(),
     finalized.versionTimeline,
+    segment,
   );
   const weekly = buildWeekly(
     month,
@@ -827,7 +865,7 @@ export async function captureClosedPlantMonth(
   bundle.warnings = [...bundle.warnings, ...weeklyWarnings];
   await db.insert(plantMonthSnapshotsTable).values({
     month,
-    segment: "PTMT",
+    segment,
     payloadJson: {
       kind: "plant_monitoring",
       actualsJson: stored.actuals,
@@ -850,7 +888,7 @@ export async function captureClosedPlantMonth(
     .from(plantMonthSnapshotsTable)
     .where(and(
       eq(plantMonthSnapshotsTable.month, month),
-      eq(plantMonthSnapshotsTable.segment, "PTMT"),
+      eq(plantMonthSnapshotsTable.segment, segment),
       eq(plantMonthSnapshotsTable.planStatus, "monitoring"),
     ));
   if (!saved) {
@@ -871,18 +909,19 @@ export async function computeLifecyclePlantMonitoring(
   dependencies: {
     fetchActuals?: (month: string, options: { forceRefresh?: boolean; requireFresh?: boolean }) => Promise<DailyActualRow[]>;
   } = {},
+  segment: MonitoringSegment = "PTMT",
 ): Promise<{
   bundle: LifecyclePlantBundle;
   weekly: PlantWeeklySummary;
 }> {
   const lifecycle = resolvePlantMonthLifecycle(month, now);
-  const { row, config } = await loadConfig(month);
+  const { row, config } = await loadConfig(month, segment);
   if (lifecycle.state === "future") {
     const bundle = emptyBundle(month, lifecycle, config, "future", "No plan issued — this is a future month.");
     return { bundle, weekly: buildWeekly(month, [], [], [], null, lifecycle) };
   }
   if (lifecycle.state === "closed") {
-    const saved = await loadSavedSnapshot(month);
+    const saved = await loadSavedSnapshot(month, segment);
     if (saved) {
       const payload = snapshotPayload(saved);
       return {
@@ -890,24 +929,26 @@ export async function computeLifecyclePlantMonitoring(
         weekly: payload.weeklyJson as PlantWeeklySummary,
       };
     }
-    const finalizedTargetsExist = await hasFinalizedTargets(month);
+    const finalizedTargetsExist = await hasFinalizedTargets(month, segment);
     const reason = finalizedTargetsExist
       ? "Targets unavailable — no frozen monitoring snapshot has been captured for this closed month."
-      : "Targets unavailable — no finalized PTMT plan was issued for this month.";
+      : `Targets unavailable — no finalized ${segment} plan was issued for this month.`;
     const bundle = emptyBundle(month, lifecycle, config, "unavailable", reason);
     return { bundle, weekly: buildWeekly(month, [], [], [], null, lifecycle) };
   }
 
-  const fetchActuals = dependencies.fetchActuals ?? fetchDailyActuals;
+  const fetchActuals = dependencies.fetchActuals ?? (
+    (selectedMonth, options) => fetchSegmentActuals(selectedMonth, segment, options)
+  );
   let targets: PlantTargetRow[];
   let planItems: WeeklyInputPlanItem[] = [];
   let sourceInfo: Record<string, unknown> | null = null;
   let versionTimeline: PlanVersion[] = [];
   let actuals: DailyActualRow[];
   if (lifecycle.state === "grace") {
-    const finalized = await loadFinalizedTargets(month);
+    const finalized = await loadFinalizedTargets(month, segment);
     if (!finalized) {
-      const bundle = emptyBundle(month, lifecycle, config, "unavailable", "Targets unavailable — no finalized PTMT plan was issued for this month.");
+      const bundle = emptyBundle(month, lifecycle, config, "unavailable", `Targets unavailable — no finalized ${segment} plan was issued for this month.`);
       return { bundle, weekly: buildWeekly(month, [], [], [], config.snapshotDate, lifecycle) };
     }
     try {
@@ -941,8 +982,8 @@ export async function computeLifecyclePlantMonitoring(
     };
   } else {
     actuals = await fetchActuals(month, {});
-    const liveItems = await buildPlanItems(month, "PTMT");
-    versionTimeline = await fetchMonitoringPlanTimeline(month);
+    const liveItems = await buildPlanItems(month, segment);
+    versionTimeline = await fetchMonitoringPlanTimeline(month, segment);
     const latestVersion = versionTimeline.at(-1);
     targets = latestVersion ? latestVersion.targets.map((item) => ({
       itemCode: item.itemCode,
@@ -984,6 +1025,7 @@ export async function computeLifecyclePlantMonitoring(
     sourceInfo,
     null,
     versionTimeline,
+    segment,
   );
   const weekly = buildWeekly(
     month,
@@ -1011,30 +1053,40 @@ export function selectUnfrozenClosedMonths(
 
 export async function captureUnfrozenClosedPlantMonths(now = new Date()): Promise<Array<{
   month: string;
+  segment: MonitoringSegment;
   result: Awaited<ReturnType<typeof captureClosedPlantMonth>>;
 }>> {
   const [finalizedRuns, snapshots] = await Promise.all([
     db
-      .select({ month: planRunsTable.month })
+      .select({ month: planRunsTable.month, segment: planRunsTable.segment })
       .from(planRunsTable)
-      .where(and(eq(planRunsTable.segment, "PTMT"), eq(planRunsTable.status, "finalized")))
+      .where(and(
+        eq(planRunsTable.status, "finalized"),
+        sql`${planRunsTable.segment} in ('PTMT', 'Plumbing')`,
+      ))
       .orderBy(desc(planRunsTable.month)),
     db
-      .select({ month: plantMonthSnapshotsTable.month })
+      .select({ month: plantMonthSnapshotsTable.month, segment: plantMonthSnapshotsTable.segment })
       .from(plantMonthSnapshotsTable)
       .where(eq(plantMonthSnapshotsTable.planStatus, "monitoring")),
   ]);
-  const months = selectUnfrozenClosedMonths(
-    finalizedRuns.map((run) => run.month),
-    snapshots.map((snapshot) => snapshot.month),
-    now,
-  );
+  const frozen = new Set(snapshots.map((snapshot) => `${snapshot.month}:${snapshot.segment}`));
+  const candidates = [...new Map(
+    finalizedRuns
+      .filter((run): run is { month: string; segment: MonitoringSegment } =>
+        (run.segment === "PTMT" || run.segment === "Plumbing")
+        && resolvePlantMonthLifecycle(run.month, now).state === "closed"
+        && !frozen.has(`${run.month}:${run.segment}`),
+      )
+      .map((run) => [`${run.month}:${run.segment}`, run]),
+  ).values()].sort((a, b) => b.month.localeCompare(a.month) || a.segment.localeCompare(b.segment));
   const outcomes: Array<{
     month: string;
+    segment: MonitoringSegment;
     result: Awaited<ReturnType<typeof captureClosedPlantMonth>>;
   }> = [];
-  for (const month of months) {
-    outcomes.push({ month, result: await captureClosedPlantMonth(month, now) });
+  for (const { month, segment } of candidates) {
+    outcomes.push({ month, segment, result: await captureClosedPlantMonth(month, now, {}, segment) });
   }
   return outcomes;
 }

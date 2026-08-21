@@ -7,6 +7,7 @@ import { DEFAULT_PLANT_WARNING_THRESHOLDS, type PlantWarningThresholds } from ".
 import { captureClosedPlantMonth, computeLifecyclePlantMonitoring } from "../lib/plant-monitoring";
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "../lib/plant-lifecycle";
 import { logger } from "../lib/logger";
+import type { MonitoringSegment } from "../lib/plant-monitoring";
 const router: IRouter = Router();
 
 // The dashboard asks for the bundle and weekly summary together. Cache the full
@@ -32,8 +33,12 @@ export function invalidatePlantBundleCache(month?: string) {
   // repopulating the cache after source data or configuration changes.
   plantMonitoringCacheEpoch++;
   if (month) {
-    monitoringCache.delete(month);
-    monitoringInFlight.delete(month);
+    for (const key of monitoringCache.keys()) {
+      if (key.endsWith(`:${month}`)) monitoringCache.delete(key);
+    }
+    for (const key of monitoringInFlight.keys()) {
+      if (key.endsWith(`:${month}`)) monitoringInFlight.delete(key);
+    }
   } else {
     monitoringCache.clear();
     monitoringInFlight.clear();
@@ -50,9 +55,13 @@ export function _setPlantMonitoringComputeForTest(
   };
 }
 
-export async function getPlantMonitoringCached(month: string): Promise<PlantMonitoringResult> {
+export async function getPlantMonitoringCached(
+  month: string,
+  segment: MonitoringSegment = "PTMT",
+): Promise<PlantMonitoringResult> {
   const lifecycle = resolvePlantMonthLifecycle(month).state;
-  const cached = monitoringCache.get(month);
+  const key = `${segment}:${month}`;
+  const cached = monitoringCache.get(key);
   if (
     cached
     && cached.lifecycle === lifecycle
@@ -61,26 +70,26 @@ export async function getPlantMonitoringCached(month: string): Promise<PlantMoni
     return cached.result;
   }
 
-  const pending = monitoringInFlight.get(month);
+  const pending = monitoringInFlight.get(key);
   if (pending && pending.lifecycle === lifecycle) {
     return pending.promise;
   }
 
   const epoch = plantMonitoringCacheEpoch;
-  const promise = computePlantMonitoringForCache(month)
+  const promise = computePlantMonitoringForCache(month, new Date(), {}, segment)
     .then((result) => {
       if (epoch === plantMonitoringCacheEpoch) {
-        monitoringCache.set(month, { result, lifecycle, ts: Date.now() });
+        monitoringCache.set(key, { result, lifecycle, ts: Date.now() });
       }
       return result;
     })
     .finally(() => {
-      if (monitoringInFlight.get(month)?.promise === promise) {
-        monitoringInFlight.delete(month);
+      if (monitoringInFlight.get(key)?.promise === promise) {
+        monitoringInFlight.delete(key);
       }
     });
 
-  monitoringInFlight.set(month, { lifecycle, promise });
+  monitoringInFlight.set(key, { lifecycle, promise });
   return promise;
 }
 
@@ -108,19 +117,24 @@ function loadThresholds(row: { thresholdsJson?: unknown } | null): PlantWarningT
   };
 }
 
-export async function computePlantBundle(month: string) {
-  return (await getPlantMonitoringCached(month)).bundle;
+export async function computePlantBundle(month: string, segment: MonitoringSegment = "PTMT") {
+  return (await getPlantMonitoringCached(month, segment)).bundle;
 }
 
 // --- GET /plant/bundle ---
 router.get("/plant/bundle", async (req, res) => {
   const month = String(req.query.month ?? "");
+  const segment = String(req.query.segment ?? "PTMT") as MonitoringSegment;
   if (!/^\d{4}-\d{2}$/.test(month)) {
     res.status(400).json({ error: "month query param required (YYYY-MM)" });
     return;
   }
   try {
-    const { bundle } = await getPlantMonitoringCached(month);
+    if (segment !== "PTMT" && segment !== "Plumbing") {
+      res.status(400).json({ error: "segment must be PTMT or Plumbing" });
+      return;
+    }
+    const { bundle } = await getPlantMonitoringCached(month, segment);
     res.set("Cache-Control", "private, max-age=300").json(bundle);
   } catch (err) {
     logger.error({ err, month }, "plant/bundle failed");
@@ -132,12 +146,20 @@ router.get("/plant/bundle", async (req, res) => {
 router.get("/plant/trend", async (req, res) => {
   try {
     const rawMonths = req.query.months as string | undefined;
-    const sourceRows = await db.select().from(plantSourceConfigsTable);
-    const configRows = await db.select().from(plantConfigsTable);
+    const segment = String(req.query.segment ?? "PTMT") as MonitoringSegment;
+    if (segment !== "PTMT" && segment !== "Plumbing") {
+      res.status(400).json({ error: "segment must be PTMT or Plumbing" });
+      return;
+    }
+    const sourceRows = await db.select().from(plantSourceConfigsTable).where(eq(plantSourceConfigsTable.segment, segment));
+    const configRows = await db.select().from(plantConfigsTable).where(eq(plantConfigsTable.segment, segment));
     const snapshotRows = await db
       .select({ month: plantMonthSnapshotsTable.month })
       .from(plantMonthSnapshotsTable)
-      .where(eq(plantMonthSnapshotsTable.planStatus, "monitoring"));
+      .where(and(
+        eq(plantMonthSnapshotsTable.planStatus, "monitoring"),
+        eq(plantMonthSnapshotsTable.segment, segment),
+      ));
     let allMonths = [...new Set([
       ...sourceRows.map((r) => r.month),
       ...configRows.map((r) => r.month),
@@ -158,7 +180,7 @@ router.get("/plant/trend", async (req, res) => {
 
     const summaries = await Promise.allSettled(allMonths.map(async (month) => {
       try {
-        const bundle = await computePlantBundle(month);
+        const bundle = await computePlantBundle(month, segment);
         if (!bundle.targetsAvailable) return null;
         const { plant, categories } = bundle;
         const sortedCats = [...categories].sort((a, b) => (b.attainmentCumPct ?? 0) - (a.attainmentCumPct ?? 0));
@@ -376,19 +398,24 @@ router.patch("/plant/config", handleConfigUpdate);
 // --- POST /plant/snapshots/backfill ---
 router.post("/plant/snapshots/backfill", async (req, res) => {
   const month = String(req.body?.month ?? "");
+  const segment = String(req.body?.segment ?? "PTMT") as MonitoringSegment;
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
     res.status(400).json({ error: "INVALID_MONTH", message: "month required (YYYY-MM)" });
     return;
   }
+  if (segment !== "PTMT" && segment !== "Plumbing") {
+    res.status(400).json({ error: "INVALID_SEGMENT", message: "segment must be PTMT or Plumbing" });
+    return;
+  }
   try {
-    const result = await captureClosedPlantMonth(month);
+    const result = await captureClosedPlantMonth(month, new Date(), {}, segment);
     if (!result.ok) {
       const status = result.code === "MONTH_NOT_CLOSED" ? 409 : 422;
       res.status(status).json({ error: result.code, message: result.reason, month });
       return;
     }
     invalidatePlantBundleCache(month);
-    res.status(201).json({ month, status: "frozen", capturedAt: result.capturedAt });
+    res.status(201).json({ month, segment, status: "frozen", capturedAt: result.capturedAt });
   } catch (err) {
     logger.error({ err, month }, "plant snapshot backfill failed");
     res.status(500).json({ error: "SNAPSHOT_CAPTURE_FAILED", message: "Failed to capture plant monitoring snapshot." });
@@ -437,12 +464,17 @@ router.post("/plant/cache/invalidate", async (req, res) => {
 // --- GET /plant/weekly-summary ---
 router.get("/plant/weekly-summary", async (req, res) => {
   const month = String(req.query.month ?? "");
+  const segment = String(req.query.segment ?? "PTMT") as MonitoringSegment;
   if (!/^\d{4}-\d{2}$/.test(month)) {
     res.status(400).json({ error: "month query param required (YYYY-MM)" });
     return;
   }
   try {
-    const { weekly } = await getPlantMonitoringCached(month);
+    if (segment !== "PTMT" && segment !== "Plumbing") {
+      res.status(400).json({ error: "segment must be PTMT or Plumbing" });
+      return;
+    }
+    const { weekly } = await getPlantMonitoringCached(month, segment);
     res.set("Cache-Control", "private, max-age=300").json(weekly);
   } catch (err) {
     logger.error({ err, month }, "plant/weekly-summary failed");
