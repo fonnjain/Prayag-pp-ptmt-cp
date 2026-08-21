@@ -29,6 +29,7 @@ import {
   type Warning,
 } from "../lib/monitoring-calc";
 import { logger } from "../lib/logger";
+import { normalizePlantSegment } from "../lib/plant-segments";
 import { resolveWorkingDays } from "../lib/plant-lifecycle";
 import { resolvePlantMonthLifecycle } from "../lib/plant-lifecycle";
 import { buildElapsedProductionDays } from "../lib/plant-engine";
@@ -385,10 +386,10 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
     return;
   }
 
-  const segment = String(req.query.segment ?? "PTMT");
+  const segment = normalizePlantSegment(req.query.segment);
 
   // ── Plumbing: pieces-based data from Sheet3 ────────────────────────────────
-  if (segment.toUpperCase() === "PLUMBING") {
+  if (segment === "Plumbing") {
     const data = await getPlumbingMonitoringPayloadCached(month);
     res.json({
       month,
@@ -693,12 +694,12 @@ router.put("/monitoring/thresholds", async (req, res): Promise<void> => {
 
 router.get("/monitoring/config", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");
-  const segment = String(req.query.segment ?? "PTMT");
+  const segment = normalizePlantSegment(req.query.segment);
   if (!month) {
     res.status(400).json({ error: "month is required" });
     return;
   }
-  if (segment !== "PTMT" && segment !== "Plumbing") {
+  if (!segment) {
     res.status(400).json({ error: "segment must be PTMT or Plumbing" });
     return;
   }
@@ -719,12 +720,13 @@ router.get("/monitoring/config", async (req, res): Promise<void> => {
 });
 
 router.put("/monitoring/config", async (req, res): Promise<void> => {
-  const { month, segment = "PTMT", workingDays, shiftsPerDay, shiftHours, snapshotDate } = req.body ?? {};
+  const { month, workingDays, shiftsPerDay, shiftHours, snapshotDate } = req.body ?? {};
+  const segment = normalizePlantSegment(req.body?.segment);
   if (!month) {
     res.status(400).json({ error: "month is required" });
     return;
   }
-  if (segment !== "PTMT" && segment !== "Plumbing") {
+  if (!segment) {
     res.status(400).json({ error: "segment must be PTMT or Plumbing" });
     return;
   }

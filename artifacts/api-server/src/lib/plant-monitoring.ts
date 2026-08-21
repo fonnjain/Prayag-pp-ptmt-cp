@@ -30,9 +30,10 @@ import { buildPlantRecommendations } from "./plant-recommendations";
 import { buildPlanItems } from "../routes/plan";
 import { annotateWeeklyRelease, type CalcPlanItem } from "./calc";
 import { fetchPlumbingSheet3Production } from "./sheets";
+import type { PlantSegment } from "./plant-segments";
 
 export type MonitoringStatus = "live" | "grace" | "frozen" | "unavailable" | "future";
-export type MonitoringSegment = "PTMT" | "Plumbing";
+export type MonitoringSegment = PlantSegment;
 
 export interface LifecyclePlantBundle extends PlantBundle {
   monitoringStatus: MonitoringStatus;

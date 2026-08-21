@@ -41,6 +41,7 @@ import { buildWeekCalendar } from "./plant-weekly-engine";
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "./plant-lifecycle";
 import { fetchDailyActuals, type DailyActualRow } from "./plant-ingestion";
 import type { PlantSnapshotSourceInfo } from "./plant-monitoring";
+import type { PlantSegment } from "./plant-segments";
 import { backfillLegacyPlantMonitoringSnapshot, getPlantMonitoringSnapshotPayload } from "./plant-monitoring";
 import { getPlumbingMonitoringPayloadCached } from "../routes/plan";
 import {
@@ -172,7 +173,7 @@ export interface SourceAvailability {
 
 export interface PlanVsActualReport {
   month: string;
-  segment: "PTMT" | "Plumbing";
+  segment: PlantSegment;
   lifecycle: string;
   generatedAt: string;
   dataAvailable: boolean;
@@ -1301,7 +1302,7 @@ const JUNE_ACTUALS_ONLY_MESSAGE =
 
 async function loadActualsOnlySnapshot(
   month: string,
-  segment: "PTMT" | "Plumbing",
+  segment: PlantSegment,
 ): Promise<{
   payload: ActualsOnlySnapshotPayload;
   reason: string;
@@ -1348,7 +1349,7 @@ function isActualsOnlyPayload(value: unknown): value is ActualsOnlySnapshotPaylo
 
 function buildActualsOnlyReport(
   month: string,
-  segment: "PTMT" | "Plumbing",
+  segment: PlantSegment,
   now: Date,
   lifecycle: ReturnType<typeof resolvePlantMonthLifecycle>,
   workingDays: number,
@@ -2220,7 +2221,7 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
 
 export async function computePlanVsActualReport(
   month: string,
-  segment: "PTMT" | "Plumbing",
+  segment: PlantSegment,
   now = new Date(),
 ): Promise<PlanVsActualReport> {
   logger.info({ month, segment }, "plan-vs-actual: computing report");

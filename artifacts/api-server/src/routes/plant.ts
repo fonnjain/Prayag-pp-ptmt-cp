@@ -8,6 +8,7 @@ import { captureClosedPlantMonth, computeLifecyclePlantMonitoring } from "../lib
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "../lib/plant-lifecycle";
 import { logger } from "../lib/logger";
 import type { MonitoringSegment } from "../lib/plant-monitoring";
+import { normalizePlantSegment } from "../lib/plant-segments";
 const router: IRouter = Router();
 
 // The dashboard asks for the bundle and weekly summary together. Cache the full
@@ -124,13 +125,13 @@ export async function computePlantBundle(month: string, segment: MonitoringSegme
 // --- GET /plant/bundle ---
 router.get("/plant/bundle", async (req, res) => {
   const month = String(req.query.month ?? "");
-  const segment = String(req.query.segment ?? "PTMT") as MonitoringSegment;
+  const segment = normalizePlantSegment(req.query.segment);
   if (!/^\d{4}-\d{2}$/.test(month)) {
     res.status(400).json({ error: "month query param required (YYYY-MM)" });
     return;
   }
   try {
-    if (segment !== "PTMT" && segment !== "Plumbing") {
+    if (!segment) {
       res.status(400).json({ error: "segment must be PTMT or Plumbing" });
       return;
     }
@@ -146,8 +147,8 @@ router.get("/plant/bundle", async (req, res) => {
 router.get("/plant/trend", async (req, res) => {
   try {
     const rawMonths = req.query.months as string | undefined;
-    const segment = String(req.query.segment ?? "PTMT") as MonitoringSegment;
-    if (segment !== "PTMT" && segment !== "Plumbing") {
+    const segment = normalizePlantSegment(req.query.segment);
+    if (!segment) {
       res.status(400).json({ error: "segment must be PTMT or Plumbing" });
       return;
     }
@@ -319,12 +320,12 @@ ${section === "control-board" ? `
 // --- GET /plant/config ---
 router.get("/plant/config", async (req, res) => {
   const month = String(req.query.month ?? "");
-  const segment = String(req.query.segment ?? "PTMT");
+  const segment = normalizePlantSegment(req.query.segment);
   if (!/^\d{4}-\d{2}$/.test(month)) {
     res.status(400).json({ error: "month required" });
     return;
   }
-  if (segment !== "PTMT" && segment !== "Plumbing") {
+  if (!segment) {
     res.status(400).json({ error: "segment must be PTMT or Plumbing" });
     return;
   }
@@ -360,7 +361,7 @@ async function handleConfigUpdate(req: import("express").Request, res: import("e
     res.status(400).json({ error: "month required" });
     return;
   }
-  if (segment !== "PTMT" && segment !== "Plumbing") {
+  if (!segment) {
     res.status(400).json({ error: "segment must be PTMT or Plumbing" });
     return;
   }
@@ -398,12 +399,12 @@ router.patch("/plant/config", handleConfigUpdate);
 // --- POST /plant/snapshots/backfill ---
 router.post("/plant/snapshots/backfill", async (req, res) => {
   const month = String(req.body?.month ?? "");
-  const segment = String(req.body?.segment ?? "PTMT") as MonitoringSegment;
+  const segment = normalizePlantSegment(req.body?.segment);
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
     res.status(400).json({ error: "INVALID_MONTH", message: "month required (YYYY-MM)" });
     return;
   }
-  if (segment !== "PTMT" && segment !== "Plumbing") {
+  if (!segment) {
     res.status(400).json({ error: "INVALID_SEGMENT", message: "segment must be PTMT or Plumbing" });
     return;
   }
@@ -424,12 +425,13 @@ router.post("/plant/snapshots/backfill", async (req, res) => {
 
 // --- PUT /plant/source-config ---
 router.put("/plant/source-config", async (req, res) => {
-  const { month, segment = "PTMT", fileId, notes } = req.body as { month: string; segment?: string; fileId: string; notes?: string };
+  const { month, fileId, notes } = req.body as { month: string; segment?: string; fileId: string; notes?: string };
+  const segment = normalizePlantSegment(req.body?.segment);
   if (!month || !fileId) {
     res.status(400).json({ error: "month and fileId required" });
     return;
   }
-  if (segment !== "PTMT" && segment !== "Plumbing") {
+  if (!segment) {
     res.status(400).json({ error: "segment must be PTMT or Plumbing" });
     return;
   }
@@ -444,9 +446,13 @@ router.put("/plant/source-config", async (req, res) => {
 // --- POST /plant/cache/invalidate ---
 router.post("/plant/cache/invalidate", async (req, res) => {
   const month = String(req.body?.month ?? req.query.month ?? "");
-  const segment = String(req.body?.segment ?? req.query.segment ?? "PTMT");
+  const segment = normalizePlantSegment(req.body?.segment ?? req.query.segment);
   if (!/^\d{4}-\d{2}$/.test(month)) {
     res.status(400).json({ error: "month required (YYYY-MM)" });
+    return;
+  }
+  if (!segment) {
+    res.status(400).json({ error: "segment must be PTMT or Plumbing" });
     return;
   }
   const lifecycle = resolvePlantMonthLifecycle(month);
@@ -464,13 +470,13 @@ router.post("/plant/cache/invalidate", async (req, res) => {
 // --- GET /plant/weekly-summary ---
 router.get("/plant/weekly-summary", async (req, res) => {
   const month = String(req.query.month ?? "");
-  const segment = String(req.query.segment ?? "PTMT") as MonitoringSegment;
+  const segment = normalizePlantSegment(req.query.segment);
   if (!/^\d{4}-\d{2}$/.test(month)) {
     res.status(400).json({ error: "month query param required (YYYY-MM)" });
     return;
   }
   try {
-    if (segment !== "PTMT" && segment !== "Plumbing") {
+    if (!segment) {
       res.status(400).json({ error: "segment must be PTMT or Plumbing" });
       return;
     }
