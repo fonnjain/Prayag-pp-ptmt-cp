@@ -25,4 +25,8 @@ Plumbing tab → /monitoring/plumbing (single overview page).
 
 ## Live actuals status
 
-Daily Production PLUMBING machine feed not yet wired. When wired, the Plumbing pages (velocity, attainment, warnings) should mirror the PTMT plant pages, scoped to Plumbing categories.
+The shared plant lifecycle now has a Plumbing Sheet3 actuals adapter and segment-keyed frozen snapshots. The legacy `/monitoring/dashboard?segment=PLUMBING` and `/monitoring/plumbing` page remain pieces-based / plan-overview surfaces for compatibility; do not silently replace them with the PTMT target-shaped payload.
+
+**Why:** Existing Plumbing consumers and regression checks rely on the pieces-based response, while the shared lifecycle is the correct home for parity snapshots and plant bundle/weekly reporting.
+
+**How to apply:** Keep legacy route shape stable, and use the shared lifecycle routes for frozen monitoring, segment-scoped snapshots, and parity work.
