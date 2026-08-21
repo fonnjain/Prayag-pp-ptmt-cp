@@ -4,7 +4,7 @@ import {
   planRunResultsTable,
   planRunsTable,
   plantConfigsTable,
-  plantMonitoringSnapshotsTable,
+  plantMonthSnapshotsTable,
   plantPlanVersionsTable,
   weeklyReleaseBandsTable,
 } from "@workspace/db";
@@ -117,10 +117,37 @@ type SnapshotPlanVersionReference = {
 };
 
 export type LegacySnapshotTimelineBackfillResult = {
-  snapshot: typeof plantMonitoringSnapshotsTable.$inferSelect | null;
+  snapshot: typeof plantMonthSnapshotsTable.$inferSelect | null;
   restored: boolean;
   reason: string | null;
 };
+
+type MonitoringSnapshotPayload = {
+  kind: "plant_monitoring";
+  actualsJson: unknown;
+  targetsJson: unknown;
+  bundleJson: unknown;
+  weeklyJson: unknown;
+  sourceInfoJson: unknown;
+};
+
+function snapshotPayload(snapshot: typeof plantMonthSnapshotsTable.$inferSelect): MonitoringSnapshotPayload {
+  const payload = isRecord(snapshot.payloadJson) ? snapshot.payloadJson : {};
+  return {
+    kind: "plant_monitoring",
+    actualsJson: payload.actualsJson ?? [],
+    targetsJson: payload.targetsJson ?? [],
+    bundleJson: payload.bundleJson ?? {},
+    weeklyJson: payload.weeklyJson ?? {},
+    sourceInfoJson: payload.sourceInfoJson ?? snapshot.planEvidenceJson,
+  };
+}
+
+export function getPlantMonitoringSnapshotPayload(
+  snapshot: typeof plantMonthSnapshotsTable.$inferSelect,
+): MonitoringSnapshotPayload {
+  return snapshotPayload(snapshot);
+}
 
 const PLAN_VERSION_KINDS = new Set<PlanVersion["kind"]>(["run", "import", "corrective"]);
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -263,9 +290,10 @@ function frozenTargetsMatchIssuedRun(
 }
 
 async function restoreLegacySnapshotTimeline(
-  snapshot: typeof plantMonitoringSnapshotsTable.$inferSelect,
+  snapshot: typeof plantMonthSnapshotsTable.$inferSelect,
 ): Promise<LegacySnapshotTimelineBackfillResult> {
-  const existingSourceInfo = snapshot.sourceInfoJson;
+  const payload = snapshotPayload(snapshot);
+  const existingSourceInfo = payload.sourceInfoJson;
   if (isRecord(existingSourceInfo)
     && Array.isArray(existingSourceInfo.planVersionTimeline)
     && existingSourceInfo.planVersionTimeline.length > 0) {
@@ -309,7 +337,11 @@ async function restoreLegacySnapshotTimeline(
         reason: "The matching immutable issued snapshot does not contain complete item-level W1–W4 targets.",
       };
     }
-    if (ref.kind === "run" && ref.sourceId === snapshot.planRunId) {
+    if (
+      ref.kind === "run"
+      && isRecord(existingSourceInfo)
+      && ref.sourceId === existingSourceInfo.planRunId
+    ) {
       capturedFinalRunTargets = targets;
     }
     timeline.push({
@@ -323,7 +355,7 @@ async function restoreLegacySnapshotTimeline(
       ...(ref.supersededSameDaySources ? { supersededSameDaySources: ref.supersededSameDaySources } : {}),
     });
   }
-  if (!capturedFinalRunTargets || !frozenTargetsMatchIssuedRun(snapshot.targetsJson, capturedFinalRunTargets)) {
+  if (!capturedFinalRunTargets || !frozenTargetsMatchIssuedRun(payload.targetsJson, capturedFinalRunTargets)) {
     return {
       snapshot,
       restored: false,
@@ -334,25 +366,37 @@ async function restoreLegacySnapshotTimeline(
   const restoredAt = new Date().toISOString();
   const sourceInfo = withBackfilledSourceInfo(existingSourceInfo as Record<string, unknown>, timeline, restoredAt);
   const [saved] = await db
-    .update(plantMonitoringSnapshotsTable)
+    .update(plantMonthSnapshotsTable)
     .set({
-      sourceInfoJson: sourceInfo,
-      bundleJson: withBackfilledBundle(snapshot.bundleJson, sourceInfo),
+      payloadJson: {
+        ...payload,
+        sourceInfoJson: sourceInfo,
+        bundleJson: withBackfilledBundle(payload.bundleJson, sourceInfo),
+      },
+      sourcePlanVersionsJson: timeline,
+      planEvidenceJson: {
+        ...(isRecord(snapshot.planEvidenceJson) ? snapshot.planEvidenceJson : {}),
+        ...sourceInfo,
+      },
     })
     // A request and the scheduler can both discover the legacy row. Only the
     // first writer may attach a timeline; later callers reload that winner.
     .where(and(
-      eq(plantMonitoringSnapshotsTable.month, snapshot.month),
-      sql`coalesce(${plantMonitoringSnapshotsTable.sourceInfoJson} -> 'planVersionTimeline', '[]'::jsonb) = '[]'::jsonb`,
+      eq(plantMonthSnapshotsTable.month, snapshot.month),
+      eq(plantMonthSnapshotsTable.segment, snapshot.segment),
+      sql`coalesce(${plantMonthSnapshotsTable.payloadJson} -> 'sourceInfoJson' -> 'planVersionTimeline', '[]'::jsonb) = '[]'::jsonb`,
     ))
     .returning();
   if (saved) return { snapshot: saved, restored: true, reason: null };
 
   const [winner] = await db
     .select()
-    .from(plantMonitoringSnapshotsTable)
-    .where(eq(plantMonitoringSnapshotsTable.month, snapshot.month));
-  const winnerSourceInfo = winner?.sourceInfoJson;
+    .from(plantMonthSnapshotsTable)
+    .where(and(
+      eq(plantMonthSnapshotsTable.month, snapshot.month),
+      eq(plantMonthSnapshotsTable.segment, snapshot.segment),
+    ));
+  const winnerSourceInfo = winner ? snapshotPayload(winner).sourceInfoJson : null;
   if (isRecord(winnerSourceInfo)
     && Array.isArray(winnerSourceInfo.planVersionTimeline)
     && winnerSourceInfo.planVersionTimeline.length > 0) {
@@ -391,7 +435,10 @@ export async function backfillLegacyPlantMonitoringSnapshots(): Promise<Array<{
   restored: boolean;
   reason: string | null;
 }>> {
-  const snapshots = await db.select({ month: plantMonitoringSnapshotsTable.month }).from(plantMonitoringSnapshotsTable);
+  const snapshots = await db
+    .select({ month: plantMonthSnapshotsTable.month })
+    .from(plantMonthSnapshotsTable)
+    .where(eq(plantMonthSnapshotsTable.planStatus, "monitoring"));
   const outcomes: Array<{ month: string; restored: boolean; reason: string | null }> = [];
   for (const snapshot of snapshots) {
     const result = await backfillLegacyPlantMonitoringSnapshot(snapshot.month);
@@ -686,8 +733,12 @@ function graceActualsUnavailableBundle(
 async function loadSavedSnapshot(month: string) {
   const [snapshot] = await db
     .select()
-    .from(plantMonitoringSnapshotsTable)
-    .where(eq(plantMonitoringSnapshotsTable.month, month));
+    .from(plantMonthSnapshotsTable)
+    .where(and(
+      eq(plantMonthSnapshotsTable.month, month),
+      eq(plantMonthSnapshotsTable.segment, "PTMT"),
+      eq(plantMonthSnapshotsTable.planStatus, "monitoring"),
+    ));
   return snapshot ?? null;
 }
 
@@ -705,10 +756,11 @@ export async function captureClosedPlantMonth(
   }
   const existing = await loadSavedSnapshot(month);
   if (existing) {
+    const payload = snapshotPayload(existing);
     return {
       ok: true,
-      bundle: existing.bundleJson as LifecyclePlantBundle,
-      weekly: existing.weeklyJson as PlantWeeklySummary,
+      bundle: payload.bundleJson as LifecyclePlantBundle,
+      weekly: payload.weeklyJson as PlantWeeklySummary,
       capturedAt: existing.capturedAt.toISOString(),
     };
   }
@@ -773,21 +825,42 @@ export async function captureClosedPlantMonth(
   );
   const weeklyWarnings = buildPlantWeeklyWarnings(weekly);
   bundle.warnings = [...bundle.warnings, ...weeklyWarnings];
-  await db.insert(plantMonitoringSnapshotsTable).values({
+  await db.insert(plantMonthSnapshotsTable).values({
     month,
-    planRunId: finalized.run.id,
-    actualsJson: stored.actuals,
-    targetsJson: finalized.targets,
-    bundleJson: bundle,
-    weeklyJson: weekly,
-    sourceInfoJson: sourceInfo,
+    segment: "PTMT",
+    payloadJson: {
+      kind: "plant_monitoring",
+      actualsJson: stored.actuals,
+      targetsJson: finalized.targets,
+      bundleJson: bundle,
+      weeklyJson: weekly,
+      sourceInfoJson: sourceInfo,
+    },
+    sourcePlanVersionsJson: finalized.versionTimeline,
+    closedAt: new Date(lifecycle.closedAt ?? capturedAt),
     capturedAt,
-  }).onConflictDoNothing();
-  const [saved] = await db.select().from(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+    capturedCommitSha: process.env.BUILD_COMMIT_SHA ?? null,
+    planStatus: "monitoring",
+    planEvidenceJson: sourceInfo,
+  }).onConflictDoNothing({
+    target: [plantMonthSnapshotsTable.month, plantMonthSnapshotsTable.segment],
+  });
+  const [saved] = await db
+    .select()
+    .from(plantMonthSnapshotsTable)
+    .where(and(
+      eq(plantMonthSnapshotsTable.month, month),
+      eq(plantMonthSnapshotsTable.segment, "PTMT"),
+      eq(plantMonthSnapshotsTable.planStatus, "monitoring"),
+    ));
+  if (!saved) {
+    return { ok: false, code: "ACTUALS_SNAPSHOT_MISSING", reason: "Historical actuals unavailable — the monitoring snapshot could not be persisted." };
+  }
+  const savedPayload = snapshotPayload(saved);
   return {
     ok: true,
-    bundle: saved.bundleJson as LifecyclePlantBundle,
-    weekly: saved.weeklyJson as PlantWeeklySummary,
+    bundle: savedPayload.bundleJson as LifecyclePlantBundle,
+    weekly: savedPayload.weeklyJson as PlantWeeklySummary,
     capturedAt: saved.capturedAt.toISOString(),
   };
 }
@@ -811,9 +884,10 @@ export async function computeLifecyclePlantMonitoring(
   if (lifecycle.state === "closed") {
     const saved = await loadSavedSnapshot(month);
     if (saved) {
+      const payload = snapshotPayload(saved);
       return {
-        bundle: saved.bundleJson as LifecyclePlantBundle,
-        weekly: saved.weeklyJson as PlantWeeklySummary,
+        bundle: payload.bundleJson as LifecyclePlantBundle,
+        weekly: payload.weeklyJson as PlantWeeklySummary,
       };
     }
     const finalizedTargetsExist = await hasFinalizedTargets(month);
@@ -945,7 +1019,10 @@ export async function captureUnfrozenClosedPlantMonths(now = new Date()): Promis
       .from(planRunsTable)
       .where(and(eq(planRunsTable.segment, "PTMT"), eq(planRunsTable.status, "finalized")))
       .orderBy(desc(planRunsTable.month)),
-    db.select({ month: plantMonitoringSnapshotsTable.month }).from(plantMonitoringSnapshotsTable),
+    db
+      .select({ month: plantMonthSnapshotsTable.month })
+      .from(plantMonthSnapshotsTable)
+      .where(eq(plantMonthSnapshotsTable.planStatus, "monitoring")),
   ]);
   const months = selectUnfrozenClosedMonths(
     finalizedRuns.map((run) => run.month),

@@ -26,7 +26,6 @@
 
 import {
   db,
-  plantMonitoringSnapshotsTable,
   plantMonthSnapshotsTable,
   plantConfigsTable,
 } from "@workspace/db";
@@ -42,7 +41,7 @@ import { buildWeekCalendar } from "./plant-weekly-engine";
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "./plant-lifecycle";
 import { fetchDailyActuals, type DailyActualRow } from "./plant-ingestion";
 import type { PlantSnapshotSourceInfo } from "./plant-monitoring";
-import { backfillLegacyPlantMonitoringSnapshot } from "./plant-monitoring";
+import { backfillLegacyPlantMonitoringSnapshot, getPlantMonitoringSnapshotPayload } from "./plant-monitoring";
 import { getPlumbingMonitoringPayloadCached } from "../routes/plan";
 import {
   normalizeCode,
@@ -1511,8 +1510,12 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
   if (lifecycle.state === "closed") {
     let [snapshot] = await db
       .select()
-      .from(plantMonitoringSnapshotsTable)
-      .where(eq(plantMonitoringSnapshotsTable.month, month));
+      .from(plantMonthSnapshotsTable)
+      .where(and(
+        eq(plantMonthSnapshotsTable.month, month),
+        eq(plantMonthSnapshotsTable.segment, "PTMT"),
+        eq(plantMonthSnapshotsTable.planStatus, "monitoring"),
+      ));
 
     if (!snapshot) {
       return buildUnavailable(
@@ -1520,13 +1523,15 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
       );
     }
 
-    let sourceInfo = snapshot.sourceInfoJson as Partial<PlantSnapshotSourceInfo> | null;
+    let payload = getPlantMonitoringSnapshotPayload(snapshot);
+    let sourceInfo = payload.sourceInfoJson as Partial<PlantSnapshotSourceInfo> | null;
     let frozenTimeline = sourceInfo?.planVersionTimeline;
     if (!Array.isArray(frozenTimeline) || frozenTimeline.length === 0) {
       const restored = await backfillLegacyPlantMonitoringSnapshot(month);
       if (restored.snapshot) {
         snapshot = restored.snapshot;
-        sourceInfo = snapshot.sourceInfoJson as Partial<PlantSnapshotSourceInfo> | null;
+        payload = getPlantMonitoringSnapshotPayload(snapshot);
+        sourceInfo = payload.sourceInfoJson as Partial<PlantSnapshotSourceInfo> | null;
         frozenTimeline = sourceInfo?.planVersionTimeline;
       }
       if (!Array.isArray(frozenTimeline) || frozenTimeline.length === 0) {
@@ -1537,11 +1542,11 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
       }
     }
 
-    actuals = snapshot.actualsJson as DailyActualRow[];
+    actuals = payload.actualsJson as DailyActualRow[];
     versionTimeline = frozenTimeline;
     planSource = `Frozen issued plan timeline (${versionTimeline.length} version${versionTimeline.length === 1 ? "" : "s"}, captured ${snapshot.capturedAt.toISOString().slice(0, 10)})`;
     productionSource = `Frozen snapshot actuals (captured ${snapshot.capturedAt.toISOString().slice(0, 10)})`;
-    logger.info({ month, planRunId: snapshot.planRunId }, "plan-vs-actual: PTMT closed month — reading from snapshot");
+    logger.info({ month, planRunId: sourceInfo?.planRunId }, "plan-vs-actual: PTMT closed month — reading from snapshot");
   } else if (lifecycle.state === "future") {
     return buildUnavailable("This is a future month — no plan or production data available.");
   } else {

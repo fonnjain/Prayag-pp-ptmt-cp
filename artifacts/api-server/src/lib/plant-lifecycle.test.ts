@@ -8,7 +8,7 @@ import {
   planRunInputsTable,
   planRunsTable,
   plantIngestionCacheTable,
-  plantMonitoringSnapshotsTable,
+  plantMonthSnapshotsTable,
   plantPlanVersionsTable,
   weeklyReleaseBandsTable,
 } from "@workspace/db";
@@ -412,7 +412,7 @@ test("future monitoring returns a named no-plan state without rebuilding targets
 test("grace monitoring never presents cached actuals after a refresh failure", async () => {
   await runMigrations();
   const month = "1997-03";
-  await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+  await db.delete(plantMonthSnapshotsTable).where(eq(plantMonthSnapshotsTable.month, month));
   await db.delete(plantIngestionCacheTable).where(eq(plantIngestionCacheTable.month, month));
   await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
 
@@ -464,7 +464,7 @@ test("grace monitoring never presents cached actuals after a refresh failure", a
     assert.equal(weekly.plant.weeks[0]?.target, 100);
     assert.equal(weekly.plant.weeks[0]?.actual, 0);
   } finally {
-    await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+    await db.delete(plantMonthSnapshotsTable).where(eq(plantMonthSnapshotsTable.month, month));
     await db.delete(plantIngestionCacheTable).where(eq(plantIngestionCacheTable.month, month));
     await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
   }
@@ -473,7 +473,7 @@ test("grace monitoring never presents cached actuals after a refresh failure", a
 test("a captured closed-month snapshot stays byte-for-byte stable after source rows change", async () => {
   await runMigrations();
   const month = "1998-02";
-  await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+  await db.delete(plantMonthSnapshotsTable).where(eq(plantMonthSnapshotsTable.month, month));
   await db.delete(plantIngestionCacheTable).where(eq(plantIngestionCacheTable.month, month));
   await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
 
@@ -510,8 +510,12 @@ test("a captured closed-month snapshot stays byte-for-byte stable after source r
     assert.match(beforeBackfill.bundle.unavailableReason ?? "", /no frozen monitoring snapshot/i);
     const snapshotsBefore = await db
       .select()
-      .from(plantMonitoringSnapshotsTable)
-      .where(eq(plantMonitoringSnapshotsTable.month, month));
+      .from(plantMonthSnapshotsTable)
+      .where(and(
+        eq(plantMonthSnapshotsTable.month, month),
+        eq(plantMonthSnapshotsTable.segment, "PTMT"),
+        eq(plantMonthSnapshotsTable.planStatus, "monitoring"),
+      ));
     assert.equal(snapshotsBefore.length, 0, "a normal closed-month read must not capture a snapshot");
 
     const first = await captureClosedPlantMonth(
@@ -544,7 +548,7 @@ test("a captured closed-month snapshot stays byte-for-byte stable after source r
     assert.deepEqual(second.bundle, first.bundle);
     assert.deepEqual(second.weekly, first.weekly);
   } finally {
-    await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+    await db.delete(plantMonthSnapshotsTable).where(eq(plantMonthSnapshotsTable.month, month));
     await db.delete(plantIngestionCacheTable).where(eq(plantIngestionCacheTable.month, month));
     await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
   }
@@ -553,7 +557,7 @@ test("a captured closed-month snapshot stays byte-for-byte stable after source r
 test("legacy frozen snapshot restores its captured immutable item timeline and preserves weekly totals", async () => {
   await runMigrations();
   const month = "1998-03";
-  await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+  await db.delete(plantMonthSnapshotsTable).where(eq(plantMonthSnapshotsTable.month, month));
   await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
   await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
 
@@ -599,23 +603,30 @@ test("legacy frozen snapshot restores its captured immutable item timeline and p
       sourceLabel: "March issued plan",
       targets: [target],
     });
-    await db.insert(plantMonitoringSnapshotsTable).values({
+    await db.insert(plantMonthSnapshotsTable).values({
       month,
-      planRunId: run.id,
-      actualsJson: [{ date: `${month}-02`, itemCode: target.itemCode, colour: target.colour, qty: 40, group: "PTMT" }],
-      targetsJson: [{ itemCode: target.itemCode, colour: target.colour, category: target.category, maxPcs: 100, minPcs: 80 }],
-      bundleJson: { context: { sourceInfo: { planVersions: [] } } },
-      weeklyJson: {},
-      sourceInfoJson: {
-        planVersions: [{
-          kind: "run",
-          sourceId: run.id,
-          sourceLabel: "March issued plan",
-          effectiveFrom: `${month}-01`,
-          effectiveTo: null,
-          targetCount: 1,
-        }],
+      segment: "PTMT",
+      payloadJson: {
+        kind: "plant_monitoring",
+        actualsJson: [{ date: `${month}-02`, itemCode: target.itemCode, colour: target.colour, qty: 40, group: "PTMT" }],
+        targetsJson: [{ itemCode: target.itemCode, colour: target.colour, category: target.category, maxPcs: 100, minPcs: 80 }],
+        bundleJson: { context: { sourceInfo: { planVersions: [] } } },
+        weeklyJson: {},
+        sourceInfoJson: {
+          planRunId: run.id,
+          planVersions: [{
+            kind: "run",
+            sourceId: run.id,
+            sourceLabel: "March issued plan",
+            effectiveFrom: `${month}-01`,
+            effectiveTo: null,
+            targetCount: 1,
+          }],
+        },
       },
+      sourcePlanVersionsJson: [],
+      closedAt: new Date("2099-01-02T00:00:00.000Z"),
+      planStatus: "monitoring",
       // Always later than the test's issued-version write, proving the backfill
       // can only use a source that existed when this snapshot was captured.
       capturedAt: new Date("2099-01-01T00:00:00.000Z"),
@@ -623,7 +634,7 @@ test("legacy frozen snapshot restores its captured immutable item timeline and p
 
     const restored = await backfillLegacyPlantMonitoringSnapshot(month);
     assert.equal(restored.restored, true);
-    const sourceInfo = restored.snapshot?.sourceInfoJson as Record<string, unknown>;
+    const sourceInfo = (restored.snapshot?.payloadJson as { sourceInfoJson: Record<string, unknown> }).sourceInfoJson;
     const timeline = sourceInfo.planVersionTimeline as import("./plant-plan-timeline").PlanVersion[];
     assert.equal(sourceInfo.planVersionTimelineSource, "issued_plan_version_snapshot");
     assert.equal(timeline.length, 1);
@@ -649,9 +660,12 @@ test("legacy frozen snapshot restores its captured immutable item timeline and p
 
     const retry = await backfillLegacyPlantMonitoringSnapshot(month);
     assert.equal(retry.restored, false, "a restored snapshot is never rewritten on later reads");
-    assert.deepEqual(retry.snapshot?.sourceInfoJson, restored.snapshot?.sourceInfoJson);
+    assert.deepEqual(
+      (retry.snapshot?.payloadJson as { sourceInfoJson: unknown }).sourceInfoJson,
+      (restored.snapshot?.payloadJson as { sourceInfoJson: unknown }).sourceInfoJson,
+    );
   } finally {
-    await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+    await db.delete(plantMonthSnapshotsTable).where(eq(plantMonthSnapshotsTable.month, month));
     await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
     await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
   }
@@ -660,26 +674,33 @@ test("legacy frozen snapshot restores its captured immutable item timeline and p
 test("legacy frozen snapshot without a matching immutable issued timeline remains explicitly unavailable", async () => {
   await runMigrations();
   const month = "1998-04";
-  await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+  await db.delete(plantMonthSnapshotsTable).where(eq(plantMonthSnapshotsTable.month, month));
   await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
 
   try {
-    await db.insert(plantMonitoringSnapshotsTable).values({
+    await db.insert(plantMonthSnapshotsTable).values({
       month,
-      actualsJson: [],
-      targetsJson: [],
-      bundleJson: {},
-      weeklyJson: {},
-      sourceInfoJson: {
-        planVersions: [{
-          kind: "run",
-          sourceId: 987654321,
-          sourceLabel: "Missing immutable plan",
-          effectiveFrom: `${month}-01`,
-          effectiveTo: null,
-          targetCount: 1,
-        }],
+      segment: "PTMT",
+      payloadJson: {
+        kind: "plant_monitoring",
+        actualsJson: [],
+        targetsJson: [],
+        bundleJson: {},
+        weeklyJson: {},
+        sourceInfoJson: {
+          planVersions: [{
+            kind: "run",
+            sourceId: 987654321,
+            sourceLabel: "Missing immutable plan",
+            effectiveFrom: `${month}-01`,
+            effectiveTo: null,
+            targetCount: 1,
+          }],
+        },
       },
+      sourcePlanVersionsJson: [],
+      closedAt: new Date("2099-01-02T00:00:00.000Z"),
+      planStatus: "monitoring",
       capturedAt: new Date("2099-01-01T00:00:00.000Z"),
     });
 
@@ -691,7 +712,7 @@ test("legacy frozen snapshot without a matching immutable issued timeline remain
     assert.equal(report.dataAvailable, false);
     assert.match(report.unavailableReason ?? "", /no matching immutable issued snapshot/i);
   } finally {
-    await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+    await db.delete(plantMonthSnapshotsTable).where(eq(plantMonthSnapshotsTable.month, month));
     await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
   }
 });
@@ -699,7 +720,7 @@ test("legacy frozen snapshot without a matching immutable issued timeline remain
 test("legacy backfill refuses an immutable version whose final targets do not match the snapshot roster", async () => {
   await runMigrations();
   const month = "1998-05";
-  await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+  await db.delete(plantMonthSnapshotsTable).where(eq(plantMonthSnapshotsTable.month, month));
   await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
   await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
 
@@ -730,29 +751,36 @@ test("legacy backfill refuses an immutable version whose final targets do not ma
       effectiveFrom: `${month}-01`,
       targets: [{ ...frozenTarget, maxPcs: 999, w1: 999 }],
     });
-    await db.insert(plantMonitoringSnapshotsTable).values({
+    await db.insert(plantMonthSnapshotsTable).values({
       month,
-      planRunId: run.id,
-      actualsJson: [],
-      targetsJson: [{
-        itemCode: frozenTarget.itemCode,
-        colour: frozenTarget.colour,
-        category: frozenTarget.category,
-        maxPcs: frozenTarget.maxPcs,
-        minPcs: frozenTarget.minPcs,
-      }],
-      bundleJson: {},
-      weeklyJson: {},
-      sourceInfoJson: {
-        planVersions: [{
-          kind: "run",
-          sourceId: run.id,
-          sourceLabel: null,
-          effectiveFrom: `${month}-01`,
-          effectiveTo: null,
-          targetCount: 1,
+      segment: "PTMT",
+      payloadJson: {
+        kind: "plant_monitoring",
+        actualsJson: [],
+        targetsJson: [{
+          itemCode: frozenTarget.itemCode,
+          colour: frozenTarget.colour,
+          category: frozenTarget.category,
+          maxPcs: frozenTarget.maxPcs,
+          minPcs: frozenTarget.minPcs,
         }],
+        bundleJson: {},
+        weeklyJson: {},
+        sourceInfoJson: {
+          planRunId: run.id,
+          planVersions: [{
+            kind: "run",
+            sourceId: run.id,
+            sourceLabel: null,
+            effectiveFrom: `${month}-01`,
+            effectiveTo: null,
+            targetCount: 1,
+          }],
+        },
       },
+      sourcePlanVersionsJson: [],
+      closedAt: new Date("2099-01-02T00:00:00.000Z"),
+      planStatus: "monitoring",
       capturedAt: new Date("2099-01-01T00:00:00.000Z"),
     });
 
@@ -760,7 +788,7 @@ test("legacy backfill refuses an immutable version whose final targets do not ma
     assert.equal(restored.restored, false);
     assert.match(restored.reason ?? "", /does not match the final target roster/i);
   } finally {
-    await db.delete(plantMonitoringSnapshotsTable).where(eq(plantMonitoringSnapshotsTable.month, month));
+    await db.delete(plantMonthSnapshotsTable).where(eq(plantMonthSnapshotsTable.month, month));
     await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
     await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
   }

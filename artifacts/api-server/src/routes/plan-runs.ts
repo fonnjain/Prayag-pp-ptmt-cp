@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { db, bufferCategoriesTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, correctivePlanRunsTable, plantMonitoringSnapshotsTable } from "@workspace/db";
-import { and, eq, desc, ne } from "drizzle-orm";
+import { db, bufferCategoriesTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, correctivePlanRunsTable, plantMonthSnapshotsTable } from "@workspace/db";
+import { and, eq, desc, ne, sql } from "drizzle-orm";
 import { buildPlanItems, loadLatestUploadRowsByKind, handlePlanError } from "./plan";
 import { summarizePlan } from "../lib/calc";
 import {
@@ -409,9 +409,13 @@ router.delete("/plan/runs/:id", async (req, res): Promise<void> => {
     return;
   }
   const frozenMonths = await db
-    .select({ month: plantMonitoringSnapshotsTable.month })
-    .from(plantMonitoringSnapshotsTable)
-    .where(eq(plantMonitoringSnapshotsTable.planRunId, id));
+    .select({ month: plantMonthSnapshotsTable.month })
+    .from(plantMonthSnapshotsTable)
+    .where(and(
+      eq(plantMonthSnapshotsTable.planStatus, "monitoring"),
+      eq(plantMonthSnapshotsTable.segment, "PTMT"),
+      sql`${plantMonthSnapshotsTable.planEvidenceJson}->>'planRunId' = ${String(id)}`,
+    ));
   if (frozenMonths.length > 0) {
     res.status(409).json({
       error: `Plan run #${id} is the finalized target source for frozen plant month ${frozenMonths[0].month} and cannot be deleted.`,

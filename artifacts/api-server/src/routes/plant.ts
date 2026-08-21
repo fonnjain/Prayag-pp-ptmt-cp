@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { launchBrowser } from "../lib/browser";
 import { exportTimestamp } from "../lib/export-filename";
-import { db, plantConfigsTable, plantSourceConfigsTable, plantIngestionCacheTable, plantMonitoringSnapshotsTable } from "@workspace/db";
+import { db, plantConfigsTable, plantSourceConfigsTable, plantIngestionCacheTable, plantMonthSnapshotsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { DEFAULT_PLANT_WARNING_THRESHOLDS, type PlantWarningThresholds } from "../lib/plant-warnings";
 import { captureClosedPlantMonth, computeLifecyclePlantMonitoring } from "../lib/plant-monitoring";
@@ -131,7 +131,10 @@ router.get("/plant/trend", async (req, res) => {
     const rawMonths = req.query.months as string | undefined;
     const sourceRows = await db.select().from(plantSourceConfigsTable);
     const configRows = await db.select().from(plantConfigsTable);
-    const snapshotRows = await db.select({ month: plantMonitoringSnapshotsTable.month }).from(plantMonitoringSnapshotsTable);
+    const snapshotRows = await db
+      .select({ month: plantMonthSnapshotsTable.month })
+      .from(plantMonthSnapshotsTable)
+      .where(eq(plantMonthSnapshotsTable.planStatus, "monitoring"));
     let allMonths = [...new Set([
       ...sourceRows.map((r) => r.month),
       ...configRows.map((r) => r.month),
