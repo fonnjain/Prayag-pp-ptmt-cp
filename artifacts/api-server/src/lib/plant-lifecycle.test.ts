@@ -57,6 +57,21 @@ test("observed working-day resolution adds worked Sundays for closed months", ()
   );
 });
 
+test("closed and grace months prefer observed working days over configured values", () => {
+  assert.deepEqual(
+    resolveWorkingDays("2026-06", 25, ["2026-06-07", "2026-06-14", "2026-06-28"], "2026-06-30", "closed"),
+    { workingDays: 29, workingDaysSource: "observed" },
+  );
+  assert.deepEqual(
+    resolveWorkingDays("2026-07", 26, ["2026-07-05"], "2026-07-07", "grace"),
+    { workingDays: 28, workingDaysSource: "observed" },
+  );
+  assert.deepEqual(
+    resolveWorkingDays("2026-06", 25, [], null, "closed"),
+    { workingDays: 25, workingDaysSource: "configured" },
+  );
+});
+
 test("open observed working days project future calendar non-Sundays and configured values still win", () => {
   assert.deepEqual(
     resolveWorkingDays("2026-08", null, ["2026-08-02", "2026-08-09"], "2026-08-19", "open"),

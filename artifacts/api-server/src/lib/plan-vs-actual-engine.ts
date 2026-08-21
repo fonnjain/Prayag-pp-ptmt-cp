@@ -1435,7 +1435,10 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
   const [configRow] = await db
     .select()
     .from(plantConfigsTable)
-    .where(eq(plantConfigsTable.month, month));
+    .where(and(
+      eq(plantConfigsTable.month, month),
+      eq(plantConfigsTable.segment, "PTMT"),
+    ));
   let { workingDays, workingDaysSource } = resolveWorkingDays(month, configRow?.workingDays);
 
   const weekCalendar: WeekCalendarEntry[] = buildWeekCalendar(month).map((wk) => ({
@@ -1767,7 +1770,10 @@ async function buildPlumbingReport(month: string, now: Date): Promise<PlanVsActu
   const [configRow] = await db
     .select()
     .from(plantConfigsTable)
-    .where(eq(plantConfigsTable.month, month));
+    .where(and(
+      eq(plantConfigsTable.month, month),
+      eq(plantConfigsTable.segment, "Plumbing"),
+    ));
   let { workingDays, workingDaysSource } = resolveWorkingDays(month, configRow?.workingDays);
 
   const weekCalendar: WeekCalendarEntry[] = buildWeekCalendar(month).map((wk) => ({

@@ -177,8 +177,8 @@ test("closed-month working days include worked Sundays for both segments", () =>
   assert.equal(buildFixtureBundle("plumbingJune").context.workingDaysSource, "observed");
 });
 
-test("configured working days override observed Sundays", () => {
-  const bundle = buildFixtureBundle("ptmtJune", undefined, {
+test("open-month configured working days override observed Sundays", () => {
+  const bundle = buildFixtureBundle("ptmtAugust", undefined, {
     workingDays: 25,
     workingDaysSource: "configured",
   });
@@ -187,6 +187,16 @@ test("configured working days override observed Sundays", () => {
   assert.equal(bundle.context.workingDaysSource, "configured");
   assert.equal(bundle.context.elapsed <= bundle.context.workingDays, true);
   assert.ok(Math.abs(bundle.plant.requiredPerDay * bundle.context.workingDays - bundle.plant.targetMax) < 2);
+});
+
+test("closed-month observed working days override configured values", () => {
+  const bundle = buildFixtureBundle("ptmtJune", undefined, {
+    workingDays: 25,
+    workingDaysSource: "configured",
+  });
+
+  assert.equal(bundle.context.workingDays, 29);
+  assert.equal(bundle.context.workingDaysSource, "observed");
 });
 
 test("open-month projection includes remaining calendar non-Sundays without shrinking for idle weekdays", () => {

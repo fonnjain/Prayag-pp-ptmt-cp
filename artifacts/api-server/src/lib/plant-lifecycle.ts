@@ -88,7 +88,9 @@ export function resolveWorkingDays(
   snapshotDate: string | null = null,
   lifecycle: PlantMonthState = "open",
 ): { workingDays: number; workingDaysSource: WorkingDaysSource } {
-  if (typeof configuredWorkingDays === "number" && configuredWorkingDays > 0) {
+  const hasConfiguredWorkingDays = typeof configuredWorkingDays === "number" && configuredWorkingDays > 0;
+  const isCompletedLifecycle = lifecycle === "closed" || lifecycle === "grace";
+  if (hasConfiguredWorkingDays && !isCompletedLifecycle) {
     return { workingDays: configuredWorkingDays, workingDaysSource: "configured" as const };
   }
 
@@ -105,11 +107,13 @@ export function resolveWorkingDays(
     .filter((date) => date.startsWith(month))
     .sort();
   if (positiveDates.length === 0) {
-    return { workingDays: calendarDays, workingDaysSource: "derived" as const };
+    return hasConfiguredWorkingDays
+      ? { workingDays: configuredWorkingDays, workingDaysSource: "configured" as const }
+      : { workingDays: calendarDays, workingDaysSource: "derived" as const };
   }
 
   const effectiveSnapshot = snapshotDate ?? positiveDates.at(-1)!;
-  if (lifecycle === "closed" || lifecycle === "grace") {
+  if (isCompletedLifecycle) {
     const extraWorkedDays = positiveDates.filter((date) => !calendarNonSundays.has(date)).length;
     return { workingDays: calendarDays + extraWorkedDays, workingDaysSource: "observed" as const };
   }
