@@ -1,0 +1,13 @@
+Six parity commits verified on origin/main at eb33593, +2,576/−459 across 55 files, all key modules parsing clean with no truncation. The archive commits 047448e and 021ab78 survived the merge — that was the real risk with the diverged branch and it was handled right.
+
+Migration 028 is the correct call, done well: legacy rows copied into plant_month_snapshots with provenance filled, backfilled TRUE, ON CONFLICT DO NOTHING for re-runnability, then the old table dropped. One snapshot table now, not two. The five PTMT-only filters are gone (grep returns 0), 029 adds composite keys to the four month-only tables, and the registry exists with as const so PlantSegment derives from the keys — good, because adding CP will then make the compiler enumerate the remaining sites.
+
+Three things:
+
+1. isPlantSegment and normalizePlantSegment hardcode the two segments as string comparisons rather than looking up PLANT_SEGMENT_PROFILES. So adding CP to the registry would widen the type but leave these silently rejecting it — and they return null, so a CP request falls back to PTMT or returns nothing with no error. Derive both from PLANT_SEGMENTS via a lower-cased Map, so the registry is genuinely the single source.
+
+2. The profile needs three more fields before CP. categories, bufferMultipliers, weeklyBands, rosterSize. weeklyBands matters most — CP has no weekly split at all, and without that field the only way to express it is branching on the segment name, which is what this work removes. CP's values are already derived: multipliers 1.0/1.5/2.0 across 12 categories, roster ~1,916.
+
+3. Migration 028 sets captured_commit_sha to NULL, so the migrated July PTMT row has no build provenance — and that row was captured 2026-08-19, the day before d0a7c9a, so its KPIs are pre-Sunday-fix. Please re-capture it, but only after confirming the working-days precedence landed in b63c703; re-capturing first would freeze a 12%-wrong denominator immutably for the second time.
+
+Separately: 126118c and screenshots/plan-vs-actual-daily-rate.jpg suggest the plan double-count fix also landed. Please report PTMT August TOTAL PLAN before and after, attainment before and after, and whether the TOTAL PLAN ≤ largest version total + new mid-month demand invariant was added.
