@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle, useGetPlantWeeklySummary, getGetPlantWeeklySummaryQueryKey, useGetPlantLiveSummary, getGetPlantLiveSummaryQueryKey } from "@workspace/api-client-react";
 import type { PlantLiveMachineMetrics } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,9 +13,25 @@ import { PlanVersionHistory, type MonitoringPlanVersion } from "@/components/pla
 import { classifyPlantLiveError } from "@/lib/plant-live-error";
 import { PlantLiveGatedBanner } from "@/components/plant-live-gated-banner";
 
-function downloadPdf(month: string, section: string) {
+async function downloadPdf(month: string, section: string, onUnavailable: () => void) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
-  window.open(`${base}/api/plant/export/pdf?month=${month}&section=${section}`, "_blank");
+  const response = await fetch(`${base}/api/plant/export/pdf?month=${month}&section=${section}`, {
+    credentials: "include",
+  });
+  if (response.status === 503) {
+    onUnavailable();
+    return;
+  }
+  if (!response.ok) {
+    throw new Error(`PDF export failed (${response.status})`);
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `PTMT_Plant_${section}_${month}.pdf`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function fmt(n: number | null | undefined, decimals = 0): string {
@@ -51,6 +68,7 @@ function lifecycleLabel(status: string) {
 
 export default function PlantDashboard({ month, selectedCategory, setSelectedCategory }: { month: string; selectedCategory?: string | null; setSelectedCategory?: (c: string | null) => void }) {
   const [, navigate] = useLocation();
+  const [pdfUnavailable, setPdfUnavailable] = useState(false);
   const { data, isLoading } = useGetPlantBundle(
     { month },
     { query: { queryKey: getGetPlantBundleQueryKey({ month }) } }
@@ -182,12 +200,25 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
             ])}>
               <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
             </Button>
-            <Button variant="outline" size="sm" onClick={() => downloadPdf(month, "control-board")}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void downloadPdf(month, "control-board", () => setPdfUnavailable(true))}
+            >
               <Download className="h-4 w-4 mr-2" /> Export PDF
             </Button>
           </div>
         </div>
       </header>
+
+      {pdfUnavailable && (
+        <Card className="border-amber-500/30 bg-amber-500/5">
+          <CardContent className="pt-4 flex items-center gap-2 text-sm text-amber-700">
+            <AlertTriangle className="h-4 w-4" />
+            PDF export is not available in this deployment. Use Export Excel for this report.
+          </CardContent>
+        </Card>
+      )}
 
       {!bundle.dataAvailable && (
         <Card className="border-amber-500/30 bg-amber-500/5">

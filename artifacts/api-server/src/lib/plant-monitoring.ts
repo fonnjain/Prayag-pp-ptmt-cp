@@ -8,7 +8,7 @@ import {
   plantPlanVersionsTable,
   weeklyReleaseBandsTable,
 } from "@workspace/db";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { buildPlantBundle, type PlantBundle } from "./plant-engine";
 import {
   fetchDailyActuals,
@@ -31,6 +31,7 @@ import { buildPlanItems } from "../routes/plan";
 import { annotateWeeklyRelease, type CalcPlanItem } from "./calc";
 import { fetchPlumbingSheet3Production } from "./sheets";
 import type { PlantSegment } from "./plant-segments";
+import { commitSha } from "./buildInfo";
 
 export type MonitoringStatus = "live" | "grace" | "frozen" | "unavailable" | "future";
 export type MonitoringSegment = PlantSegment;
@@ -779,6 +780,43 @@ async function loadSavedSnapshot(month: string, segment: MonitoringSegment = "PT
   return snapshot ?? null;
 }
 
+export async function backfillPlantSnapshotProvenance(
+  month: string,
+  segment: MonitoringSegment,
+  verifiedOn: string,
+): Promise<
+  | { ok: true; snapshotId: number; capturedCommitSha: string; planStatusReason: string }
+  | { ok: false; reason: "SNAPSHOT_NOT_FOUND" | "PROVENANCE_ALREADY_SET" }
+> {
+  const existing = await loadSavedSnapshot(month, segment);
+  if (!existing) return { ok: false, reason: "SNAPSHOT_NOT_FOUND" };
+  if (existing.capturedCommitSha) return { ok: false, reason: "PROVENANCE_ALREADY_SET" };
+
+  const capturedCommitSha = commitSha === "(unknown)" ? "unknown-lazy-capture" : commitSha;
+  const planStatusReason =
+    `Captured by lazy capture after the parity deploy; figures verified against the source on ${verifiedOn}.`;
+  const [updated] = await db
+    .update(plantMonthSnapshotsTable)
+    .set({ capturedCommitSha, backfilled: true, planStatusReason })
+    .where(and(
+      eq(plantMonthSnapshotsTable.id, existing.id),
+      isNull(plantMonthSnapshotsTable.capturedCommitSha),
+    ))
+    .returning({
+      id: plantMonthSnapshotsTable.id,
+      capturedCommitSha: plantMonthSnapshotsTable.capturedCommitSha,
+      planStatusReason: plantMonthSnapshotsTable.planStatusReason,
+    });
+
+  if (!updated) return { ok: false, reason: "PROVENANCE_ALREADY_SET" };
+  return {
+    ok: true,
+    snapshotId: updated.id,
+    capturedCommitSha: updated.capturedCommitSha ?? capturedCommitSha,
+    planStatusReason: updated.planStatusReason ?? planStatusReason,
+  };
+}
+
 export async function captureClosedPlantMonth(
   month: string,
   now = new Date(),
@@ -878,7 +916,7 @@ export async function captureClosedPlantMonth(
     sourcePlanVersionsJson: finalized.versionTimeline,
     closedAt: new Date(lifecycle.closedAt ?? capturedAt),
     capturedAt,
-    capturedCommitSha: process.env.BUILD_COMMIT_SHA ?? null,
+    capturedCommitSha: commitSha === "(unknown)" ? "unknown-lazy-capture" : commitSha,
     planStatus: "monitoring",
     planEvidenceJson: sourceInfo,
   }).onConflictDoNothing({

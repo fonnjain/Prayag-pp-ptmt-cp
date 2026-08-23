@@ -5,7 +5,7 @@ import {
   getPlantMonitoringCached,
   invalidatePlantBundleCache,
 } from "./plant.js";
-import { normalizePlantSegment, PLANT_SEGMENTS, plantSegmentProfile } from "../lib/plant-segments.js";
+import { isPlantSegment, normalizePlantSegment, PLANT_SEGMENTS, plantSegmentProfile } from "../lib/plant-segments.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -89,8 +89,16 @@ test("the shared monitoring cache keeps PTMT and Plumbing bundles isolated", asy
 test("the segment registry contains only the supported plant profiles", () => {
   assert.deepEqual(PLANT_SEGMENTS, ["PTMT", "Plumbing"]);
   assert.equal(normalizePlantSegment(undefined), "PTMT");
-  assert.equal(normalizePlantSegment("plumbing"), "Plumbing");
-  assert.equal(normalizePlantSegment("CP"), null);
+  for (const segment of PLANT_SEGMENTS) {
+    assert.equal(normalizePlantSegment(segment.toLowerCase()), segment);
+    assert.equal(normalizePlantSegment(segment.toUpperCase()), segment);
+    assert.equal(normalizePlantSegment(segment), segment);
+  }
+  assert.equal(normalizePlantSegment("NOT_A_SEGMENT"), null);
+  assert.equal(normalizePlantSegment(" cp "), null);
+  assert.equal(isPlantSegment(" ptmt "), true);
+  assert.equal(isPlantSegment("PLUMBING"), true);
+  assert.equal(isPlantSegment("NOT_A_SEGMENT"), false);
   assert.equal(plantSegmentProfile("PTMT").orderGroup, "PTMT");
   assert.equal(plantSegmentProfile("Plumbing").orderGroup, "PLUMBING");
 });

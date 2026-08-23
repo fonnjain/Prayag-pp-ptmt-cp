@@ -16,6 +16,7 @@ export async function launchBrowser() {
   const puppeteer = (await import("puppeteer")).default;
   return puppeteer.launch({
     headless: true,
+    timeout: 120_000,
     protocolTimeout: 120_000,
     args: [
       "--no-sandbox",

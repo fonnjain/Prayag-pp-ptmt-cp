@@ -58,3 +58,10 @@ uri = "file://docs/plant-attainment-data-explanation.md"
 type = "text"
 title = "PTMT Plant Attainment Data Guide"
 description = "Plain-English explanation of the PTMT August 2026 Plan vs Actual Attainment chart, including spreadsheet names, data flow, formulas, matching rules, and refresh behavior."
+
+[[outputs]]
+id = "l2h6Gz5d-7aHgLTwWVW_X"
+uri = "file://.agents/outputs/suggested-tasks.txt"
+type = "text"
+title = "Suggested task list"
+description = "Plain-text copy of the suggested snapshot-provenance task."

@@ -8,7 +8,7 @@ import {
   monitoringConfigTable,
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
-import { buildPlanItems, getPlumbingMonitoringPayloadCached } from "./plan";
+import { buildPlanItems, getPlumbingMonitoringPayloadCached, handlePlanError } from "./plan";
 import { parseReport5 } from "../lib/report5";
 import { getWorkbookIdForMonth, normalizeCodeStrict } from "../lib/sheets";
 import { fetchDailyActuals, type DailyActualRow } from "../lib/plant-ingestion";
@@ -29,7 +29,7 @@ import {
   type Warning,
 } from "../lib/monitoring-calc";
 import { logger } from "../lib/logger";
-import { normalizePlantSegment } from "../lib/plant-segments";
+import { normalizePlantSegment, PLANT_SEGMENTS } from "../lib/plant-segments";
 import { resolveWorkingDays } from "../lib/plant-lifecycle";
 import { resolvePlantMonthLifecycle } from "../lib/plant-lifecycle";
 import { buildElapsedProductionDays } from "../lib/plant-engine";
@@ -387,10 +387,24 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
   }
 
   const segment = normalizePlantSegment(req.query.segment);
+  if (segment === null) {
+    res.status(400).json({
+      error: "Unrecognised segment",
+      value: String(req.query.segment),
+      recognised: PLANT_SEGMENTS,
+    });
+    return;
+  }
 
   // ── Plumbing: pieces-based data from Sheet3 ────────────────────────────────
   if (segment === "Plumbing") {
-    const data = await getPlumbingMonitoringPayloadCached(month);
+    let data: Awaited<ReturnType<typeof getPlumbingMonitoringPayloadCached>>;
+    try {
+      data = await getPlumbingMonitoringPayloadCached(month);
+    } catch (err) {
+      handlePlanError(res, err);
+      return;
+    }
     res.json({
       month,
       segment: "PLUMBING",

@@ -91,8 +91,14 @@ export async function exportPlanPdf(
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: "networkidle0" });
-    const pdfUint8 = await page.pdf({ format: "A4", landscape: true, printBackground: true, margin: { top: "10mm", bottom: "10mm", left: "8mm", right: "8mm" } });
+    await page.setContent(html, { waitUntil: "networkidle0", timeout: 120_000 });
+    const pdfUint8 = await page.pdf({
+      format: "A4",
+      landscape: true,
+      printBackground: true,
+      timeout: 120_000,
+      margin: { top: "10mm", bottom: "10mm", left: "8mm", right: "8mm" },
+    });
     return Buffer.from(pdfUint8);
   } finally {
     await browser.close();

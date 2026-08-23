@@ -1,0 +1,27 @@
+Suggested Task
+===============
+
+Title: Repair missing snapshot provenance and unblock July PTMT evidence
+Task reference: #154
+Status: Cancelled in the project task list
+Category: incomplete_scope
+
+What & Why
+----------
+The July Plumbing monitoring snapshot is numerically reconciled to the live Sheet3 source, but its captured_commit_sha is NULL. That means the capture cannot be proven to post-date the finalized Plumbing plan commit d0a7c9a, so the dependent July PTMT recapture must remain stopped.
+
+Done looks like
+---------------
+- Preserve and hash the existing July Plumbing snapshot before any replacement.
+- Replace only the invalid July Plumbing snapshot through the supported lifecycle path with explicit deployed commit provenance and a clear recapture reason.
+- Add a sentinel or focused suite guard so future migration-generated snapshots cannot silently retain NULL capture provenance.
+- Re-run the production audit and confirm plan run 17, 28 observed working days, 1,919,313 Sheet3 pieces, and valid commit provenance.
+- Only after that audit passes, recapture the July PTMT snapshot using the existing archived evidence and corrected 28-day observed denominator.
+
+Relevant files
+--------------
+- artifacts/api-server/src/lib/plant-monitoring.ts
+- artifacts/api-server/src/routes/plant.ts
+- lib/db/migrations/028_monitoring_snapshot_convergence.sql
+- lib/db/src/schema/plant-month-snapshots.ts
+- .agents/outputs/2026-08-21_ptmt-july-monitoring-snapshot-before.json

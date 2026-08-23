@@ -4,7 +4,11 @@ import { exportTimestamp } from "../lib/export-filename";
 import { db, plantConfigsTable, plantSourceConfigsTable, plantIngestionCacheTable, plantMonthSnapshotsTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { DEFAULT_PLANT_WARNING_THRESHOLDS, type PlantWarningThresholds } from "../lib/plant-warnings";
-import { captureClosedPlantMonth, computeLifecyclePlantMonitoring } from "../lib/plant-monitoring";
+import {
+  backfillPlantSnapshotProvenance,
+  captureClosedPlantMonth,
+  computeLifecyclePlantMonitoring,
+} from "../lib/plant-monitoring";
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "../lib/plant-lifecycle";
 import { logger } from "../lib/logger";
 import type { MonitoringSegment } from "../lib/plant-monitoring";
@@ -409,6 +413,21 @@ router.post("/plant/snapshots/backfill", async (req, res) => {
     return;
   }
   try {
+    if (req.body?.provenanceOnly === true) {
+      const verifiedOn = String(req.body?.verifiedOn ?? new Date().toISOString().slice(0, 10));
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(verifiedOn)) {
+        res.status(400).json({ error: "INVALID_VERIFIED_ON", message: "verifiedOn must be YYYY-MM-DD" });
+        return;
+      }
+      const result = await backfillPlantSnapshotProvenance(month, segment, verifiedOn);
+      if (!result.ok) {
+        const status = result.reason === "SNAPSHOT_NOT_FOUND" ? 404 : 409;
+        res.status(status).json({ error: result.reason, month, segment });
+        return;
+      }
+      res.status(200).json({ ...result, month, segment, status: "provenance_backfilled" });
+      return;
+    }
     const result = await captureClosedPlantMonth(month, new Date(), {}, segment);
     if (!result.ok) {
       const status = result.code === "MONTH_NOT_CLOSED" ? 409 : 422;
@@ -421,6 +440,31 @@ router.post("/plant/snapshots/backfill", async (req, res) => {
     logger.error({ err, month }, "plant snapshot backfill failed");
     res.status(500).json({ error: "SNAPSHOT_CAPTURE_FAILED", message: "Failed to capture plant monitoring snapshot." });
   }
+});
+
+// --- GET /plant/snapshots/provenance-status ---
+// Lightweight audit surface used by the release verifier. It reports NULL
+// capture provenance without exposing snapshot payloads.
+router.get("/plant/snapshots/provenance-status", async (req, res) => {
+  const segment = req.query.segment === undefined ? null : normalizePlantSegment(req.query.segment);
+  if (req.query.segment !== undefined && !segment) {
+    res.status(400).json({ error: "INVALID_SEGMENT", message: "segment must be PTMT or Plumbing" });
+    return;
+  }
+  const predicates = segment
+    ? and(eq(plantMonthSnapshotsTable.planStatus, "monitoring"), eq(plantMonthSnapshotsTable.segment, segment))
+    : eq(plantMonthSnapshotsTable.planStatus, "monitoring");
+  const rows = await db
+    .select({
+      capturedCommitSha: plantMonthSnapshotsTable.capturedCommitSha,
+    })
+    .from(plantMonthSnapshotsTable)
+    .where(predicates);
+  res.json({
+    totalSnapshots: rows.length,
+    nullCapturedCommitSha: rows.filter((row) => row.capturedCommitSha === null).length,
+    segment: segment ?? "all",
+  });
 });
 
 // --- PUT /plant/source-config ---

@@ -25,8 +25,12 @@ export type PlantSegment = keyof typeof PLANT_SEGMENT_PROFILES;
 
 export const PLANT_SEGMENTS = Object.keys(PLANT_SEGMENT_PROFILES) as PlantSegment[];
 
+const BY_LOWER: ReadonlyMap<string, PlantSegment> = new Map(
+  PLANT_SEGMENTS.map((segment) => [segment.toLowerCase(), segment]),
+);
+
 export function isPlantSegment(value: unknown): value is PlantSegment {
-  return value === "PTMT" || value === "Plumbing";
+  return typeof value === "string" && BY_LOWER.has(value.trim().toLowerCase());
 }
 
 /**
@@ -35,10 +39,7 @@ export function isPlantSegment(value: unknown): value is PlantSegment {
  */
 export function normalizePlantSegment(value: unknown, fallback: PlantSegment | null = "PTMT"): PlantSegment | null {
   if (value === undefined || value === null || value === "") return fallback;
-  const normalized = String(value).trim().toLowerCase();
-  if (normalized === "ptmt") return "PTMT";
-  if (normalized === "plumbing") return "Plumbing";
-  return null;
+  return BY_LOWER.get(String(value).trim().toLowerCase()) ?? null;
 }
 
 export function plantSegmentProfile(segment: PlantSegment) {

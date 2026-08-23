@@ -1,0 +1,109 @@
+# Three items — bridge cleanup, snapshot verification, July recapture
+
+Publish is verified: deployed commit `8c2e7f5` matches `origin/main`, migrations 027/028/029 recorded, four composite keys in place, legacy table dropped, `runMigrations()` tracking per-database. That work is done and correct.
+
+Three things follow, in this order. **Item 1 is blocking** — until it lands, any publish undoes the migration.
+
+---
+
+# 1 — Reopen #150 and remove the development bridge ⬤ blocking
+
+## Why this is urgent
+
+Publish diffs the **development database** against production. While dev holds month-only primary keys and an empty `plant_monitoring_snapshots`, the next publish generates DDL that **reverts production's composite keys and recreates the dropped table** — silently undoing migrations 028 and 029.
+
+Two things make this worse than an ordinary open task:
+
+- The next person to publish may not be you.
+- **Nothing in the repository warns them.** The checked-in schema files are already correct — all four have composite `primaryKey({…})` and there is no `plant-monitoring-snapshots.ts`. Source looks finished; only the dev database diverges. Reading the code gives no hint.
+
+## What to do
+
+**1a. Restore the development database to match the repo schema.** For each of `plant_configs`, `plant_ingestion_cache`, `plant_source_configs`, `monitoring_config`: drop the month-only primary key and restore `(month, segment)`, matching migrations 029 and the schema files.
+
+**1b. Drop the empty bridge `plant_monitoring_snapshots` table from development.** It exists only to stop Publish scheduling the production table for deletion, and that purpose is served — production's table is already gone.
+
+**1c. Verify the diff is empty.** Generate the dev-to-production schema diff and confirm it contains **no DDL for these five tables**. Report the diff output verbatim, including if it's empty. That is the proof the bridge is gone, and it is the only proof that counts.
+
+**1d. Add a guard so this cannot recur.** A note that must be read is not a safeguard. Add a check that fails loudly — in the API test suite, or as a pre-publish step — asserting that `plant_configs`, `plant_ingestion_cache`, `plant_source_configs` and `monitoring_config` each have a **composite** primary key on `(month, segment)`, and that `plant_monitoring_snapshots` does not exist. It should fail on a dev database in the bridge state.
+
+**Do not publish again until 1c passes.**
+
+---
+
+# 2 — Verify the unreviewed July Plumbing snapshot
+
+## What happened
+
+`plant_month_snapshots` went from **0 rows to 2**. Migration 028 copies from `plant_monitoring_snapshots`, which held exactly **one** row (July PTMT), so 028 alone accounts for 1.
+
+The second — July Plumbing — was created by the app **lazily capturing a closed month after startup**. That is the segment-aware monitoring working, and it is **the first closed-month snapshot Plumbing has ever had**. Genuine progress from the parity work.
+
+But it was created in production without review, and snapshots are immutable by design. A permanent record made unattended needs checking once.
+
+## What to report
+
+For the (2026-07, Plumbing) row:
+
+| Field | |
+|---|---|
+| `workingDays` | expect **27** — 26 calendar non-Sundays plus worked Sunday 7 June… **no**: for July, report what it holds and the derivation |
+| `workingDaysSource` | expect `observed` |
+| `producedToDate` | compare against the true July Plumbing actuals total |
+| `captured_at` and `captured_commit_sha` | must post-date `d0a7c9a` |
+| `plan_status` and `plan_run_id` | July has a finalized Plumbing plan run (#17), so this should cite it |
+
+**My expectation is that it's correct.** `plant_configs` for 2026-07 defaulted to `segment = 'PTMT'` under migration 029, so a Plumbing lookup finds no config row and falls through to observed working days — which is what we want. But "expected correct" is not a standard for a permanent record, so confirm it.
+
+**If `workingDaysSource` is `configured`, or the commit predates `d0a7c9a`, stop and report.** That row would need the same archive-and-recapture treatment as item 3.
+
+Also confirm no other unreviewed snapshots were created. Report every row now in `plant_month_snapshots` with month, segment, `captured_at`, `captured_commit_sha` and `backfilled`.
+
+---
+
+# 3 — Recapture the July PTMT row (#148) — gate passed, proceed
+
+## The gate
+
+You verified production resolves July PTMT as:
+
+```
+workingDays = 28 · workingDaysSource = observed · elapsed = 28
+```
+
+That is exactly the expected result, so the denominator is now correct and the recapture is authorized. You stopped on a broad reading of "don't modify production" — cautious rather than wrong, but the instruction was verify **then** recapture, and the verification passed.
+
+## What to do, in order
+
+**3a. Archive the existing row first — this is not optional.** Export the current `plant_month_snapshots` row for (2026-07, PTMT) to a file, SHA-256 it, and commit it under `.agents/outputs/` following the `047448e` pattern. It is the only record of what the pre-Sunday-fix code produced, and it is unrecoverable once replaced.
+
+**3b. Delete and recapture** that single row. Report before and after:
+
+| Field | Before | After |
+|---|---|---|
+| `producedToDate` | 898,817 | |
+| `workingDays` | 25 | expect 28 |
+| `workingDaysSource` | configured | expect observed |
+| `elapsed` | 25 | expect 28 |
+| cumulative attainment | | |
+| linearity | | |
+
+**3c. Reconcile against the true source.** The recaptured `producedToDate` must equal the raw actuals total of **994,374** minus only genuinely unmapped production. State the mapped and unmapped figures explicitly. The old gap of 95,557 decomposed as **9,029 Sunday + 86,528 unmapped**; after this, only the 86,528 should remain — so expect roughly **907,846**. Report the actual number and explain any difference.
+
+**3d. Set the provenance.** `captured_commit_sha` to the deployed commit, and rewrite `plan_status_reason` to record that the row was recaptured after the Sunday fix, naming the original capture date (2026-08-19) and the reason.
+
+**3e. Fix the NULL for future migrations.** Migration 028 hardcodes `NULL` for `captured_commit_sha`. Either write a sentinel such as `'pre-migration-unknown'`, or add a suite check reporting how many snapshot rows lack provenance. Silence about a missing value is how the July row's defect stayed invisible.
+
+---
+
+## Reporting
+
+Each item is its own commit where code changes. For each: files and line numbers, diffstat with **every file named including `package.json`**, `tsc --noEmit` clean, test count, byte-size match, nothing else in the diff.
+
+Report the live regression verifier separately from the API unit suite.
+
+## One process note
+
+#147, #148, #149 and #150 were each cancelled shortly after being recorded. #150's cancellation is what left the bridge live — an active landmine, not a documentation gap.
+
+Whatever is closing these is doing so on grounds that don't hold. Please look at why, because the next one might be something with a deadline rather than a note. **These four are open until the work described in them is done, not until the note describing them has been read.**

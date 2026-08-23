@@ -207,7 +207,9 @@ export const PTMT_AUG_GRAND_MIN  = 335_145;
 export const PTMT_AUG_STOCK_121O_WHITE = 6_644;
 export const PTMT_AUG_LM_TOTAL         = 168_695;
 export const PTMT_AUG_PENDING_TOTAL    = 0; // Aug DATA.xlsx rows have no Balance_Qty column
-export const PTMT_AUG_AVG3MO_144O_WHITE = 5_415;
+// Re-verified 2026-08-21 against the live Sale 26-27 "May,Jun,July'26"
+// rolling tab: 16,114 total / 3 = 5,371 monthly average.
+export const PTMT_AUG_AVG3MO_144O_WHITE = 5_371;
 
 export const PTMT_AUG_CATEGORY_GOLDEN: Array<{ cat: string; maxExpected: number; minExpected: number }> = [
   { cat: "Accessorise",                  maxExpected:  38_533, minExpected:  20_007 },

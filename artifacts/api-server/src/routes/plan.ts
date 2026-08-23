@@ -15,6 +15,7 @@ import {
   normalizeCodeStrict,
   runInPlanningContext,
   PlanningIsolationError,
+  PlumbingInputUnreadableError,
   type DualTotals,
   type PlumbingSheet3Row,
 } from "../lib/sheets";
@@ -116,6 +117,16 @@ async function requireUploadRows(kind: string, fileLabel: string): Promise<Recor
 
 /** Maps plan-path errors to HTTP responses: 422 for named input failures. */
 export function handlePlanError(res: Response, err: unknown): void {
+  if (err instanceof PlumbingInputUnreadableError) {
+    res.status(422).json({
+      error: err.code,
+      month: err.month,
+      workbookId: err.workbookId,
+      skippedTabs: err.skippedTabs,
+      detail: err.detail,
+    });
+    return;
+  }
   if (err instanceof MissingUploadError || err instanceof PlanningInputError || err instanceof PlanningIsolationError) {
     res.status(422).json({ error: err.message, kind: err.name });
     return;
@@ -715,11 +726,13 @@ router.get("/plan/export/pdf", async (req, res): Promise<void> => {
     return;
   }
   const segment = String(req.query.segment ?? "PTMT");
+  const startedAt = Date.now();
   try {
     const items = await buildPlanItems(month, segment);
     await annotateLiveOrders(items, month, segment); // display-only Order column
     const summary = summarizePlan(items);
     const buffer = await exportPlanPdf(month, items, summary);
+    logger.info({ month, segment, renderMs: Date.now() - startedAt }, "plan/export/pdf complete");
     const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Production_Plan_${month}_${exportTimestamp()}.pdf"`);
@@ -998,7 +1011,16 @@ router.get("/plan/corrective-replan", async (req, res): Promise<void> => {
       : new Date().toISOString().slice(0, 10);     // default: today
 
   // Read-only view: never persist a run from a GET (the UI polls this and the suite hits it)
-  const replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing", dryRun: true });
+  let replan: Awaited<ReturnType<typeof runCorrectiveReplan>>;
+  try {
+    replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing", dryRun: true });
+  } catch (err) {
+    if (err instanceof PlumbingInputUnreadableError) {
+      handlePlanError(res, err);
+      return;
+    }
+    throw err;
+  }
 
   const totalProducedCapped = replan.categories.reduce((s, c) => s + c.producedCapped, 0);
   const totalRemaining = replan.categories.reduce((s, c) => s + c.remaining, 0);
@@ -1054,7 +1076,16 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
 
   // Run the unified corrective engine (same path as the UI) — dryRun so the
   // regression suite doesn't persist a duplicate corrective run on every pass
-  const replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing", dryRun: true });
+  let replan: Awaited<ReturnType<typeof runCorrectiveReplan>>;
+  try {
+    replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing", dryRun: true });
+  } catch (err) {
+    if (err instanceof PlumbingInputUnreadableError) {
+      handlePlanError(res, err);
+      return;
+    }
+    throw err;
+  }
   const wdr = replan.workingDaysRemaining;
   const catMap = new Map(replan.categories.map((c) => [c.category, c]));
   const checks: CheckResult[] = [];
@@ -1219,14 +1250,26 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
 
   // ── PLUMBING self-check ────────────────────────────────────────────────────
   if (segment === "Plumbing") {
+    let items: PlanItemWithBom[];
+    let fgStockRows: Record<string, unknown>[];
+    let bufferRows: typeof bufferCategoriesTable.$inferSelect[];
+    let sheet3Rows: PlumbingSheet3Row[];
+    try {
+      [items, fgStockRows, bufferRows, sheet3Rows] = await Promise.all([
+        buildPlanItems(month, "Plumbing"),
+        loadLatestUploadRowsByKind("plumbing_fg_stock"),
+        db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
+        fetchPlumbingSheet3Production(month),
+      ]);
+    } catch (err) {
+      if (err instanceof PlumbingInputUnreadableError) {
+        handlePlanError(res, err);
+        return;
+      }
+      throw err;
+    }
     // Golden values live in lib/plumbing-golden.ts — update them there when the
     // reference month rolls over.  Never inline them here.
-    const [items, fgStockRows, bufferRows, sheet3Rows] = await Promise.all([
-      buildPlanItems(month, "Plumbing"),
-      loadLatestUploadRowsByKind("plumbing_fg_stock"),
-      db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
-      fetchPlumbingSheet3Production(month),
-    ]);
 
     const checks: CheckResult[] = [];
     const roundInt = (v: number) => Math.round(v);
@@ -2542,6 +2585,10 @@ router.get("/plan/validate-plumbing-monitoring", async (req, res) => {
     res.json({ month, allPass, passCount: checks.length - failCount, failCount, checks });
   } catch (err) {
     req.log.error({ err, month }, "plan/validate-plumbing-monitoring failed");
+    if (err instanceof PlumbingInputUnreadableError) {
+      handlePlanError(res, err);
+      return;
+    }
     res.status(500).json({ error: "Failed to validate Plumbing monitoring" });
   }
 });

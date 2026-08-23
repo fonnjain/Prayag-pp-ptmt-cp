@@ -32,6 +32,21 @@ export class PlanningIsolationError extends Error {
   }
 }
 
+/** Thrown when a selected Plumbing workbook cannot provide a usable material roster. */
+export class PlumbingInputUnreadableError extends Error {
+  readonly code = "PLUMBING_INPUT_UNREADABLE";
+
+  constructor(
+    public readonly month: string,
+    public readonly workbookId: string,
+    public readonly skippedTabs: string[],
+    public readonly detail: string,
+  ) {
+    super(`Plumbing workbook input is unreadable for ${month}: ${detail}`);
+    this.name = "PlumbingInputUnreadableError";
+  }
+}
+
 const _planningContext = new AsyncLocalStorage<{ label: string }>();
 const _allowedReadScope = new AsyncLocalStorage<{ fetcher: string }>();
 
@@ -1147,7 +1162,123 @@ function normItemType(raw: string): "Pipe" | "Fitting" | "Solvent" | null {
   return null;
 }
 
-const PLUMBING_MATERIALS = ["CPVC", "UPVC", "SWR", "AGRI"] as const;
+export const PLUMBING_MATERIALS = ["CPVC", "UPVC", "SWR", "AGRI"] as const;
+
+/** Normalize display punctuation/spacing so "CPVC PIPE" and " cpvc_pipe " compare alike. */
+export function normalizePlumbingTabName(tab: string): string {
+  return tab.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "");
+}
+
+export function plumbingTabMatchesMaterial(tab: string, material: string): boolean {
+  const normalizedTab = normalizePlumbingTabName(tab);
+  const normalizedMaterial = normalizePlumbingTabName(material);
+  return normalizedTab === normalizedMaterial || normalizedTab.startsWith(normalizedMaterial);
+}
+
+export function selectPlumbingMaterialTab(tabs: string[], material: string): string | undefined {
+  const candidates = tabs.filter((tab) => plumbingTabMatchesMaterial(tab, material));
+  return (
+    candidates.find((tab) => normalizePlumbingTabName(tab) === normalizePlumbingTabName(material)) ??
+    candidates.find((tab) => !normalizePlumbingTabName(tab).includes("TOPITEM")) ??
+    candidates[0]
+  );
+}
+
+export function selectPlumbingMaterialTabs(tabs: string[], material: string): string[] {
+  const candidates = tabs.filter((tab) => plumbingTabMatchesMaterial(tab, material));
+  const exact = candidates.find((tab) => normalizePlumbingTabName(tab) === normalizePlumbingTabName(material));
+  if (exact) return [exact];
+  return candidates.filter((tab) => !normalizePlumbingTabName(tab).includes("TOPITEM"));
+}
+
+function typeFromPlumbingTab(tab: string): "Pipe" | "Fitting" | "Solvent" | null {
+  const normalized = normalizePlumbingTabName(tab);
+  if (normalized.endsWith("SOLVENT")) return "Solvent";
+  if (normalized.endsWith("FITTING") || normalized.endsWith("FITTINGS") || normalized.endsWith("FT")) return "Fitting";
+  if (normalized.endsWith("PIPE") || normalized.endsWith("PIPES")) return "Pipe";
+  return null;
+}
+
+const MONTH_NUMBER_BY_NAME: Record<string, number> = {
+  JAN: 1, JANUARY: 1, FEB: 2, FEBRUARY: 2, MAR: 3, MARCH: 3,
+  APR: 4, APRIL: 4, MAY: 5, JUN: 6, JUNE: 6, JUL: 7, JULY: 7,
+  AUG: 8, AUGUST: 8, SEP: 9, SEPT: 9, SEPTEMBER: 9, OCT: 10,
+  OCTOBER: 10, NOV: 11, NOVEMBER: 11, DEC: 12, DECEMBER: 12,
+};
+
+function monthKeyFromHeader(header: string): string | null {
+  const match = header.trim().toUpperCase().match(/\b([A-Z]+)[\s-]+(\d{2,4})\b/);
+  if (!match) return null;
+  const monthNumber = MONTH_NUMBER_BY_NAME[match[1]!];
+  if (!monthNumber) return null;
+  const rawYear = Number(match[2]);
+  const year = rawYear < 100 ? 2000 + rawYear : rawYear;
+  return `${year}-${String(monthNumber).padStart(2, "0")}`;
+}
+
+function priorThreeMonthKeys(month: string): Set<string> {
+  const [year, monthNumber] = month.split("-").map(Number);
+  if (!year || !monthNumber || monthNumber < 1 || monthNumber > 12) return new Set();
+  const keys = new Set<string>();
+  for (let offset = 1; offset <= 3; offset++) {
+    const date = new Date(Date.UTC(year, monthNumber - 1 - offset, 1));
+    keys.add(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  return keys;
+}
+
+function parsePlumbingMasterRows(values: string[][], month: string): PlumbingPlanRow[] {
+  const headerRowIdx = values.findIndex((row) => {
+    const headers = row.map((cell) => String(cell ?? "").trim().toUpperCase());
+    return headers.includes("ITEM CODE") && headers.includes("PRODUCTION") && headers.includes("MONTH");
+  });
+  if (headerRowIdx < 0) return [];
+
+  const header = values[headerRowIdx]!.map((cell) => String(cell ?? "").trim());
+  const codeCol = header.findIndex((cell) => /^item\s*code$/i.test(cell));
+  const productionCol = header.findIndex((cell) => /^production$/i.test(cell));
+  const monthCol = header.findIndex((cell) => /^month$/i.test(cell));
+  const typeCol = header.findIndex((cell) => /^type$/i.test(cell));
+  if (codeCol < 0 || productionCol < 0 || monthCol < 0 || typeCol < 0) return [];
+
+  const priorMonths = priorThreeMonthKeys(month);
+  const byItem = new Map<string, { material: string; type: "Pipe" | "Fitting" | "Solvent"; itemCode: string; priorTotal: number }>();
+  for (const row of values.slice(headerRowIdx + 1)) {
+    const itemCode = String(row[codeCol] ?? "").trim();
+    const typeLabel = String(row[typeCol] ?? "").trim().toUpperCase();
+    const material = PLUMBING_MATERIALS.find((candidate) => typeLabel.startsWith(candidate));
+    const type = typeFromPlumbingTab(typeLabel);
+    if (!itemCode || !material || !type) continue;
+
+    const key = `${material}\u0000${type}\u0000${itemCode.toUpperCase()}`;
+    const entry = byItem.get(key) ?? { material, type, itemCode, priorTotal: 0 };
+    if (priorMonths.has(monthKeyFromHeader(String(row[monthCol] ?? "")) ?? "")) {
+      entry.priorTotal += toNumber(row[productionCol]);
+    }
+    byItem.set(key, entry);
+  }
+
+  return [...byItem.values()].map((entry) => ({
+    material: entry.material,
+    type: entry.type,
+    category: `${entry.material} ${entry.type}`,
+    itemCode: entry.itemCode,
+    // MASTER stores monthly totals, so the previous three months are summed
+    // and divided by three to match the daily workbook's monthly-average field.
+    avg3MoSale: entry.priorTotal / 3,
+    sheetMultiplier: undefined,
+  }));
+}
+
+function looksLikePlumbingMaterialTab(tab: string): boolean {
+  const normalized = normalizePlumbingTabName(tab);
+  return (
+    PLUMBING_MATERIALS.some((material) => normalized.startsWith(material)) ||
+    normalized.includes("PIPE") ||
+    normalized.includes("FITTING") ||
+    normalized.includes("SOLVENT")
+  );
+}
 
 /**
  * Reads each material tab (CPVC, UPVC, SWR, AGRI) of the Plumbing daily-production
@@ -1195,18 +1326,20 @@ function assertNotComputedColumn(material: string, tab: string, purpose: string,
 }
 
 async function fetchPlumbingPlanDataInner(month: string): Promise<PlumbingPlanRow[]> {
-  // Priority: DB-configured ID → Drive discovery → hardcoded map.
+  // Priority: DB-configured ID → hardcoded month map → Drive discovery.
   // After finding any file, validate it has at least one material tab.
   // The Drive search can match wrong files (e.g. purchase workbooks) that share
   // "PLUMBING" + month + year in their name but have no CPVC/UPVC/SWR/AGRI tabs.
   const dbId = await loadWorkbookIdFromDb("Plumbing", month);
-  const driveIds = dbId ? [] : await findPlumbingWorkbookIds(month); // skip Drive if DB has an ID
   const hardcodedId = PLUMBING_DAILY_WORKBOOK_IDS[month] ?? null;
+  const driveIds = dbId ? [] : await findPlumbingWorkbookIds(month); // skip Drive if DB has an ID
 
-  // Try DB ID first, then ALL Drive candidates, then hardcoded — use first that has material tabs.
+  // Try DB ID first, then the exact month-pinned workbook, then ALL Drive candidates.
+  // Discovery can return similarly named purchase workbooks with incompatible
+  // production-summary layouts, so it must not outrank the known month source.
   let fileId: string | null = null;
   let tabs: string[] = [];
-  for (const candidateId of [...new Set([dbId, ...driveIds, hardcodedId].filter(Boolean) as string[])]) {
+  for (const candidateId of [...new Set([dbId, hardcodedId, ...driveIds].filter(Boolean) as string[])]) {
     const candidateTabs = await listTabs(candidateId);
     const hasMaterialTab = PLUMBING_MATERIALS.some((m) =>
       candidateTabs.some((t) => t.toUpperCase().includes(m)),
@@ -1234,52 +1367,98 @@ async function fetchPlumbingPlanDataInner(month: string): Promise<PlumbingPlanRo
   }
 
   const result: PlumbingPlanRow[] = [];
+  const skippedTabs = new Set<string>();
+  const diagnostics: string[] = [];
+  const parsedMaterials = new Set<string>();
+  const markSkipped = (tab: string, detail: string): void => {
+    skippedTabs.add(tab);
+    diagnostics.push(`${tab}: ${detail}`);
+    logger.warn({ materialTab: tab, fileId, detail }, "fetchPlumbingPlanData: skipped Plumbing tab");
+  };
+
+  const masterTab = tabs.find((tab) => normalizePlumbingTabName(tab) === "MASTER");
+  const hasPlainMaterialTab = PLUMBING_MATERIALS.every((material) =>
+    tabs.some((tab) => normalizePlumbingTabName(tab) === normalizePlumbingTabName(material)),
+  );
+  if (masterTab && !hasPlainMaterialTab) {
+    try {
+      await sleep(1100);
+      const masterRows = parsePlumbingMasterRows(
+        await getTabValues(fileId, masterTab, "A1:Z50000"),
+        month,
+      );
+      if (masterRows.length > 0) {
+        logger.info(
+          { month, fileId, tab: masterTab, rowCount: masterRows.length },
+          "fetchPlumbingPlanData: parsed full roster from MASTER tab",
+        );
+        return masterRows;
+      }
+      markSkipped(masterTab, "MASTER header or supported material rows not found");
+    } catch (err) {
+      markSkipped(masterTab, `tab read failed: ${String(err)}`);
+    }
+  }
 
   for (const material of PLUMBING_MATERIALS) {
     // Prefer the plain "CPVC" / "UPVC" / "SWR" / "AGRI" tab over compound variants
     // like "CPVC TOP ITEM" that contain only the top-100 rows and no type column.
     // Priority: (1) exact case-insensitive match, (2) contains material but NOT "TOP ITEM",
     // (3) any tab containing the material name.
-    const tab =
-      tabs.find((t) => t.trim().toUpperCase() === material) ??
-      tabs.find((t) => t.toUpperCase().includes(material) && !t.toUpperCase().includes("TOP")) ??
-      tabs.find((t) => t.toUpperCase().includes(material));
-    if (!tab) {
+    const materialTabs = selectPlumbingMaterialTabs(tabs, material);
+    if (materialTabs.length === 0) {
+      diagnostics.push(`${material}: no matching material tab`);
       logger.warn({ material, tabs, fileId }, "fetchPlumbingPlanData: no tab found for material");
       continue;
     }
 
-    await sleep(1100); // throttle: Sheets API allows ~60 req/min
-    const values = await getTabValues(fileId, tab, "A1:Z50000");
-
-    // Scan the first 15 rows for the header row.
-    // The header row contains "LAST 3 MONTH" and/or "PENDING ORDER".
-    let headerRowIdx = -1;
-    for (let i = 0; i < Math.min(15, values.length); i++) {
-      const joined = values[i].map((c) => String(c ?? "")).join(" ").toUpperCase();
-      if (joined.includes("LAST 3 MONTH") || (joined.includes("PENDING") && joined.includes("ORDER"))) {
-        headerRowIdx = i;
-        break;
+    for (const tab of materialTabs) {
+      let values: string[][];
+      try {
+        await sleep(1100); // throttle: Sheets API allows ~60 req/min
+        values = await getTabValues(fileId, tab, "A1:Z50000");
+      } catch (err) {
+        markSkipped(tab, `tab read failed: ${String(err)}`);
+        continue;
       }
-    }
-    if (headerRowIdx < 0) {
-      logger.warn({ material, tab }, "fetchPlumbingPlanData: header row not found in first 15 rows — skipping tab");
-      continue;
-    }
 
-    const header = values[headerRowIdx].map((h) => String(h ?? "").trim());
+      // Scan a generous header window: compound material tabs can have title,
+      // metadata, and blank rows before their actual column headers.
+      // The newer layout contains LAST 3 MONTH/PENDING ORDER. Older production
+      // summary tabs contain ITEM CODE plus dated month columns.
+      let headerRowIdx = -1;
+      for (let i = 0; i < Math.min(100, values.length); i++) {
+        const joined = values[i].map((c) => String(c ?? "")).join(" ").toUpperCase();
+        const hasDailyHeader = joined.includes("LAST 3 MONTH") || (joined.includes("PENDING") && joined.includes("ORDER"));
+        const hasMonthlySummaryHeader = joined.includes("ITEM CODE") && values[i].some((cell) => monthKeyFromHeader(String(cell ?? "")));
+        if (hasDailyHeader || hasMonthlySummaryHeader) {
+          headerRowIdx = i;
+          break;
+        }
+      }
+      if (headerRowIdx < 0) {
+        markSkipped(tab, "header row not found in first 100 rows");
+        continue;
+      }
 
-    // COLUMN ALLOW-LIST (uploads-only rule, scoped 2026-08): only the item
-    // roster (code/type), avg-3-month, and per-item multiplier are mapped.
-    // Stock / pending / pending-LM / buffer columns exist in this workbook but
-    // are NOT read — stock and pending come exclusively from uploads (plan.ts),
-    // and the buffer is recomputed from avg × multiplier.
-    const avg3moCol    = header.findIndex((h) => /last\s*3\s*month\s*avg|3.*month.*avg.*sale/i.test(h));
+      const header = values[headerRowIdx].map((h) => String(h ?? "").trim());
+
+      // COLUMN ALLOW-LIST (uploads-only rule, scoped 2026-08): only the item
+      // roster (code/type), avg-3-month, and per-item multiplier are mapped.
+      // Stock / pending / pending-LM / buffer columns exist in this workbook but
+      // are NOT read — stock and pending come exclusively from uploads (plan.ts),
+      // and the buffer is recomputed from avg × multiplier.
+      const avg3moCol = header.findIndex((h) => /last\s*3\s*month\s*avg|3.*month.*avg.*sale/i.test(h));
+      const priorMonths = priorThreeMonthKeys(month);
+      const avg3moMonthCols = header
+        .map((h, index) => ({ index, key: monthKeyFromHeader(h) }))
+        .filter(({ key }) => key !== null && priorMonths.has(key))
+        .map(({ index }) => index);
     // Prefer the canonical "ITEM CODE" / "ERP CODE" column over "OLD ITEM CODE".
     // "OLD ITEM CODE" columns are often populated only for fitting/finished-goods rows
     // and are empty for pipe items, causing entire pipe blocks to be silently skipped.
     // Declared as `let` so the positional fallback (after typeCol is known) can assign it.
-    let codeCol = (() => {
+      let codeCol = (() => {
       // 1st priority: exact "ITEM CODE" (not "OLD ITEM CODE")
       const exact = header.findIndex(h => /^item\s*code$/i.test(h.trim()));
       if (exact >= 0) return exact;
@@ -1291,45 +1470,45 @@ async function fetchPlumbingPlanDataInner(month: string): Promise<PlumbingPlanRo
       if (noOld >= 0) return noOld;
       // Fallback: first match of any item/code pattern
       return header.findIndex(h => /item\s*code|old.*item|erp.*code/i.test(h));
-    })();
+      })();
 
     // Type column: try "TYPE" header first, then detect by counting PIPE/FITTING/SOLVENT
     // hits per column across sample rows — picks the column with the MOST hits, not just
     // the first column with any hit.  This prevents column B (which may have item-name
     // fragments like "PIPE") from winning over column E (the actual type column where
     // every row carries exactly "PIPE", "FITTING", or "SOLVENT").
-    let typeCol = header.findIndex((h) => /^type$/i.test(h));
-    if (typeCol < 0) {
-      const sampleRows = values.slice(headerRowIdx + 1, headerRowIdx + 21);
-      let bestTypeCol = -1;
-      let bestCount = 0;
-      for (let col = 0; col < header.length; col++) {
-        let count = 0;
-        for (const dr of sampleRows) {
-          const v = String(dr?.[col] ?? "").trim().toUpperCase();
-          if (/^(PIPE|FITTING|FITTINGS|SOLVENT)$/.test(v)) count++;
+      let typeCol = header.findIndex((h) => /^type$/i.test(h));
+      if (typeCol < 0) {
+        const sampleRows = values.slice(headerRowIdx + 1, headerRowIdx + 21);
+        let bestTypeCol = -1;
+        let bestCount = 0;
+        for (let col = 0; col < header.length; col++) {
+          let count = 0;
+          for (const dr of sampleRows) {
+            const v = String(dr?.[col] ?? "").trim().toUpperCase();
+            if (/^(PIPE|FITTING|FITTINGS|SOLVENT)$/.test(v)) count++;
+          }
+          if (count > bestCount) { bestCount = count; bestTypeCol = col; }
         }
-        if (count > bestCount) { bestCount = count; bestTypeCol = col; }
+        if (bestTypeCol >= 0) typeCol = bestTypeCol;
       }
-      if (bestTypeCol >= 0) typeCol = bestTypeCol;
-    }
 
-    // Code column fallback: when the header regex finds nothing, use the layout the
-    // user confirmed per tab:
-    //   CPVC / UPVC / SWR : code is immediately to the right of type (typeCol + 1)
-    //   AGRI               : there is an item-name column between type and code
-    //                        so code is two columns to the right (typeCol + 2)
-    //
-    // We skip elaborate value-scanning heuristics because:
-    //   • the early rows of each tab are blank section-header rows (no data to sample)
-    //   • item "code" values in this workbook can be long descriptions, not short SKUs
-    if (codeCol < 0 && typeCol >= 0) {
-      const offset = material.toUpperCase() === "AGRI" ? 2 : 1;
-      const candidate = typeCol + offset;
-      if (candidate < header.length) codeCol = candidate;
-    }
+      // Code column fallback: when the header regex finds nothing, use the layout the
+      // user confirmed per tab:
+      //   CPVC / UPVC / SWR : code is immediately to the right of type (typeCol + 1)
+      //   AGRI               : there is an item-name column between type and code
+      //                        so code is two columns to the right (typeCol + 2)
+      //
+      // We skip elaborate value-scanning heuristics because:
+      //   • the early rows of each tab are blank section-header rows (no data to sample)
+      //   • item "code" values in this workbook can be long descriptions, not short SKUs
+      if (codeCol < 0 && typeCol >= 0) {
+        const offset = material.toUpperCase() === "AGRI" ? 2 : 1;
+        const candidate = typeCol + offset;
+        if (candidate < header.length) codeCol = candidate;
+      }
 
-    // Multiplier column: each row stores its own buffer multiplier as a numeric cell.
+      // Multiplier column: each row stores its own buffer multiplier as a numeric cell.
     // Sheet formula: Buffer = Avg3Mo × (multiplier cell).  Examples confirmed:
     //   CPVC col C (typeCol-1): Pipe/Fitting=1.5, Solvent=2.0
     //   UPVC col E (typeCol-1): Pipe=1.2 or 1.5 per-item, Fitting=1.5, Solvent=2.0
@@ -1339,86 +1518,107 @@ async function fetchPlumbingPlanDataInner(month: string): Promise<PlumbingPlanRo
     // Detection: for AGRI check typeCol+1 first (it sits between type and code);
     // for the others check typeCol-1 first.  Validate by requiring ≥60% of
     // non-blank item-row cells in a 40-row sample to be numeric in [0.5, 3.0].
-    let multiplierCol = -1;
-    if (typeCol >= 0) {
-      const isAgri = material.toUpperCase() === "AGRI";
-      const candidates = isAgri
-        ? [typeCol + 1, typeCol - 1, typeCol + 2, typeCol - 2]
-        : [typeCol - 1, typeCol + 1, typeCol - 2, typeCol + 2];
-      const sampleRows = values.slice(headerRowIdx + 1, headerRowIdx + 41);
-      for (const c of candidates) {
-        if (c < 0 || c >= header.length) continue;
-        const nonBlank = sampleRows
-          .map((r) => String(r?.[c] ?? "").trim())
-          .filter(Boolean);
-        if (nonBlank.length === 0) continue;
-        const inRange = nonBlank.filter((v) => {
-          const n = parseFloat(v);
-          return !isNaN(n) && n >= 0.5 && n <= 3.0;
-        });
-        if (inRange.length >= Math.max(1, nonBlank.length * 0.6)) {
-          multiplierCol = c;
-          break;
+      let multiplierCol = -1;
+      if (typeCol >= 0) {
+        const isAgri = material.toUpperCase() === "AGRI";
+        const candidates = isAgri
+          ? [typeCol + 1, typeCol - 1, typeCol + 2, typeCol - 2]
+          : [typeCol - 1, typeCol + 1, typeCol - 2, typeCol + 2];
+        const sampleRows = values.slice(headerRowIdx + 1, headerRowIdx + 41);
+        for (const c of candidates) {
+          if (c < 0 || c >= header.length) continue;
+          const nonBlank = sampleRows
+            .map((r) => String(r?.[c] ?? "").trim())
+            .filter(Boolean);
+          if (nonBlank.length === 0) continue;
+          const inRange = nonBlank.filter((v) => {
+            const n = parseFloat(v);
+            return !isNaN(n) && n >= 0.5 && n <= 3.0;
+          });
+          if (inRange.length >= Math.max(1, nonBlank.length * 0.6)) {
+            multiplierCol = c;
+            break;
+          }
         }
       }
-    }
 
-    logger.info(
-      { material, tab, headerRowIdx, codeCol, typeCol, multiplierCol, avg3moCol,
-        header: header.slice(0, 20) },
-      "fetchPlumbingPlanData: columns mapped (allow-list: roster / avg3mo / multiplier)",
-    );
-
-    // COMPUTED-NOT-COPIED tripwire: fail loudly if any mapped column is a
-    // finished plan column rather than a raw input.
-    if (avg3moCol >= 0)     assertNotComputedColumn(material, tab, "avg3MoSale", header[avg3moCol] ?? "");
-    if (codeCol >= 0)       assertNotComputedColumn(material, tab, "itemCode",   header[codeCol] ?? "");
-    if (multiplierCol >= 0) assertNotComputedColumn(material, tab, "multiplier", header[multiplierCol] ?? "");
-
-    // codeCol and avg3moCol are required from the workbook (roster + sales history).
-    // Stock / pending / pending-LM come from uploads — never required or read here.
-    if (codeCol < 0 || avg3moCol < 0) {
-      logger.warn(
-        { material, tab, codeCol, avg3moCol },
-        "fetchPlumbingPlanData: required columns (code/avg3mo) not found — skipping tab",
+      const tabType = typeFromPlumbingTab(tab);
+      logger.info(
+        { material, tab, headerRowIdx, codeCol, typeCol, tabType, multiplierCol, avg3moCol, avg3moMonthCols,
+          header: header.slice(0, 20) },
+        "fetchPlumbingPlanData: columns mapped (allow-list: roster / avg3mo / multiplier)",
       );
-      continue;
+
+      // COMPUTED-NOT-COPIED tripwire: fail loudly if any mapped column is a
+      // finished plan column rather than a raw input.
+      if (avg3moCol >= 0)     assertNotComputedColumn(material, tab, "avg3MoSale", header[avg3moCol] ?? "");
+      if (codeCol >= 0)       assertNotComputedColumn(material, tab, "itemCode",   header[codeCol] ?? "");
+      if (multiplierCol >= 0) assertNotComputedColumn(material, tab, "multiplier", header[multiplierCol] ?? "");
+
+      // codeCol and avg3moCol are required from the workbook (roster + sales history).
+      // Stock / pending / pending-LM come from uploads — never required or read here.
+      if (codeCol < 0 || (avg3moCol < 0 && avg3moMonthCols.length === 0) || (typeCol < 0 && !tabType)) {
+        markSkipped(
+          tab,
+          `required columns not found (itemCode=${codeCol}, avg3mo=${avg3moCol}, avg3moMonths=${avg3moMonthCols.length}, type=${typeCol}, tabType=${tabType ?? "none"})`,
+        );
+        continue;
+      }
+
+      // ALL FOUR newer material tabs tag the type on EVERY item row. Older
+      // production-summary tabs carry the type in the tab name (PIPE/FT).
+      let rowCount = 0;
+      for (let i = headerRowIdx + 1; i < values.length; i++) {
+        const row = values[i];
+        if (!row) continue;
+        const rawCode = String(row[codeCol] ?? "").trim();
+
+        // Skip blank rows and stray note text.
+        // Note text (e.g. AGRI correction notice) appears in the item-code cell; it can be
+        // identified because it contains a colon (":") which no item code ever contains.
+        if (!rawCode || rawCode.includes(":")) continue;
+
+        // Read type directly from the row when available; otherwise use the
+        // normalized PIPE/FT/SOLVENT tab suffix.
+        const itemType: "Pipe" | "Fitting" | "Solvent" | null = typeCol >= 0
+          ? (normItemType(String(row[typeCol] ?? "")) ?? tabType)
+          : tabType;
+
+        const rawMult = multiplierCol >= 0 ? toNumber(row[multiplierCol]) : 0;
+        const sheetMultiplier = rawMult >= 0.5 && rawMult <= 3.0 ? rawMult : undefined;
+        const avg3MoSale = avg3moCol >= 0
+          ? toNumber(row[avg3moCol])
+          : avg3moMonthCols.reduce((sum, column) => sum + toNumber(row[column]), 0) / 3;
+
+        result.push({
+          material,
+          type: itemType,
+          category: itemType ? `${material} ${itemType}` : material,
+          itemCode: rawCode,
+          avg3MoSale,
+          // Stock / pending / pending-LM intentionally NOT read — uploads only (plan.ts).
+          sheetMultiplier,
+        });
+        rowCount++;
+      }
+      logger.info({ material, tab, typeCol, tabType, codeCol, rowCount }, "fetchPlumbingPlanData: rows parsed");
+      if (rowCount === 0) {
+        markSkipped(tab, "no item rows found after the mapped header");
+        continue;
+      }
+      parsedMaterials.add(material);
     }
+  }
 
-    // ALL FOUR material tabs tag the type on EVERY item row — no section-header
-    // carry-forward is needed.  Read the type directly from each row's type column.
-    // Verified item-row coverage: CPVC 293/296, UPVC 324/327, SWR 297/300, AGRI 206/209.
-    let rowCount = 0;
-    for (let i = headerRowIdx + 1; i < values.length; i++) {
-      const row = values[i];
-      if (!row) continue;
-      const rawCode = String(row[codeCol] ?? "").trim();
-
-      // Skip blank rows and stray note text.
-      // Note text (e.g. AGRI correction notice) appears in the item-code cell; it can be
-      // identified because it contains a colon (":") which no item code ever contains.
-      if (!rawCode || rawCode.includes(":")) continue;
-
-      // Read type directly from this row's own type column.
-      const itemType: "Pipe" | "Fitting" | "Solvent" | null = typeCol >= 0
-        ? normItemType(String(row[typeCol] ?? ""))
-        : null;
-
-      const rawMult = multiplierCol >= 0 ? toNumber(row[multiplierCol]) : 0;
-      const sheetMultiplier = rawMult >= 0.5 && rawMult <= 3.0 ? rawMult : undefined;
-
-      result.push({
-        material,
-        type: itemType,
-        category: itemType ? `${material} ${itemType}` : material,
-        itemCode: rawCode,
-        avg3MoSale: toNumber(row[avg3moCol]),
-        // Stock / pending / pending-LM intentionally NOT read — uploads only (plan.ts).
-        sheetMultiplier,
-      });
-      rowCount++;
-    }
-    logger.info({ material, tab, typeCol, codeCol, rowCount }, "fetchPlumbingPlanData: rows parsed");
+  const missingMaterials = PLUMBING_MATERIALS.filter((material) => !parsedMaterials.has(material));
+  if (missingMaterials.length > 0 || result.length === 0) {
+    const materialLikeTabs = tabs.filter(looksLikePlumbingMaterialTab);
+    const reportedTabs = [...new Set([...skippedTabs, ...materialLikeTabs])];
+    const detail = [
+      missingMaterials.length > 0 ? `missing usable material tabs: ${missingMaterials.join(", ")}` : "",
+      diagnostics.length > 0 ? diagnostics.join("; ") : "no usable item rows were parsed",
+    ].filter(Boolean).join(". ");
+    throw new PlumbingInputUnreadableError(month, fileId, reportedTabs, detail);
   }
 
   return result;
