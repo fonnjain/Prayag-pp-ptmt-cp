@@ -51,6 +51,7 @@ export const PLUMBING_GOLDEN_MONTH = "2026-07";
 export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
   // Snapshot: 2026-07-28. Drift from prior snapshot was confirmed as legitimate avg3MoSale
   // rolling-window advancement — item counts intact, FG Stock file unchanged (1,042 rows).
+  // UPVC Solvent was re-read from the live July workbook on 2026-08-23: 525 pcs.
   { cat: "CPVC Pipe",    expected: 129_247 },
   // Point-in-time values re-rolled 2026-08-05: Plumbing current pending now
   // comes from the DATA.xlsx upload (open-balance columns only) instead of the
@@ -59,7 +60,7 @@ export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
   { cat: "CPVC Solvent", expected:  16_250 },
   { cat: "UPVC Pipe",    expected:  51_477 },
   { cat: "UPVC Fitting", expected: 629_339 },
-  { cat: "UPVC Solvent", expected:     541 },
+  { cat: "UPVC Solvent", expected:     525 },
   { cat: "SWR Pipe",     expected:  64_123 },
   { cat: "SWR Fitting",  expected: 235_192 },
   { cat: "SWR Solvent",  expected:   1_256 },
@@ -240,7 +241,7 @@ export const PLUMBING_KG_GOLDEN: Array<{ cat: string; expectedKg: number }> = [
   { cat: "CPVC Solvent", expectedKg:       0 },
   { cat: "UPVC Pipe",    expectedKg: 103_363 },
   { cat: "UPVC Fitting", expectedKg:  41_750 },
-  { cat: "UPVC Solvent", expectedKg:      28 },
+  { cat: "UPVC Solvent", expectedKg:      27 },
   { cat: "SWR Pipe",     expectedKg:  16_417 },
   { cat: "SWR Fitting",  expectedKg:  59_184 },
   { cat: "SWR Solvent",  expectedKg:     291 },
@@ -283,7 +284,7 @@ export const PLUMBING_WEEKLY_GOLDEN: Array<{
   { cat: "CPVC Solvent", w1:  16_250, w2:     0, w3:       0, w4:      0 },
   { cat: "UPVC Pipe",    w1:  48_149, w2: 1_058, w3:     190, w4:  2_329 },
   { cat: "UPVC Fitting", w1: 597_619, w2: 3_107, w3:  20_979, w4:  7_634 },
-  { cat: "UPVC Solvent", w1:     541, w2:     0, w3:       0, w4:      0 },
+  { cat: "UPVC Solvent", w1:     525, w2:     0, w3:       0, w4:      0 },
   { cat: "SWR Pipe",     w1:  64_183, w2:    46, w3:      94, w4:      0 },
   { cat: "SWR Fitting",  w1: 233_029, w2: 2_191, w3:     421, w4:    310 },
   { cat: "SWR Solvent",  w1:   1_256, w2:     0, w3:       0, w4:      0 },
@@ -340,7 +341,7 @@ export const PLUMBING_REPLAN_GOLDEN: Array<{
   { cat: "CPVC Solvent", plan:  16_538, produced:       0, remaining:  16_538, capPerDay:      0, feasible:       0, shortfall:  16_538 },
   { cat: "UPVC Pipe",    plan:  59_674, produced:  21_490, remaining:  38_184, capPerDay:  9_875, feasible: 148_125, shortfall:       0 },
   { cat: "UPVC Fitting", plan: 639_005, produced: 176_184, remaining: 462_821, capPerDay: 20_126, feasible: 301_890, shortfall: 160_931 },
-  { cat: "UPVC Solvent", plan:     541, produced:       0, remaining:     541, capPerDay:      0, feasible:       0, shortfall:     541 },
+  { cat: "UPVC Solvent", plan:     525, produced:       0, remaining:     525, capPerDay:      0, feasible:       0, shortfall:     525 },
   { cat: "SWR Pipe",     plan:  64_515, produced:  11_456, remaining:  53_816, capPerDay:  2_405, feasible:  36_075, shortfall:  17_741 },
   { cat: "SWR Fitting",  plan: 249_167, produced:  99_963, remaining: 149_204, capPerDay: 11_510, feasible: 172_650, shortfall:       0 },
   { cat: "SWR Solvent",  plan:   1_256, produced:     300, remaining:     956, capPerDay:    300, feasible:   4_500, shortfall:       0 },
