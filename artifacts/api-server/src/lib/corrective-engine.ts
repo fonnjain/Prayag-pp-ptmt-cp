@@ -1,23 +1,3 @@
-v !== "") as string | undefined) ?? "";
-    const rawQty = (["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"].map(k => row[k]).find(v => v != null) as unknown);
-    if (!code) continue;
-    const qty = typeof rawQty === "number" ? rawQty : Number(String(rawQty ?? "0").replace(/,/g, "")) || 0;
-    const k = itemKey(code, colour);
-    m.set(k, (m.get(k) ?? 0) + qty);
-  }
-  return m;
-}
-
-function p90(sortedValues: number[]): number {
-  if (sortedValues.length === 0) return 0;
-  return Math.round(sortedValues[Math.floor(sortedValues.length * 0.9)]!);
-}
-
-export function computeCapByCategory(
-  map: Map<string, Map<string, number>>,
-): Map<string, { cap: number; method: "p90" | "mean"; days: number }> {
-  const result = new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
-  for (const [category, dayMap] of map) {
     // Corrective remaining days are calendar Mon–Sat. Keep Cap/Day on the
     // same calendar basis rather than multiplying weekday capacity by a
     // denominator that includes no future Sundays. This aligns the samples
@@ -113,7 +93,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     plumbingSheet3Raw,
     ptmtActualsRaw,
     livePendingTotals,
-    pendingOrderRows,
+    pendingOrderSource,
     pendingLastMoRows,
     bufferRows,
     bandRows,
@@ -132,9 +112,20 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       : Promise.resolve([] as DailyActualRow[]),
     fetchLivePendingOrderTotals().catch(err => {
       logger.warn({ err }, "corrective-engine: fetchLivePendingOrderTotals failed");
-      return { exact: new Map<string, number>(), byCode: new Map<string, number>() };
+      return {
+        exact: new Map<string, number>(),
+        byCode: new Map<string, number>(),
+        diagnostics: diagnoseInputRows([], {
+          code: ["Old ERP Code"],
+          colour: ["Colour"],
+          quantity: ["Bal. Qty"],
+        }, {
+          source: "Pending order / report",
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      };
     }),
-    loadLatestUploadRowsByKind("pending_orders"),
+    loadLatestUploadSnapshotByKind("pending_orders"),
     loadLatestUploadRowsByKind("last_month_pending"),
     db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
     db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
@@ -255,7 +246,12 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   const ptmtCapByCategory    = segment === "PTMT"     ? computeCapByCategory(dailyByCat) : new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
 
   // ── Pending maps ──────────────────────────────────────────────────────────
-  const pendingAtPlanMap = sumPendingUploads(pendingOrderRows);
+  const pendingAtPlanResult = sumPendingUploads(pendingOrderSource.rows, {
+    source: "DATA.xlsx (pending orders)",
+    uploadId: pendingOrderSource.id,
+    filename: pendingOrderSource.filename,
+  });
+  const pendingAtPlanMap = pendingAtPlanResult.totals;
 
   const lastMoPendingMap = new Map<string, number>();
   for (const row of pendingLastMoRows) {
@@ -921,5 +917,13 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     baselinePlanRunId: input.planRunId ?? null,
     baselineSource: input.planRunId != null ? "frozen-run" : "live",
     frozenPlanGrandMax: input.planRunGrandMax != null ? Math.round(input.planRunGrandMax) : null,
+    inputDiagnostics: {
+      pendingAtPlan: pendingAtPlanResult.diagnostics,
+      livePending: livePendingTotals.diagnostics ?? diagnoseInputRows([], {
+        code: ["Old ERP Code"],
+        colour: ["Colour"],
+        quantity: ["Bal. Qty"],
+      }, { source: "Pending order / report" }),
+    },
   };
 }
