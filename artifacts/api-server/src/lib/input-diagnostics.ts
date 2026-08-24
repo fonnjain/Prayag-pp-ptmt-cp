@@ -13,6 +13,7 @@ export interface InputReadDiagnostics {
   acceptedAliases: Record<InputFieldRole, string[]>;
   presentHeaders: string[];
   missingRequiredFields: InputFieldRole[];
+  reasons: string[];
   error?: string;
 }
 
@@ -62,6 +63,15 @@ export function diagnoseInputRows(
   const missingRequiredFields: InputFieldRole[] = [];
   if (!resolvedFields.code) missingRequiredFields.push("code");
   if (!resolvedFields.quantity) missingRequiredFields.push("quantity");
+  const reasons = [
+    ...(missingRequiredFields.length > 0
+      ? [`missing required fields: ${missingRequiredFields.join(", ")}`]
+      : []),
+    ...(rows.length > 0 && recognizedRows === 0 && missingRequiredFields.length === 0
+      ? ["rows were read but none contained both a recognized code and quantity"]
+      : []),
+    ...(options.error ? [`source read failed: ${options.error}`] : []),
+  ];
 
   return {
     source: options.source,
@@ -76,6 +86,7 @@ export function diagnoseInputRows(
     acceptedAliases: aliases,
     presentHeaders: headers,
     missingRequiredFields,
+    reasons,
     ...(options.error ? { error: options.error } : {}),
   };
 }
@@ -93,6 +104,7 @@ export function formatInputDiagnostics(diagnostics: InputReadDiagnostics): strin
     `resolved=${JSON.stringify(diagnostics.resolvedFields)}`,
     `presentHeaders=${JSON.stringify(diagnostics.presentHeaders)}`,
     `acceptedAliases=${JSON.stringify(diagnostics.acceptedAliases)}`,
+    `reasons=${JSON.stringify(diagnostics.reasons)}`,
     missing,
     diagnostics.error ? `; error=${diagnostics.error}` : "",
   ].join(" ");
