@@ -11,6 +11,11 @@ function fmt(n: number | null | undefined, dec = 0): string {
   return Number(n).toLocaleString("en-IN", { maximumFractionDigits: dec });
 }
 
+function isNonCalendarWorkingDay(date: string): boolean {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.getUTCDay() === 0;
+}
+
 interface PlumbingMonitoringWeek {
   week: number;
   label: string;
@@ -224,7 +229,7 @@ export default function PlumbingVelocity({ month }: { month: string }) {
     cumGood  += day.good_count  ?? 0;
     cumIdeal += day.ideal_output ?? 0;
     const pace = day.actual_hours > 0 ? (day.good_count / day.actual_hours) : null;
-    return { ...day, cumGood, cumIdeal, pace };
+    return { ...day, cumGood, cumIdeal, pace, isNonCalendarWorkingDay: isNonCalendarWorkingDay(day.date) };
   });
 
   const activeDays = days.filter((d) => (d.good_count ?? 0) > 0).length;
@@ -392,7 +397,14 @@ export default function PlumbingVelocity({ month }: { month: string }) {
               <tbody className="divide-y divide-border/30">
                 {rows.map((row) => (
                   <tr key={row.date} className="hover:bg-muted/20">
-                    <td className="py-2 px-4 font-medium">{row.date}</td>
+                    <td className="py-2 px-4 font-medium">
+                      <span>{row.date}</span>
+                      {row.isNonCalendarWorkingDay && (
+                        <Badge variant="outline" className="ml-2 border-amber-300 bg-amber-50 px-1.5 py-0 text-[10px] font-medium text-amber-700">
+                          Sun — worked
+                        </Badge>
+                      )}
+                    </td>
                     <td className="py-2 px-3 text-right font-mono">{fmt(row.good_count)}</td>
                     <td className="py-2 px-3 text-right font-mono text-red-500/80">{row.reject_count > 0 ? fmt(row.reject_count) : "–"}</td>
                     <td className="py-2 px-3 text-right font-mono">

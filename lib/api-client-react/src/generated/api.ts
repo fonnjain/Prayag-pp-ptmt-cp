@@ -1110,7 +1110,7 @@ export type deleteCorrectiveRunResponse409 = {
   data: DeleteCorrectiveRun409
   status: 409
 }
-
+    
 export type deleteCorrectiveRunResponseSuccess = (deleteCorrectiveRunResponse204) & {
   headers: Headers;
 };
@@ -1123,19 +1123,19 @@ export type deleteCorrectiveRunResponse = (deleteCorrectiveRunResponseSuccess | 
 export const getDeleteCorrectiveRunUrl = (id: number,) => {
 
 
-
+  
 
   return `/api/corrective/runs/${id}`
 }
 
 export const deleteCorrectiveRun = async (id: number, options?: RequestInit): Promise<deleteCorrectiveRunResponse> => {
-
+  
   return customFetch<deleteCorrectiveRunResponse>(getDeleteCorrectiveRunUrl(id),
-  {
+  {      
     ...options,
     method: 'DELETE'
-
-
+    
+    
   }
 );}
 
@@ -1153,7 +1153,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteCorrectiveRun>>, {id: number}> = (props) => {
@@ -1162,13 +1162,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
           return  deleteCorrectiveRun(id,requestOptions)
         }
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
 
     export type DeleteCorrectiveRunMutationResult = NonNullable<Awaited<ReturnType<typeof deleteCorrectiveRun>>>
-
+    
     export type DeleteCorrectiveRunMutationError = DeleteCorrectiveRun404 | DeleteCorrectiveRun409
 
     export const useDeleteCorrectiveRun = <TError = DeleteCorrectiveRun404 | DeleteCorrectiveRun409,
@@ -1184,7 +1184,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
       return useMutation(mutationOptions);
     }
-
+    
 export type pinCorrectiveRunResponse200 = {
   data: PinCorrectiveRun200
   status: 200
@@ -1194,7 +1194,7 @@ export type pinCorrectiveRunResponse404 = {
   data: PinCorrectiveRun404
   status: 404
 }
-
+    
 export type pinCorrectiveRunResponseSuccess = (pinCorrectiveRunResponse200) & {
   headers: Headers;
 };
@@ -1207,16 +1207,16 @@ export type pinCorrectiveRunResponse = (pinCorrectiveRunResponseSuccess | pinCor
 export const getPinCorrectiveRunUrl = (id: number,) => {
 
 
-
+  
 
   return `/api/corrective/runs/${id}/pin`
 }
 
 export const pinCorrectiveRun = async (id: number,
     pinCorrectiveRunBody: PinCorrectiveRunBody, options?: RequestInit): Promise<pinCorrectiveRunResponse> => {
-
+  
   return customFetch<pinCorrectiveRunResponse>(getPinCorrectiveRunUrl(id),
-  {
+  {      
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
@@ -1239,7 +1239,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       : {...options, mutation: {...options.mutation, mutationKey}}
       : {mutation: { mutationKey, }, request: undefined};
 
-
+      
 
 
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof pinCorrectiveRun>>, {id: number;data: PinCorrectiveRunBody}> = (props) => {
@@ -1248,7 +1248,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
           return  pinCorrectiveRun(id,data,requestOptions)
         }
 
-
+        
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -1270,7 +1270,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
       return useMutation(mutationOptions);
     }
-
+    
 export type exportCorrectiveExcelResponse200 = {
   data: Blob
   status: 200

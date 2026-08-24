@@ -2466,10 +2466,11 @@ components:
 
     PlantDayRecord:
       type: object
-      required: [date, workingDayNum, actualPcs, requiredPerDay, cumulativeActual, cumulativeRequired]
+      required: [date, workingDayNum, isNonCalendarWorkingDay, actualPcs, requiredPerDay, cumulativeActual, cumulativeRequired]
       properties:
         date: { type: string }
         workingDayNum: { type: integer }
+        isNonCalendarWorkingDay: { type: boolean }
         actualPcs: { type: number }
         requiredPerDay: { type: number }
         cumulativeActual: { type: number }

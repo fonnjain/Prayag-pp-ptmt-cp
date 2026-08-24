@@ -177,6 +177,26 @@ test("closed-month working days include worked Sundays for both segments", () =>
   assert.equal(buildFixtureBundle("plumbingJune").context.workingDaysSource, "observed");
 });
 
+test("daily series includes every elapsed day and reconciles to headline production", () => {
+  for (const name of Object.keys(fixtureFiles) as FixtureName[]) {
+    const bundle = buildFixtureBundle(name);
+    const visible = bundle.dailySeries.filter((day) => day.workingDayNum <= bundle.context.elapsed);
+    const visibleTotal = visible.reduce((sum, day) => sum + day.actualPcs, 0);
+    const sundayRows = visible.filter((day) => day.isNonCalendarWorkingDay);
+
+    assert.equal(visible.length, bundle.context.elapsed, `${name}: visible rows should cover elapsed days`);
+    assert.equal(visibleTotal, bundle.plant.producedToDate, `${name}: visible daily output should reconcile`);
+    assert.ok(
+      sundayRows.length > 0,
+      `${name}: fixture has worked Sunday output and should expose a marked non-calendar day`,
+    );
+    assert.ok(
+      sundayRows.every((day) => day.actualPcs > 0),
+      `${name}: non-calendar rows should be worked days, not empty placeholders`,
+    );
+  }
+});
+
 test("open-month configured working days override observed Sundays", () => {
   const bundle = buildFixtureBundle("ptmtAugust", undefined, {
     workingDays: 25,

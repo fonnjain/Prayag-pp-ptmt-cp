@@ -68,7 +68,7 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
     const dayOfMonth = parseInt(d.date.slice(8), 10);
     const wkIdx = weekIndexForDay(dayOfMonth);
     return {
-      day: `D${d.workingDayNum}`,
+      day: d.isNonCalendarWorkingDay ? "Sun · worked" : `D${d.workingDayNum}`,
       date: d.date,
       actual: d.actualPcs > 0 || d.workingDayNum <= context.elapsed ? d.actualPcs : null,
       cumActual: d.workingDayNum <= context.elapsed ? d.cumulativeActual : null,
@@ -77,6 +77,10 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
       required: d.requiredPerDay,
     };
   });
+
+  const workedNonCalendarDays = dailySeries.filter((d) => d.isNonCalendarWorkingDay);
+  const calendarElapsedDays = dailySeries.length - workedNonCalendarDays.length;
+  const dayComposition = `${calendarElapsedDays} calendar workdays + ${workedNonCalendarDays.length} worked non-calendar day${workedNonCalendarDays.length === 1 ? "" : "s"}`;
 
   const kpiCards = [
     { label: "Actual/Day", value: fmt(kpis.actualPerDay, 0), sub: "pcs/day" },
@@ -96,7 +100,7 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
               {catKPIs && <span className="ml-2 text-lg font-normal text-muted-foreground">— {selectedCategory}</span>}
             </h1>
             <p className="text-muted-foreground text-sm">
-              Daily output and burn-up chart in pieces (NOS) — {month} · {context.elapsed}/{context.workingDays} days elapsed
+              Daily output and burn-up chart in pieces (NOS) — {month} · {context.elapsed}/{context.workingDays} working days elapsed ({dayComposition})
               {context.snapshotDate && <span className="ml-1 text-xs">· data through <span className="font-medium text-foreground">{fmtDate(context.snapshotDate)}</span></span>}
               {catKPIs && <span className="ml-2 text-xs text-muted-foreground">· KPIs showing {selectedCategory} · burn-up chart is plant-level</span>}
             </p>
@@ -246,6 +250,16 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
               <ReferenceLine yAxisId="daily" y={plant.requiredPerDay} stroke="#94a3b8" strokeDasharray="4 4" label={{ value: "Req/Day", fontSize: 10, fill: "#94a3b8" }} />
             </ComposedChart>
           </ResponsiveContainer>
+          {workedNonCalendarDays.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <span className="font-medium text-amber-700">Worked non-calendar days:</span>
+              {workedNonCalendarDays.map((day) => (
+                <Badge key={day.date} variant="outline" className="border-amber-300 bg-amber-50 text-amber-700">
+                  {new Date(`${day.date}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })} — worked
+                </Badge>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -267,7 +281,7 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
                 </tr>
               </thead>
               <tbody>
-                {dailySeries.filter((d) => d.workingDayNum <= context.elapsed).map((d) => {
+                {dailySeries.map((d) => {
                   const dayOfMonth = parseInt(d.date.slice(8), 10);
                   const wkIdx = weekIndexForDay(dayOfMonth);
                   const released = hasWeeklyTargets ? wkCum[wkIdx] : d.cumulativeRequired;
@@ -276,7 +290,14 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
                   return (
                     <tr key={d.date} className="border-b border-border/20 hover:bg-muted/20">
                       <td className="py-1.5 pr-4 font-mono">D{d.workingDayNum}</td>
-                      <td className="py-1.5 pr-4 text-muted-foreground">{fmtDate(d.date)}</td>
+                      <td className="py-1.5 pr-4 text-muted-foreground">
+                        <span>{fmtDate(d.date)}</span>
+                        {d.isNonCalendarWorkingDay && (
+                          <Badge variant="outline" className="ml-2 border-amber-300 bg-amber-50 px-1.5 py-0 text-[10px] font-medium text-amber-700">
+                            Sun — worked
+                          </Badge>
+                        )}
+                      </td>
                       <td className="py-1.5 pr-4 text-right font-mono text-muted-foreground">{wkLabel}</td>
                       <td className="py-1.5 pr-4 text-right font-mono">{d.actualPcs.toLocaleString()}</td>
                       <td className="py-1.5 pr-4 text-right text-muted-foreground font-mono">{d.requiredPerDay.toLocaleString()}</td>

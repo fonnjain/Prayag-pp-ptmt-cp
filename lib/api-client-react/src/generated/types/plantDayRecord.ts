@@ -8,6 +8,7 @@
 export interface PlantDayRecord {
   date: string;
   workingDayNum: number;
+  isNonCalendarWorkingDay: boolean;
   actualPcs: number;
   requiredPerDay: number;
   cumulativeActual: number;

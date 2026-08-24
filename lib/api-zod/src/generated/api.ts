@@ -1409,6 +1409,7 @@ export const getPlantBundleResponse = zod.object({
   "dailySeries": zod.array(zod.object({
   "date": zod.string(),
   "workingDayNum": zod.number(),
+  "isNonCalendarWorkingDay": zod.boolean(),
   "actualPcs": zod.number(),
   "requiredPerDay": zod.number(),
   "cumulativeActual": zod.number(),

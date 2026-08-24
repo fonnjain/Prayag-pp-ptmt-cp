@@ -46,6 +46,7 @@ export interface ItemKPIs {
 export interface DayRecord {
   date: string;
   workingDayNum: number;
+  isNonCalendarWorkingDay: boolean;
   actualPcs: number;
   requiredPerDay: number;
   cumulativeActual: number;
@@ -295,7 +296,7 @@ export function buildPlantBundle(
   let cumActual = 0;
   let wdNum = 0;
   let cumulativeRequired = 0;
-  for (const d of calendarNonSundays) {
+  for (const d of elapsedDays) {
     wdNum++;
     const dayActual = dailyByDate.get(d) ?? 0;
     const dayRequired = dailyRequiredByDate.get(d) ?? 0;
@@ -304,6 +305,7 @@ export function buildPlantBundle(
     dailySeries.push({
       date: d,
       workingDayNum: wdNum,
+      isNonCalendarWorkingDay: !calendarNonSundays.includes(d),
       actualPcs: wdNum <= elapsed ? dayActual : 0,
       requiredPerDay: r2(dayRequired),
       cumulativeActual: wdNum <= elapsed ? cumActual : 0,
