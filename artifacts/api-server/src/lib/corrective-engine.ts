@@ -1,3 +1,351 @@
+import { db, bufferCategoriesTable, weeklyReleaseBandsTable, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable, planRunsTable, planRunInputsTable, planRunResultsTable } from "@workspace/db";
+import type { CorrectiveWeekStat, CorrectiveWarning } from "@workspace/db";
+import { eq, and, desc, sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
+import { fetchDailyActuals, type DailyActualRow } from "./plant-ingestion";
+import {
+  fetchPlumbingSheet3Production,
+  fetchLivePendingOrderTotals,
+  itemKey,
+  normalizeCode,
+  normalizeCodeStrict,
+  type PlumbingSheet3Row,
+  type DualTotals,
+} from "./sheets";
+import {
+  buildPlanItems,
+  loadLatestUploadRowsByKind,
+  loadLatestUploadSnapshotByKind,
+  type PlanItemWithBom,
+} from "../routes/plan";
+import { annotateWeeklyRelease, type CalcPlanItem } from "./calc";
+import { logger } from "./logger";
+import { defaultEffectiveDate, savePlanVersionSnapshot } from "./plant-plan-timeline";
+import { diagnoseInputRows, type InputReadDiagnostics } from "./input-diagnostics";
+
+const round = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Deterministic SHA-256 fingerprint of the full persisted content of a
+ * corrective run (run-level fields + every item row + weekStats + warnings).
+ * Numbers are quantized to Postgres `real` (single precision, what the DB
+ * stores) so recomputing the fingerprint stays stable across float noise.
+ * Items are sorted by a stable key so ordering can't change the hash.
+ */
+function computeRunFingerprint(content: {
+  segment: string;
+  month: string;
+  weekClosed: number;
+  asOfDate: string | null;
+  note: string | null;
+  planRunId: number | null;
+  dailyCapacity: number;
+  workingDaysPerWeek: number;
+  producedToDate: number;
+  newOrdersQty: number;
+  originalMonthTotal: number;
+  revisedMonthTotal: number;
+  unfulfillableQty: number;
+  weekStats: CorrectiveWeekStat[];
+  warnings: CorrectiveWarning[];
+  items: CorrectiveItemResult[];
+  categories: CorrectiveCategoryResult[];
+  workingDaysRemaining: number;
+}): string {
+  const q = (n: number | null) => (n == null ? null : Math.fround(n));
+  const payload = {
+    segment: content.segment,
+    month: content.month,
+    weekClosed: content.weekClosed,
+    asOfDate: content.asOfDate,
+    note: content.note,
+    planRunId: content.planRunId,
+    dailyCapacity: q(content.dailyCapacity),
+    workingDaysPerWeek: content.workingDaysPerWeek,
+    producedToDate: q(content.producedToDate),
+    newOrdersQty: q(content.newOrdersQty),
+    originalMonthTotal: q(content.originalMonthTotal),
+    revisedMonthTotal: q(content.revisedMonthTotal),
+    unfulfillableQty: q(content.unfulfillableQty),
+    weekStats: content.weekStats.map(w => [w.week, w.weekLabel, q(w.released), q(w.capacity), w.workingDays, q(w.produced), q(w.lag), q(w.loadFactor), w.status]),
+    warnings: content.warnings.map(w => [w.code, w.severity, w.message, q(w.value ?? null), q(w.threshold ?? null), w.category ?? null, w.items ?? null]),
+    items: [...content.items]
+      .sort((a, b) => (a.category + "::" + a.itemCode + "::" + a.colour).localeCompare(b.category + "::" + b.itemCode + "::" + b.colour))
+      .map(i => [
+        i.itemCode, i.colour, i.category,
+        q(i.avg3MoSale), q(i.bufferMultiplier), q(i.stockOpen), q(i.producedToDate), q(i.stockNow),
+        q(i.pendingAtPlan), q(i.pendingNow), q(i.pendingLastMonth),
+        q(i.originalPlan), i.originalWeek, q(i.bufferReqRev), q(i.planRev), q(i.remainingToProduce),
+        q(i.kgRev), q(i.remainingKg), q(i.deltaNewOrders), q(i.deltaProduction), q(i.deltaNet),
+        q(i.coverNow), i.newWeek, q(i.w1Rev), q(i.w2Rev), q(i.w3Rev), q(i.w4Rev),
+        i.status, i.isNewItem ? 1 : 0,
+      ]),
+    workingDaysRemaining: content.workingDaysRemaining,
+    categories: [...content.categories]
+      .sort((a, b) => a.category.localeCompare(b.category))
+      .map(c => [
+        c.category, q(c.plan), q(c.produced), q(c.remaining),
+        q(c.capPerDay), c.capacityMethod, c.capacityDays,
+        q(c.feasible), q(c.shortfall),
+        c.daysRun, q(c.feasibleAtRunRate), c.runRateDivergenceFlag ? 1 : 0,
+      ]),
+  };
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+}
+
+// ── Public types ──────────────────────────────────────────────────────────────
+
+export interface CorrectiveReplanInput {
+  month: string;
+  weekClosed: number;
+  asOfDate?: string;
+  segment?: string;
+  dailyCapacity?: number;
+  workingDaysPerWeek?: number;
+  /**
+   * Immutable plan run to use as the baseline ("as issued"). When set, the
+   * original plan is read from the frozen plan_run_results/inputs snapshot —
+   * NOT rebuilt live — so the corrective run measures against the issued plan.
+   * Undefined = live rebuild (legacy behaviour, used by the validate suite).
+   */
+  planRunId?: number;
+  /**
+   * Grand-max total stored on the auto-selected plan run (planRun.grandMaxTotal).
+   * When provided the engine asserts that the frozen baseline items sum to this
+   * total (±100 pcs). A material mismatch means the plan run's items were not
+   * written consistently with its header — a BASELINE_INTEGRITY_ERROR warning
+   * is emitted rather than silently producing a corrective on corrupted data.
+   */
+  planRunGrandMax?: number;
+  /**
+   * When true, run the full engine but skip persisting the run + items to the
+   * DB. Used by the regression/validate suite so repeated verification runs
+   * don't pile duplicate corrective_plan_runs rows into the run history.
+   */
+  dryRun?: boolean;
+}
+
+export interface CorrectiveItemResult {
+  itemCode: string;
+  colour: string;
+  category: string;
+  avg3MoSale: number;
+  bufferMultiplier: number;
+  stockOpen: number;
+  producedToDate: number;
+  stockNow: number;
+  pendingAtPlan: number;
+  pendingNow: number;
+  pendingLastMonth: number;
+  originalPlan: number;
+  originalWeek: number | null;
+  bufferReqRev: number;
+  planRev: number;
+  remainingToProduce: number;
+  kgRev: number;
+  remainingKg: number;
+  deltaNewOrders: number;
+  deltaProduction: number;
+  deltaNet: number;
+  coverNow: number | null;
+  newWeek: number | null;
+  w1Rev: number;
+  w2Rev: number;
+  w3Rev: number;
+  w4Rev: number;
+  status: string;
+  isNewItem: boolean;
+}
+
+export interface CorrectiveCategoryResult {
+  category: string;
+  plan: number;
+  produced: number;
+  producedCapped: number;
+  remaining: number;
+  capPerDay: number;
+  /** Alias for capPerDay — the p90 daily capacity derived from production history. */
+  capacityPerDay: number;
+  /** How capPerDay was derived: p90 (≥5 production days), mean (1–4 days), override, db (seeded fallback), none (no demonstrated production). */
+  capacityMethod: "p90" | "mean" | "override" | "db" | "none";
+  /** Distinct production days observed for this category in the current month (null for override/db fallback). */
+  capacityDays: number | null;
+  /** Feasibility at full capacity: capPerDay × workingDaysRemaining. */
+  feasible: number;
+  shortfall: number;
+  productionLag: number;
+  newDemandDelta: number;
+  capacityShortfall: number;
+  flags: string[];
+  kgRemaining: number;
+  /** Distinct days this category produced in the elapsed portion of the month. */
+  daysRun: number;
+  /** Working days elapsed (used to compute run-rate). */
+  elapsedWorkingDays: number;
+  /** Feasibility at demonstrated run-rate: (produced ÷ elapsedWorkingDays) × workingDaysRemaining. */
+  feasibleAtRunRate: number;
+  /** True when feasibleAtCapacity > feasibleAtRunRate × 1.5 — optimism flag for review. */
+  runRateDivergenceFlag: boolean;
+}
+
+export interface CorrectiveReplanResult {
+  runId: number;
+  month: string;
+  segment: string;
+  weekClosed: number;
+  asOfDate?: string;
+  workingDaysUsed: number;
+  workingDaysRemaining: number;
+  note?: string;
+  dailyCapacity: number;
+  workingDaysPerWeek: number;
+  producedToDate: number;
+  newOrdersQty: number;
+  originalMonthTotal: number;
+  revisedMonthTotal: number;
+  unfulfillableQty: number;
+  weekStats: CorrectiveWeekStat[];
+  warnings: CorrectiveWarning[];
+  items: CorrectiveItemResult[];
+  categories: CorrectiveCategoryResult[];
+  unplannedProduction: Array<{ code: string; qty: number }>;
+  unplannedTotal: number;
+  /** Plan run cited as the baseline (null = live rebuild, no frozen run used). */
+  baselinePlanRunId: number | null;
+  /** "frozen-run" when the baseline came from an immutable plan run snapshot. */
+  baselineSource: "frozen-run" | "live";
+  /**
+   * Grand total of plan_run_results for the cited baseline run (rounded pcs).
+   * null = either no frozen baseline was used or the run predates migration 022.
+   * Used by the UI to detect item-sum drift vs the frozen plan run header.
+   */
+  frozenPlanGrandMax: number | null;
+  inputDiagnostics?: {
+    pendingAtPlan: InputReadDiagnostics;
+    livePending: InputReadDiagnostics;
+  };
+}
+
+/**
+ * Load PTMT production for a corrective run without manufacturing a
+ * zero-production snapshot when the source is unavailable.
+ *
+ * The optional loader keeps this boundary unit-testable while the production
+ * path always uses fetchDailyActuals.
+ */
+export async function fetchCorrectivePtmtActuals(
+  month: string,
+  loader: (month: string) => Promise<DailyActualRow[]> = fetchDailyActuals,
+): Promise<DailyActualRow[]> {
+  return loader(month);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function countWorkingDays(from: string, to: string): number {
+  let count = 0;
+  const d = new Date(from + "T00:00:00Z");
+  const end = new Date(to + "T00:00:00Z");
+  while (d <= end) {
+    if (d.getUTCDay() !== 0) count++;
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return count;
+}
+
+function monthLastDay(month: string): string {
+  const [y, m] = month.split("-").map(Number);
+  return `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * P5: returns the calendar date of the last working day of week N in the given month.
+ * Working days are Mon–Sat (Sunday excluded). Week N = the N-th consecutive group
+ * of wdPerWeek working days starting from the 1st of the month.
+ */
+function lastDayOfWeekN(month: string, weekN: number, wdPerWeek: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1, 1));
+  const lastOfMonth = new Date(Date.UTC(y, m, 0));
+  let count = 0;
+  const target = weekN * wdPerWeek;
+  while (d <= lastOfMonth) {
+    if (d.getUTCDay() !== 0) {
+      count++;
+      if (count === target) break;
+    }
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Revised plan formula — one formula for ALL segments and categories (P3).
+ * stockOpen = opening stock (month-start); pendingNow = live orders.
+ * planRev represents the total monthly plan quantity (parallel to maxProduction)
+ * so that remaining = max(planRev − producedToDate, 0) is correct without
+ * double-subtracting production.
+ */
+function computePlanRev(opts: {
+  bufferReqRev: number;
+  stockOpen: number;
+  pendingNow: number;
+  pendingLastMonth: number;
+}): number {
+  const { bufferReqRev, stockOpen, pendingNow, pendingLastMonth } = opts;
+  return round(Math.max(bufferReqRev - stockOpen + pendingLastMonth + pendingNow, 0));
+}
+
+function resolveFromDualTotals(
+  exact: Map<string, number>,
+  byCode: Map<string, number>,
+  itemCode: string,
+  colour: string,
+  isSingleVariant: boolean,
+): number {
+  if (isSingleVariant) {
+    return byCode.get(normalizeCode(itemCode)) ?? 0;
+  }
+  return exact.get(itemKey(itemCode, colour)) ?? 0;
+}
+
+export function sumPendingUploads(
+  rows: Record<string, unknown>[],
+  options: { source?: string; uploadId?: number | null; filename?: string | null } = {},
+): { totals: Map<string, number>; diagnostics: InputReadDiagnostics } {
+  const m = new Map<string, number>();
+  for (const row of rows) {
+    const code = (["Old Item Code", "Item Code", "Item No."].map(k => row[k]).find(v => v != null && v !== "") as string | undefined);
+    const colour = (["Colour", "Color"].map(k => row[k]).find(v => v != null && v !== "") as string | undefined) ?? "";
+    const rawQty = (["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"].map(k => row[k]).find(v => v != null) as unknown);
+    if (!code) continue;
+    const qty = typeof rawQty === "number" ? rawQty : Number(String(rawQty ?? "0").replace(/,/g, "")) || 0;
+    const k = itemKey(code, colour);
+    m.set(k, (m.get(k) ?? 0) + qty);
+  }
+  const diagnostics = diagnoseInputRows(rows, {
+    code: ["Old Item Code", "Item Code", "Item No."],
+    colour: ["Colour", "Color"],
+    quantity: ["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"],
+  }, {
+    source: options.source ?? "pending upload",
+    uploadId: options.uploadId,
+    filename: options.filename,
+  });
+  logger.info({ diagnostics }, "sumPendingUploads: source diagnostics");
+  return { totals: m, diagnostics };
+}
+
+function p90(sortedValues: number[]): number {
+  if (sortedValues.length === 0) return 0;
+  return Math.round(sortedValues[Math.floor(sortedValues.length * 0.9)]!);
+}
+
+export function computeCapByCategory(
+  map: Map<string, Map<string, number>>,
+): Map<string, { cap: number; method: "p90" | "mean"; days: number }> {
+  const result = new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
+  for (const [category, dayMap] of map) {
     // Corrective remaining days are calendar Mon–Sat. Keep Cap/Day on the
     // same calendar basis rather than multiplying weekday capacity by a
     // denominator that includes no future Sundays. This aligns the samples
