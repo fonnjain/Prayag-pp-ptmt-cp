@@ -1,9 +1,9 @@
 ---
-name: GitHub push via Contents API truncation
-description: Pushing large files via GitHub Contents API silently truncates; use Git Trees API with utf-8 blobs instead.
+name: GitHub push safety
+description: Large-file pushes need UTF-8 Git Trees or GraphQL atomic commits; Contents truncates and Git Data REST may be Cloudflare-blocked.
 ---
 
-# GitHub push via Contents API truncation
+# GitHub push safety
 
 **Rule:** Never push source files to GitHub using `PUT /repos/.../contents/{path}` when the file exceeds ~61 KB. Use the Git Trees API with `encoding: "utf-8"` blobs instead.
 
@@ -28,5 +28,12 @@ After every push, fetch each file's metadata via `GET /repos/.../contents/{path}
 - Any CodeExecution that pushes a file to GitHub must use the Git Trees API path above
 - Add size verification as the final step before reporting success
 - If `readFile` fails with "exceeds maxBytes", the parameter name is wrong (camelCase `maxBytes` required)
+- Re-read the live branch ref immediately before creating the tree; abort on divergence, then verify the updated ref and every changed file's byte size.
 
 **Workspace fallback:** If the checkout's HTTPS Git credential is rejected, use the installed GitHub connector's authenticated proxy to create blobs, a tree, a commit, and a non-force ref update; verify the ref and file sizes afterward.
+
+**Connector fallback:** The GitHub connector's Git Data REST POST endpoints can be rejected by Cloudflare even when reads work. If that happens, use the GraphQL `createCommitOnBranch` mutation with `expectedHeadOid` and a full-file addition, then verify the commit, file size, and syntax.
+
+**Why:** The atomic GraphQL mutation preserves the large file while avoiding the blocked REST write path and prevents overwriting a concurrent update.
+
+**Connector line endings:** Do not use multiline source returned by `shellExec` as the authoritative upload payload for GraphQL commits. In this environment it can arrive with CRLF line endings; read the workspace files directly with `readFile({ maxBytes: 1048576 })`, upload those contents, and verify byte sizes afterward.

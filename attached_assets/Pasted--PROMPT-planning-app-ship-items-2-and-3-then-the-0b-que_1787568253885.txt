@@ -1,0 +1,164 @@
+# PROMPT — planning app: ship items 2 and 3, then the 0b question
+
+**Workspace check first: this is for `fonnjain/Prayag-pp-ptmt-cp`.** Three recent prompts landed in Distributor Analysis by mistake; a wrong-project report cost only a round, but these two items change failure behaviour on live paths.
+
+Baseline: `origin/main` = **`4e5e6c6`**, production = **`8c2e7f5`** (three commits behind).
+
+Two commits to ship now, then one question for the team. **Item 1 (the pending-order header fix) stays blocked** — do not touch it.
+
+---
+
+# Item 2 — PTMT actuals must fail loudly
+
+## The defect
+
+`corrective-engine.ts:416–425`:
+
+```typescript
+// Do NOT swallow Sheet3 failures: a missing/unreadable workbook must fail
+// the replan loudly, never present as zero production (stale-plan hazard).
+segment === "Plumbing"
+  ? fetchPlumbingSheet3Production(month)
+  : Promise.resolve([] as PlumbingSheet3Row[]),
+segment === "PTMT"
+  ? fetchDailyActuals(month).catch(err => {
+      logger.warn({ err }, "corrective-engine: fetchDailyActuals failed"); return [] as DailyActualRow[];
+    })
+  : Promise.resolve([] as DailyActualRow[]),
+```
+
+The comment states the rule. **The line directly beneath it breaks the rule for PTMT.**
+
+## Why it matters — both directions, one observed
+
+Already evidenced: two identical dev runs with the same `asOfDate` produced different plans, because the actuals fetch failed in one.
+
+| Item type | Effect when the fetch fails |
+|---|---|
+| Planned (`maxProduction > 0`) | `producedToDate → 0`, so `remaining = planRev` — **the plant is asked to remake everything it has already produced this month** |
+| Out-of-plan (`maxProduction = 0`) | `planRev = max(0, producedToDate) → 0` — **the item disappears from the corrective entirely** |
+
+The second is what you observed: `123-FH / IVORY`, `124-FH / IVORY` and `1375-SP / IVORY` all dropped to 0 across identical runs.
+
+## Fix
+
+Remove the `.catch` so PTMT behaves as Plumbing does:
+
+```typescript
+segment === "PTMT"
+  ? fetchDailyActuals(month)
+  : Promise.resolve([] as DailyActualRow[]),
+```
+
+**No business decision here.** The Plumbing comment already states the principle and it is segment-independent — a corrective computed silently against zero production is not a defensible output for either segment.
+
+## Also check the third `.catch` in the same block
+
+`:426–429` swallows `fetchLivePendingOrderTotals()` failures the same way, returning empty maps. Given item 1 is blocked and that source currently parses to zero regardless, **do not change its behaviour in this commit** — but report whether it should follow, so the decision is made deliberately rather than left as an oversight.
+
+## Tests
+
+- A failing actuals fetch **rejects** rather than resolving with `[]`
+- Two identical runs with the same `asOfDate` produce identical `planRev` for every item
+- Plumbing's existing fail-loud behaviour is unchanged
+
+---
+
+# Item 3 — Say when a required column is missing
+
+## Why this is the highest-value item after 2
+
+Your Item 0 investigation produced the number that identified the file: **14,787 rows with codes, 14,787 with colours, 0 with an accepted balance alias.**
+
+**The code computed all three and reported none of them.** It returned zero silently, and you had to go looking. Had it said so, A5 would have been found the day the upload changed shape.
+
+## Where
+
+`corrective-engine.ts:288–299` — `sumPendingUploads`:
+
+```typescript
+const code   = (["Old Item Code", "Item Code", "Item No."].map(k => row[k]).find(…));
+const colour = (["Colour", "Color"].map(k => row[k]).find(…)) ?? "";
+const rawQty = (["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"].map(k => row[k]).find(…));
+if (!code) continue;
+```
+
+and `plan.ts:581–586` — `sumByKey`, with the same alias lists.
+
+## What to add
+
+Track resolution counts per field, and when a required field resolves in **zero** rows while rows exist, log it with everything needed to diagnose:
+
+```typescript
+logger.warn({
+  source: "pending_orders upload",
+  uploadId,
+  rowCount: rows.length,
+  resolved: { code: 14787, colour: 14787, balance: 0 },
+  accepted: ["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"],
+  present: [...new Set(rows.flatMap(r => Object.keys(r)))],
+}, "no accepted open-balance column found — contributing zero pending");
+```
+
+`present` is the field that matters most — it is what turns *"pending is zero"* into *"the file has `Quantity`, we accept `Qty`"* in one line.
+
+**Surface it, not just log it.** Add the same information to the plan-validate response so a plan built with zero pending because a column was missing says so on screen. A warning only in logs is a warning nobody reads.
+
+## One thing worth knowing while you implement this
+
+`plan.ts:585` already accepts **`"Qty"`** in its balance alias list. The upload has a field named `Quantity`. So the plan's zero was reached because `Quantity ≠ Qty` — **one letter, not a design decision.**
+
+Had the column been named `Qty`, the plan would have silently taken **827,733** pcs of invoice quantity as pending orders. The right answer was reached by accident, and the same alias list would give the wrong answer on a differently-named file.
+
+**Do not "fix" this by adding `Quantity` to the alias list.** That is the 0b question below and it is not yours to decide. Item 3 is only about making the silence audible.
+
+## Tests
+
+- A row set with no accepted balance column logs the warning and reports zero
+- The warning includes `present` headers and the `accepted` list
+- A row set with a valid balance column does **not** warn
+- Both `sumPendingUploads` and `sumByKey` behave the same way
+
+---
+
+# 0b — The question for the team (do not implement)
+
+`calc.ts`:
+
+```
+Max Production = (Buffer Req − Stock) + Pending Order + Pending Order Last Month
+```
+
+**Does `Pending Order` mean open balance, or invoiced quantity?**
+
+- **Open balance** → `DATA.xlsx` is the wrong source, and plan runs **#20 and #21 understate every item that had outstanding orders on 17 August**. That is a plan defect, not just a corrective one.
+- **Invoiced quantity** → the current zero is wrong for a different reason, and the live corrective sheet is the wrong source instead.
+
+Either way, one of the two paths is reading the wrong thing today.
+
+Please report three figures so the team can size it:
+
+1. **What `pending_current` would have been for run #20** using a true open balance on 17 August. The live sheet holds **15,238 pcs across 71 PTMT keys** today; use a 17-August snapshot if one exists, and say so if not.
+2. **Why 71 keys against 3,766 upload rows?** Consistent with a balance register versus a transaction log — confirm it.
+3. **Is an open-balance export available at all**, or does the business only produce the invoice register?
+
+---
+
+## Order and reporting
+
+1. **Item 2** — ship
+2. **Item 3** — ship
+3. **0b** — report the three figures, put the question to the team
+4. Item 1 — blocked until 0b is answered
+
+Each its own commit. Files and line numbers, diffstat with **every file named including `package.json`**, `tsc --noEmit` clean, test count, byte-size match, nothing else in the diff.
+
+**Then push** and report `git rev-parse origin/main`.
+
+**Do not publish.** #157 still gates it — `0a3fe7d` carries the unexplained July golden change, and publishing would couple these fixes to it.
+
+## Also still open, for your awareness
+
+- **#148** — July PTMT snapshot recapture, gate passed, not executed
+- **#157** — the July golden question, blocking the publish
+- Production is three commits behind at `8c2e7f5`

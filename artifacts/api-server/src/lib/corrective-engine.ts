@@ -15,13 +15,13 @@ import {
 import {
   buildPlanItems,
   loadLatestUploadRowsByKind,
-  loadLatestUploadSnapshotByKind,
   type PlanItemWithBom,
 } from "../routes/plan";
 import { annotateWeeklyRelease, type CalcPlanItem } from "./calc";
 import { logger } from "./logger";
 import { defaultEffectiveDate, savePlanVersionSnapshot } from "./plant-plan-timeline";
 import { diagnoseInputRows, type InputReadDiagnostics } from "./input-diagnostics";
+import { LivePendingReadError } from "./corrective-errors";
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
@@ -226,6 +226,43 @@ export interface CorrectiveReplanResult {
   };
 }
 
+const LIVE_PENDING_ALIASES = {
+  code: ["Old ERP Code", "Item Code", "Item No."],
+  colour: ["Colour", "Color", "COLOR", "COLUOR"],
+  quantity: ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"],
+};
+
+/**
+ * Read the live pending source for corrective calculations.
+ *
+ * A successful response may legitimately contain no recognized rows or only
+ * zero quantities, and its diagnostics are preserved for the result. A source
+ * read failure is different: returning empty maps would turn the failure into
+ * `0 - pendingAtPlan`, so it must reject before item deltas are calculated.
+ */
+export async function fetchCorrectiveLivePending(
+  loader?: () => Promise<DualTotals>,
+  segment: string = "PTMT",
+): Promise<DualTotals> {
+  try {
+    return await (loader ?? (() => fetchLivePendingOrderTotals(segment)))();
+  } catch (err) {
+    const causeMessage = err instanceof Error ? err.message : String(err);
+    const baseDiagnostics = diagnoseInputRows([], LIVE_PENDING_ALIASES, {
+      source: "Pending order / report",
+      error: causeMessage,
+    });
+    const diagnostics: InputReadDiagnostics = {
+      ...baseDiagnostics,
+      // No headers were observed because the source read failed. Do not make
+      // that transport failure look like a malformed successfully-read file.
+      reasons: [`source read failed: ${causeMessage}`],
+    };
+    logger.warn({ diagnostics, error: causeMessage }, "corrective-engine: live pending source read failed");
+    throw new LivePendingReadError(diagnostics, causeMessage);
+  }
+}
+
 /**
  * Load PTMT production for a corrective run without manufacturing a
  * zero-production snapshot when the source is unavailable.
@@ -317,7 +354,7 @@ export function sumPendingUploads(
   for (const row of rows) {
     const code = (["Old Item Code", "Item Code", "Item No."].map(k => row[k]).find(v => v != null && v !== "") as string | undefined);
     const colour = (["Colour", "Color"].map(k => row[k]).find(v => v != null && v !== "") as string | undefined) ?? "";
-    const rawQty = (["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"].map(k => row[k]).find(v => v != null) as unknown);
+    const rawQty = (["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty", "Qty"].map(k => row[k]).find(v => v != null) as unknown);
     if (!code) continue;
     const qty = typeof rawQty === "number" ? rawQty : Number(String(rawQty ?? "0").replace(/,/g, "")) || 0;
     const k = itemKey(code, colour);
@@ -326,7 +363,7 @@ export function sumPendingUploads(
   const diagnostics = diagnoseInputRows(rows, {
     code: ["Old Item Code", "Item Code", "Item No."],
     colour: ["Colour", "Color"],
-    quantity: ["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"],
+    quantity: ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty", "Qty"],
   }, {
     source: options.source ?? "pending upload",
     uploadId: options.uploadId,
@@ -441,8 +478,6 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     plumbingSheet3Raw,
     ptmtActualsRaw,
     livePendingTotals,
-    pendingOrderSource,
-    pendingLastMoRows,
     bufferRows,
     bandRows,
     catCapRows,
@@ -458,23 +493,7 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     segment === "PTMT"
       ? fetchCorrectivePtmtActuals(month)
       : Promise.resolve([] as DailyActualRow[]),
-    fetchLivePendingOrderTotals().catch(err => {
-      logger.warn({ err }, "corrective-engine: fetchLivePendingOrderTotals failed");
-      return {
-        exact: new Map<string, number>(),
-        byCode: new Map<string, number>(),
-        diagnostics: diagnoseInputRows([], {
-          code: ["Old ERP Code"],
-          colour: ["Colour"],
-          quantity: ["Bal. Qty"],
-        }, {
-          source: "Pending order / report",
-          error: err instanceof Error ? err.message : String(err),
-        }),
-      };
-    }),
-    loadLatestUploadSnapshotByKind("pending_orders"),
-    loadLatestUploadRowsByKind("last_month_pending"),
+    fetchCorrectiveLivePending(undefined, segment),
     db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
     db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
     db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment)),
@@ -593,25 +612,6 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   const plumbingCapByCategory = segment === "Plumbing" ? computeCapByCategory(dailyByCat) : new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
   const ptmtCapByCategory    = segment === "PTMT"     ? computeCapByCategory(dailyByCat) : new Map<string, { cap: number; method: "p90" | "mean"; days: number }>();
 
-  // ── Pending maps ──────────────────────────────────────────────────────────
-  const pendingAtPlanResult = sumPendingUploads(pendingOrderSource.rows, {
-    source: "DATA.xlsx (pending orders)",
-    uploadId: pendingOrderSource.id,
-    filename: pendingOrderSource.filename,
-  });
-  const pendingAtPlanMap = pendingAtPlanResult.totals;
-
-  const lastMoPendingMap = new Map<string, number>();
-  for (const row of pendingLastMoRows) {
-    const code = (["Item Code", "Cat No", "Cat-No", "Old Item Code"].map(k => row[k]).find(v => v != null && v !== "") as string | undefined);
-    const colour = (["Colour", "Color"].map(k => row[k]).find(v => v != null && v !== "") as string | undefined) ?? "";
-    const rawQty = (["Qty", "Balance_Qty", "Balance Qty"].map(k => row[k]).find(v => v != null));
-    if (!code) continue;
-    const qty = typeof rawQty === "number" ? rawQty : Number(String(rawQty ?? "0").replace(/,/g, "")) || 0;
-    const k = itemKey(code, colour);
-    lastMoPendingMap.set(k, (lastMoPendingMap.get(k) ?? 0) + qty);
-  }
-
   const bufferByCategory = new Map(bufferRows.map(b => [b.name, b.multiplier]));
   const bandsByCategory = new Map(bandRows.map(b => [b.categoryName, b]));
 
@@ -626,7 +626,6 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   const items: CorrectiveItemResult[] = [];
 
   for (const orig of originalItems) {
-    const k = itemKey(orig.itemCode, orig.colour);
     const sv = segment === "PTMT" ? isSingleVariant(orig.category, orig.itemCode) : false;
 
     // P4: use normalizeCodeStrict for production lookup
@@ -652,7 +651,10 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       sv,
     );
 
-    const pendingAtPlan = pendingAtPlanMap.get(k) ?? 0;
+    // Both live rebuilds and frozen plan runs carry current pending from the
+    // same Pending order report. For a frozen run, orig.pendingOrder is the
+    // immutable pending value captured when that run was created.
+    const pendingAtPlan = orig.pendingOrder;
     const pendingLastMonth = orig.pendingOrderLastMonth;
 
     const multiplier = bufferByCategory.get(orig.category) ?? 1;
@@ -1266,12 +1268,12 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     baselineSource: input.planRunId != null ? "frozen-run" : "live",
     frozenPlanGrandMax: input.planRunGrandMax != null ? Math.round(input.planRunGrandMax) : null,
     inputDiagnostics: {
-      pendingAtPlan: pendingAtPlanResult.diagnostics,
-      livePending: livePendingTotals.diagnostics ?? diagnoseInputRows([], {
-        code: ["Old ERP Code"],
-        colour: ["Colour"],
-        quantity: ["Bal. Qty"],
-      }, { source: "Pending order / report" }),
+      pendingAtPlan: livePendingTotals.diagnostics ?? diagnoseInputRows([], LIVE_PENDING_ALIASES, {
+        source: "Pending order / report · plan snapshot",
+      }),
+      livePending: livePendingTotals.diagnostics ?? diagnoseInputRows([], LIVE_PENDING_ALIASES, {
+        source: "Pending order / report",
+      }),
     },
   };
 }

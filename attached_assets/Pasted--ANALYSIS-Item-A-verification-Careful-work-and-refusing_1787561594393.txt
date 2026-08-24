@@ -1,0 +1,103 @@
+# ANALYSIS — Item A verification
+
+Careful work, and **refusing to fabricate A4 examples was exactly right.** "No honest rows to display" is the correct answer when the data doesn't contain the case, and inventing three would have produced a verification that proved nothing.
+
+Three things follow. One is a correction, one is a buried headline, and one is a mechanism worth naming precisely.
+
+---
+
+## ⚠ 1. This ran against **development**, not production
+
+> *"PTMT baseline plan run: **21**"* … *"Plumbing baseline plan run: **44**"*
+
+Those are the **dev** run ids. Production's August baselines are **PTMT #20** and **Plumbing #21** — established at length several rounds ago, and #44 was specifically shown to be dev-only by the shared-`serial` argument (production's sequence is gapless 18→19→20→21, so it never reached 44).
+
+This is the same dev/prod confusion that cost five rounds on the baseline work.
+
+**What survives and what doesn't:**
+
+| Finding | Environment-dependent? |
+|---|---|
+| **A3** — the `.catch` asymmetry | **No.** It's source code. Holds. |
+| The three unstable `planRev` values | **No.** Real behaviour, real mechanism. |
+| A1 — pending empty, no repeatability delta | **Yes.** Describes dev only. |
+| A2 — zero cancellations | **Yes.** Describes dev only. |
+| A4 — no qualifying items | **Yes.** Describes dev only. |
+
+So A1, A2 and A4 need re-running against production before they mean anything. You noted the empty-source caveat, which was right — but the reason it's empty may simply be that dev has no pending-order data.
+
+## 2. The buried headline: the order term is contributing nothing
+
+> `fetchLivePendingOrderTotals()` returned: **exact keys 0 · code keys 0 · total quantity 0**
+> August finalized baseline `pending_current`: **PTMT 0 · Plumbing 0**
+
+With `pendingNow = 0` and `pendingAtPlan = 0`, `deltaNewOrders = 0`, so:
+
+```
+planRev = max(maxProduction + 0, producedToDate)
+```
+
+**The revised plan currently carries no order component at all.** That is the direct answer to your original question — *"does the recompute take new orders into account?"* — and in this environment the answer is **no, because there are no orders to take**.
+
+That's more important than A1, A2 and A4 individually, because it makes all three vacuous rather than negative. It reads as three quiet nulls in the report; it should be the first line.
+
+**If production's pending source is also empty, that is a live defect** and it outranks everything else in Item A. If production has data, then A1/A2/A4 are simply unanswered.
+
+## 3. The three unstable items — the mechanism fits exactly
+
+| Item | planRev run 1 → run 2 |
+|---|---|
+| 123-FH / IVORY | 116.2 → 0 |
+| 124-FH / IVORY | 215 → 0 |
+| 1375-SP / IVORY | 12 → 0 |
+
+`round()` is `Math.round(n*100)/100`, so 116.2 is legitimately fractional. And `:615`:
+
+```typescript
+const planRev = round(Math.max(orig.maxProduction + Math.max(deltaNewOrders, 0), producedToDate));
+```
+
+With `deltaNewOrders = 0`, `planRev = max(maxProduction, producedToDate)`. For it to fall to **0**, both terms must be 0 in run 2. `maxProduction` comes from the frozen baseline and cannot change between runs.
+
+**So these are out-of-plan items** — `maxProduction = 0`, and their `planRev` was floored entirely by `producedToDate`. When the actuals fetch failed in run 2, `producedToDate` became 0 and they vanished from the plan.
+
+That confirms A3's hazard empirically, and it shows it has **two directions**:
+
+| Item type | On actuals-fetch failure |
+|---|---|
+| Planned (`maxProduction > 0`) | `producedToDate → 0`, so `remaining = planRev` — **the plant is asked to remake everything it has already produced** |
+| Out-of-plan (`maxProduction = 0`) | `planRev → 0` — **the item disappears from the corrective entirely** |
+
+I described only the first. The second is what you actually observed, and it's arguably worse: an item silently leaving the plan is harder to notice than an inflated quantity.
+
+Both come from one `.catch` returning `[]`.
+
+---
+
+## What I'd do
+
+**A3 is now a live defect with observed evidence, not a code-review observation.** Two identical runs produced different plans because the actuals fetch failed in one. Make the PTMT branch match Plumbing's fail-loud behaviour.
+
+The Plumbing comment already states the principle:
+
+> *"Do NOT swallow Sheet3 failures: a missing/unreadable workbook must fail the replan loudly, never present as zero production (stale-plan hazard)."*
+
+That reasoning applies identically to PTMT. This is the one item where I don't think there's a genuine business decision — a corrective silently computed against zero production is not a defensible output in either segment.
+
+**A1, A2 and A4 need re-running against production**, with the baseline ids confirmed as **#20 / #21** before starting.
+
+---
+
+## Suggested reply
+
+> Good report, and declining to fabricate A4 examples was exactly right — "no honest rows" is the correct answer when the data doesn't contain the case.
+>
+> **One correction: this ran against development.** Baselines **#21 (PTMT)** and **#44 (Plumbing)** are dev ids; production's August baselines are **#20** and **#21**. #44 was specifically shown to be dev-only — production's `plan_runs` sequence is a shared `serial` and runs gapless 18→19→20→21, so it never reached 44. A3 and the three unstable items survive that (they're code behaviour), but **A1, A2 and A4 describe dev only** and need re-running against production with the baselines confirmed as #20/#21 first.
+>
+> **The buried headline should be the first line:** `fetchLivePendingOrderTotals()` returned 0 keys and 0 quantity, and the August baselines have `pending_current = 0` for both segments. So `deltaNewOrders = 0` everywhere and **the revised plan currently carries no order component at all**. That's the direct answer to the original question, and it makes A1/A2/A4 vacuous rather than negative. Please check whether production's pending source is also empty — if it is, that outranks everything else in Item A.
+>
+> **On the three unstable items — your mechanism is right, and it's sharper than that.** `planRev = max(maxProduction, producedToDate)` when `deltaNewOrders = 0`, and `maxProduction` comes from the frozen baseline so it can't move. For planRev to reach 0, both terms must be 0 — so these are **out-of-plan items** whose planRev was floored entirely by `producedToDate`. When the actuals fetch failed, they dropped out of the plan.
+>
+> That means A3 has **two failure directions**, and I only described one: planned items get `remaining = planRev` (remake everything already produced), and out-of-plan items **disappear from the corrective entirely**. The second is what you observed, and it's harder to notice.
+>
+> **So A3 is now a live defect with observed evidence, not a code-review point** — two identical runs produced different plans. Please make PTMT match Plumbing's fail-loud behaviour. The Plumbing comment already states the principle: *"a missing/unreadable workbook must fail the replan loudly, never present as zero production (stale-plan hazard)."* That reasoning is segment-independent, and I don't think there's a real business decision here — a corrective computed silently against zero production isn't a defensible output either way.

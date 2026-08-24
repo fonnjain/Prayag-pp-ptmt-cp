@@ -1,0 +1,148 @@
+# PROMPT (revised) — after the Item 0 answer
+
+Item 0 is answered, and refusing to treat `Quantity` as pending was the right call. Reading invoice quantity as outstanding balance would have swapped a visible zero for an invisible **827,733** — far worse than the defect being fixed.
+
+**Item 1 stays blocked.** The revision below reflects what the answer changed.
+
+---
+
+# ⚠ The finding is sharper than "different universes"
+
+The two sources measure **different quantities**, not two views of one book:
+
+| | Source | Field | Measures |
+|---|---|---|---|
+| Plan baseline | `DATA.xlsx` upload | `Quantity` | **invoice / order quantity** — what was ordered |
+| Live corrective | `Pending order → report` | `Bal. Qty` | **open balance** — what remains unfulfilled |
+
+`deltaNewOrders = pendingNow − pendingAtPlan` is only meaningful when both sides are open balance. **No parser fix can make that subtraction valid** while the baseline is an invoice register.
+
+**And one thing I found that widens this beyond the corrective.** `plan.ts:581–586`:
+
+```typescript
+const pendingOrderTotals = sumByKey(
+  pendingOrderRows,
+  ["Old Item Code", "Item Code", "Item No."],
+  ["Colour", "Color"],
+  ["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"],    // ← "Qty" is accepted
+);
+```
+
+`"Qty"` **is** in the plan's accepted alias list. So the plan builder would take a `Qty` column as pending if one were present under that name. Your report says the upload has a `Quantity` field and zero accepted balance aliases — so `Quantity` ≠ `Qty` and it fell through. **The plan's zero is an accident of naming, not a design decision.**
+
+That matters: if the upload's column were named `Qty` instead of `Quantity`, the plan would have silently used 827,733 of invoice quantity as pending orders. The correct outcome was reached for the wrong reason, and the same alias list would produce the wrong outcome on a differently-named file.
+
+---
+
+# 0b — The question for the business (blocks item 1)
+
+`calc.ts` computes:
+
+```
+Max Production = (Buffer Req − Stock) + Pending Order + Pending Order Last Month
+```
+
+**Does `Pending Order` there mean open balance, or invoiced quantity?**
+
+- If **open balance**: `DATA.xlsx` is the wrong source, and plan runs **#20 and #21 understate every item that had outstanding orders on 17 August**. This is a plan defect, not just a corrective one.
+- If **invoiced quantity**: the current zero is wrong for a different reason, and the live corrective sheet is the wrong source instead.
+
+Either way, one of the two paths is reading the wrong thing today. **Please put this to the team as a plan question, not a corrective question** — the corrective is downstream of it.
+
+Report alongside it, so the team can size the impact:
+
+1. **What would `pending_current` have been for run #20** if the true open balance on 17 August had been used? The live sheet holds **15,238 pcs across 71 PTMT keys** today; if a 17-August snapshot exists, use it.
+2. **Why 71 keys against 3,766 upload rows?** Consistent with a balance register versus a transaction log, but confirm it — different granularity as well as different fields.
+3. **Is there an open-balance export available at all**, or does the business only produce the invoice register?
+
+---
+
+# 1 — Header fix — STILL BLOCKED
+
+Do not implement until 0b is answered. Keeping the previously specified scope for when it unblocks:
+
+- Normalised header matching (trim, case-fold, collapse punctuation) against alias lists — `SEGMENT`/`Segment`, `Item Code`/`Old ERP Code`, `COLOR`/`COLUOR`/`Colour`, `Bal. Qty`/`Bal.Qty`. **`COLUOR` is a typo in the source sheet; match it as an alias rather than asking anyone to correct the sheet.**
+- Add a `segment` parameter to `fetchLivePendingOrderTotals()` — it hardcodes `if (segment !== "PTMT") continue`, so **Plumbing pending orders can never be returned**, zero by construction rather than by data.
+
+---
+
+# 2 — PTMT actuals must fail loudly ⬤ ship this now
+
+**Unaffected by everything above. No dependencies. Already evidenced.** Two identical dev runs produced different plans because the actuals fetch failed in one.
+
+`corrective-engine.ts:418–425` — Plumbing is deliberately un-caught with a comment saying a missing workbook must fail the replan loudly rather than present as zero. PTMT `.catch`es and returns `[]`.
+
+| Item type | Effect when the fetch fails |
+|---|---|
+| Planned (`maxProduction > 0`) | `producedToDate → 0`, `remaining = planRev` — **remake everything already produced** |
+| Out-of-plan (`maxProduction = 0`) | `planRev → 0` — **item vanishes from the corrective** |
+
+The second is what you observed: `123-FH`, `124-FH`, `1375-SP` all dropped to 0 across identical runs.
+
+**Remove the `.catch`.** No business decision here — the Plumbing comment already states the principle, and it is segment-independent. Add a test asserting a failing actuals fetch **rejects** rather than resolving with `[]`.
+
+---
+
+# 3 — Say when a needed column is missing ⬤ do this now, it is what made 0b findable
+
+Your Item 0 investigation produced the decisive number: **14,787 rows with codes, 14,787 with colours, 0 with an accepted balance alias.** That is what identified the file as an invoice register.
+
+**The code computed all three and reported none of them.** It returned zero silently. You had to go looking.
+
+Make the parsers say it:
+
+```typescript
+// When a required field resolves in no row:
+logger.warn({
+  source: "pending_orders upload",
+  uploadId, rowCount,
+  resolved: { code: 14787, colour: 14787, balance: 0 },
+  accepted: ["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"],
+  present: [...distinct header names in the file],
+}, "no accepted open-balance column found — contributing zero pending");
+```
+
+Surface it in the plan-validate response too, so it appears on screen rather than only in logs. A plan built with zero pending because a column was missing should say so on the plan.
+
+**Apply to both readers** — `sumPendingUploads` in `corrective-engine.ts` and `sumByKey` in `plan.ts`.
+
+This is the generalised version of item 3 from the earlier prompt, and it is now the highest-value item after 2, because it is what turns this class of defect from invisible into immediate.
+
+---
+
+# 4 — Structural check in the verifier
+
+Once item 3 reports the numbers, assert on them:
+
+```
+For each configured sheet or upload source:
+  rows read > 0  AND  rows recognised == 0   →  FAIL, naming the source,
+                                                 the fields it needed,
+                                                 and the headers actually present
+```
+
+**Fail when rows exist but none are recognised.** That single assertion is what would have caught A5 the day the headers changed.
+
+Also report how many readers use exact `row["Literal"]` lookups across `sheets.ts` — each is the same hazard waiting.
+
+---
+
+## Order
+
+1. **Item 2** — ship now, no dependencies.
+2. **Item 3** — ship now, both readers.
+3. **0b** — put the plan question to the team; report the three sizing figures.
+4. **Item 4** — after 3.
+5. **Item 1** — only after 0b is answered.
+
+## Reporting
+
+Each its own commit. Files and line numbers, diffstat with **every file named including `package.json`**, `tsc --noEmit` clean, test count, byte-size match, nothing else in the diff.
+
+**Then push** — `origin/main` is `4e5e6c6` and production is three commits behind at `8c2e7f5`.
+
+**Do not publish** until #157 resolves the July golden question.
+
+## For the record
+
+Once item 1 eventually lands, **every corrective run produced before it had no order component.** That includes the exports verified earlier in this workstream — their plan and production figures were sound, their order-driven revisions were not, because there were none. Worth writing into the memory notes so a future reader comparing an old corrective to a new one understands why the numbers moved.

@@ -7,6 +7,7 @@ import {
   planRunResultsTable,
   planRunInputsTable,
   planRunsTable,
+  planRunInputSnapshotsTable,
   plantIngestionCacheTable,
   plantMonthSnapshotsTable,
   plantPlanVersionsTable,
@@ -118,6 +119,52 @@ test("legacy finalized plans hydrate without requiring a linked corrective run",
   } finally {
     await db.delete(plantPlanVersionsTable).where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, "PTMT")));
     await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "PTMT")));
+  }
+});
+
+test("plan-run input snapshots preserve provenance and cascade with their run", async () => {
+  await runMigrations();
+  const month = "1996-01";
+  await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "Plumbing")));
+
+  try {
+    const [run] = await db.insert(planRunsTable).values({
+      month,
+      segment: "Plumbing",
+      status: "draft",
+      effectiveFrom: `${month}-01`,
+      weeklyReleaseVersion: 1,
+    }).returning();
+    await db.insert(planRunInputSnapshotsTable).values({
+      runId: run.id,
+      segment: "Plumbing",
+      sourceRole: "pending_current",
+      sourceKind: "pending_orders",
+      sourceUploadId: 17,
+      sourceFilename: "DATA.xlsx",
+      sourceUploadedAt: new Date("1995-12-31T10:00:00.000Z"),
+      rawRowsJson: [{ Segment: "PLUMBING", "Item Code": "PIPE-1", "Balance Qty": 0 }],
+      parsedRowsJson: [{ itemCode: "PIPE-1", colour: "", qty: 0 }],
+      diagnosticsJson: {
+        source: "pending_orders (pending_current)",
+        rowCount: 1,
+        recognizedRows: 1,
+        skippedRows: 0,
+      },
+    });
+
+    const [snapshot] = await db.select().from(planRunInputSnapshotsTable)
+      .where(eq(planRunInputSnapshotsTable.runId, run.id));
+    assert.equal(snapshot?.segment, "Plumbing");
+    assert.equal(snapshot?.sourceUploadId, 17);
+    assert.deepEqual(snapshot?.parsedRowsJson, [{ itemCode: "PIPE-1", colour: "", qty: 0 }]);
+
+    await db.delete(planRunsTable).where(eq(planRunsTable.id, run.id));
+    const remaining = await db.select().from(planRunInputSnapshotsTable)
+      .where(eq(planRunInputSnapshotsTable.runId, run.id));
+    assert.equal(remaining.length, 0);
+  } finally {
+    await db.delete(planRunsTable).where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, "Plumbing")));
   }
 });
 

@@ -53,9 +53,9 @@ export const PLUMBING_GOLDEN: Array<{ cat: string; expected: number }> = [
   // rolling-window advancement — item counts intact, FG Stock file unchanged (1,042 rows).
   // UPVC Solvent was re-read from the live July workbook on 2026-08-23: 525 pcs.
   { cat: "CPVC Pipe",    expected: 129_247 },
-  // Point-in-time values re-rolled 2026-08-05: Plumbing current pending now
-  // comes from the DATA.xlsx upload (open-balance columns only) instead of the
-  // workbook PENDING ORDER column — removed ~5.4k pcs of pending across 9 items.
+  // Point-in-time values re-rolled 2026-08-05: Plumbing current pending comes
+  // from the segmented live Pending order / report sheet using Bal. Qty, not
+  // the workbook PENDING ORDER column.
   { cat: "CPVC Fitting", expected: 749_297 },
   { cat: "CPVC Solvent", expected:  16_250 },
   { cat: "UPVC Pipe",    expected:  51_477 },
@@ -191,7 +191,7 @@ export const PTMT_CATEGORY_GOLDEN: Array<{ cat: string; maxExpected: number; min
  *                          cols A=Item Code, B=Colour, C=Closing Stock — plain value,
  *                          no Plumbing-style positive/negative sign split)
  *   last_month_pending  = "LAST MONth PENDING ORDERS JULY 2026.xlsx" (qty column "Qty.")
- *   pending_orders      = "DATA.xlsx" (Aug rows carry no Balance_Qty column → pending = 0)
+ *   pending_current     = live Pending order / report sheet (Bal. Qty)
  *
  * Business verification targets for 2026-08 (per the correction spec):
  *   Cocks Standard 210,513/392,794 · Cocks Premium 10,369/16,120 ·
@@ -207,7 +207,8 @@ export const PTMT_AUG_GRAND_MAX  = 617_710;
 export const PTMT_AUG_GRAND_MIN  = 335_145;
 export const PTMT_AUG_STOCK_121O_WHITE = 6_644;
 export const PTMT_AUG_LM_TOTAL         = 168_695;
-export const PTMT_AUG_PENDING_TOTAL    = 0; // Aug DATA.xlsx rows have no Balance_Qty column
+export const PTMT_AUG_PENDING_TOTAL    = 15_238; // live Pending order / report Bal. Qty
+export const PLUMBING_AUG_PENDING_TOTAL = 152_625; // live Pending order / report Bal. Qty
 // Re-verified 2026-08-21 against the live Sale 26-27 "May,Jun,July'26"
 // rolling tab: 16,114 total / 3 = 5,371 monthly average.
 export const PTMT_AUG_AVG3MO_144O_WHITE = 5_371;

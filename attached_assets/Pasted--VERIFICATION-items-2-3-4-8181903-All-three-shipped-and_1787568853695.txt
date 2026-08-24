@@ -1,0 +1,108 @@
+# VERIFICATION — items 2, 3, 4 (`8181903`)
+
+All three shipped and verified on `origin/main`. Four commits, clean history:
+
+```
+8181903  Preserve local source bytes after connector push
+85d615b  Guard regression checks against unread input rows
+200361c  Expose corrective input source diagnostics
+b65dfdc  Fail loudly when PTMT corrective actuals fetch fails
+```
+
+---
+
+## ✅ Item 2 — and the extraction is better than what I asked for
+
+```typescript
+segment === "PTMT"
+  ? fetchCorrectivePtmtActuals(month)          // ← no .catch
+  : Promise.resolve([] as DailyActualRow[]),
+```
+
+And the helper:
+
+```typescript
+export async function fetchCorrectivePtmtActuals(
+  month: string,
+  loader: (month: string) => Promise<DailyActualRow[]> = fetchDailyActuals,
+): Promise<DailyActualRow[]> {
+  return loader(month);
+}
+```
+
+No catch, so failures propagate exactly as Plumbing's do. **The injectable `loader` is the improvement** — a failing fetch can now be tested directly rather than by mocking the module, which is why "a failing fetch rejects" can be asserted properly instead of assumed.
+
+## ✅ Item 3 — both readers covered
+
+`diagnoseInputRows` appears **4×** in `corrective-engine.ts` and **5×** in `plan.ts`. Both the corrective and the plan paths report. The diagnostic payload carries source, upload id, filename, rows read/recognised/skipped, resolved and accepted aliases, **present headers**, and the failure reason.
+
+`present` is the field that turns *"pending is zero"* into *"the file has `Quantity`, we accept `Qty`"* in one line. That is the whole value of this item.
+
+## ✅ Item 4 — the assertion is right
+
+`verify-plumbing-plan.ts:207`:
+
+```typescript
+&& (diagnostics.rowCount === 0 || diagnostics.recognizedRows > 0);
+```
+
+**Rows read > 0 with rows recognised == 0 fails**, and the tolerance string spells the rule out. That is exactly the check that would have caught A5 the day the headers changed. Reporting the `row["..."]` reader inventory in `sheets.ts` alongside it is a useful addition I hadn't asked for.
+
+---
+
+## ⚠ The third `.catch` still swallows — and it is now the last silent path
+
+I asked for a **recommendation**, not a change. It came back as neither.
+
+`corrective-engine.ts:461`:
+
+```typescript
+fetchLivePendingOrderTotals().catch(err => {
+  logger.warn({ err }, "corrective-engine: fetchLivePendingOrderTotals failed");
+  return { exact: new Map(), byCode: new Map(), diagnostics: diagnoseInputRows([], …) };
+}),
+```
+
+**The diagnostics wiring is a real improvement** — the catch now returns a structured diagnostic naming the source and error rather than bare empty maps, so item 4's verifier check will fire on it. Good.
+
+But the swallow remains, and the position has changed since I first raised it: **items 2 and 3 removed every other silent path in this block.** This is the only one left, so it is now the single place where a failed source read produces a plausible-looking corrective.
+
+The argument for leaving it is that the source parses to zero anyway while item 1 is blocked, so nothing is currently lost. **The argument against is that the moment item 1 lands, this catch turns a fetch failure into `deltaNewOrders = 0 − pendingAtPlan`** — silently reverting the order component to exactly the behaviour we are fixing, with only a log line.
+
+**So it should fail loudly at the same time item 1 lands**, not before and not later. Please record that as a stated decision tied to item 1, rather than leaving it as the one unexplained exception in a block whose comment says failures must be loud.
+
+## Two smaller notes
+
+**The regression verifier did not run** — blocked at 401 before any check executed. So items 2, 3 and 4 are verified by typecheck and 157 unit tests, but **item 4's own assertion has never been exercised against real data**. It is the check designed to catch a live condition, and it has not yet met one. Worth stating that way rather than as "verifier blocked".
+
+**`8181903` — "Preserve local source bytes after connector push"** is the third occurrence of the connector altering bytes on push. The correction is fine, but a push mechanism that needs a follow-up commit to restore what it changed is worth a note in `gh-push-truncation.md` if it is not there already.
+
+---
+
+## 0b — the honest answer, and what it means
+
+Refusing to reconstruct run #20's `pending_current` without a verified 17-August snapshot was right. An estimate here would have anchored a business decision to a number nobody could defend.
+
+But that absence is itself the finding, and it should be stated plainly to the team:
+
+> **There is no 17-August snapshot of the open-order book.** The plan froze its items, its plan-run totals and its provenance — but not the order inputs it was built from. So the question *"what were the outstanding orders when run #20 was created?"* has no answer from stored data.
+
+That has a consequence beyond 0b: if the business says `Pending Order` means open balance, then **run #20 cannot be corrected retrospectively** — only future runs can be right. Worth knowing before the decision is made, because it changes what "fix it" can mean.
+
+And it argues for capturing the order snapshot alongside the plan run, the same way `frozenPlanGrandMax` captures the plan total. That is the same lesson as the June workbook drift and the July golden: a plan whose inputs were not preserved cannot be audited later.
+
+---
+
+## Suggested reply
+
+> All three verified on `origin/main` at `8181903`. Item 2's extraction into `fetchCorrectivePtmtActuals` with an injectable `loader` is better than what I asked for — a failing fetch can now be tested directly rather than by mocking the module. Item 3 covers both readers (`diagnoseInputRows` 4× in the corrective, 5× in the plan), and `present` headers is the field that makes the diagnosis one line rather than an investigation. Item 4's `rowCount === 0 || recognizedRows > 0` is exactly the assertion that would have caught A5 on day one.
+>
+> **On the third `.catch`:** the diagnostics wiring is a genuine improvement — it now returns a structured diagnostic so item 4's check will fire on it. But the swallow remains, and I asked for a recommendation, which didn't come. The position has changed: items 2 and 3 removed every other silent path in that block, so this is the only one left. And **the moment item 1 lands, this catch turns a fetch failure into `deltaNewOrders = 0 − pendingAtPlan`** — silently reverting the order component to exactly what we're fixing. Please make it fail loudly **at the same time as item 1**, and record that as a decision tied to it rather than leaving it as the unexplained exception in a block whose own comment says failures must be loud.
+>
+> **On validation:** worth stating precisely that item 4's assertion has never been exercised against real data — the verifier stopped at 401 before any check ran. It's the check designed to catch a live condition and it hasn't met one yet.
+>
+> **On 0b — declining to reconstruct run #20's `pending_current` was right**, and the absence is itself the finding. Please put this to the team in these terms: **there is no 17-August snapshot of the open-order book.** The plan froze its items, totals and provenance but not its order inputs, so "what were the outstanding orders when #20 was created?" has no answer from stored data.
+>
+> That matters for the decision: if `Pending Order` means open balance, **run #20 cannot be corrected retrospectively** — only future runs can be right. And it argues for capturing the order snapshot alongside each plan run, the way `frozenPlanGrandMax` captures the plan total. Same lesson as the June workbook drift and the July golden — a plan whose inputs weren't preserved can't be audited later.
+>
+> Minor: `8181903` is the third time the connector has altered bytes on push. Worth a line in `gh-push-truncation.md` if it isn't there.

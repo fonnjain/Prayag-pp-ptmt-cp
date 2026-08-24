@@ -17,10 +17,18 @@ export interface InputReadDiagnostics {
   error?: string;
 }
 
+function normaliseHeader(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 function firstValue(row: Record<string, unknown>, aliases: string[]): unknown {
-  return aliases
+  const direct = aliases
     .map((alias) => row[alias])
     .find((value) => value !== undefined && value !== null && value !== "");
+  if (direct !== undefined) return direct;
+  const wanted = new Set(aliases.map(normaliseHeader));
+  const matchingKey = Object.keys(row).find((key) => wanted.has(normaliseHeader(key)));
+  return matchingKey ? row[matchingKey] : undefined;
 }
 
 function presentHeaders(rows: Record<string, unknown>[]): string[] {
@@ -43,10 +51,17 @@ export function diagnoseInputRows(
   options: { source: string; uploadId?: number | null; filename?: string | null; error?: string },
 ): InputReadDiagnostics {
   const headers = presentHeaders(rows);
+  const normalisedHeaders = new Set(headers.map(normaliseHeader));
   const resolvedFields = {
-    code: aliases.code.find((alias) => headers.includes(alias)) ?? null,
-    colour: aliases.colour.find((alias) => headers.includes(alias)) ?? null,
-    quantity: aliases.quantity.find((alias) => headers.includes(alias)) ?? null,
+    code: aliases.code.find((alias) => headers.includes(alias))
+      ?? aliases.code.find((alias) => normalisedHeaders.has(normaliseHeader(alias)))
+      ?? null,
+    colour: aliases.colour.find((alias) => headers.includes(alias))
+      ?? aliases.colour.find((alias) => normalisedHeaders.has(normaliseHeader(alias)))
+      ?? null,
+    quantity: aliases.quantity.find((alias) => headers.includes(alias))
+      ?? aliases.quantity.find((alias) => normalisedHeaders.has(normaliseHeader(alias)))
+      ?? null,
   } satisfies Record<InputFieldRole, string | null>;
 
   let codeRows = 0;

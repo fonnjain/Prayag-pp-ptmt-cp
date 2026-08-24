@@ -47,3 +47,44 @@ test("input diagnostics recognize zero quantities when the balance field exists"
   assert.equal(diagnostics.skippedRows, 0);
   assert.deepEqual(diagnostics.missingRequiredFields, []);
 });
+
+test("input diagnostics recognize the confirmed Bal. Qty open-balance header", () => {
+  const diagnostics = diagnoseInputRows(
+    [{ "Item Code": "144-O", Colour: "WHITE", "Bal. Qty": 12, Quantity: 999 }],
+    {
+      code: ["Old ERP Code", "Item Code", "Item No."],
+      colour: ["Colour", "Color"],
+      quantity: ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty"],
+    },
+    { source: "pending report" },
+  );
+
+  assert.equal(diagnostics.recognizedRows, 1);
+  assert.equal(diagnostics.quantityRows, 1);
+  assert.deepEqual(diagnostics.resolvedFields, {
+    code: "Item Code",
+    colour: "Colour",
+    quantity: "Bal. Qty",
+  });
+  assert.deepEqual(diagnostics.missingRequiredFields, []);
+});
+
+test("input diagnostics normalise live report header casing and punctuation", () => {
+  const diagnostics = diagnoseInputRows(
+    [{ "ITEM CODE": "144-O", COLOR: "WHITE", "BAL QTY": 12, SEGMENT: "PT" }],
+    {
+      code: ["Old ERP Code", "Item Code", "Item No."],
+      colour: ["Colour", "Color"],
+      quantity: ["Bal. Qty"],
+    },
+    { source: "Pending order / report · PTMT" },
+  );
+
+  assert.equal(diagnostics.recognizedRows, 1);
+  assert.deepEqual(diagnostics.resolvedFields, {
+    code: "Item Code",
+    colour: "Color",
+    quantity: "Bal. Qty",
+  });
+  assert.deepEqual(diagnostics.missingRequiredFields, []);
+});

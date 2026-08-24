@@ -1,4 +1,4 @@
-import { pgTable, serial, text, real, timestamp, jsonb, integer } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, real, timestamp, jsonb, integer, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -56,6 +56,29 @@ export const pendingSnapshotsTable = pgTable("pending_snapshots", {
   qty: real("qty").notNull().default(0),
 });
 
+export const planRunInputSnapshotsTable = pgTable("plan_run_input_snapshots", {
+  id: serial("id").primaryKey(),
+  runId: integer("run_id")
+    .notNull()
+    .references(() => planRunsTable.id, { onDelete: "cascade" }),
+  segment: text("segment").notNull(),
+  sourceRole: text("source_role").notNull(),
+  sourceKind: text("source_kind").notNull(),
+  sourceUploadId: integer("source_upload_id"),
+  sourceFilename: text("source_filename"),
+  sourceUploadedAt: timestamp("source_uploaded_at", { withTimezone: true }),
+  capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
+  rawRowsJson: jsonb("raw_rows_json").notNull().$type<Record<string, unknown>[]>(),
+  parsedRowsJson: jsonb("parsed_rows_json").notNull().$type<Array<{
+    itemCode: string;
+    colour: string;
+    qty: number;
+  }>>(),
+  diagnosticsJson: jsonb("diagnostics_json").notNull().$type<Record<string, unknown>>(),
+}, (table) => [
+  uniqueIndex("plan_run_input_snapshots_run_role_idx").on(table.runId, table.sourceRole),
+]);
+
 export const insertPlanRunSchema = createInsertSchema(planRunsTable).omit({
   id: true,
   asOfAt: true,
@@ -66,3 +89,4 @@ export type PlanRun = typeof planRunsTable.$inferSelect;
 export type PlanRunInput = typeof planRunInputsTable.$inferSelect;
 export type PlanRunResult = typeof planRunResultsTable.$inferSelect;
 export type PendingSnapshot = typeof pendingSnapshotsTable.$inferSelect;
+export type PlanRunInputSnapshot = typeof planRunInputSnapshotsTable.$inferSelect;

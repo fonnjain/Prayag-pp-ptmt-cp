@@ -23,6 +23,7 @@
 - [Prod API build command](prod-api-build.md) — pnpm build step in artifact.toml takes ~32s in prod (healthchecks fail); use direct esbuild instead.
 - [API startup readiness](api-startup-readiness.md) — listen early for healthchecks, but hold DB-backed routes behind readiness and let clients retry during migrations/seeding.
 - [Plan runs + pending order source](plan-runs-system.md) — THREE uploads required (current_stock/pending_orders/last_month_pending); current pending MUST come from DATA.xlsx upload NOT live sheet (drifts daily); plan_runs schema in 003_plan_runs.sql; last_month_pending reads PTMT tab; F.G. STOCK reads F.G Sheet only.
+- [Plan-run pending provenance](plan-run-pending-provenance.md) — freeze source-level pending rows, parsed totals, diagnostics, upload identity, and capture time atomically with every new run; legacy runs stay explicitly uncaptured.
 - [Segment discriminator pattern](segment-discriminator.md) — `segment TEXT NOT NULL DEFAULT 'PTMT'` on all planning tables; Plumbing upload kinds prefixed `plumbing_`; ERP GROUP filter "PLUMBING"; SegmentContext + sidebar toggle; categories sidebar is dynamic from API, not static list.
 - [Publish schema bridge](publish-schema-bridge.md) — when Publish diffs old single-key production to composite-key dev, stage columns first and preserve legacy tables until app-start migrations transfer data.
 - [Capacity segment isolation fix](capacity-segment-fix.md) — GET /capacity/categories and recompute POST must pass ?segment=; seedCategoryCapacity is idempotent per-category (seeds 7 PTMT + 12 Plumbing); Plumbing actuals not yet wired so all Plumbing capacity starts thin-data.
@@ -39,13 +40,14 @@
 - [Workbook ID config](workbook-id-config.md) — workbook_config DB table (migration 012) stores IDs per division+month; getWorkbookIdForMonth() checks DB first then hardcoded maps; WorkbookConfigPanel on Data page allows UI edits.
 - [Replan invariant rounding](replan-invariant-rounding.md) — round planTotal before storing in c.plan; derive remaining = planTotal − producedCapped (never round independently); update point-in-time goldens each time Sheet3 advances significantly.
 - [Upload column aliases](upload-column-aliases.md) — Aug uploads renamed qty/code headers; alias lists in sumByKey calls must cover every layout or stock/pending silently zero.
+- [Pending open-balance source](pending-open-balance-source.md) — current pending is unfulfilled `Bal. Qty`; invoice `Quantity` is never a substitute and invoice-only layouts remain explicit structural zero.
 - [Planning uploads-only isolation](planning-isolation.md) — plan build reads stock/pending from uploads only (loud named 422 when missing); sheet reads gated by allow-list guard in sheets.ts; Order column display-only.
 - [Plan-run baseline citation](plan-run-baseline.md) — corrective replans cite frozen plan runs; engine stays live unless route passes planRunId; cited runs undeletable; drift keys need category.
 - [Corrective run dedupe](corrective-run-dedupe.md) — fingerprint(Math.fround-quantized full content) + pg advisory lock; `real` columns break strict float equality.
 - [Ops overview partial cache](ops-overview-partial-cache.md) — never cache a live-sheet aggregate when any tab read failed; suite live checks use fetchJson + evaluateWithRetry.
 - [Plant-live proxy auth](plant-live-proxy.md) — /api/plant-live/records requires a managed Bearer API key (only route using validateApiKey); upstream fetches have 20s timeout; document 401/503 in openapi.
 - [Corrective export provenance](corrective-export-provenance.md) — exports render persisted engine categoriesJson (never DB capacity table); new persisted fields must join the dedupe fingerprint payload; frozenPlanGrandMax fix: explicit-planRunId calls were silently skipped, disabling BASELINE_INTEGRITY_ERROR for pinned baselines.
-- [GitHub push via Contents API truncation](gh-push-truncation.md) — base64-encoded file push via Contents API silently truncates files >~61 KB; use Git Trees API with encoding:"utf-8" blobs instead; verify by comparing GitHub reported size to local wc -c before declaring success.
+- [GitHub push safety](gh-push-truncation.md) — Contents truncates large pushes; prefer UTF-8 Git Trees, with GraphQL atomic commit as fallback when Git Data REST is Cloudflare-blocked.
 - [Plumbing machine cascade](plumbing-machine-cascade.md) — 9 PIPE + 24 MOULDING in plumbing_machine_capacity; cascade runs after annotateWeeklyRelease; AGRI Pipe → flex only (MC3/MC4/MC5); Solvent unconstrained; machineW1-W4 on PlanItemWithBom; DataPage has no month prop (panel derives from new Date()).
 - [Plumbing plan run casing](plumbing-plan-run-casing.md) — POST /plan/runs requires segment="Plumbing" (title-case); "PLUMBING" produces 0 items silently; GET /plan normalises internally but the plan-runs route does not.
 - [Corrective empty-baseline guard](corrective-empty-baseline-guard.md) — POST /corrective/replan returns 422 EMPTY_BASELINE when live rebuild yields 0 items+0 categories; prevents silent zero plan passing as a real result.
@@ -59,3 +61,5 @@
 - [Browser auth and machine routes](auth-machine-route-boundary.md) — classify machine API-key paths before applying the shared browser session guard.
 - [Build commit provenance](build-commit-provenance.md) — production bundles need the commit SHA injected at build time because stripped containers have no .git metadata.
 - [Corrective capacity basis](corrective-capacity-basis.md) — weekday-only Cap/Day aligns with calendar Mon–Sat remaining days; p90 rank effects can still raise capacity.
+- [Live pending failure boundary](live-pending-failure-boundary.md) — corrective replans must fail on unavailable live pending reads, while valid zero/empty reads remain diagnostic results.
+- [Regression verifier authentication](regression-verifier-auth.md) — the CLI needs a valid existing admin account; bootstrap credentials may not match seeded accounts.

@@ -4,6 +4,7 @@ import { exportTimestamp } from "../lib/export-filename";
 import { db, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable, planRunsTable, planRunResultsTable } from "@workspace/db";
 import { eq, desc, and, sql } from "drizzle-orm";
 import { runCorrectiveReplan, type CorrectiveItemResult } from "../lib/corrective-engine";
+import { LivePendingReadError } from "../lib/corrective-errors";
 import { exportPlanExcel, ITEM_COLUMNS, addLegendSheet, RED_FILL, GREEN_FILL } from "../lib/excel-export";
 import { summarizePlan, type CalcPlanItem } from "../lib/calc";
 import ExcelJS from "exceljs";
@@ -188,6 +189,18 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "corrective/replan failed");
+    if (err instanceof LivePendingReadError) {
+      req.log.error(
+        { code: err.code, diagnostics: err.diagnostics, causeMessage: err.causeMessage },
+        "corrective/replan blocked by live pending source failure",
+      );
+      res.status(503).json({
+        error: err.code,
+        message: err.message,
+        diagnostics: err.diagnostics,
+      });
+      return;
+    }
     res.status(500).json({ error: "Corrective replan failed", detail: String(err) });
   }
 });

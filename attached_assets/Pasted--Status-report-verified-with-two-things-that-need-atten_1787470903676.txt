@@ -1,0 +1,107 @@
+# Status report — verified, with two things that need attention
+
+This is the report the last one should have been. Written from the right workspace, with real database and deployment access, and honest about what it couldn't reach. The correction that matters most is that **both defects I flagged as falsely cleared were in fact real** — and the fix for one of them has since landed.
+
+---
+
+## Confirmed against GitHub
+
+`origin/main` is now **`0a3fe7d`**, two commits past my baseline. I verified the substance:
+
+**The segment fall-through is genuinely fixed** (`monitoring.ts:389–397`):
+
+```typescript
+const segment = normalizePlantSegment(req.query.segment);
+if (segment === null) {
+  res.status(400).json({
+    error: "Unrecognised segment",
+    value: String(req.query.segment),
+    recognised: PLANT_SEGMENTS,
+  });
+  return;
+}
+```
+
+Named value, listed alternatives, rejected before branching — exactly as specified.
+
+**And the registry is now the single source** (`plant-segments.ts:28–43`) — `BY_LOWER` built from `PLANT_SEGMENTS`, both functions deriving from it. So adding CP will widen the type *and* the runtime behaviour together. That was the root cause behind the fall-through and it's properly closed.
+
+Much of the release-blocker work landed alongside it: parser support for legacy Plumbing layouts, bounded PDF rendering (500 at 41.5s → 200 at ~9s), snapshot provenance backfill, and the dynamic verifier fixture. 467/467 regression checks.
+
+---
+
+## ⚠ 1. Production is running code that is two commits old
+
+```
+GET /api/healthz → commitSha: 8c2e7f5
+GitHub main:                  0a3fe7d
+```
+
+**The release-blocker fixes are on GitHub but not deployed.** Everything in section 6 marked "fixed in source" is unfixed in production — including the segment fall-through, which was reproduced in production and is still live there.
+
+The report says this plainly ("the live served-code identity does not independently prove the current source is deployed"), which is the right call. But it belongs at the top rather than as a caveat under each item: **#153's RELEASE BLOCKED verdict still stands in production**, whatever the source now says.
+
+Worth noting the deployment restarted at 05:30 UTC on 23 Aug with `/api` returning 500 during startup — which is normal — and that no August snapshot was created, which is correct since August closes on 8 September.
+
+## ⚠ 2. The golden baseline was lowered to match live data
+
+`0a3fe7d` changes UPVC Solvent from **541 → 525** across four assertions, with the comment *"re-read from the live July workbook on 2026-08-23"*.
+
+**A test that gets updated whenever the source moves has stopped being a test.** July is a **closed month** — its figures are supposed to be frozen. That a July golden drifted means one of three things, and they have very different implications:
+
+1. Someone edited the July source workbook after close — the exact drift the freeze exists to prevent
+2. The golden was wrong from the start and 525 is the true figure
+3. The parser changed in `8b2c381` (which touched `sheets.ts`) and now reads the tab differently
+
+**Case 3 is the one to rule out first.** `8b2c381` added legacy Plumbing workbook-layout support and modified `sheets.ts` — and the very next commit adjusts a Plumbing golden downward. If the parser now reads UPVC Solvent differently, updating the golden hides a parser regression rather than recording a data change.
+
+Before accepting 525: check the July workbook's `modifiedTime`, and re-run the *old* parser against the *current* workbook. If it still yields 541, the parser changed and the golden should not have moved.
+
+More broadly, this is the pattern the ±500 divergence-band discussion was about: when a check goes red, establish whether the code or the data moved before adjusting the expectation. The commit message says what changed but not why it was safe.
+
+## 3. #148 is still open, and correctly reported as such
+
+The July PTMT row still has a blank `captured_commit_sha` and was never recaptured — while the July Plumbing row was backfilled with `8c2e7f5` and now carries a proper reason string.
+
+Reporting #148 as "archived but not complete" is exactly the distinction I asked for. That's five tasks now archived with work outstanding, and this report is the first to say so rather than let the closure imply completion.
+
+## 4. Machine app — one bug fixed, one still live
+
+`app.py:7517` still calls `sheets._get_drive_token()` with `sheets` unbound, still inside `except Exception`, so **staleness warnings remain silently disabled on every render**. Confirmed still present on GitHub `main`.
+
+Two useful findings from the machine API checks:
+
+- **`months_with_data` = 2026-04 through 2026-07. August is absent.** So even with authentication working, August machine data does not exist upstream — which independently confirms the `DAILY_SOURCES` gap found earlier.
+- **`figures_gated: false`** on both PIPE and PTMT summaries. The flag is still unhandled in the planning UI, but nothing is currently gated, so no wrong data is being displayed today. It remains a latent issue.
+
+The PTMT summary returning 975 rows and 40+ machine keys means PTMT machine data *is* reachable now — the 302 fix worked.
+
+---
+
+## What I'd do next, in order
+
+1. **Publish.** `commitSha` must reach `0a3fe7d`, or every "fixed in source" item stays broken in production.
+2. **Justify or revert the golden change** — rule out case 3 before accepting 525.
+3. **Complete #148**, archive-first, once production is current.
+4. **Fix `app.py:7517`** and narrow that `except`.
+5. **Re-run the production verifier** after publishing and report the count. 4/98 → 0/98, or each failure named.
+
+---
+
+## Suggested reply
+
+> This is the report the last one should have been — right workspace, real database and deployment access, and honest about what it couldn't reach. Reporting #148 as "archived but not complete" is exactly the distinction that matters; that's five tasks archived with work outstanding, and this is the first report to say so rather than let closure imply completion.
+>
+> I verified the two fixes on GitHub: `monitoring.ts:389–397` now rejects null with the value named and `PLANT_SEGMENTS` listed, and `plant-segments.ts:28–43` derives both functions from `BY_LOWER`. The root cause is properly closed — adding CP will widen the type and the runtime behaviour together.
+>
+> **Two things need attention.**
+>
+> **1. Production is two commits behind — `commitSha` is `8c2e7f5`, GitHub is `0a3fe7d`.** So every section-6 item marked "fixed in source" is still broken in production, including the segment fall-through that was reproduced there. **#153's RELEASE BLOCKED verdict still stands in production**, whatever the source says. That belongs at the top of the report, not as a per-item caveat. Please publish and confirm `commitSha` reaches `0a3fe7d`.
+>
+> **2. `0a3fe7d` lowers a July golden from 541 to 525** because the live workbook was re-read. July is a **closed** month — its figures are meant to be frozen, so a drifting July golden is itself the finding. Three possibilities: someone edited the source after close, the golden was always wrong, or **the parser changed**. That third one worries me: `8b2c381` modified `sheets.ts` to support legacy Plumbing layouts, and the very next commit moves a Plumbing golden down. Before accepting 525, please check the July workbook's `modifiedTime` and re-run the pre-`8b2c381` parser against the current workbook. If it still yields 541, the parser changed and the golden shouldn't have moved — updating it would hide a regression.
+>
+> Two useful things from the machine API checks worth recording: **`months_with_data` stops at 2026-07**, independently confirming the `DAILY_SOURCES` gap, so August machine data won't appear regardless of auth. And **`figures_gated: false`** on both plants — still unhandled in our UI, but nothing gated today, so it's latent rather than active.
+>
+> `app.py:7517` is still live in the machine app — please fix it and narrow that `except Exception`, since the broad catch is what hid it.
+>
+> Order: publish → justify or revert the golden → complete #148 → machine-app fix → re-run the verifier and report 4/98 → 0/98 or each remaining failure named.

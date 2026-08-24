@@ -16,7 +16,9 @@
  *
  * AGRI Pipe has no dedicated machine — only flex machines (MC3, MC4, MC5).
  *
- * Items with noBomWeight=true or weightKg=0 are unconstrained (no kg to schedule).
+ * Items with noBomWeight=true or weightKg=0 are unconstrained (no kg to schedule)
+ * when weekly release assigned them a week. Pending-only items without a release
+ * week remain explicit unfulfillable residuals instead of disappearing.
  *
  * Algorithm — PARTIAL ALLOCATION:
  *   Track residualPcs per item.  Each week, for every item whose desiredWeek ≤ w and
@@ -181,6 +183,7 @@ export function runMachineCascade(
 
   // ── Residual tracking per item ─────────────────────────────────────────────
   const residualPcs = new Map<PlanItemForCascade, number>();
+  const unfulfillable: MachineCascadeResult["unfulfillable"] = [];
 
   for (const item of items) {
     const pool = getPoolForCategory(item.category);
@@ -193,6 +196,16 @@ export function runMachineCascade(
       item.machineW3 = item.w3 ?? 0;
       item.machineW4 = item.w4 ?? 0;
       item.machineWeek = desiredWeek(item);
+      const placed = item.machineW1 + item.machineW2 + item.machineW3 + item.machineW4;
+      if (pool !== "SOLVENT" && item.maxProduction > 0 && placed < item.maxProduction - 1) {
+        item.machineUnfulfillable = true;
+        unfulfillable.push({
+          itemCode: item.itemCode,
+          category: item.category,
+          pieces: item.maxProduction - placed,
+          bindingMachine: null,
+        });
+      }
       continue;
     }
 
@@ -278,8 +291,6 @@ export function runMachineCascade(
   }
 
   // ── After W4: items with remaining residual are unfulfillable ─────────────
-  const unfulfillable: MachineCascadeResult["unfulfillable"] = [];
-
   for (const [item, rem] of residualPcs) {
     if (rem <= 0) continue;
 

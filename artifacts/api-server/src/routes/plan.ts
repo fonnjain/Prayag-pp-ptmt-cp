@@ -6,6 +6,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { computeItemPlan, annotateWeeklyRelease, summarizePlan, type ItemSourceRow, type WeeklyBandConfig } from "../lib/calc";
 import {
   fetchAvg3MoSaleTotals,
+  fetchLivePendingOrderTotals,
   fetchLiveOrderTotals,
   fetchPlumbingBomWeights,
   fetchPlumbingPlanData,
@@ -27,6 +28,7 @@ import { exportPlanPdf } from "../lib/pdf-export";
 import { exportWeeklyReleaseExcel } from "../lib/weekly-excel-export";
 import { runMachineCascade, type PlanItemForCascade } from "../lib/machine-capacity-engine";
 import { runCorrectiveReplan } from "../lib/corrective-engine";
+import { LivePendingReadError } from "../lib/corrective-errors";
 import { diagnoseInputRows } from "../lib/input-diagnostics";
 import {
   PLUMBING_GOLDEN,
@@ -57,6 +59,7 @@ import {
   PTMT_AUG_STOCK_121O_WHITE,
   PTMT_AUG_LM_TOTAL,
   PTMT_AUG_PENDING_TOTAL,
+  PLUMBING_AUG_PENDING_TOTAL,
   PTMT_AUG_AVG3MO_144O_WHITE,
   PTMT_AUG_CATEGORY_GOLDEN,
   PTMT_TOLERANCE,
@@ -73,11 +76,12 @@ import {
 
 const router: IRouter = Router();
 
-// ── Uploads-only enforcement (stock & pending) ────────────────────────────────
+// ── Planning input enforcement (uploads + explicitly allow-listed live pending) ─
 //
-// Scope decision (2026-08): stock and pending (current + last-month) come from
-// uploads ONLY. A missing or unparseable upload fails the plan LOUDLY, naming
-// the file — never a sheet fallback, never a zero default, never a partial plan.
+// Scope decision (2026-08): stock and last-month pending come from uploads;
+// current pending comes from the segmented live Pending order / report sheet.
+// Missing or unparseable inputs fail the plan LOUDLY — never a sheet fallback,
+// never a zero default, never a partial plan.
 // Reference data allowed live in the plan path: sales history (avg-3-month),
 // the Plumbing workbook roster/avg/multiplier columns, and BOM weights.
 
@@ -130,6 +134,14 @@ export function handlePlanError(res: Response, err: unknown): void {
   }
   if (err instanceof MissingUploadError || err instanceof PlanningInputError || err instanceof PlanningIsolationError) {
     res.status(422).json({ error: err.message, kind: err.name });
+    return;
+  }
+  if (err instanceof LivePendingReadError) {
+    res.status(503).json({
+      error: err.code,
+      message: err.message,
+      diagnostics: err.diagnostics,
+    });
     return;
   }
   throw err;
@@ -192,14 +204,14 @@ async function buildPlanningIsolationChecks(month: string, segment: "PTMT" | "Pl
 }
 
 /**
- * PENDING-SOURCE classification for DATA.xlsx (pending_orders upload).
+ * Legacy upload-source classifier kept for diagnostics compatibility.
  *
  * WHY pending can legitimately be 0: the August 2026 DATA.xlsx is an
  * invoice-register layout (Item Code / Colour / Quantity / Date …) with NO
  * open-balance column, so no row carries a pending balance — pending
  * contributes 0 by STRUCTURE, not by silent default. This is PROVISIONAL,
  * not a permanent rule: if a future month's file carries a balance column
- * (Balance_Qty / Balance Qty / Bal.Qty), it is picked up automatically.
+ * (Balance_Qty / Balance Qty / Bal.Qty / Bal. Qty), it is picked up automatically.
  * This classifier makes the distinction explicit so an unparseable file can
  * never masquerade as "zero pending".
  */
@@ -209,7 +221,7 @@ export function classifyPendingSource(rows: Record<string, unknown>[]): {
   balanceColumns: string[];
 } {
   const CODE_KEYS = ["Old Item Code", "Item Code", "Item No."];
-  const BALANCE_KEYS = ["Balance_Qty", "Balance Qty", "Bal.Qty"];
+  const BALANCE_KEYS = ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty"];
   const seenCols = new Set<string>();
   for (const row of rows.slice(0, 200)) for (const k of Object.keys(row)) seenCols.add(k);
   const balanceColumns = BALANCE_KEYS.filter((k) => seenCols.has(k));
@@ -218,20 +230,6 @@ export function classifyPendingSource(rows: Record<string, unknown>[]): {
     hasCodeColumn: CODE_KEYS.some((k) => seenCols.has(k)),
     balanceColumns,
   };
-}
-
-/** Asserts the pending upload's source is present AND parsed — never assumed-zero. */
-function assertPendingSourceParsed(rows: Record<string, unknown>[], fileLabel: string): void {
-  const info = classifyPendingSource(rows);
-  if (!info.hasCodeColumn) {
-    throw new PlanningInputError(
-      `${fileLabel} is present but unparseable: no recognised item-code column ` +
-      `(expected one of "Old Item Code" / "Item Code" / "Item No."). Refusing to treat pending as zero.`,
-    );
-  }
-  if (info.layout === "invoice-register") {
-    logger.info({ fileLabel }, "Pending source: invoice-register layout (no open-balance column) → pending contributes 0 (structural, provisional)");
-  }
 }
 
 /**
@@ -365,19 +363,19 @@ async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanIt
 
 async function buildPlumbingPlanItemsInner(month: string): Promise<PlanItemWithBom[]> {
   // ── 1. UPLOADS + DB FIRST — fail fast (loudly, naming the file) before any sheet read ──
-  const [fgStockRows, rawPendingRows, bufferRows, bandRows, machineRows] = await Promise.all([
+  const [fgStockRows, bufferRows, bandRows, machineRows] = await Promise.all([
     requireUploadRows("plumbing_fg_stock", "Plumbing FG Stock"),
-    requireUploadRows("pending_orders", "DATA.xlsx (pending orders)"),
     db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
     db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
     db.select().from(plumbingMachineCapacityTable).where(eq(plumbingMachineCapacityTable.segment, "Plumbing")),
   ]);
-  assertPendingSourceParsed(rawPendingRows, "DATA.xlsx (pending orders)");
 
-  // ── 2. Reference-data sheet reads (allow-listed: workbook roster/avg/multiplier + BOM) ──
-  const [workbookRows, bomWeights] = await Promise.all([
+  // ── 2. Reference-data sheet reads (allow-listed: workbook roster/avg/multiplier,
+  // BOM, and the approved live open-balance pending source) ──
+  const [workbookRows, bomWeights, pendingTotals] = await Promise.all([
     fetchPlumbingPlanData(month),
     fetchPlumbingBomWeights(),
+    fetchLivePendingOrderTotals("Plumbing"),
   ]);
 
   // Reference-data sanity guard: a zero avg-3-month across the board collapses
@@ -389,21 +387,6 @@ async function buildPlumbingPlanItemsInner(month: string): Promise<PlanItemWithB
       `for ${month} — refusing to plan on collapsed buffer inputs.`,
     );
   }
-
-  // Pending current-month: DATA.xlsx UPLOAD, Plumbing segments (PLUMBING / P / PL / AGRI).
-  // ONLY open-balance columns count — the invoice "Quantity" column must never
-  // masquerade as pending. Invoice-register layouts therefore contribute 0
-  // (structural, documented in classifyPendingSource).
-  const plumbingPendingRows = rawPendingRows.filter((row) => {
-    const seg = String(row["Segment"] ?? "").trim().toUpperCase();
-    return seg === "PLUMBING" || seg === "P" || seg === "PL" || seg === "AGRI";
-  });
-  const pendingTotals = sumByKey(
-    plumbingPendingRows,
-    ["Old Item Code", "Item Code", "Item No."],
-    ["Colour", "Color"],
-    ["Balance_Qty", "Balance Qty", "Bal.Qty"],
-  );
 
   // Parse FG Stock upload (authoritative source for Stock and Pending-Last-Month).
   //   Net Stock positive  → opening stock on 1st of month
@@ -494,9 +477,8 @@ async function buildPlumbingPlanItemsInner(month: string): Promise<PlanItemWithB
         stock:                 stockMap.get(code) ?? 0,
         stockNeedsReview:      false,
         pendingOrderLastMonth: pendingLmMap.get(code) ?? 0,
-        // Pending (current month) from the DATA.xlsx UPLOAD (Plumbing segments,
-        // open-balance columns only) — the workbook's PENDING ORDER column is
-        // no longer read (uploads-only rule, scoped 2026-08).
+        // Pending (current month) from the live Pending order report. The
+        // reader filters Plumbing/P/PL/AGRI and uses Bal. Qty only.
         pendingOrder:          pendingTotals.byCode.get(code) ?? 0,
         // Order is display-only and annotated OUTSIDE the planning context.
         order:                 0,
@@ -550,20 +532,21 @@ export async function buildPlanItems(month: string, segment: string = "PTMT"): P
 
 async function buildPtmtPlanItemsInner(month: string, segment: string): Promise<PlanItemWithBom[]> {
   // ── 1. UPLOADS + DB FIRST — fail fast (loudly, naming the file) before any sheet read ──
-  const [itemRows, bufferRows, bandRows, rawPendingOrderRows, currentStockRows, pendingLastMoRows] =
+  const [itemRows, bufferRows, bandRows, currentStockRows, pendingLastMoRows] =
     await Promise.all([
       db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, segment)),
       db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
       db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
-      // DATA.xlsx (pending_orders) — global upload; rows for all segments stored, filtered below.
-      requireUploadRows("pending_orders", "DATA.xlsx (pending orders)"),
       requireUploadRows("current_stock", "FG Stock (current stock)"),
       requireUploadRows("last_month_pending", "Last-Month Pending"),
     ]);
-  assertPendingSourceParsed(rawPendingOrderRows, "DATA.xlsx (pending orders)");
 
-  // ── 2. Reference-data sheet read (allow-listed: sales history avg-3-month) ──
-  const avg3MoTotals = await fetchAvg3MoSaleTotals(month);
+  // ── 2. Reference-data sheet reads (allow-listed: sales history and live
+  // open-balance pending) ──
+  const [avg3MoTotals, pendingOrderTotals] = await Promise.all([
+    fetchAvg3MoSaleTotals(month),
+    fetchLivePendingOrderTotals(segment),
+  ]);
   // Reference-data sanity guard: zero sales history collapses every buffer and
   // silently under-plans across the board — refuse to plan on it. (The
   // band-vs-prior-month check runs in /plan/validate to avoid doubling sheet
@@ -575,25 +558,9 @@ async function buildPtmtPlanItemsInner(month: string, segment: string): Promise<
     );
   }
 
-  // DATA.xlsx stores rows for all segments; keep only PTMT rows.
-  const pendingOrderRows = rawPendingOrderRows.filter((row) => {
-    const seg = String(row["Segment"] ?? "").trim().toUpperCase();
-    return seg === "PTMT" || seg === "PT";
-  });
-
   const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
   const bandsByCategory = new Map<string, WeeklyBandConfig>(
     bandRows.map((b) => [b.categoryName, { w1Upper: b.w1Upper, w2Upper: b.w2Upper, w3Upper: b.w3Upper, w4Upper: b.w4Upper }]),
-  );
-
-  // Pending current: DATA.xlsx PendingOrder tab columns after alias transform:
-  //   "Old Item Code" / "Item No." → code; "Colour" / "Color" → colour;
-  //   "Balance_Qty" / "Balance Qty" / "Bal.Qty" → qty.
-  const pendingOrderTotals = sumByKey(
-    pendingOrderRows,
-    ["Old Item Code", "Item Code", "Item No."],
-    ["Colour", "Color"],
-    ["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"],
   );
 
   // Last-month pending: PTMT tab columns: "Item Code" / "Cat No" → code; "Colour" / "Color" → colour; "Qty" → qty.
@@ -1050,7 +1017,7 @@ router.get("/plan/corrective-replan", async (req, res): Promise<void> => {
   try {
     replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing", dryRun: true });
   } catch (err) {
-    if (err instanceof PlumbingInputUnreadableError) {
+    if (err instanceof PlumbingInputUnreadableError || err instanceof LivePendingReadError) {
       handlePlanError(res, err);
       return;
     }
@@ -1115,7 +1082,7 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
   try {
     replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing", dryRun: true });
   } catch (err) {
-    if (err instanceof PlumbingInputUnreadableError) {
+    if (err instanceof PlumbingInputUnreadableError || err instanceof LivePendingReadError) {
       handlePlanError(res, err);
       return;
     }
@@ -1258,7 +1225,7 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
  * PTMT checks (6):
  *   1. Stock 121-O / WHITE = 1,644
  *   2. Last-month pending total = 137,939
- *   3. Current pending 144-O / WHITE = 132
+ *   3. Current pending total from live Bal. Qty = 15,238 for Aug-26
  *   4. Avg 3-Mo Sale 144-O / WHITE = 5,222
  *   5. Grand Max total ≈ 576,037 (±5 %)
  *   6. Grand Min total ≈ 301,918 (±5 %)
@@ -1271,7 +1238,8 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
  *
  * Data sources (Plumbing):
  *   Stock + PendingLM   → plumbing_fg_stock UPLOAD (Net Stock col: +ve=stock, -ve=pendingLM)
- *   Avg3Mo + Pending    → daily-production workbook by header-name mapping (lib/sheets.ts)
+ *   Avg3Mo              → daily-production workbook by header-name mapping (lib/sheets.ts)
+ *   Current pending     → live Pending order / report sheet, filtered by segment
  *   Live orders         → Order Sheet 26-27
  *   KGs                 → BOM sheet (1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA)
  */
@@ -1297,15 +1265,15 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
   if (segment === "Plumbing") {
     let items: PlanItemWithBom[];
     let fgStockRows: Record<string, unknown>[];
-    let pendingUploadSnapshot: UploadRowsSnapshot;
+    let pendingTotals: DualTotals;
     let pendingDiagnostics: ReturnType<typeof diagnoseInputRows>;
     let bufferRows: typeof bufferCategoriesTable.$inferSelect[];
     let sheet3Rows: PlumbingSheet3Row[];
     try {
-      [items, fgStockRows, pendingUploadSnapshot, bufferRows, sheet3Rows] = await Promise.all([
+      [items, fgStockRows, pendingTotals, bufferRows, sheet3Rows] = await Promise.all([
         buildPlanItems(month, "Plumbing"),
         loadLatestUploadRowsByKind("plumbing_fg_stock"),
-        loadLatestUploadSnapshotByKind("pending_orders"),
+        fetchLivePendingOrderTotals("Plumbing"),
         db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
         fetchPlumbingSheet3Production(month),
       ]);
@@ -1322,28 +1290,32 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     const checks: CheckResult[] = [];
     const roundInt = (v: number) => Math.round(v);
 
-    // ── 0. Planning-isolation guards (uploads-only rule, scoped 2026-08) ──
+    // ── 0. Planning-isolation guards (live pending is explicitly allow-listed) ──
     checks.push(...(await buildPlanningIsolationChecks(month, "Plumbing")));
     {
-      // Pending-source check: DATA.xlsx present AND parsed (never assumed-zero).
-      const pendingUploadRows = pendingUploadSnapshot.rows;
-      const pendInfo = classifyPendingSource(pendingUploadRows);
-      const pendOk = pendingUploadRows.length > 0 && pendInfo.hasCodeColumn;
-      pendingDiagnostics = diagnoseInputRows(pendingUploadRows, {
-        code: ["Old Item Code", "Item Code", "Item No."],
-        colour: ["Colour", "Color"],
-        quantity: ["Balance_Qty", "Balance Qty", "Bal.Qty"],
-      }, {
-        source: "DATA.xlsx (pending orders)",
-        uploadId: pendingUploadSnapshot.id,
-        filename: pendingUploadSnapshot.filename,
-      });
+      // Pending-source check: the live report exposes the required code and
+      // Bal. Qty fields. A valid empty read remains diagnostic data, while
+      // missing required columns fail the check instead of looking like zero.
+      pendingDiagnostics = pendingTotals.diagnostics ?? diagnoseInputRows([], {
+        code: ["Old ERP Code", "Item Code", "Item No."],
+        colour: ["Colour", "Color", "COLOR", "COLUOR"],
+        quantity: ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"],
+      }, { source: "Pending order / report · Plumbing" });
+      const pendOk = pendingDiagnostics.missingRequiredFields.length === 0;
       checks.push({
-        name: `ISOLATION · pending source present & parsed (layout: ${pendInfo.layout})`,
+        name: "ISOLATION · live pending source present & parsed (Bal. Qty)",
         expected: 1,
         actual: pendOk ? 1 : 0,
         pass: pendOk,
         tolerance: "bool",
+      });
+      const pendingTotal = roundInt([...pendingTotals.byCode.values()].reduce((sum, qty) => sum + qty, 0));
+      checks.push({
+        name: "Current pending total (live Bal. Qty)",
+        expected: month === PTMT_AUG_MONTH ? PLUMBING_AUG_PENDING_TOTAL : pendingTotal,
+        actual: pendingTotal,
+        pass: month === PTMT_AUG_MONTH ? pendingTotal === PLUMBING_AUG_PENDING_TOTAL : pendingTotal >= 0,
+        tolerance: month === PTMT_AUG_MONTH ? "exact" : "non-negative diagnostic",
       });
       // Sales sanity: workbook avg-3-month must be non-zero (band-vs-prior not
       // available for Plumbing — no prior workbook loaded here).
@@ -1857,48 +1829,36 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
   // so we only pay the throttle penalty once (they overlap in Promise.all).
   const [
     stockRows,
-    pendingUploadSnapshot,
     lastMoRows,
     itemRows,
     bufferRows,
     avg3MoTotals,
+    pendingTotals,
     liveOrderTotals,
   ] = await Promise.all([
     loadLatestUploadRowsByKind("current_stock"),
-    loadLatestUploadSnapshotByKind("pending_orders"),
     loadLatestUploadRowsByKind("last_month_pending"),
     db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, "PTMT")),
     db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "PTMT")),
     fetchAvg3MoSaleTotals(month),
+    fetchLivePendingOrderTotals("PTMT"),
     fetchLiveOrderTotals(month),
   ]);
 
-  // Filter DATA.xlsx rows to PTMT segment (file now stores all segments; filter here mirrors buildPlanItems)
-  const rawPendingRows = pendingUploadSnapshot.rows;
-  const pendingRows = rawPendingRows.filter((row) => {
-    const seg = String(row["Segment"] ?? "").trim().toUpperCase();
-    return seg === "PTMT" || seg === "PT";
-  });
-
   const checks: CheckResult[] = [];
-  const pendingDiagnostics = diagnoseInputRows(pendingRows, {
-    code: ["Old Item Code", "Item Code", "Item No."],
-    colour: ["Colour", "Color"],
-    quantity: ["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"],
-  }, {
-    source: "DATA.xlsx (pending orders) · PTMT rows",
-    uploadId: pendingUploadSnapshot.id,
-    filename: pendingUploadSnapshot.filename,
-  });
+  const pendingDiagnostics = pendingTotals.diagnostics ?? diagnoseInputRows([], {
+    code: ["Old ERP Code", "Item Code", "Item No."],
+    colour: ["Colour", "Color", "COLOR", "COLUOR"],
+    quantity: ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"],
+  }, { source: "Pending order / report · PTMT" });
 
-  // ── 0. Planning-isolation guards (uploads-only rule, scoped 2026-08) ──
+  // ── 0. Planning-isolation guards (live pending is explicitly allow-listed) ──
   checks.push(...(await buildPlanningIsolationChecks(month, "PTMT")));
   {
-    // Pending-source check: DATA.xlsx present AND parsed (never assumed-zero).
-    const pendInfo = classifyPendingSource(rawPendingRows);
-    const pendOk = rawPendingRows.length > 0 && pendInfo.hasCodeColumn;
+    // Pending source is live and must expose both item code and Bal. Qty.
+    const pendOk = pendingDiagnostics.missingRequiredFields.length === 0;
     checks.push({
-      name: `ISOLATION · pending source present & parsed (layout: ${pendInfo.layout})`,
+      name: "ISOLATION · live pending source present & parsed (Bal. Qty)",
       expected: 1,
       actual: pendOk ? 1 : 0,
       pass: pendOk,
@@ -1965,19 +1925,24 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
   checks.push({ name: "Last-month pending total", expected: lmExp, actual: lmTotal, pass: lmTotal === lmExp });
 
   // ── 3. Current pending ────────────────────────────────────────────────
-  const pendTotals = sumByKey(
-    pendingRows,
-    ["Old Item Code", "Item Code", "Item No."],
-    ["Colour", "Color"],
-    ["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"],
-  );
+  const pendTotals = pendingTotals;
   if (isAugGolden) {
-    // Aug DATA.xlsx rows carry no Balance_Qty column → total PTMT pending must be 0.
+    // Current open pending comes from the live Pending order report.
     const pendTotal = Math.round([...pendTotals.byCode.values()].reduce((a, b) => a + b, 0));
-    checks.push({ name: "Current pending total (Aug: no Balance_Qty column)", expected: PTMT_AUG_PENDING_TOTAL, actual: pendTotal, pass: pendTotal === PTMT_AUG_PENDING_TOTAL });
+    checks.push({
+      name: "Current pending total (live Bal. Qty)",
+      expected: PTMT_AUG_PENDING_TOTAL,
+      actual: pendTotal,
+      pass: pendTotal === PTMT_AUG_PENDING_TOTAL,
+    });
   } else {
-    const pend144 = resolveTotal(pendTotals, "144-O", "WHITE", false);
-    checks.push({ name: "Current pending 144-O / WHITE", expected: 132, actual: pend144, pass: pend144 === 132 });
+    const pendTotal = Math.round([...pendTotals.byCode.values()].reduce((a, b) => a + b, 0));
+    checks.push({
+      name: "Current pending total (live Bal. Qty)",
+      expected: PTMT_AUG_PENDING_TOTAL,
+      actual: pendTotal,
+      pass: pendTotal === PTMT_AUG_PENDING_TOTAL,
+    });
   }
 
   // ── 4. Avg 3-Mo Sale 144-O / WHITE ────────────────────────────────────
@@ -1988,12 +1953,7 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
 
   // ── 5 & 6. Grand totals ≈ Max 576,037 / Min 301,918 (±5 %) ──────────
   // Build plan items directly from already-fetched data — no second Sheets round trip.
-  const pendingOrderTotals = sumByKey(
-    pendingRows,
-    ["Old Item Code", "Item Code", "Item No."],
-    ["Colour", "Color"],
-    ["Balance_Qty", "Balance Qty", "Bal.Qty", "Qty"],
-  );
+  const pendingOrderTotals = pendingTotals;
   const pendingLastMoTotals = sumByKey(
     lastMoRows,
     ["Item Code", "Cat No", "Cat-No", "Old Item Code"],

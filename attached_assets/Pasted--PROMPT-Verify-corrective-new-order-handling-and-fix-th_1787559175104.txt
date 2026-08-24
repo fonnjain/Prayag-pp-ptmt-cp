@@ -1,0 +1,152 @@
+# PROMPT — Verify corrective new-order handling, and fix the Sunday display gap
+
+Two items, PTMT and Plumbing both.
+
+**Item A is a verification** — do not change code until it is reported.
+**Item B is a confirmed defect** — I have located it in the source.
+
+---
+
+# A — Does the recompute account for new orders *plus* unfulfilled production?
+
+## What I can see in the code
+
+`corrective-engine.ts:614–617`:
+
+```typescript
+const deltaNewOrders     = round(pendingNow - pendingAtPlan);
+const planRev            = round(Math.max(orig.maxProduction + Math.max(deltaNewOrders, 0), producedToDate));
+const remainingToProduce = round(Math.max(planRev - producedToDate, 0));
+```
+
+So the intent is right in shape: the original plan, **plus** orders arrived since the plan was issued, **minus** what has already been made. Both halves of what you asked about appear to be handled.
+
+But three things in the surrounding code need checking against real data before we can say it behaves correctly.
+
+## A1 — `pendingNow` is not filtered to the as-of date
+
+`fetchLivePendingOrderTotals()` (`sheets.ts:1083`) takes **no arguments**. It reads the whole `report` tab of the pending-order workbook as it stands **at the moment the recompute runs**.
+
+So a recompute with `asOfDate = 2026-08-17`, run today, picks up orders that arrived *after* the 17th. Two consequences:
+
+- A replan is not reproducible — re-running the same as-of date on a different day gives a different answer.
+- For a **closed** month the figure is meaningless, since orders have kept arriving since.
+
+**Report:** for PTMT and Plumbing, run the same corrective twice with an identical `asOfDate` and compare `pendingNow` and `planRev` totals. If they differ, the as-of date is not controlling the order snapshot.
+
+**Then state whether that is intended.** For a live mid-month replan "orders as of now" may be exactly what the business wants. For a re-run of a past as-of date it is not. I am not assuming which.
+
+## A2 — `Math.max(deltaNewOrders, 0)` discards cancellations
+
+Negative deltas are clamped, so **orders cancelled since the plan was issued do not reduce the revised plan**. If 500 units were ordered at plan time and 200 have since been cancelled, `planRev` still carries all 500.
+
+**Report:** for PTMT and Plumbing August, how many items have `deltaNewOrders < 0`, and what is the total clamped quantity? That number is what the revised plan is currently overstating by.
+
+**Then confirm whether it is intended.** Planning conservatively against a cancelled order is a defensible policy; silently doing so is not.
+
+## A3 — `producedToDate` uses different failure handling per segment
+
+`corrective-engine.ts:418–425`:
+
+```typescript
+segment === "Plumbing"
+  ? fetchPlumbingSheet3Production(month)          // no .catch → fails loudly
+  : Promise.resolve([]),
+segment === "PTMT"
+  ? fetchDailyActuals(month).catch(err => {       // ← swallows, returns []
+      logger.warn(...); return [];
+    })
+  : Promise.resolve([]),
+```
+
+The Plumbing branch is deliberately un-caught, with a comment explaining that a missing workbook must fail loudly rather than present as zero production. **The PTMT branch does the opposite**: it swallows the error and returns an empty array.
+
+So if the PTMT actuals fetch fails, `producedToDate = 0` for every item, `remainingToProduce = planRev`, and **the revised plan asks the plant to remake everything it has already produced this month** — with only a log line to say why.
+
+That is the stale-plan hazard the Plumbing comment names, live in the PTMT path.
+
+**Report:** confirm the asymmetry, then say whether PTMT should match Plumbing's fail-loud behaviour. My view is it should — but it changes failure behaviour on a live path, so it is your call, not a silent fix.
+
+## A4 — The end-to-end check
+
+For **PTMT August** and **Plumbing August**, pick three items that have (a) new orders since the plan and (b) partial production. For each, report:
+
+| | |
+|---|---|
+| `orig.maxProduction` | plan at issue |
+| `pendingAtPlan` / `pendingNow` | orders then and now |
+| `deltaNewOrders` | the difference |
+| `producedToDate` | made so far |
+| `planRev` | revised plan |
+| `remainingToProduce` | what the recompute asks for |
+
+Then verify by hand: `planRev = maxProduction + max(deltaNewOrders, 0)` and `remaining = planRev − producedToDate`. Both should hold exactly.
+
+**That is the answer to the question as asked** — one worked item makes it unarguable in a way that no amount of code reading does.
+
+---
+
+# B — Sunday production is missing from the UI
+
+## The defect, located
+
+`plant-engine.ts:294–312` builds `dailySeries` from `calendarNonSundays` only:
+
+```typescript
+for (const d of calendarNonSundays) {      // ← Sundays never enter the series
+  wdNum++;
+  …
+  dailySeries.push({ date: d, workingDayNum: wdNum, actualPcs: …, … });
+}
+```
+
+And `velocity.tsx:270` renders it as-is:
+
+```typescript
+dailySeries.filter((d) => d.workingDayNum <= context.elapsed).map(…)
+```
+
+**So the Day-by-day Breakdown skips Sundays entirely** — which is exactly what you're seeing. Your earlier screenshot showed `D1 = 01-08-2026` then `D2 = 03-08-2026`, with Sunday 2 August absent and its 9,683 pcs missing from the cumulative.
+
+**This is a display gap, not the old data-loss bug.** That one was fixed — `producedToDate` and `workingDays` now count Sundays correctly. But `dailySeries` was never updated, so **the totals include Sunday output while the table that is supposed to explain them does not.** A reader who adds the visible rows cannot reach the headline figure.
+
+## The fix
+
+Build `dailySeries` from the same day set the totals use — `elapsedDays`, which already includes worked Sundays — rather than `calendarNonSundays`.
+
+Then mark the non-calendar days so they are legible rather than surprising:
+
+```typescript
+{
+  date: d,
+  workingDayNum: wdNum,
+  isNonCalendarWorkingDay: true,       // worked Sunday / holiday
+  actualPcs, requiredPerDay, cumulativeActual, cumulativeRequired,
+}
+```
+
+In `velocity.tsx`, render those rows with a visual marker and a label such as *"Sun — worked"*. The `workingDayNum <= context.elapsed` filter needs revisiting too: with Sundays in the series, that comparison no longer aligns the way it did.
+
+Apply to **both** segments. Check whether the Plumbing velocity and trend views build their series the same way — if they do, they have the same gap.
+
+## The assertion that keeps it fixed
+
+```
+Σ dailySeries[].actualPcs (up to elapsed) === producedToDate
+```
+
+The table must add up to the headline. That is the check that would have caught this, and it is the one to add.
+
+## Also
+
+Where the working-day count is shown (`28/28`, `25/25`), state the composition — e.g. *"28 working days: 26 weekdays + 2 worked Sundays"*. Right now a reader seeing 28 in a 26-weekday month has no way to know why.
+
+---
+
+## Reporting
+
+**Item A: report first, change nothing.** The three sub-findings each need a business decision, and I do not want any of them fixed silently. Give me the numbers and the worked examples, then we decide.
+
+**Item B: fix**, one commit, both segments, with the assertion above. Files and line numbers, diffstat with every file named, `tsc --noEmit` clean, test count, byte-size match.
+
+For B, also report for PTMT June and August, both segments: the row count in `dailySeries` before and after, and confirm the visible rows now sum to `producedToDate`.

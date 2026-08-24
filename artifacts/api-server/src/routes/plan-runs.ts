@@ -1,8 +1,15 @@
 import { Router, type IRouter } from "express";
-import { db, bufferCategoriesTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, correctivePlanRunsTable, plantMonthSnapshotsTable } from "@workspace/db";
+import { createHash } from "node:crypto";
+import { db, bufferCategoriesTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, planRunInputSnapshotsTable, correctivePlanRunsTable, plantMonthSnapshotsTable } from "@workspace/db";
 import { and, eq, desc, ne, sql } from "drizzle-orm";
-import { buildPlanItems, loadLatestUploadRowsByKind, handlePlanError } from "./plan";
+import { buildPlanItems, loadLatestUploadSnapshotByKind, type UploadRowsSnapshot, handlePlanError } from "./plan";
+import { snapshotPendingOrderRows } from "../lib/sheets";
 import { summarizePlan } from "../lib/calc";
+import {
+  buildPlanRunInputSnapshot,
+  pendingSnapshotStatus as getPendingSnapshotStatus,
+  type PlanRunInputSnapshotPayload,
+} from "../lib/plan-input-snapshot";
 import {
   assertEffectiveDate,
   defaultEffectiveDate,
@@ -13,6 +20,104 @@ import {
 } from "../lib/plant-plan-timeline";
 
 const router: IRouter = Router();
+
+function pendingSourceKinds(segment: string): {
+  current: string;
+  lastMonth: string;
+} {
+  return segment === "Plumbing"
+    ? { current: "pending_order_live_sheet", lastMonth: "plumbing_fg_stock" }
+    : { current: "pending_order_live_sheet", lastMonth: "last_month_pending" };
+}
+
+type PendingSourceSnapshot = UploadRowsSnapshot & { sourceContentHash?: string };
+
+async function loadPendingSources(segment: string): Promise<{
+  current: PendingSourceSnapshot;
+  lastMonth: PendingSourceSnapshot;
+}> {
+  const kinds = pendingSourceKinds(segment);
+  const [liveRows, lastMonth] = await Promise.all([
+    snapshotPendingOrderRows(segment),
+    loadLatestUploadSnapshotByKind(kinds.lastMonth),
+  ]);
+  const currentRows = liveRows.map((row) => ({
+    "Item Code": row.catNo,
+    "Colour": row.colour,
+    "Bal. Qty": row.qty,
+    "Segment": segment,
+  }));
+  return {
+    current: {
+      id: null,
+      filename: "Pending order / report",
+      rowCount: currentRows.length,
+      uploadedAt: null,
+      rows: currentRows,
+      sourceContentHash: createHash("sha256").update(JSON.stringify(liveRows)).digest("hex"),
+    },
+    lastMonth,
+  };
+}
+
+function sameUploadSnapshot(a: PendingSourceSnapshot, b: PendingSourceSnapshot): boolean {
+  if (a.sourceContentHash !== undefined || b.sourceContentHash !== undefined) {
+    return a.sourceContentHash === b.sourceContentHash;
+  }
+  return a.id === b.id
+    && a.rowCount === b.rowCount
+    && a.uploadedAt?.getTime() === b.uploadedAt?.getTime();
+}
+
+function makePendingSnapshotPayloads(
+  segment: string,
+  sources: { current: PendingSourceSnapshot; lastMonth: PendingSourceSnapshot },
+): PlanRunInputSnapshotPayload[] {
+  const kinds = pendingSourceKinds(segment);
+  const currentAliases = {
+    code: ["Old Item Code", "Item Code", "Item No."],
+    colour: ["Colour", "Color", "COLOR", "COLUOR"],
+    quantity: segment === "PTMT"
+      ? ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty", "Qty"]
+      : ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty"],
+  };
+  const lastMonthAliases = segment === "PTMT"
+    ? {
+      code: ["Item Code", "Cat No", "Cat-No", "Old Item Code"],
+      colour: ["Colour", "Color"],
+      quantity: ["Qty", "Qty.", "Balance_Qty", "Balance Qty"],
+    }
+    : {
+      code: ["Item Code"],
+      colour: [],
+      quantity: ["Net Stock"],
+    };
+
+  const currentRows = sources.current.rows;
+  const currentDiagnosticNotes = currentRows.length === 0
+    ? [`live Pending order report returned no ${segment} rows; pending contributes 0 for this segment`]
+    : [];
+  return [
+    buildPlanRunInputSnapshot({
+      segment,
+      sourceRole: "pending_current",
+      sourceKind: kinds.current,
+      source: sources.current,
+      rows: currentRows,
+      aliases: currentAliases,
+      diagnosticNotes: currentDiagnosticNotes,
+    }),
+    buildPlanRunInputSnapshot({
+      segment,
+      sourceRole: "pending_last_month",
+      sourceKind: kinds.lastMonth,
+      source: sources.lastMonth,
+      rows: sources.lastMonth.rows,
+      aliases: lastMonthAliases,
+      transformQuantity: segment === "Plumbing" ? (qty) => Math.max(-qty, 0) : undefined,
+    }),
+  ];
+}
 
 function makeSummary(run: typeof planRunsTable.$inferSelect, items: typeof planRunResultsTable.$inferSelect[]) {
   const grandMinTotal = items.reduce((s, r) => s + Math.max(r.minProduction, 0), 0);
@@ -61,19 +166,29 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
   const factorsJson: Record<string, number> = {};
   for (const b of bufferRows) factorsJson[b.name] = b.multiplier;
 
-  // Compute plan from uploaded files + Google Sheets in parallel with loading
-  // the raw pending rows for the audit snapshot. Both segments source current
-  // pending from the GLOBAL DATA.xlsx upload ("pending_orders") — the snapshot
-  // must mirror what the plan build actually consumed.
+  // Read the pending sources before and after the build. The plan builder reads
+  // these same uploads internally; checking the source identity around the
+  // build prevents a replacement upload from being paired with the wrong
+  // frozen plan run.
+  const pendingSourcesBefore = await loadPendingSources(segment);
   let planItems: Awaited<ReturnType<typeof buildPlanItems>>;
-  let pendingOrderRows: Awaited<ReturnType<typeof loadLatestUploadRowsByKind>>;
   try {
-    [planItems, pendingOrderRows] = await Promise.all([
-      buildPlanItems(month, segment),
-      loadLatestUploadRowsByKind("pending_orders"),
-    ]);
+    planItems = await buildPlanItems(month, segment);
   } catch (err) {
     handlePlanError(res, err); // 422 naming the missing/broken upload
+    return;
+  }
+  const pendingSourcesAfter = await loadPendingSources(segment);
+  if (
+    !sameUploadSnapshot(pendingSourcesBefore.current, pendingSourcesAfter.current)
+    || !sameUploadSnapshot(pendingSourcesBefore.lastMonth, pendingSourcesAfter.lastMonth)
+  ) {
+    res.status(409).json({
+      error: "PENDING_SOURCE_CHANGED",
+      message: "A pending-order source changed while the plan was being built. Retry to create a run with one consistent input snapshot.",
+      segment,
+      month,
+    });
     return;
   }
 
@@ -102,19 +217,9 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
     return;
   }
 
-  // Create the plan run record. The first run is normalized to the first day
-  // when it is finalized; retaining the requested/default date on a draft lets
-  // a planner correct it before issuance.
-  const [run] = await db
-    .insert(planRunsTable)
-    .values({ month, segment, effectiveFrom, status: "draft", weeklyReleaseVersion: 1, factorsJson, note: note ?? null })
-    .returning();
-
-  const runId = run.id;
-
   // Insert inputs (one row per item)
   const inputValues = planItems.map((item) => ({
-    runId,
+    runId: 0,
     itemCode: item.itemCode,
     colour: item.colour,
     avg3MoSale: item.avg3MoSale,
@@ -125,7 +230,7 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
 
   // Insert results (one row per item)
   const resultValues = planItems.map((item) => ({
-    runId,
+    runId: 0,
     itemCode: item.itemCode,
     colour: item.colour,
     category: item.category,
@@ -139,39 +244,61 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
     w4: item.w4,
   }));
 
-  // Pending audit snapshot: store the raw filtered rows from the DATA.xlsx upload
-  // so the exact source data is preserved against this run forever.
-  const snapshotValues = pendingOrderRows
-    .map((row) => {
-      const catNo = String(
-        row["Old Item Code"] ?? row["Item Code"] ?? row["Item No."] ?? "",
-      ).trim();
-      const colour = String(row["Colour"] ?? row["Color"] ?? "").trim();
-      const qty =
-        typeof row["Balance_Qty"] === "number"
-          ? row["Balance_Qty"]
-          : typeof row["Qty"] === "number"
-            ? row["Qty"]
-            : Number(
-                String(row["Balance_Qty"] ?? row["Balance Qty"] ?? row["Bal.Qty"] ?? row["Qty"] ?? "0").replace(/,/g, ""),
-              ) || 0;
-      return { runId, catNo, colour, qty };
-    })
-    .filter((r) => r.catNo);
+  const pendingSnapshotPayloads = makePendingSnapshotPayloads(segment, pendingSourcesBefore);
+  const currentSnapshot = pendingSnapshotPayloads.find((snapshot) => snapshot.sourceRole === "pending_current")!;
+  const snapshotValues = currentSnapshot.parsedRows.map((row) => ({
+    runId: 0,
+    catNo: row.itemCode,
+    colour: row.colour,
+    qty: row.qty,
+  }));
 
   // Batch inserts (500 rows at a time to stay within PG limits)
   const BATCH = 500;
-  for (let i = 0; i < inputValues.length; i += BATCH) {
-    await db.insert(planRunInputsTable).values(inputValues.slice(i, i + BATCH));
-  }
-  for (let i = 0; i < resultValues.length; i += BATCH) {
-    await db.insert(planRunResultsTable).values(resultValues.slice(i, i + BATCH));
-  }
-  if (snapshotValues.length > 0) {
-    for (let i = 0; i < snapshotValues.length; i += BATCH) {
-      await db.insert(pendingSnapshotsTable).values(snapshotValues.slice(i, i + BATCH));
+  // Create the run and all of its frozen input/result rows atomically. A run
+  // must never exist claiming provenance while its input snapshot is partial.
+  const run = await db.transaction(async (tx) => {
+    const [createdRun] = await tx
+      .insert(planRunsTable)
+      .values({ month, segment, effectiveFrom, status: "draft", weeklyReleaseVersion: 1, factorsJson, note: note ?? null })
+      .returning();
+    const runId = createdRun.id;
+
+    for (let i = 0; i < inputValues.length; i += BATCH) {
+      await tx.insert(planRunInputsTable).values(
+        inputValues.slice(i, i + BATCH).map((row) => ({ ...row, runId })),
+      );
     }
-  }
+    for (let i = 0; i < resultValues.length; i += BATCH) {
+      await tx.insert(planRunResultsTable).values(
+        resultValues.slice(i, i + BATCH).map((row) => ({ ...row, runId })),
+      );
+    }
+    if (snapshotValues.length > 0) {
+      for (let i = 0; i < snapshotValues.length; i += BATCH) {
+        await tx.insert(pendingSnapshotsTable).values(
+          snapshotValues.slice(i, i + BATCH).map((row) => ({ ...row, runId })),
+        );
+      }
+    }
+    for (const snapshot of pendingSnapshotPayloads) {
+      await tx.insert(planRunInputSnapshotsTable).values({
+        runId,
+        segment: snapshot.segment,
+        sourceRole: snapshot.sourceRole,
+        sourceKind: snapshot.sourceKind,
+        sourceUploadId: snapshot.sourceUploadId,
+        sourceFilename: snapshot.sourceFilename,
+        sourceUploadedAt: snapshot.sourceUploadedAt,
+        rawRowsJson: snapshot.rawRows,
+        parsedRowsJson: snapshot.parsedRows,
+        diagnosticsJson: { ...snapshot.diagnostics } as Record<string, unknown>,
+      });
+    }
+    return createdRun;
+  });
+
+  const runId = run.id;
 
   await savePlanVersionSnapshot({
     month,
@@ -292,9 +419,10 @@ router.get("/plan/runs/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const [results, inputs] = await Promise.all([
+  const [results, inputs, pendingInputSnapshots] = await Promise.all([
     db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, id)),
     db.select().from(planRunInputsTable).where(eq(planRunInputsTable.runId, id)),
+    db.select().from(planRunInputSnapshotsTable).where(eq(planRunInputSnapshotsTable.runId, id)),
   ]);
 
   const inputByKey = new Map(inputs.map((inp) => [`${inp.itemCode}::${inp.colour}`, inp]));
@@ -315,7 +443,26 @@ router.get("/plan/runs/:id", async (req, res): Promise<void> => {
     };
   });
 
-  res.json({ run: makeSummary(run, results), items });
+  res.json({
+    run: {
+      ...makeSummary(run, results),
+      pendingSnapshotStatus: getPendingSnapshotStatus(pendingInputSnapshots.length),
+    },
+    items,
+    pendingInputSnapshots: pendingInputSnapshots.map((snapshot) => ({
+      id: snapshot.id,
+      segment: snapshot.segment,
+      sourceRole: snapshot.sourceRole,
+      sourceKind: snapshot.sourceKind,
+      sourceUploadId: snapshot.sourceUploadId,
+      sourceFilename: snapshot.sourceFilename,
+      sourceUploadedAt: snapshot.sourceUploadedAt,
+      capturedAt: snapshot.capturedAt,
+      rawRows: snapshot.rawRowsJson,
+      parsedRows: snapshot.parsedRowsJson,
+      diagnostics: snapshot.diagnosticsJson,
+    })),
+  });
 });
 
 /** GET /api/plan/runs/:id/drift — frozen "as issued" vs live rebuild "if re-run today" */

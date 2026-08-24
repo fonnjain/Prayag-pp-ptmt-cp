@@ -1,0 +1,164 @@
+# PROMPT — Restore the corrective order component, and make sheet failures loud
+
+The A5 finding is the most consequential of this workstream. **15,238 pending PTMT pieces exist in the production sheet and the parser recognises none of them**, so `deltaNewOrders = 0` on every corrective run. The order component has been silently disabled.
+
+Four items. **Item 0 is a decision that must be answered before item 1 is implemented** — fixing the parser without settling it would swap one wrong answer for another.
+
+---
+
+# 0 — ⚠ Decide this first: `pendingAtPlan` is also zero
+
+Your report shows:
+
+| Plan run | Segment | `pending_current` |
+|---:|---|---:|
+| #20 | PTMT | **0 pcs** |
+| #21 | Plumbing | **0 pcs** |
+
+And `corrective-engine.ts:614`:
+
+```typescript
+const deltaNewOrders = round(pendingNow - pendingAtPlan);
+```
+
+`pendingAtPlan` comes from `sumPendingUploads(pendingOrderRows)` (`:551`) — the **uploads** path, not the live sheet. It is currently **0** on both production baselines.
+
+**So if you fix the parser and nothing else:**
+
+```
+deltaNewOrders = 15,238 − 0 = 15,238
+```
+
+Every pending order becomes a *new* order. `planRev` inflates by the full pending book rather than the genuine delta since the plan was issued, and the corrective asks the plant to produce against orders that were already counted in the original plan.
+
+**That would be worse than the current zero**, because a plausible inflated number is harder to spot than a missing one.
+
+**Please establish and report, before writing any fix:**
+
+1. **Why is `pending_current = 0` on plan runs #20 and #21?** Was the pending-orders upload empty when those plans were built, or is the field simply not populated?
+2. **Does the plan build see pending orders at all?** `sumPendingUploads` accepts `Old Item Code` / `Item Code` / `Item No.`, `Colour` / `Color`, and `Balance_Qty` / `Balance Qty` / `Bal.Qty` / `Qty`. That is tolerant matching — so if it also returns zero, the upload itself is empty, which is a different problem again.
+3. **Do the plan and the corrective read the same order universe?** The plan uses uploads; the corrective uses the live sheet. If those two disagree, `deltaNewOrders` is a difference between incompatible sources and is meaningless regardless of parsing.
+
+**Do not proceed to item 1 until these three are answered.** The fix depends on which is true.
+
+---
+
+# 1 — Fix the header mismatch (after item 0)
+
+## The defect
+
+`sheets.ts:1083–1105`:
+
+```typescript
+const rows = rowsToObjects(values);
+…
+const segment = String(row["Segment"] ?? "").trim().toUpperCase();
+if (segment !== "PTMT") continue;
+let code   = String(row["Old ERP Code"] ?? "").trim();
+let colour = String(row["Colour"] ?? "").trim();
+const qty  = toNumber(row["Bal. Qty"]);
+if (!code) continue;
+```
+
+`rowsToObjects` (`:663–673`) builds keys from the header row verbatim — **exact string match, no normalisation**. So:
+
+| Parser expects | Sheet has | Result |
+|---|---|---|
+| `Segment` | `SEGMENT` | undefined → `""` → **every row skipped at the segment filter** |
+| `Old ERP Code` | `Item Code` | undefined → `""` → skipped by `if (!code)` |
+| `Colour` | `COLOR` / `COLUOR` | undefined → `""` |
+| `Bal. Qty` | `Bal. Qty` | ✅ the only one that matches |
+
+Three of four fail. **This is HANDOVER §7 lesson 1 verbatim** — an unrecognised header joining as zero rather than erroring — now in production, on the order input, silently, for an unknown length of time.
+
+Note `COLUOR` is a **typo in the source sheet**. Match it as an alias; do not ask anyone to correct the sheet, because the app must tolerate what the business actually maintains.
+
+## Fix
+
+Match headers by **normalised comparison** — trim, case-fold, collapse whitespace and punctuation — against an alias list per field, exactly as `sumPendingUploads` already does:
+
+```typescript
+const CODE_KEYS    = ["Old ERP Code", "Item Code", "Old Item Code", "Item No."];
+const COLOUR_KEYS  = ["Colour", "Color", "COLOR", "COLUOR"];
+const QTY_KEYS     = ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty", "Qty"];
+const SEGMENT_KEYS = ["Segment", "SEGMENT", "Division"];
+```
+
+Better still, normalise once in `rowsToObjects` (or a wrapper) so every consumer benefits — the same drift will hit the next reader otherwise.
+
+## And fix the Plumbing gap in the same commit
+
+```typescript
+export async function fetchLivePendingOrderTotals(): Promise<DualTotals> {
+  …
+  if (segment !== "PTMT") continue;      // ← hardcoded, no parameter
+```
+
+**Plumbing pending orders can never be returned by this function.** So `pendingNow = 0` for Plumbing by construction, not by data. Add a `segment` parameter and use `normalizePlantSegment` for the comparison.
+
+That is the PTMT-only pattern again — the one the parity work removed from monitoring — still live in the sheets layer.
+
+## Report
+
+For **PTMT and Plumbing** against production: recognised exact keys, code keys, and total quantity, before and after. PTMT should move **0 → 15,238**. State Plumbing's figure; it has never been readable, so its value is unknown.
+
+---
+
+# 2 — PTMT actuals must fail loudly (#160)
+
+Already evidenced: two identical dev runs produced different plans because the actuals fetch failed in one.
+
+`corrective-engine.ts:418–425` — Plumbing is deliberately un-caught, with a comment stating a missing workbook must fail loudly rather than present as zero. PTMT `.catch`es and returns `[]`.
+
+**Two failure directions, both observed or derived:**
+
+| Item type | Effect when the fetch fails |
+|---|---|
+| Planned (`maxProduction > 0`) | `producedToDate → 0`, `remaining = planRev` — **remake everything already produced** |
+| Out-of-plan (`maxProduction = 0`) | `planRev → 0` — **the item vanishes from the corrective** |
+
+The second is what your dev run showed: `123-FH`, `124-FH`, `1375-SP` went to 0 across identical runs.
+
+**Fix:** remove the `.catch`. Let it throw, exactly as Plumbing does. There is no business decision here — a corrective computed silently against zero production is not a defensible output in either segment, and the Plumbing comment already says so.
+
+Add a test: a failing actuals fetch must **reject**, not resolve with an empty array.
+
+---
+
+# 3 — Regression protection for header drift (#161)
+
+This is the item that stops a recurrence, and it should not be a fixture test.
+
+**Add a structural check to the verifier**, run against production:
+
+```
+For each configured sheet source:
+  - every field the parser needs resolves to a real column
+  - the parse returns a non-zero row count where rows exist in the sheet
+  - report: sheet id, tab, rows read, rows recognised, rows skipped, and the reason
+```
+
+**Fail when rows exist but none are recognised.** That single assertion converts this class from invisible to immediate — it is precisely what would have caught A5 the day the headers changed.
+
+Apply it to every sheet reader with fixed header names, not just the pending-order one. `grep` for `row["` across `sheets.ts` and report how many readers use exact literals; each is the same hazard waiting.
+
+---
+
+## Order and reporting
+
+1. **Item 0** — report the three answers. Change nothing.
+2. **Item 2** — smallest, no dependencies, already evidenced. Ship it.
+3. **Item 1** — after item 0 is settled.
+4. **Item 3** — after item 1, so it protects the corrected parser.
+
+Each its own commit. Files and line numbers, diffstat with **every file named including `package.json`**, `tsc --noEmit` clean, test count, byte-size match, nothing else in the diff.
+
+**Then push** — `origin/main` is at `4e5e6c6` and production is three commits behind at `8c2e7f5`.
+
+**Do not publish** until #157 resolves the July golden question; `0a3fe7d` is in the chain and carries that unexplained change.
+
+## One thing to say plainly in the record
+
+Once item 1 lands, **every corrective run produced before it had no order component.** That includes the exports verified earlier in this workstream. Their plan and production figures were correct; their order-driven revisions were not, because there were none.
+
+Worth stating in the memory notes, so a future reader comparing an old corrective against a new one understands why the numbers moved.

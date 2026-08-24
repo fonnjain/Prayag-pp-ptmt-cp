@@ -14,8 +14,9 @@ import { diagnoseInputRows, type InputReadDiagnostics } from "./input-diagnostic
 //                               avg-3-month, per-item multiplier — NOTHING else
 //   • fetchPlumbingBomWeights — BOM weight-per-piece (kg computation)
 //
-// Stock and pending (current + last-month) MUST come from uploads and fail
-// loudly when missing (see routes/plan.ts). Any other sheet read inside a
+// Stock and last-month pending MUST come from uploads. Current pending is read
+// from the explicitly allow-listed live Pending order report and still fails
+// loudly when unavailable or unparseable. Any other sheet read inside a
 // planning context throws PlanningIsolationError naming the call site.
 // Non-planning paths (monitoring actuals, corrective production-to-date,
 // machine capacity reference) are unaffected — they never run inside a
@@ -27,7 +28,8 @@ export class PlanningIsolationError extends Error {
     super(
       `Planning isolation violation: sheet read "${callSite}" attempted inside planning context "${context}". ` +
       `Planning may only read sales history (fetchAvg3MoSaleTotals), the Plumbing workbook roster/avg/multiplier ` +
-      `(fetchPlumbingPlanData), and BOM weights (fetchPlumbingBomWeights). Stock and pending must come from uploads.`,
+      `(fetchPlumbingPlanData), BOM weights (fetchPlumbingBomWeights), and current pending ` +
+      `(fetchLivePendingOrderTotals). Stock and last-month pending must come from uploads.`,
     );
     this.name = "PlanningIsolationError";
   }
@@ -61,6 +63,7 @@ export const PLANNING_SHEET_READ_ALLOWLIST = [
   "fetchAvg3MoSaleTotals",
   "fetchPlumbingPlanData",
   "fetchPlumbingBomWeights",
+  "fetchLivePendingOrderTotals",
 ] as const;
 
 function runInAllowedReadScope<T>(fetcher: string, fn: () => Promise<T>): Promise<T> {
@@ -1076,65 +1079,134 @@ function applyPendingOrderAlias(code: string, colour: string): { code: string; c
   return { code, colour };
 }
 
+function rowValue(row: Record<string, unknown>, aliases: string[]): unknown {
+  const normalise = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+  for (const alias of aliases) {
+    const direct = row[alias];
+    if (direct !== undefined && direct !== null && String(direct).trim() !== "") return direct;
+  }
+  const wanted = new Set(aliases.map(normalise));
+  const matchingKey = Object.keys(row).find((key) => wanted.has(normalise(key)));
+  return matchingKey ? row[matchingKey] : undefined;
+}
+
+/**
+ * The live report currently has a second header row embedded below the
+ * top-level sheet header. That row identifies the actual code column as
+ * "Old ERP Code" (positioned under top-level "Item Group") and the colour
+ * column as "Color" (positioned under top-level "Item Code"). Keep the
+ * top-level Bal. Qty column authoritative; never replace it with the
+ * embedded "Quantity" label.
+ */
+function pendingReportRowsToObjects(values: string[][]): Record<string, string>[] {
+  if (values.length === 0) return [];
+
+  const topHeader = values[0] ?? [];
+  const embeddedHeader = values[1] ?? [];
+  const normalise = (value: unknown) => String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const embeddedCodeCol = embeddedHeader.findIndex((cell) =>
+    ["olderpcode", "itemcode", "itemno"].includes(normalise(cell)),
+  );
+  const embeddedColourCol = embeddedHeader.findIndex((cell) =>
+    ["colour", "color", "coluor"].includes(normalise(cell)),
+  );
+  const hasEmbeddedHeader = embeddedCodeCol >= 0 &&
+    embeddedColourCol >= 0 &&
+    embeddedHeader.some((cell) => normalise(cell) === "quantity");
+  const dataStart = hasEmbeddedHeader ? 2 : 1;
+
+  return values.slice(dataStart).map((row) => {
+    const obj: Record<string, string> = {};
+    topHeader.forEach((header, index) => {
+      obj[header] = row[index] ?? "";
+    });
+    if (hasEmbeddedHeader) {
+      obj["Old ERP Code"] = row[embeddedCodeCol] ?? "";
+      obj["Color"] = row[embeddedColourCol] ?? "";
+    }
+    return obj;
+  });
+}
+
+function pendingSegmentValues(segment: string): Set<string> {
+  return segment.toLowerCase() === "plumbing"
+    ? new Set(["PLUMBING", "P", "PL", "AGRI", "CPVC", "UPVC", "SWR"])
+    : new Set(["PTMT", "PT"]);
+}
+
+function pendingRowsForSegment(rows: Record<string, unknown>[], segment: string): Record<string, unknown>[] {
+  const acceptedSegments = pendingSegmentValues(segment);
+  return rows.filter((row) => acceptedSegments.has(String(rowValue(row, ["Segment", "SEGMENT", "Group", "GROUP"]) ?? "").trim().toUpperCase()));
+}
+
+function pendingRowToParsed(row: Record<string, unknown>): { catNo: string; colour: string; qty: number } | null {
+  let code = String(rowValue(row, ["Old ERP Code", "Item Code", "Item No."]) ?? "").trim();
+  if (!code) return null;
+  let colour = String(rowValue(row, ["Colour", "Color", "COLOR", "COLUOR"]) ?? "").trim();
+  const qty = toNumber(rowValue(row, ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"]));
+  const aliased = applyPendingOrderAlias(code, colour);
+  return { catNo: aliased.code, colour: aliased.colour, qty };
+}
+
+export function parsePendingOrderRows(
+  rows: Record<string, unknown>[],
+  segment: string = "PTMT",
+): { catNo: string; colour: string; qty: number }[] {
+  return pendingRowsForSegment(rows, segment)
+    .map(pendingRowToParsed)
+    .filter((row): row is { catNo: string; colour: string; qty: number } => row !== null);
+}
+
+export function pendingOrderTotalsFromRows(rows: Record<string, unknown>[], segment: string = "PTMT"): DualTotals {
+  const totals: DualTotals = { exact: new Map(), byCode: new Map() };
+  for (const row of parsePendingOrderRows(rows, segment)) {
+    addToDualTotals(totals, row.catNo, row.colour, row.qty);
+  }
+  return totals;
+}
+
+export function pendingOrderParsedValues(
+  values: string[][],
+  segment: string = "PTMT",
+): { catNo: string; colour: string; qty: number }[] {
+  return parsePendingOrderRows(pendingReportRowsToObjects(values), segment);
+}
+
 /**
  * Live current pending order from "Pending order" Google Sheet → "report" tab.
- * Filter Segment (col X) = PTMT, key on Old ERP Code (col F) + Colour (col H),
- * sum Bal. Qty (col Q). Applies -LSBB/BLACK → -LSB/BLUE alias.
- * Verified: PTMT total 15,906; 120-WS/WHITE = 180; 123-LSB/BLUE = 184 (via alias).
+ * PTMT accepts PTMT/PT rows; Plumbing accepts PLUMBING/P/PL/AGRI plus the
+ * material-group values CPVC/UPVC/SWR used by the current live report.
+ * `Bal. Qty` is the only quantity used. Header matching is case- and punctuation-
+ * insensitive because the live report currently exposes SEGMENT and COLOR.
  */
-export async function fetchLivePendingOrderTotals(): Promise<DualTotals> {
-  guardPlanningRead("fetchLivePendingOrderTotals"); // pending must come from uploads in plan build
-  // Read enough columns to cover Segment at col X (index 23). Use "A1:X" to include
-  // all columns A through X without a hard row cap that would truncate large sheets.
-  const values = await throttledGetTabValues(SHEET_IDS.pendingOrder, "report", "A1:X50000");
-  const rows = rowsToObjects(values);
-  const totals: DualTotals = { exact: new Map(), byCode: new Map() };
-  const diagnostics = diagnoseInputRows(rows, {
-    code: ["Old ERP Code"],
-    colour: ["Colour"],
-    quantity: ["Bal. Qty"],
-  }, { source: `${SHEET_LABELS.pendingOrder} / report` });
+export async function fetchLivePendingOrderTotals(segment: string = "PTMT"): Promise<DualTotals> {
+  return runInAllowedReadScope("fetchLivePendingOrderTotals", async () => {
+    // Read enough columns to cover Segment at col X (index 23). Use "A1:X" to include
+    // all columns A through X without a hard row cap that would truncate large sheets.
+    const values = await throttledGetTabValues(SHEET_IDS.pendingOrder, "report", "A1:X50000");
+    const rows = pendingReportRowsToObjects(values);
+    const diagnostics = diagnoseInputRows(rows, {
+      code: ["Old ERP Code", "Item Code", "Item No."],
+      colour: ["Colour", "Color", "COLOR", "COLUOR"],
+      quantity: ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"],
+    }, { source: `${SHEET_LABELS.pendingOrder} / report · ${segment}` });
 
-  for (const row of rows) {
-    const segment = String(row["Segment"] ?? "").trim().toUpperCase();
-    if (segment !== "PTMT") continue;
-    let code = String(row["Old ERP Code"] ?? "").trim();
-    let colour = String(row["Colour"] ?? "").trim();
-    const qty = toNumber(row["Bal. Qty"]);
-    if (!code) continue;
-    const aliased = applyPendingOrderAlias(code, colour);
-    code = aliased.code;
-    colour = aliased.colour;
-    addToDualTotals(totals, code, colour, qty);
-  }
+    const totals = pendingOrderTotalsFromRows(rows, segment);
 
-  totals.diagnostics = diagnostics;
-  logger.info({ diagnostics }, "fetchLivePendingOrderTotals: source diagnostics");
-  return totals;
+    totals.diagnostics = diagnostics;
+    logger.info({ segment, diagnostics }, "fetchLivePendingOrderTotals: source diagnostics");
+    return totals;
+  });
 }
 
 /**
  * Snapshot the raw filtered rows from the "Pending order" sheet (for audit trail).
- * Returns an array of { catNo, colour, qty } for all PTMT rows after aliasing.
+ * Returns an array of { catNo, colour, qty } for the requested segment after aliasing.
  */
-export async function snapshotPendingOrderRows(): Promise<{ catNo: string; colour: string; qty: number }[]> {
+export async function snapshotPendingOrderRows(segment: string = "PTMT"): Promise<{ catNo: string; colour: string; qty: number }[]> {
   guardPlanningRead("snapshotPendingOrderRows");
   const values = await throttledGetTabValues(SHEET_IDS.pendingOrder, "report", "A1:X50000");
-  const rows = rowsToObjects(values);
-  const result: { catNo: string; colour: string; qty: number }[] = [];
-
-  for (const row of rows) {
-    const segment = String(row["Segment"] ?? "").trim().toUpperCase();
-    if (segment !== "PTMT") continue;
-    let code = String(row["Old ERP Code"] ?? "").trim();
-    let colour = String(row["Colour"] ?? "").trim();
-    const qty = toNumber(row["Bal. Qty"]);
-    if (!code) continue;
-    const aliased = applyPendingOrderAlias(code, colour);
-    result.push({ catNo: aliased.code, colour: aliased.colour, qty });
-  }
-
-  return result;
+  return pendingOrderParsedValues(values, segment);
 }
 
 // ── Plumbing daily-production workbook reader ────────────────────────────────
