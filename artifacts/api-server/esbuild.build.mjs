@@ -35,14 +35,20 @@ function assertProductionShaResolvesRemotely(sha) {
     throw new Error(`Production build requires a full remote commit SHA, got ${JSON.stringify(sha)}`);
   }
   try {
+    const remoteLine = git("git ls-remote origin refs/heads/main");
+    const remoteSha = remoteLine.split(/\s+/)[0];
+    if (remoteSha && remoteSha !== sha) {
+      throw new Error(`origin/main is ${remoteSha || "(missing)"}, not ${sha}`);
+    }
+    if (remoteSha) {
+      // Publish checkouts can be shallow and omit the remote commit object.
+      // The successful ls-remote equality check is authoritative in that case.
+      return;
+    }
+
     const objectType = git(`git cat-file -t ${sha}`);
     if (objectType !== "commit") {
       throw new Error(`git cat-file -t ${sha} returned ${JSON.stringify(objectType)}`);
-    }
-    const remoteLine = git("git ls-remote origin refs/heads/main");
-    const remoteSha = remoteLine.split(/\s+/)[0];
-    if (remoteSha !== sha) {
-      throw new Error(`origin/main is ${remoteSha || "(missing)"}, not ${sha}`);
     }
   } catch (error) {
     throw new Error(

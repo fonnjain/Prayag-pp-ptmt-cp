@@ -4,10 +4,25 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { CreateApiKeyRequestConsumer } from './createApiKeyRequestConsumer';
+import type { CreateApiKeyRequestScopesItem } from './createApiKeyRequestScopesItem';
+import type { CreateApiKeyRequestSegmentScopesItem } from './createApiKeyRequestSegmentScopesItem';
 
 export interface CreateApiKeyRequest {
   /** Human-readable label for this key, e.g. prayag-plant.com */
   name: string;
   /** Optional notes about where this key is used */
   description?: string;
+  /** The external consumer identity used to select the rate-limit policy. */
+  consumer?: CreateApiKeyRequestConsumer;
+  /**
+   * Capabilities granted to this key.
+   * @minItems 1
+   */
+  scopes?: CreateApiKeyRequestScopesItem[];
+  /**
+   * Plant segments this key may read or mutate.
+   * @minItems 1
+   */
+  segmentScopes?: CreateApiKeyRequestSegmentScopesItem[];
 }

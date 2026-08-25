@@ -17,6 +17,64 @@ paths:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
 
+  /v1/plan/items:
+    get:
+      operationId: getV1PlanItems
+      tags: [v1ReadOnly]
+      security: [{ apiKeyAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/ApiMonth"
+        - $ref: "#/components/parameters/ApiSegment"
+      responses:
+        "200":
+          description: Locally cached normalized plan items
+          headers: { X-Data-Cache-State: { schema: { type: string } }, X-Data-Cache-Age: { schema: { type: integer } } }
+          content: { application/json: { schema: { $ref: "#/components/schemas/V1PlanItemsResponse" } } }
+        "400": { $ref: "#/components/responses/V1BadRequest" }
+        "401": { $ref: "#/components/responses/V1Unauthorized" }
+        "403": { $ref: "#/components/responses/V1Forbidden" }
+        "429": { $ref: "#/components/responses/V1RateLimited" }
+        "503": { $ref: "#/components/responses/V1CacheUnavailable" }
+  /v1/calendar:
+    get:
+      operationId: getV1Calendar
+      tags: [v1ReadOnly]
+      security: [{ apiKeyAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/ApiMonth" }, { $ref: "#/components/parameters/ApiSegment" }]
+      responses:
+        "200": { description: Locally cached working calendar, content: { application/json: { schema: { $ref: "#/components/schemas/V1CalendarResponse" } } } }
+        "400": { $ref: "#/components/responses/V1BadRequest" }
+        "401": { $ref: "#/components/responses/V1Unauthorized" }
+        "403": { $ref: "#/components/responses/V1Forbidden" }
+        "429": { $ref: "#/components/responses/V1RateLimited" }
+        "503": { $ref: "#/components/responses/V1CacheUnavailable" }
+  /v1/summary:
+    get:
+      operationId: getV1Summary
+      tags: [v1ReadOnly]
+      security: [{ apiKeyAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/ApiMonth" }, { $ref: "#/components/parameters/ApiSegment" }]
+      responses:
+        "200": { description: Locally cached plant summary, content: { application/json: { schema: { $ref: "#/components/schemas/V1SummaryResponse" } } } }
+        "400": { $ref: "#/components/responses/V1BadRequest" }
+        "401": { $ref: "#/components/responses/V1Unauthorized" }
+        "403": { $ref: "#/components/responses/V1Forbidden" }
+        "429": { $ref: "#/components/responses/V1RateLimited" }
+        "503": { $ref: "#/components/responses/V1CacheUnavailable" }
+  /v1/categories:
+    get:
+      operationId: getV1Categories
+      tags: [v1ReadOnly]
+      security: [{ apiKeyAuth: [] }]
+      parameters: [{ $ref: "#/components/parameters/ApiMonth" }, { $ref: "#/components/parameters/ApiSegment" }]
+      responses:
+        "200": { description: Locally cached category summary, content: { application/json: { schema: { $ref: "#/components/schemas/V1CategoriesResponse" } } } }
+        "400": { $ref: "#/components/responses/V1BadRequest" }
+        "401": { $ref: "#/components/responses/V1Unauthorized" }
+        "403": { $ref: "#/components/responses/V1Forbidden" }
+        "429": { $ref: "#/components/responses/V1RateLimited" }
+        "503": { $ref: "#/components/responses/V1CacheUnavailable" }
+
   /buffer-categories:
     get:
       operationId: listBufferCategories
@@ -1699,7 +1757,188 @@ paths:
                 $ref: "#/components/schemas/PlantLiveError"
 
 components:
+  securitySchemes:
+    apiKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: "Managed API key with read scope and optional PTMT/Plumbing segment restrictions."
+  parameters:
+    ApiMonth:
+      name: month
+      in: query
+      required: true
+      schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
+      description: "Fiscal month represented as YYYY-MM."
+    ApiSegment:
+      name: segment
+      in: query
+      required: false
+      schema: { type: string, enum: [PTMT, Plumbing], default: PTMT }
+  responses:
+    V1BadRequest:
+      description: Invalid month or segment.
+      content: { application/json: { schema: { $ref: "#/components/schemas/V1Error" } } }
+    V1Unauthorized:
+      description: Missing, invalid, or revoked API key.
+      content: { application/json: { schema: { $ref: "#/components/schemas/V1Error" } } }
+    V1Forbidden:
+      description: API key does not have the requested read or segment scope.
+      content: { application/json: { schema: { $ref: "#/components/schemas/V1Error" } } }
+    V1RateLimited:
+      description: Per-key process-local rate limit exceeded.
+      headers:
+        Retry-After: { schema: { type: integer } }
+        X-RateLimit-Limit: { schema: { type: integer } }
+        X-RateLimit-Remaining: { schema: { type: integer } }
+        X-RateLimit-Reset: { schema: { type: integer } }
+      content: { application/json: { schema: { $ref: "#/components/schemas/V1Error" } } }
+    V1CacheUnavailable:
+      description: No safe local cache or snapshot is available.
+      content: { application/json: { schema: { $ref: "#/components/schemas/V1Error" } } }
   schemas:
+    V1Error:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string }
+        message: { type: string }
+    V1Metadata:
+      type: object
+      required: [snapshotDate, lifecycle, planVersions, workingDays, workingDaysSource, elapsed, remaining, mappedProduction, unmappedProduction, cache, caveats]
+      properties:
+        snapshotDate: { type: ["string", "null"], format: date }
+        lifecycle: { type: string, enum: [future, open, grace, closed] }
+        planVersions: { type: array, items: { $ref: "#/components/schemas/V1PlanVersion" } }
+        workingDays: { type: integer }
+        workingDaysSource: { type: string, enum: [configured, observed, derived] }
+        elapsed: { type: integer }
+        remaining: { type: integer }
+        mappedProduction: { type: number }
+        unmappedProduction: { type: number }
+        cache:
+          type: object
+          required: [state, ageMs, generatedAt]
+          properties:
+            state: { type: string, enum: [fresh, stale, frozen] }
+            ageMs: { type: integer }
+            generatedAt: { type: string, format: date-time }
+        caveats: { type: array, items: { type: string } }
+    V1PlanVersion:
+      type: object
+      required: [kind, sourceId, sourceLabel, effectiveFrom, effectiveTo, targetCount, selection, isCurrent]
+      properties:
+        kind: { type: string }
+        sourceId: { type: integer }
+        sourceLabel: { type: ["string", "null"] }
+        effectiveFrom: { type: string, format: date }
+        effectiveTo: { type: ["string", "null"], format: date }
+        targetCount: { type: integer }
+        selection: {}
+        isCurrent: { type: boolean }
+    V1PlanItem:
+      type: object
+      required: [itemCode, colour, category, stock, pendingOrder, avg3MoSale, pendingLastMonth, bufferReq, minProduction, productionPlan, maxProduction, releaseWeek, w1, w2, w3, w4, produced, weightKgPerPiece, machines, machineHrs]
+      properties:
+        itemCode: { type: string }
+        colour: { type: string }
+        category: { type: string }
+        stock: { type: number }
+        pendingOrder: { type: number }
+        avg3MoSale: { type: number }
+        pendingLastMonth: { type: number }
+        bufferReq: { type: number }
+        minProduction: { type: number }
+        productionPlan: { type: number }
+        maxProduction: { type: number }
+        releaseWeek: { type: ["integer", "null"] }
+        w1: { type: number }
+        w2: { type: number }
+        w3: { type: number }
+        w4: { type: number }
+        produced: { type: number }
+        weightKgPerPiece: { type: ["number", "null"] }
+        machines: { type: ["array", "null"], items: { type: string } }
+        machineHrs: { type: ["number", "null"] }
+    V1Weekly:
+      type: object
+      required: [week, release, mapped, unmapped, actual]
+      properties:
+        week: { type: integer, minimum: 1, maximum: 4 }
+        release: { type: number }
+        mapped: { type: number }
+        unmapped: { type: number }
+        actual: { type: number }
+    V1PlanItemsResponse:
+      type: object
+      required: [month, segment, metadata, items]
+      properties:
+        month: { type: string }
+        segment: { type: string, enum: [PTMT, Plumbing] }
+        metadata: { $ref: "#/components/schemas/V1Metadata" }
+        items: { type: array, items: { $ref: "#/components/schemas/V1PlanItem" } }
+    V1CalendarResponse:
+      type: object
+      required: [month, segment, metadata, workingDays, workingDaysSource, elapsed, remaining, workedSundays, idleWeekdays]
+      properties:
+        month: { type: string }
+        segment: { type: string, enum: [PTMT, Plumbing] }
+        metadata: { $ref: "#/components/schemas/V1Metadata" }
+        workingDays: { type: integer }
+        workingDaysSource: { type: string }
+        elapsed: { type: integer }
+        remaining: { type: integer }
+        workedSundays: { type: array, items: { type: string, format: date } }
+        idleWeekdays: { type: array, items: { type: string, format: date } }
+    V1SummaryResponse:
+      type: object
+      required: [month, segment, metadata, targetMax, targetMin, mappedProduced, totalProduced, unmappedProduced, weeks]
+      properties:
+        month: { type: string }
+        segment: { type: string, enum: [PTMT, Plumbing] }
+        metadata: { $ref: "#/components/schemas/V1Metadata" }
+        targetMax: { type: number }
+        targetMin: { type: number }
+        mappedProduced: { type: number }
+        totalProduced: { type: number }
+        unmappedProduced: { type: number }
+        projectedAttainmentPct: { type: ["number", "null"] }
+        projectedMinAttainmentPct: { type: ["number", "null"] }
+        runRatePerDay: { type: ["number", "null"] }
+        ragBand: { type: ["string", "null"], enum: [green, amber, red, null] }
+        weeks: { type: array, items: { $ref: "#/components/schemas/V1Weekly" } }
+    V1Category:
+      type: object
+      required: [category, targetMin, targetMax, mappedProduced, unmappedProduced, actual, gap, attainmentPct, w1, w2, w3, w4]
+      properties:
+        category: { type: string }
+        targetMin: { type: number }
+        targetMax: { type: number }
+        mappedProduced: { type: number }
+        unmappedProduced: { type: number }
+        actual: { type: number }
+        gap: { type: number }
+        attainmentPct: { type: ["number", "null"] }
+        w1: { $ref: "#/components/schemas/V1WeekValues" }
+        w2: { $ref: "#/components/schemas/V1WeekValues" }
+        w3: { $ref: "#/components/schemas/V1WeekValues" }
+        w4: { $ref: "#/components/schemas/V1WeekValues" }
+    V1WeekValues:
+      type: object
+      required: [release, mapped, unmapped, actual]
+      properties:
+        release: { type: number }
+        mapped: { type: number }
+        unmapped: { type: number }
+        actual: { type: number }
+    V1CategoriesResponse:
+      type: object
+      required: [month, segment, metadata, categories]
+      properties:
+        month: { type: string }
+        segment: { type: string, enum: [PTMT, Plumbing] }
+        metadata: { $ref: "#/components/schemas/V1Metadata" }
+        categories: { type: array, items: { $ref: "#/components/schemas/V1Category" } }
     HealthStatus:
       type: object
       required: [status]
@@ -3050,11 +3289,25 @@ components:
 
     ApiKey:
       type: object
-      required: [id, name, keyPrefix, isActive, createdAt]
+      required: [id, name, consumer, scopes, segmentScopes, keyPrefix, isActive, createdAt]
       properties:
         id: { type: integer }
         name: { type: string }
         description: { type: ["string", "null"] }
+        consumer:
+          type: string
+          enum: [machine-analysis, mis, legacy]
+          description: "The external consumer identity used to select the rate-limit policy."
+        scopes:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [read, write] }
+          description: "Capabilities granted to this key."
+        segmentScopes:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [PTMT, Plumbing] }
+          description: "Plant segments this key may read or mutate."
         keyPrefix: { type: string, description: "First 14 chars of the key for identification — safe to display" }
         isActive: { type: boolean }
         createdAt: { type: string }
@@ -3076,6 +3329,21 @@ components:
       properties:
         name: { type: string, description: "Human-readable label for this key, e.g. prayag-plant.com" }
         description: { type: string, description: "Optional notes about where this key is used" }
+        consumer:
+          type: string
+          enum: [machine-analysis, mis, legacy]
+          default: legacy
+          description: "The external consumer identity used to select the rate-limit policy."
+        scopes:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [read, write] }
+          description: "Capabilities granted to this key."
+        segmentScopes:
+          type: array
+          minItems: 1
+          items: { type: string, enum: [PTMT, Plumbing] }
+          description: "Plant segments this key may read or mutate."
 
     PlantLiveError:
       type: object

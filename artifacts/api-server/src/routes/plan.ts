@@ -1291,13 +1291,15 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     let pendingTotals: DualTotals;
     let pendingDiagnostics: ReturnType<typeof diagnoseInputRows>;
     let bufferRows: typeof bufferCategoriesTable.$inferSelect[];
+    let bandRows: typeof weeklyReleaseBandsTable.$inferSelect[];
     let sheet3Rows: PlumbingSheet3Row[];
     try {
-      [items, fgStockRows, pendingTotals, bufferRows, sheet3Rows] = await Promise.all([
+      [items, fgStockRows, pendingTotals, bufferRows, bandRows, sheet3Rows] = await Promise.all([
         buildPlanItems(month, "Plumbing"),
         loadLatestUploadRowsByKind("plumbing_fg_stock"),
         fetchLivePendingOrderTotals("Plumbing"),
         db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
+        db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
         fetchPlumbingSheet3Production(month),
       ]);
     } catch (err) {
@@ -1714,6 +1716,51 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
         pass: weeklySum === prodReq,
       });
     }
+
+    const weeklyInvariantViolations = items.filter((item) => {
+      const weeklyAllocations = [item.w1, item.w2, item.w3, item.w4];
+      const weeklyTotal = weeklyAllocations.reduce((sum, value) => sum + value, 0);
+      const nonZeroWeeks = weeklyAllocations
+        .map((value, index) => ({ value, week: index + 1 }))
+        .filter(({ value }) => Math.abs(value) > 0.01);
+      if (item.maxProduction <= 0) {
+        return weeklyAllocations.some((value) => Math.abs(value) > 0.01) || item.week !== null;
+      }
+      return Math.abs(weeklyTotal - item.maxProduction) > 0.01
+        || nonZeroWeeks.length !== 1
+        || Math.abs(nonZeroWeeks[0]!.value - item.maxProduction) > 0.01
+        || item.week !== nonZeroWeeks[0]!.week;
+    });
+    checks.push({
+      name: "Weekly · every planned item has exactly one release allocation",
+      expected: 0,
+      actual: weeklyInvariantViolations.length,
+      pass: weeklyInvariantViolations.length === 0,
+      tolerance: "one non-zero W column = maxProduction and agrees with week; zero plans have no allocation",
+    });
+
+    const categoriesInPlan = new Set(items.map((item) => item.category));
+    const bandRowsByCategory = new Map<string, typeof bandRows[number][]>();
+    for (const row of bandRows) {
+      const rows = bandRowsByCategory.get(row.categoryName) ?? [];
+      rows.push(row);
+      bandRowsByCategory.set(row.categoryName, rows);
+    }
+    const invalidBandCategories = [...categoriesInPlan].filter((category) => {
+      const rows = bandRowsByCategory.get(category) ?? [];
+      if (rows.length !== 1) return true;
+      const band = rows[0]!;
+      return !(band.w1Upper < band.w2Upper
+        && band.w2Upper < band.w3Upper
+        && band.w3Upper < band.w4Upper);
+    });
+    checks.push({
+      name: "Weekly · every planned category has one valid release band",
+      expected: 0,
+      actual: invalidBandCategories.length,
+      pass: invalidBandCategories.length === 0,
+      tolerance: "exactly one strictly increasing W1–W4 band per planned category",
+    });
 
     const categoryTotals: Record<string, number> = {};
     for (const [cat, total] of byCategory.entries()) categoryTotals[cat] = roundInt(total);

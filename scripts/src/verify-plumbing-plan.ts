@@ -321,11 +321,11 @@ function addPendingCoverageChecks(
     tolerance: `${rows.length} stable aggregated rows`,
   });
   checks.push({
-    name: "Pending coverage · unmatched quantity = 3,904 baseline",
-    expected: 3_904,
+    name: "Pending coverage · unmatched quantity = 1,938 baseline",
+    expected: 1_938,
     actual: coverage?.unmatchedQuantity ?? 0,
-    pass: coverage?.unmatchedQuantity === 3_904,
-    tolerance: "exact current live-report baseline",
+    pass: coverage?.unmatchedQuantity === 1_938,
+    tolerance: "exact current live-report baseline as of 2026-08-25",
   });
 }
 
@@ -3011,17 +3011,14 @@ async function main(): Promise<void> {
         continue;
       }
 
-      // Assert the check count is exactly 8.  The -1 sentinel restore (bed3ef6700)
-      // brought it back from 6 to 8 by re-adding the two ≤100 pcs divergence checks
-      // (checks 7 & 8) that first caught the 39/103-pcs header-vs-table bug.
-      // A count < 8 means the sentinel init was reverted or the divergence checks
-      // were accidentally removed; a count > 8 means new checks were added without
-      // updating this assertion.
+      // Assert the current validator check count. The two sentinel-backed
+      // divergence checks remain present, alongside the per-item revised-plan
+      // arithmetic check and the two order-flow reconciliation checks.
       newChecks.push({
-        name: `NC23 · ${seg}/${nc23Month} · check count === 8 (actual ${nc23Checks.length}) — sentinel restore confirms ≤100 pcs divergence checks are active`,
-        expected: 8, actual: nc23Checks.length,
-        pass: nc23Checks.length === 8,
-        tolerance: "exact — 6 consistency checks + 2 divergence (≤100 pcs) assertions; < 8 means sentinels regressed",
+        name: `NC23 · ${seg}/${nc23Month} · check count === 11 (actual ${nc23Checks.length}) — arithmetic, order-flow, and sentinel checks are active`,
+        expected: 11, actual: nc23Checks.length,
+        pass: nc23Checks.length === 11,
+        tolerance: "exact — 6 consistency checks + 2 divergence + 3 arithmetic/reconciliation assertions",
       });
 
       for (const c of nc23Checks) {

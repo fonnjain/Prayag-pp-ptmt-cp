@@ -694,6 +694,63 @@ export function normalizeCode(itemCode: unknown): string {
   return String(itemCode ?? "").trim().toUpperCase();
 }
 
+// ── Order Sheet TYPE → planning segment ─────────────────────────────────────
+//
+// The Order Sheet's TYPE column is the authoritative business classification.
+// GROUP is retained only as a compatibility fallback for old fixture layouts
+// that predate TYPE exposure. Matching is deliberately trim + upper-case,
+// followed by exact membership; no prefixes or fuzzy matching are allowed.
+export type ClassifiedOrderSegment = "PTMT" | "Plumbing" | "Excluded";
+
+export const ORDER_TYPE_TO_SEGMENT: Readonly<Record<string, ClassifiedOrderSegment>> = {
+  PTMT: "PTMT",
+  CABINET: "PTMT",
+  CISTERN: "PTMT",
+  CONNECTION: "PTMT",
+  "WASTE PIPE": "PTMT",
+  "SEAT COVER": "PTMT",
+  QUAA: "PTMT",
+  "CORRUGATED PIPE": "PTMT",
+  CPVC: "Plumbing",
+  UPVC: "Plumbing",
+  SWR: "Plumbing",
+  AGRI: "Plumbing",
+  "GARDEN PIPE": "Plumbing",
+  PPR: "Plumbing",
+  COLUMN: "Plumbing",
+  OPVC: "Plumbing",
+  "LPG PIPE": "Plumbing",
+  "WT LID": "Plumbing",
+};
+
+export const ORDER_TYPES_BY_SEGMENT: Readonly<Record<"PTMT" | "Plumbing", readonly string[]>> = {
+  PTMT: Object.entries(ORDER_TYPE_TO_SEGMENT)
+    .filter(([, segment]) => segment === "PTMT")
+    .map(([type]) => type),
+  Plumbing: Object.entries(ORDER_TYPE_TO_SEGMENT)
+    .filter(([, segment]) => segment === "Plumbing")
+    .map(([type]) => type),
+};
+
+export function normalizeOrderType(value: unknown): string {
+  return String(value ?? "").trim().toUpperCase();
+}
+
+export function classifyOrderType(value: unknown): ClassifiedOrderSegment {
+  return ORDER_TYPE_TO_SEGMENT[normalizeOrderType(value)] ?? "Excluded";
+}
+
+/** Find the TYPE column case-insensitively without changing its row value. */
+export function getOrderTypeField(row: Record<string, unknown>): { present: boolean; value: string } {
+  const key = Object.keys(row).find((candidate) => normalizeOrderType(candidate) === "TYPE");
+  return { present: key !== undefined, value: key === undefined ? "" : String(row[key] ?? "") };
+}
+
+/** Return the raw TYPE value. Use getOrderTypeField when column presence matters. */
+export function getOrderType(row: Record<string, unknown>): string {
+  return getOrderTypeField(row).value;
+}
+
 /**
  * Production-to-plan code normalisation: strip hyphens, spaces and dots before
  * uppercasing.  Production sheets log "A465" while the plan master uses "A-465";
@@ -1113,12 +1170,18 @@ export async function fetchLiveOrderTotals(month: string, group: string = "PTMT"
   const values = await throttledGetTabValues(SHEET_IDS.orderSheet, "Combined");
   const rows = rowsToObjects(values);
   const totals: DualTotals = { exact: new Map(), byCode: new Map() };
-  const groupUpper = group.toUpperCase();
+  const segment = group.trim().toUpperCase() === "PLUMBING" ? "Plumbing" : "PTMT";
   for (const row of rows) {
-    const rowGroup = String(row["GROUP"] ?? "").trim().toUpperCase();
     const rowMonth = String(row["Month"] ?? "").trim().toLowerCase();
-    if (rowGroup !== groupUpper) continue;
     if (rowMonth && rowMonth !== label) continue;
+    const typeField = getOrderTypeField(row);
+    // Older per-source fixtures used GROUP before TYPE was exposed. Keep that
+    // compatibility only when TYPE is absent; live Order Sheet rows always use
+    // the exact TYPE mapping above.
+    const rowSegment = typeField.present
+      ? classifyOrderType(typeField.value)
+      : classifyOrderType(row["GROUP"]);
+    if (rowSegment !== segment) continue;
     const code = row["Old ERP Code"];
     const colour = row["Item.Color"];
     const qty = toNumber(row["Quantity"]);

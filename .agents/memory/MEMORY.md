@@ -34,6 +34,7 @@
 - [Plumbing monitoring tab](plumbing-monitoring-tab.md) — /monitoring/plumbing route; header tabs PTMT/Plumbing; Plumbing sidebar shows Plan Overview only; live actuals not yet wired.
 - [Plumbing FG Stock structure](plumbing-fg-stock-structure.md) — Solvent items are in *-TRADING categories (not Solvent category); detect by item name; no SWR Solvent in file; col indices: A=code B=name C=cat R=NetStock.
 - [Plumbing pending order segments](plumbing-pending-order-segments.md) — filter must include PLUMBING+P+PL+AGRI; PL=SWR Selfit+UPVC SCH40; AGRI=AGRI Pipe; PPR items under PLUMBING are safe (never in item_master).
+- [Order Sheet TYPE classification](order-sheet-type-classification.md) — TYPE is authoritative exact membership; C P and HDPE PIPE remain excluded from both planning segments.
 - [Sheet tab name normalisation](tab-normalisation.md) — order sheets use "July" not "Jul"; buildTabMap()+normTab() in seasonality-engine.ts maps full names→FiscalMonth; fixes missing Jul data (10→12 months per FY).
 - [Plumbing buffer CV methodology](plumbing-buffer-cv.md) — our engine uses category-aggregate monthly CV; golden values use item-level weighted-average CV (per-SKU); category CV is always lower; SWR Pipe gap ~-1.0.
 - [PTMT buffer multiplier locks](ptmt-multiplier-locks.md) — AI engine drifts PTMT multipliers; lock with overrideMultiplier via PATCH; PTMT_TOLERANCE=0.001; 76/76 regression suite includes per-category Max/Min.
