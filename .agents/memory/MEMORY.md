@@ -16,6 +16,7 @@
 - [CP Machine Roster Reconciliation](cp-roster-reconciliation.md) — PIPE-1..9 + MOULD-A01..D07 canonical keys; Report-5/11/12 parsed from per-month PIPE daily workbooks; reconciliation_runs table; RosterPanel shows CP-only in data.tsx.
 - [orval fetch-client response shape](orval-fetch-response-shape.md) — generated hook `data` types are wrapped `{data,status}&{headers}` but our customFetch mutator returns the raw body; cast with `as unknown as <SchemaType>`, never access `.data`.
 - [Plant bundle in-memory cache](plant-bundle-cache.md) — 5-min Map cache in routes/plant.ts; invalidate it alongside DB cache on config save; React Query staleTime=5min keeps UI instant.
+- [Read-only API cache hydration](api-read-cache-hydration.md) — open-month projections must persist segment actuals before workbook-heavy plan rebuilds, or production returns 503.
 - [Puppeteer Chrome auto-install](puppeteer-chrome.md) — puppeteer package is installed but Chrome binary needs explicit install; ensureBrowser.ts at startup handles this; API URL from monitoring app must be /api/... not ${base}/api/...
 - [API listen-before-browser](listen-before-browser.md) — ensureBrowser blocks app.listen; always listen first, run browser install in background callback.
 - [Ops dashboard month normalizer](ops-month-normalizer.md) — Order Sheet "Month" col returns "Apr-26" not "Apr"; normalizeMonth() maps prefix-3/numeric→short name; ytdValue from allRows directly, not monthly array.

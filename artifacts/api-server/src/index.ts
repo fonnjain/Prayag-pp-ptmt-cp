@@ -73,6 +73,16 @@ async function main(): Promise<void> {
       .then(() => logger.info({ month }, "Plant monitoring startup pre-warm complete"))
       .catch((err) => logger.warn({ err, month }, "Plant monitoring startup pre-warm failed"));
 
+    // The versioned read-only API is local-only. Persist Plumbing Sheet3
+    // actuals before any workbook-heavy plan rebuild can fail on a transient
+    // Sheets quota response, so /api/v1 remains useful after publishing.
+    import("./lib/plant-ingestion")
+      .then(({ refreshPlumbingActualsCache }) => refreshPlumbingActualsCache(month))
+      .then(({ actuals, snapshotDate }) =>
+        logger.info({ month, rowCount: actuals.length, snapshotDate }, "Plumbing API actuals startup cache ready"),
+      )
+      .catch((err) => logger.warn({ err, month }, "Plumbing API actuals startup cache failed"));
+
     // Warm the live machine summary independently. It is an external API
     // call, so it must never delay readiness or the Sheets-backed pre-warm.
     import("./routes/plant-live")

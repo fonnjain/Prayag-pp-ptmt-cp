@@ -14,9 +14,10 @@ import {
   fetchDailyActuals,
   fetchMonitoringPlanTimeline,
   loadStoredDailyActualsForSegment,
+  refreshPlumbingActualsCache,
   type DailyActualRow,
   type PlantTargetRow,
-} from "./plant-ingestion";
+} from "./plant-ingestion";} from "./plant-ingestion";
 import type { PlanVersion, VersionTarget } from "./plant-plan-timeline";
 import {
   lastProductionDay,
@@ -29,7 +30,6 @@ import { buildPlantWarnings, buildPlantWeeklyWarnings, DEFAULT_PLANT_WARNING_THR
 import { buildPlantRecommendations } from "./plant-recommendations";
 import { buildPlanItems } from "../routes/plan";
 import { annotateWeeklyRelease, type CalcPlanItem } from "./calc";
-import { fetchPlumbingSheet3Production } from "./sheets";
 import type { PlantSegment } from "./plant-segments";
 import { commitSha } from "./buildInfo";
 
@@ -537,24 +537,12 @@ async function fetchSegmentActuals(
   options: { forceRefresh?: boolean; requireFresh?: boolean } = {},
 ): Promise<DailyActualRow[]> {
   if (segment === "PTMT") return fetchDailyActuals(month, options, segment);
-  const rows = await fetchPlumbingSheet3Production(month);
-  return rows.map((row) => ({
-    date: row.dateStr,
-    itemCode: row.rawCode,
-    colour: "",
-    qty: row.qty,
-    group: "PLUMBING",
-  }));
+  return (await refreshPlumbingActualsCache(month)).actuals;
 }
 
 async function loadSegmentActuals(month: string, segment: MonitoringSegment) {
   if (segment === "PTMT") return loadStoredDailyActualsForSegment(month, segment);
-  const actuals = await fetchSegmentActuals(month, segment);
-  return {
-    actuals,
-    snapshotDate: actuals.length ? [...actuals].sort((a, b) => a.date.localeCompare(b.date)).at(-1)?.date ?? null : null,
-    cachedAt: actuals.length ? new Date() : null,
-  };
+  return refreshPlumbingActualsCache(month);
 }
 
 async function loadFinalizedTargets(month: string, segment: MonitoringSegment = "PTMT"): Promise<{

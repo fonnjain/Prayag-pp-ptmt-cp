@@ -1,6 +1,6 @@
 import { db, plantIngestionCacheTable, plantSourceConfigsTable, itemMasterTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import { getTabValues, SHEET_IDS, itemKey, normalizeCode } from "./sheets";
+import { fetchPlumbingSheet3Production, getTabValues, SHEET_IDS, itemKey, normalizeCode } from "./sheets";
 import { logger } from "./logger";
 import { buildPlanItems } from "../routes/plan";
 import { getPlanVersionTimeline, type PlanVersion } from "./plant-plan-timeline";
@@ -72,6 +72,47 @@ export async function loadStoredDailyActualsForSegment(month: string, segment = 
     snapshotDate: cached?.snapshotDate || null,
     cachedAt: cached?.cachedAt ?? null,
   };
+}
+
+/**
+ * Fetch and persist Plumbing's Sheet3 actuals independently of plan-building.
+ *
+ * The read-only API is intentionally local-only, so its open-month projection
+ * needs a durable ingestion row before a workbook-heavy monitoring rebuild
+ * starts. Keeping this operation separate also means a transient quota error
+ * while reading a plan tab cannot discard successfully-read production rows.
+ */
+export async function refreshPlumbingActualsCache(month: string): Promise<{
+  actuals: DailyActualRow[];
+  snapshotDate: string | null;
+  cachedAt: Date;
+}> {
+  const rows = await fetchPlumbingSheet3Production(month);
+  const actuals = rows.map((row) => ({
+    date: row.dateStr,
+    itemCode: row.rawCode,
+    colour: "",
+    qty: row.qty,
+    group: "PLUMBING",
+  }));
+  const snapshotDate = actuals.length
+    ? [...actuals].sort((a, b) => a.date.localeCompare(b.date)).at(-1)?.date ?? null
+    : null;
+  const cachedAt = new Date();
+
+  await db.insert(plantIngestionCacheTable).values({
+    month,
+    segment: "Plumbing",
+    snapshotDate: snapshotDate ?? "",
+    rawActualsJson: actuals,
+    cachedAt,
+  }).onConflictDoUpdate({
+    target: [plantIngestionCacheTable.month, plantIngestionCacheTable.segment],
+    set: { snapshotDate: snapshotDate ?? "", rawActualsJson: actuals, cachedAt },
+  });
+
+  logger.info({ month, rowCount: actuals.length, snapshotDate }, "plant-ingestion: cached Plumbing Sheet3 actuals");
+  return { actuals, snapshotDate, cachedAt };
 }
 
 export async function fetchDailyActuals(
