@@ -76,6 +76,15 @@ export const PLUMBING_GOLDEN_TOLERANCE = 0.001;
 /** Grand total across all 12 categories for PLUMBING_GOLDEN_MONTH. */
 export const PLUMBING_GRAND_TOTAL = 1_950_983; // re-rolled 2026-08-05 (pending → DATA.xlsx upload)
 
+/**
+ * Point-in-time reconciliation from the July 2026 live-pending cutover:
+ * 148,721 matched pending pieces produced 143,897 pieces of plan movement;
+ * the remaining 4,824 pieces were absorbed by the per-item max(..., 0)
+ * clamp. These are diagnostic targets, not replacement plan goldens.
+ */
+export const PLUMBING_PENDING_PLAN_MOVEMENT = 143_897;
+export const PLUMBING_PENDING_PLAN_CLAMP_LOSS = 4_824;
+
 /** Canonical list of the 12 Plumbing category names (derived from PLUMBING_GOLDEN). */
 export const PLUMBING_CATEGORIES = PLUMBING_GOLDEN.map((g) => g.cat);
 
@@ -209,6 +218,7 @@ export const PTMT_AUG_STOCK_121O_WHITE = 6_644;
 export const PTMT_AUG_LM_TOTAL         = 168_695;
 export const PTMT_AUG_PENDING_TOTAL    = 15_238; // live Pending order / report Bal. Qty
 export const PLUMBING_AUG_PENDING_TOTAL = 152_625; // live Pending order / report Bal. Qty
+export const PLUMBING_UNMATCHED_PENDING_TOTAL = 3_904; // live Plumbing pending rows without a current plan-roster code
 // Re-verified 2026-08-21 against the live Sale 26-27 "May,Jun,July'26"
 // rolling tab: 16,114 total / 3 = 5,371 monthly average.
 export const PTMT_AUG_AVG3MO_144O_WHITE = 5_371;

@@ -1,0 +1,103 @@
+# ANALYSIS — the 83-failure itemisation
+
+This is the report the acceptance criterion needed. Classifying every failure with **previous actual** alongside expected and actual is what makes the pending-driven group self-evidently correct rather than asserted — 50 checks all moving in the same direction by the right magnitude is a coherent story, not a coincidence.
+
+And **no unclassified failures beyond the four** is the sentence that matters. That is what makes `d92e947` assessable.
+
+---
+
+## The 50 pending-driven are correct
+
+Spot-checked the direction and scale throughout: every actual moved **up** from its previous actual, and the sizes track the pending injected into each category. `CPVC Fitting` 959,671 → 1,042,699 against expected 749,297 is exactly what a plan gains when 96,370 pcs of CPVC open balance enters a term that was previously zero.
+
+These goldens describe a plan built without open orders. **They are now describing a state the system will never produce again**, so they need re-deriving — with the reason and the observation in the tolerance string, not a bare number.
+
+## The 29 pre-existing are correctly separated
+
+Same expected and same actual before and after — that is the right test, and the `Mon ·` monitoring group is untouched by a pending change, which corroborates it.
+
+## ✅ The `plumbing-golden.ts` explanation resolves my concern
+
+> *"No `PLUMBING_GOLDEN` category expected value was changed."*
+
+The +6/−5 was `PTMT_AUG_PENDING_TOTAL` 0 → **15,238**, a new `PLUMBING_AUG_PENDING_TOTAL = 152,625`, and comment updates naming the new source. **Adding assertions on the pending totals rather than adjusting plan goldens is exactly right** — it locks in the newly-visible quantities as a check instead of quietly moving an expectation.
+
+---
+
+## The four unexplained gaps — I think I can identify the cause
+
+| Category | Plan | Weekly sum | Gap |
+|---|--:|--:|--:|
+| CPVC Fitting | 1,042,699 | 1,042,430 | **269** |
+| UPVC Fitting | 817,895 | 817,788 | **107** |
+| SWR Pipe | 80,897 | 80,856 | **41** |
+| AGRI Fitting | 58,712 | 58,544 | **168** |
+| | | | **585** |
+
+Not rounding — these are whole pieces, and 269 is far too large for accumulated rounding across a category.
+
+`calc.ts:122–133`, `annotateWeeklyRelease`:
+
+```typescript
+for (const item of items) {
+  if (item.maxProduction <= 0 || item.cover === "OS") continue;    // ← skipped entirely
+  const band = bandsByCategory.get(item.category);
+  if (!band) continue;                                             // ← skipped entirely
+
+  const c = item.cover as number;
+  let week: 1|2|3|4|null = null;
+  if (c < band.w1Upper) week = 1;
+  else if (c < band.w2Upper) week = 2;
+  else if (c < band.w3Upper) week = 3;
+  else if (c < band.w4Upper) week = 4;                             // ← may stay null
+  item.week = week;
+```
+
+**Four ways an item's `maxProduction` lands in the category total but in no week:**
+
+1. `cover === "OS"` — out of stock, so `avg3MoSale = 0` and cover cannot be computed
+2. no band configured for the category
+3. `cover ≥ w4Upper` — falls past every band, `week` stays `null`
+4. `maxProduction <= 0` — not relevant here, since these gaps are positive
+
+**Cause 1 is almost certainly it, and the pending fix is what exposed it.** An item with no recent sales has `cover = "OS"`. Before this change its `maxProduction` was `(buffer − stock) + 0 + 0`, which for a no-sales item is typically 0 — so it never appeared. **Now it carries pending orders**, so `maxProduction > 0` while `cover` is still `"OS"` — it enters the category total and is skipped by the weekly split.
+
+That reads as a genuine business case: *a customer has ordered an item we have not sold in three months.* Real demand, no sales history, so no cover band.
+
+**These four are therefore pending-driven after all** — but not as stale goldens. They are a **real defect the pending fix uncovered**: production planned at category level that never reaches a week.
+
+### To confirm, and it is one query
+
+For each of the four categories, list items where `maxProduction > 0` and `week === null`, with their `cover` value and `maxProduction`. The sum should equal the gap exactly — 269, 107, 41, 168.
+
+Then decide where they belong. **W1 is the defensible default** — an open order with no sales history is unfulfilled demand and should be scheduled first, not last. But that is a business call, and whatever is chosen must be explicit rather than a silent fallthrough.
+
+**Note the same hazard exists for causes 2 and 3.** `cover ≥ w4Upper` also leaves `week` null. Once fixed, the invariant should be `Σ(w1..w4) === maxProduction` **per item**, asserted, so no item can carry a plan quantity into no week again.
+
+---
+
+## On the task references
+
+Creating #175–#179 as replacements is a reasonable response to a platform that cannot un-cancel. Two requests: **carry the original numbers in the new descriptions** (*"replaces cancelled #173"*), so the history is traceable; and note that **#175 is now larger than it was** — the 3,904 unmatched pending is separate from the 585 pcs above, so both need tracking.
+
+---
+
+## Suggested reply
+
+> This is the report the acceptance criterion needed — classifying every failure with **previous actual** alongside expected and actual is what makes the 50 pending-driven self-evidently correct rather than asserted. 50 checks all moving up by magnitudes that track the injected pending is a coherent story. And *"no unclassified failures beyond these four"* is the sentence that makes `d92e947` assessable.
+>
+> The `plumbing-golden.ts` explanation resolves it fully — **adding `PTMT_AUG_PENDING_TOTAL` 15,238 and `PLUMBING_AUG_PENDING_TOTAL` 152,625 as assertions, rather than adjusting plan goldens, is exactly right.** It locks in the newly-visible quantities instead of quietly moving an expectation.
+>
+> **On the four gaps — I think the cause is identifiable, and they are pending-driven after all, but not as stale goldens.**
+>
+> `calc.ts:123` skips an item entirely when `cover === "OS"`, and `:130–132` leaves `week` null when cover exceeds every band. Either way `maxProduction` lands in the category total and in no week.
+>
+> **Cause: items with no recent sales.** `cover = "OS"` when `avg3MoSale = 0`. Before this change such an item's `maxProduction` was `(buffer − stock) + 0 + 0` — typically zero, so it never appeared. **Now it carries pending orders**, so `maxProduction > 0` while cover is still `"OS"`. It enters the category total and is skipped by the weekly split. That's a real case: *a customer ordered something we haven't sold in three months.*
+>
+> **So these four are a genuine defect the pending fix uncovered**, not a golden problem — production planned at category level that never reaches a week.
+>
+> To confirm, one query: for each of the four categories, list items with `maxProduction > 0` and `week === null`, with their `cover` and `maxProduction`. **The sums should equal 269, 107, 41 and 168 exactly.**
+>
+> Then decide where they belong. **W1 is the defensible default** — an open order with no sales history is unfulfilled demand and should be scheduled first. But make it explicit rather than a silent fallthrough, and note `cover ≥ w4Upper` leaves `week` null too, so the fix should cover both. Afterwards assert **`Σ(w1..w4) === maxProduction` per item**, so no item can carry a plan quantity into no week again.
+>
+> On the tasks: replacements are a fair response to a platform with no un-cancel, but please carry the original numbers in the descriptions (*"replaces cancelled #173"*) so the history stays traceable. And #175 is now larger than it was — the 3,904 unmatched pending is separate from these 585 pcs, so both need tracking.

@@ -52,6 +52,117 @@ export interface PlanSummaryResult {
 
 const round = (n: number): number => Math.round(n * 100) / 100;
 
+export interface PendingPlanReconciliationItem {
+  itemCode: string;
+  colour: string;
+  category: string;
+  baseDemandBeforeCurrentPending: number;
+  currentPending: number;
+  unclampedBaseline: number;
+  planWithoutCurrentPending: number;
+  planWithCurrentPending: number;
+  pendingContribution: number;
+  pendingLostToClamping: number;
+}
+
+export interface PendingPlanReconciliationCategory {
+  category: string;
+  itemCount: number;
+  currentPending: number;
+  pendingContribution: number;
+  pendingLostToClamping: number;
+}
+
+export interface PendingPlanReconciliation {
+  sourcePendingTotal: number;
+  matchedPendingTotal: number;
+  unmatchedPendingTotal: number;
+  planMovement: number;
+  clampLoss: number;
+  unexplainedResidual: number;
+  clampedItemCount: number;
+  categories: PendingPlanReconciliationCategory[];
+  clampedItems: PendingPlanReconciliationItem[];
+}
+
+/**
+ * Reconcile the current-pending contribution to a plan without re-running any
+ * source reads. The plan formula applies max(..., 0) per item, so the only
+ * legitimate difference between matched pending and plan movement is pending
+ * attached to an item whose pre-pending demand is negative.
+ *
+ * `matchedPendingTotal` and `unmatchedPendingTotal` come from the pending
+ * coverage join. Keeping them separate prevents unmatched report rows from
+ * being mistaken for a planning clamp.
+ */
+export function reconcilePendingPlan(
+  items: CalcPlanItem[],
+  sourcePendingTotal: number,
+  matchedPendingTotal: number,
+  unmatchedPendingTotal: number,
+): PendingPlanReconciliation {
+  const reconciliationItems = items.map((item): PendingPlanReconciliationItem => {
+    const baseDemandBeforeCurrentPending = round(
+      item.bufferReq - item.stock + item.pendingOrderLastMonth,
+    );
+    const planWithoutCurrentPending = round(Math.max(baseDemandBeforeCurrentPending, 0));
+    const unclampedBaseline = round(baseDemandBeforeCurrentPending + item.pendingOrder);
+    const planWithCurrentPending = round(item.maxProduction);
+    const pendingContribution = round(planWithCurrentPending - planWithoutCurrentPending);
+    const pendingLostToClamping = round(item.pendingOrder - pendingContribution);
+
+    return {
+      itemCode: item.itemCode,
+      colour: item.colour,
+      category: item.category,
+      baseDemandBeforeCurrentPending,
+      currentPending: round(item.pendingOrder),
+      unclampedBaseline,
+      planWithoutCurrentPending,
+      planWithCurrentPending,
+      pendingContribution,
+      pendingLostToClamping,
+    };
+  });
+
+  const categories = new Map<string, PendingPlanReconciliationCategory>();
+  for (const item of reconciliationItems) {
+    const category = categories.get(item.category) ?? {
+      category: item.category,
+      itemCount: 0,
+      currentPending: 0,
+      pendingContribution: 0,
+      pendingLostToClamping: 0,
+    };
+    category.itemCount += 1;
+    category.currentPending = round(category.currentPending + item.currentPending);
+    category.pendingContribution = round(category.pendingContribution + item.pendingContribution);
+    category.pendingLostToClamping = round(category.pendingLostToClamping + item.pendingLostToClamping);
+    categories.set(item.category, category);
+  }
+
+  const planMovement = round(
+    reconciliationItems.reduce((sum, item) => sum + item.pendingContribution, 0),
+  );
+  const clampLoss = round(
+    reconciliationItems.reduce((sum, item) => sum + item.pendingLostToClamping, 0),
+  );
+
+  return {
+    sourcePendingTotal: round(sourcePendingTotal),
+    matchedPendingTotal: round(matchedPendingTotal),
+    unmatchedPendingTotal: round(unmatchedPendingTotal),
+    planMovement,
+    clampLoss,
+    unexplainedResidual: round(matchedPendingTotal - planMovement - clampLoss),
+    clampedItemCount: reconciliationItems.filter((item) => item.pendingLostToClamping > 0).length,
+    categories: [...categories.values()],
+    clampedItems: reconciliationItems
+      .filter((item) => item.pendingLostToClamping > 0)
+      .sort((a, b) => b.pendingLostToClamping - a.pendingLostToClamping),
+  };
+}
+
 /**
  * Computes a single item's production plan line.
  *

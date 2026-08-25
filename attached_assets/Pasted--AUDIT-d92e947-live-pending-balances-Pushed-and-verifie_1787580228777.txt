@@ -1,0 +1,93 @@
+# AUDIT — `d92e947` (live pending balances)
+
+Pushed and verified. Substantial commit — **39 files, +2,495 / −318** — and the arithmetic reconciles throughout.
+
+---
+
+## ✅ The segment filter is exact — my concern was unfounded
+
+`sheets.ts:1131–1139`:
+
+```typescript
+function pendingSegmentValues(segment: string): Set<string> {
+  return segment.toLowerCase() === "plumbing"
+    ? new Set(["PLUMBING", "P", "PL", "AGRI", "CPVC", "UPVC", "SWR"])
+    : new Set(["PTMT", "PT"]);
+}
+
+return rows.filter((row) =>
+  acceptedSegments.has(String(rowValue(row, ["Segment","SEGMENT","Group","GROUP"]) ?? "").trim().toUpperCase()));
+```
+
+`Set.has()` on a trimmed, upper-cased value — **exact equality, no prefix matching**. So `"P"` cannot match `"PPR"` and `"PL"` cannot match `"PLATE RACK"`. The 152,625 total confirms it empirically, and the implementation confirms it structurally.
+
+Header resolution is properly alias-based too: `["Old ERP Code","Item Code","Item No."]`, `["Colour","Color","COLOR","COLUOR"]`, `["Bal. Qty","Bal.Qty","Balance Qty","Balance_Qty"]` — including the `COLUOR` typo.
+
+## ✅ Everything reconciles
+
+| Check | |
+|---|---|
+| `148,721 + 3,904 = 152,625` | ✓ exact |
+| Plan `2,447,569 → 2,591,466` | delta **+143,897**, matches ✓ |
+| PTMT 15,238 / Plumbing 152,625 | matches the sheet pivot I read independently ✓ |
+
+**Note the 4,824 gap** between joined pending (148,721) and plan movement (143,897). That is expected — `Math.max(…, 0)` clamps items where buffer minus stock already exceeded the pending — but it is worth confirming that is the cause rather than assuming, since it is the kind of difference that later reads as unexplained.
+
+**Migration 030 + `plan-input-snapshot.ts` is #166 landing in the same commit.** Capturing the order inputs per plan run is what makes future plans auditable, and it arrived alongside the change that made the inputs move. Right timing.
+
+**And pending-only no-BOM items now surface as machine-unfulfillable residuals** rather than disappearing. That is the same class as the out-of-plan items vanishing from the corrective — an item silently leaving a plan is harder to notice than a wrong quantity.
+
+---
+
+## ⚠ 1. The August comparison is 91 passed / **83 failed** — that needs itemising
+
+This is the number that matters and it is stated in one line without detail.
+
+You say *"the changed plan, KG, weekly, and capacity results are pending-driven"* and *"existing golden/monitoring mismatches were not lowered"* — both good. But **83 failures is not a residue, it is most of the suite**, and the split has to be explicit:
+
+- **How many of the 83 are consequences of +143,897 pcs of pending?** Those are correct — the goldens describe a plan built without open orders and the plan now includes them.
+- **How many predate this change?** Those are pre-existing and separately owned.
+- **How many are neither?** Those are the ones that matter.
+
+Please list each failing check with expected and actual, grouped into those three. Without that split, "91/83" cannot be acted on, and the next person to see it will either re-derive the analysis or take the whole thing as broken.
+
+The goldens for the first group then need re-deriving **with the reason in the tolerance string** — that the plan now includes live pending balances, and the observation that set the new value.
+
+## ⚠ 2. `plumbing-golden.ts` was changed (+6/−5) in this commit
+
+Given §1 (the July 541→525 change) is still unresolved, a further golden edit inside a large functional commit needs stating explicitly: **which values changed, from what to what, and why.**
+
+If those six lines are the pending-driven re-derivation, they belong in a separate commit with the reasoning — not folded into a 39-file change where nobody will find them.
+
+## ⚠ 3. Twelve `attached_assets/*.txt` files — 1,307 lines of my own prompts
+
+The diffstat includes twelve pasted prompt files. They are harmless, but they are two-thirds of a "39 files changed" headline, which makes the functional change look larger than it is and makes the diff harder to review.
+
+Worth a `.gitignore` entry for `attached_assets/Pasted-*.txt`, or a separate commit for them.
+
+## Verification status
+
+- **174/174 API tests** ✓
+- **473/473 regression** — but that was the *previous* run; the latest attempt hit a Sheets **504** on `/plan/validate?segment=Plumbing&month=2026-07` and returned 500
+
+Correctly not counted as passing. But note the **500 masking a 504** is the same shape as the earlier "quota" misclassification — an upstream timeout surfacing as a generic server error. Worth a named `UPSTREAM_TIMEOUT` response so the next occurrence is diagnosable without reading logs.
+
+---
+
+## Suggested reply
+
+> Verified on `origin/main` at `d92e947`. **My segment-filter concern was unfounded** — `sheets.ts:1138` uses `Set.has()` on a trimmed, upper-cased value, so it is exact equality and `"P"` cannot reach `"PPR"`. Good.
+>
+> Everything reconciles: `148,721 + 3,904 = 152,625` exactly; the plan delta `2,447,569 → 2,591,466` is `+143,897` as stated; and both segment totals match the sheet pivot I read independently. Migration 030 plus `plan-input-snapshot.ts` is **#166 landing in the same commit**, which is the right timing — the inputs started moving in this change, so capturing them here is what keeps future plans auditable. Surfacing pending-only no-BOM items as machine-unfulfillable residuals rather than letting them disappear is the same good instinct.
+>
+> **Three things.**
+>
+> **1. Itemise the 83 failures.** "91 passed / 83 failed" in one line can't be acted on. Please list each failing check with expected and actual, grouped three ways: caused by the +143,897 pending (correct — the goldens describe a plan without open orders), pre-existing, and neither. The third group is the one that matters. Then re-derive the first group's goldens **with the reason in the tolerance string** — that the plan now includes live pending balances, and the observation that set each value.
+>
+> **2. `plumbing-golden.ts` changed +6/−5 in this commit.** With §1 (the July 541→525) still unresolved, a further golden edit buried in a 39-file change needs stating: which values, from what to what, and why. If it's the pending-driven re-derivation it should be its own commit.
+>
+> **3. Twelve `attached_assets/*.txt` files, ~1,307 lines**, are two-thirds of the "39 files changed" headline. Worth a `.gitignore` for `attached_assets/Pasted-*.txt` so functional diffs stay legible.
+>
+> Also worth confirming the **4,824 gap** between joined pending (148,721) and plan movement (143,897) is the `Math.max(…, 0)` clamp on items where buffer-minus-stock already exceeded pending — expected, but better confirmed than assumed.
+>
+> And the latest regression run returning **500 for an upstream 504** is the same shape as the earlier quota misclassification. A named `UPSTREAM_TIMEOUT` response would make the next one diagnosable without reading logs.

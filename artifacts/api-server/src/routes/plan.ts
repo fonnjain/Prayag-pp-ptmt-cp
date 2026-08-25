@@ -1,9 +1,17 @@
-import { Router, type IRouter, type Response } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { exportTimestamp } from "../lib/export-filename";
 import { db, itemMasterTable, bufferCategoriesTable, uploadedFilesTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable } from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
-import { computeItemPlan, annotateWeeklyRelease, summarizePlan, type ItemSourceRow, type WeeklyBandConfig } from "../lib/calc";
+import {
+  computeItemPlan,
+  annotateWeeklyRelease,
+  reconcilePendingPlan,
+  summarizePlan,
+  type ItemSourceRow,
+  type PendingPlanReconciliation,
+  type WeeklyBandConfig,
+} from "../lib/calc";
 import {
   fetchAvg3MoSaleTotals,
   fetchLivePendingOrderTotals,
@@ -11,12 +19,14 @@ import {
   fetchPlumbingBomWeights,
   fetchPlumbingPlanData,
   fetchPlumbingSheet3Production,
+  pendingCoverageFromParsedRows,
   itemKey,
   normalizeCode,
   normalizeCodeStrict,
   runInPlanningContext,
   PlanningIsolationError,
   PlumbingInputUnreadableError,
+  UpstreamTimeoutError,
   type DualTotals,
   type PlumbingSheet3Row,
 } from "../lib/sheets";
@@ -60,6 +70,9 @@ import {
   PTMT_AUG_LM_TOTAL,
   PTMT_AUG_PENDING_TOTAL,
   PLUMBING_AUG_PENDING_TOTAL,
+  PLUMBING_UNMATCHED_PENDING_TOTAL,
+  PLUMBING_PENDING_PLAN_MOVEMENT,
+  PLUMBING_PENDING_PLAN_CLAMP_LOSS,
   PTMT_AUG_AVG3MO_144O_WHITE,
   PTMT_AUG_CATEGORY_GOLDEN,
   PTMT_TOLERANCE,
@@ -122,6 +135,16 @@ async function requireUploadRows(kind: string, fileLabel: string): Promise<Recor
 
 /** Maps plan-path errors to HTTP responses: 422 for named input failures. */
 export function handlePlanError(res: Response, err: unknown): void {
+  if (err instanceof UpstreamTimeoutError) {
+    const provider = err.provider === "google-drive" ? "Google Drive" : "Google Sheets";
+    res.status(504).set("Retry-After", "5").json({
+      error: err.code,
+      message: `${provider} did not respond in time while loading planning data. Retry shortly.`,
+      upstreamErrorType: err.upstreamErrorType,
+      retryable: err.retryable,
+    });
+    return;
+  }
   if (err instanceof PlumbingInputUnreadableError) {
     res.status(422).json({
       error: err.code,
@@ -1017,7 +1040,7 @@ router.get("/plan/corrective-replan", async (req, res): Promise<void> => {
   try {
     replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing", dryRun: true });
   } catch (err) {
-    if (err instanceof PlumbingInputUnreadableError || err instanceof LivePendingReadError) {
+    if (err instanceof PlumbingInputUnreadableError || err instanceof LivePendingReadError || err instanceof UpstreamTimeoutError) {
       handlePlanError(res, err);
       return;
     }
@@ -1082,7 +1105,7 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
   try {
     replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing", dryRun: true });
   } catch (err) {
-    if (err instanceof PlumbingInputUnreadableError || err instanceof LivePendingReadError) {
+    if (err instanceof PlumbingInputUnreadableError || err instanceof LivePendingReadError || err instanceof UpstreamTimeoutError) {
       handlePlanError(res, err);
       return;
     }
@@ -1243,7 +1266,7 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
  *   Live orders         → Order Sheet 26-27
  *   KGs                 → BOM sheet (1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA)
  */
-router.get("/plan/validate", async (req, res): Promise<void> => {
+async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   const month = String(req.query.month ?? "");
   if (!month) {
     res.status(400).json({ error: "month is required" });
@@ -1289,6 +1312,7 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
 
     const checks: CheckResult[] = [];
     const roundInt = (v: number) => Math.round(v);
+    let pendingPlanReconciliation: PendingPlanReconciliation | undefined;
 
     // ── 0. Planning-isolation guards (live pending is explicitly allow-listed) ──
     checks.push(...(await buildPlanningIsolationChecks(month, "Plumbing")));
@@ -1301,6 +1325,11 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
         colour: ["Colour", "Color", "COLOR", "COLUOR"],
         quantity: ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"],
       }, { source: "Pending order / report · Plumbing" });
+      const pendingCoverage = pendingCoverageFromParsedRows(
+        pendingTotals.pendingRows ?? [],
+        items.map((item) => item.itemCode),
+      );
+      pendingDiagnostics.pendingCoverage = pendingCoverage;
       const pendOk = pendingDiagnostics.missingRequiredFields.length === 0;
       checks.push({
         name: "ISOLATION · live pending source present & parsed (Bal. Qty)",
@@ -1310,12 +1339,68 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
         tolerance: "bool",
       });
       const pendingTotal = roundInt([...pendingTotals.byCode.values()].reduce((sum, qty) => sum + qty, 0));
+      pendingPlanReconciliation = reconcilePendingPlan(
+        items,
+        pendingTotal,
+        pendingCoverage.matchedQuantity,
+        pendingCoverage.unmatchedQuantity,
+      );
       checks.push({
         name: "Current pending total (live Bal. Qty)",
         expected: month === PTMT_AUG_MONTH ? PLUMBING_AUG_PENDING_TOTAL : pendingTotal,
         actual: pendingTotal,
         pass: month === PTMT_AUG_MONTH ? pendingTotal === PLUMBING_AUG_PENDING_TOTAL : pendingTotal >= 0,
         tolerance: month === PTMT_AUG_MONTH ? "exact" : "non-negative diagnostic",
+      });
+      const coverageReconciles = pendingCoverage.totalQuantity === pendingTotal;
+      checks.push({
+        name: "Pending · coverage reconciles to live Bal. Qty",
+        expected: pendingTotal,
+        actual: pendingCoverage.totalQuantity,
+        pass: coverageReconciles,
+        tolerance: "exact",
+      });
+      const allUnmatchedExplicit = pendingCoverage.unmatchedRows.every(
+        (row) => row.disposition === "excluded" && row.reason === "NO_ROSTER_MATCH",
+      );
+      checks.push({
+        name: "Pending · unmatched rows have explicit disposition",
+        expected: 1,
+        actual: allUnmatchedExplicit ? 1 : 0,
+        pass: allUnmatchedExplicit,
+        tolerance: `${pendingCoverage.unmatchedRows.length} stable aggregated rows`,
+      });
+      checks.push({
+        name: "Pending · unmatched quantity",
+        expected: PLUMBING_UNMATCHED_PENDING_TOTAL,
+        actual: pendingCoverage.unmatchedQuantity,
+        pass: pendingCoverage.unmatchedQuantity === PLUMBING_UNMATCHED_PENDING_TOTAL,
+        tolerance: "exact baseline",
+      });
+      const pendingIdentityActual = pendingPlanReconciliation.planMovement
+        + pendingPlanReconciliation.clampLoss;
+      checks.push({
+        name: "Pending-to-plan · matched pending = plan movement + clamp loss",
+        expected: pendingPlanReconciliation.matchedPendingTotal,
+        actual: pendingIdentityActual,
+        pass: Math.abs(pendingPlanReconciliation.unexplainedResidual) <= 0.01,
+        tolerance: "exact item-level identity",
+      });
+      checks.push({
+        name: "Pending-to-plan · historical July plan movement",
+        expected: PLUMBING_PENDING_PLAN_MOVEMENT,
+        actual: pendingPlanReconciliation.planMovement,
+        pass: true,
+        warn: Math.abs(pendingPlanReconciliation.planMovement - PLUMBING_PENDING_PLAN_MOVEMENT) > 0.01,
+        tolerance: "2026-07 point-in-time snapshot; mismatch is data drift warning",
+      });
+      checks.push({
+        name: "Pending-to-plan · historical July clamp loss",
+        expected: PLUMBING_PENDING_PLAN_CLAMP_LOSS,
+        actual: pendingPlanReconciliation.clampLoss,
+        pass: true,
+        warn: Math.abs(pendingPlanReconciliation.clampLoss - PLUMBING_PENDING_PLAN_CLAMP_LOSS) > 0.01,
+        tolerance: "2026-07 point-in-time snapshot; mismatch is data drift warning",
       });
       // Sales sanity: workbook avg-3-month must be non-zero (band-vs-prior not
       // available for Plumbing — no prior workbook loaded here).
@@ -1820,6 +1905,7 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
       categoryTotals,
       machineFeasible,
       inputDiagnostics: { pending: pendingDiagnostics },
+      pendingPlanReconciliation,
     });
     return;
   }
@@ -2217,6 +2303,17 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
     },
     inputDiagnostics: { pending: pendingDiagnostics },
   });
+}
+
+// Keep the whole validation endpoint behind the same named-error boundary.
+// The PTMT branch performs its live reads directly in the handler, so a Sheets
+// timeout there must not escape as Express' generic 500 response.
+router.get("/plan/validate", async (req, res): Promise<void> => {
+  try {
+    await validatePlanRoute(req, res);
+  } catch (err) {
+    handlePlanError(res, err);
+  }
 });
 
 // ── GET /plan/plumbing-monitoring ─────────────────────────────────────────────
@@ -2536,6 +2633,10 @@ router.get("/plan/plumbing-monitoring", async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err, month }, "plan/plumbing-monitoring failed");
+    if (err instanceof UpstreamTimeoutError) {
+      handlePlanError(res, err);
+      return;
+    }
     // Surface date-format errors with the full diagnostic message so the plant
     // sees the workbook ID, bad-date sample, and supported formats in the UI —
     // not just a generic "Failed" string.
@@ -2623,7 +2724,7 @@ router.get("/plan/validate-plumbing-monitoring", async (req, res) => {
     res.json({ month, allPass, passCount: checks.length - failCount, failCount, checks });
   } catch (err) {
     req.log.error({ err, month }, "plan/validate-plumbing-monitoring failed");
-    if (err instanceof PlumbingInputUnreadableError) {
+    if (err instanceof PlumbingInputUnreadableError || err instanceof UpstreamTimeoutError) {
       handlePlanError(res, err);
       return;
     }

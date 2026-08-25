@@ -1286,6 +1286,26 @@ type ValidationResponse = {
   failCount: number;
   checks: CheckResult[];
   categoryTotals?: Record<string, number>;
+  inputDiagnostics?: {
+    pending?: {
+      pendingCoverage?: {
+        totalQuantity: number;
+        matchedQuantity: number;
+        unmatchedQuantity: number;
+        matchedRowCount: number;
+        unmatchedRowCount: number;
+        unmatchedRows: Array<{
+          segment: string;
+          code: string;
+          colour: string;
+          description: string;
+          quantity: number;
+          disposition: "excluded";
+          reason: "NO_ROSTER_MATCH";
+        }>;
+      };
+    };
+  };
 };
 
 function ValidationPanel({ segment }: { segment: string }) {
@@ -1363,6 +1383,74 @@ function ValidationPanel({ segment }: { segment: string }) {
                 : `${result.failCount} of ${result.passCount + result.failCount} checks FAILED for ${result.month}`}
             </span>
           </div>
+
+          {isPlumbing && result.inputDiagnostics?.pending?.pendingCoverage && (
+            <div className="rounded-md border border-amber-200 bg-amber-50/50 p-3 space-y-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">Unmatched live pending orders</p>
+                  <p className="text-xs text-amber-800">
+                    Rows below are retained as explicit exclusions because their code has no current plan-roster match.
+                  </p>
+                </div>
+                <Badge className="bg-amber-100 text-amber-900 whitespace-nowrap">
+                  {result.inputDiagnostics.pending.pendingCoverage.unmatchedQuantity.toLocaleString("en-IN")} pcs
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div className="rounded border bg-white px-2 py-1.5">
+                  <div className="text-gray-500">Source total</div>
+                  <div className="font-semibold">{result.inputDiagnostics.pending.pendingCoverage.totalQuantity.toLocaleString("en-IN")}</div>
+                </div>
+                <div className="rounded border bg-white px-2 py-1.5">
+                  <div className="text-gray-500">Matched</div>
+                  <div className="font-semibold text-green-700">{result.inputDiagnostics.pending.pendingCoverage.matchedQuantity.toLocaleString("en-IN")}</div>
+                </div>
+                <div className="rounded border bg-white px-2 py-1.5">
+                  <div className="text-gray-500">Unmatched</div>
+                  <div className="font-semibold text-amber-800">{result.inputDiagnostics.pending.pendingCoverage.unmatchedQuantity.toLocaleString("en-IN")}</div>
+                </div>
+                <div className="rounded border bg-white px-2 py-1.5">
+                  <div className="text-gray-500">Excluded rows</div>
+                  <div className="font-semibold">{result.inputDiagnostics.pending.pendingCoverage.unmatchedRowCount}</div>
+                </div>
+              </div>
+
+              {result.inputDiagnostics.pending.pendingCoverage.unmatchedRows.length > 0 ? (
+                <div className="overflow-x-auto rounded border bg-white">
+                  <table className="w-full text-xs">
+                    <thead className="bg-amber-100/70 text-amber-950">
+                      <tr>
+                        <th className="px-2 py-1.5 text-left font-semibold">Segment</th>
+                        <th className="px-2 py-1.5 text-left font-semibold">Code</th>
+                        <th className="px-2 py-1.5 text-left font-semibold">Colour</th>
+                        <th className="px-2 py-1.5 text-left font-semibold">Description</th>
+                        <th className="px-2 py-1.5 text-right font-semibold">Bal. Qty</th>
+                        <th className="px-2 py-1.5 text-left font-semibold">Disposition</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {result.inputDiagnostics.pending.pendingCoverage.unmatchedRows.map((row) => (
+                        <tr key={`${row.segment}-${row.code}-${row.colour}-${row.description}`}>
+                          <td className="px-2 py-1.5">{row.segment}</td>
+                          <td className="px-2 py-1.5 font-mono">{row.code}</td>
+                          <td className="px-2 py-1.5">{row.colour || "—"}</td>
+                          <td className="px-2 py-1.5 min-w-52">{row.description || "—"}</td>
+                          <td className="px-2 py-1.5 text-right font-mono">{row.quantity.toLocaleString("en-IN")}</td>
+                          <td className="px-2 py-1.5 text-amber-800">
+                            {row.disposition} · {row.reason}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-green-700">All live pending rows match the current plan roster.</p>
+              )}
+            </div>
+          )}
 
           <div className="rounded-md border divide-y text-sm">
             {result.checks.map((c) => (

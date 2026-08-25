@@ -3,7 +3,11 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { db, workbookConfigTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { logger } from "./logger";
-import { diagnoseInputRows, type InputReadDiagnostics } from "./input-diagnostics";
+import {
+  diagnoseInputRows,
+  type InputReadDiagnostics,
+  type PendingCoverageDiagnostics,
+} from "./input-diagnostics";
 
 // ── Planning isolation guard ──────────────────────────────────────────────────
 //
@@ -50,6 +54,27 @@ export class PlumbingInputUnreadableError extends Error {
   }
 }
 
+/**
+ * A connector response or transport error that means the upstream workbook
+ * service did not answer in time. Keep this typed through the reader and route
+ * layers so a timeout cannot become an empty result or a misleading HTTP 500.
+ */
+export class UpstreamTimeoutError extends Error {
+  readonly code = "UPSTREAM_TIMEOUT" as const;
+  readonly upstreamErrorType = "timeout" as const;
+  readonly statusCode = 504 as const;
+  readonly retryable = true as const;
+
+  constructor(
+    public readonly provider: "google-sheet" | "google-drive",
+    public readonly path: string,
+    public readonly upstreamStatus = 504,
+  ) {
+    super(`${provider} upstream timed out while reading ${path}`);
+    this.name = "UpstreamTimeoutError";
+  }
+}
+
 const _planningContext = new AsyncLocalStorage<{ label: string }>();
 const _allowedReadScope = new AsyncLocalStorage<{ fetcher: string }>();
 
@@ -90,6 +115,15 @@ let _connectors: ReplitConnectors | null = null;
 function getConnectors(): ReplitConnectors {
   if (!_connectors) _connectors = new ReplitConnectors();
   return _connectors;
+}
+
+/** TEST ONLY: replace the connector client for boundary-level error tests. */
+export function _setConnectorsForTest(connectors: ReplitConnectors): () => void {
+  const previous = _connectors;
+  _connectors = connectors;
+  return () => {
+    _connectors = previous;
+  };
 }
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -251,6 +285,7 @@ async function fetchDriveFileMeta(fileId: string): Promise<{ name: string; modif
     const data = await driveProxyJson(`/drive/v3/files/${fileId}?fields=id,name,modifiedTime`);
     return { name: data.name, modifiedTime: data.modifiedTime };
   } catch (err) {
+    if (err instanceof UpstreamTimeoutError) throw err;
     logger.warn({ fileId, err: String(err) }, "resolveWorkbook: Drive metadata fetch failed");
     return null;
   }
@@ -324,6 +359,7 @@ export async function resolveWorkbookForMonth(
     );
     files = data.files ?? [];
   } catch (err) {
+    if (err instanceof UpstreamTimeoutError) throw err;
     throw new WorkbookResolutionError(division, month, pattern, `Drive search failed: ${String(err)}`);
   }
 
@@ -387,7 +423,13 @@ async function proxyJson(path: string): Promise<any> {
   const MAX_RETRIES = 4;
   let delay = 1000;
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const res = await getConnectors().proxy("google-sheet", path, { method: "GET" });
+    let res: Response;
+    try {
+      res = await getConnectors().proxy("google-sheet", path, { method: "GET" });
+    } catch (err) {
+      if (isUpstreamTimeout(err)) throw new UpstreamTimeoutError("google-sheet", path);
+      throw err;
+    }
     if (res.ok) return res.json();
     if (res.status === 429 && attempt < MAX_RETRIES) {
       logger.warn({ attempt, delay, path }, "Sheets API 429 — backing off");
@@ -396,6 +438,10 @@ async function proxyJson(path: string): Promise<any> {
       continue;
     }
     const body = await res.text();
+    if (isUpstreamTimeoutStatus(res.status)) {
+      logger.warn({ path, status: res.status }, "Sheets upstream timeout");
+      throw new UpstreamTimeoutError("google-sheet", path, res.status);
+    }
     throw new Error(`Sheets API error ${res.status}: ${body.slice(0, 300)}`);
   }
 }
@@ -407,7 +453,13 @@ async function driveProxyJson(path: string): Promise<any> {
   const MAX_RETRIES = 3;
   let delay = 1000;
   for (let attempt = 0; ; attempt++) {
-    const res = await getConnectors().proxy("google-drive", path, { method: "GET" });
+    let res: Response;
+    try {
+      res = await getConnectors().proxy("google-drive", path, { method: "GET" });
+    } catch (err) {
+      if (isUpstreamTimeout(err)) throw new UpstreamTimeoutError("google-drive", path);
+      throw err;
+    }
     if (res.ok) return res.json();
     if ((res.status === 429 || res.status >= 500) && attempt < MAX_RETRIES) {
       logger.warn({ attempt, delay, path, status: res.status }, "Drive API transient error — backing off");
@@ -416,8 +468,23 @@ async function driveProxyJson(path: string): Promise<any> {
       continue;
     }
     const body = await res.text();
+    if (isUpstreamTimeoutStatus(res.status)) {
+      logger.warn({ path, status: res.status }, "Drive upstream timeout");
+      throw new UpstreamTimeoutError("google-drive", path, res.status);
+    }
     throw new Error(`Drive API error ${res.status}: ${body.slice(0, 300)}`);
   }
+}
+
+function isUpstreamTimeoutStatus(status: number): boolean {
+  return status === 408 || status === 504;
+}
+
+function isUpstreamTimeout(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return err.name === "TimeoutError"
+    || err.name === "AbortError"
+    || /\btimeout\b|\btimed out\b/i.test(err.message);
 }
 
 const _MONTH_ABBREVS: Record<string, string[]> = {
@@ -490,6 +557,7 @@ async function findPlumbingWorkbookIds(month: string): Promise<string[]> {
     }
     return fileIds;
   } catch (err) {
+    if (err instanceof UpstreamTimeoutError) throw err;
     logger.warn({ month, err: String(err) }, "fetchPlumbingPlanData: Drive lookup failed — using hardcoded ID");
     return [];
   }
@@ -649,6 +717,7 @@ export interface DualTotals {
   exact: Map<string, number>;
   byCode: Map<string, number>;
   diagnostics?: InputReadDiagnostics;
+  pendingRows?: PendingOrderRow[];
 }
 
 function addToDualTotals(totals: DualTotals, code: unknown, colour: unknown, qty: number): void {
@@ -989,6 +1058,7 @@ export async function fetchPlumbingSheet3Production(month: string): Promise<Plum
   try {
     values = await getTabValues(workbookId, "Sheet3", "A1:C500000");
   } catch (err) {
+    if (err instanceof UpstreamTimeoutError) throw err;
     logger.error({ month, workbookId, err: String(err) }, "fetchPlumbingSheet3Production: failed to read Sheet3");
     throw new Error(
       `Failed to read Sheet3 from Plumbing workbook ${workbookId} for ${month}: ${String(err)}`,
@@ -1148,21 +1218,123 @@ function pendingRowToParsed(row: Record<string, unknown>): { catNo: string; colo
   return { catNo: aliased.code, colour: aliased.colour, qty };
 }
 
+export interface PendingOrderRow {
+  segment: string;
+  catNo: string;
+  colour: string;
+  description: string;
+  qty: number;
+}
+
+function pendingRowDescription(row: Record<string, unknown>, code: string): string {
+  // The live report's embedded header leaves the descriptive item text under
+  // the top-level "Item Code" key while the actual code is under "Old ERP Code".
+  const embeddedCode = String(row["Old ERP Code"] ?? "").trim();
+  const topLevelItemCode = String(row["Item Code"] ?? "").trim();
+  if (
+    embeddedCode
+    && topLevelItemCode
+    && normalizeCode(topLevelItemCode) !== normalizeCode(embeddedCode)
+  ) {
+    return topLevelItemCode;
+  }
+  return String(rowValue(row, ["Description", "Item Description", "Product Name", "Item Name"]) ?? "").trim()
+    || (normalizeCode(topLevelItemCode) === normalizeCode(code) ? "" : topLevelItemCode);
+}
+
+export function pendingOrderRecordsFromRows(
+  rows: Record<string, unknown>[],
+  segment: string = "PTMT",
+): PendingOrderRow[] {
+  return pendingRowsForSegment(rows, segment)
+    .map((row): PendingOrderRow | null => {
+      const parsed = pendingRowToParsed(row);
+      if (!parsed) return null;
+      return {
+        segment: String(rowValue(row, ["Segment", "SEGMENT", "Group", "GROUP"]) ?? "").trim().toUpperCase(),
+        catNo: parsed.catNo,
+        colour: parsed.colour,
+        description: pendingRowDescription(row, parsed.catNo),
+        qty: parsed.qty,
+      };
+    })
+    .filter((row): row is PendingOrderRow => row !== null);
+}
+
 export function parsePendingOrderRows(
   rows: Record<string, unknown>[],
   segment: string = "PTMT",
 ): { catNo: string; colour: string; qty: number }[] {
-  return pendingRowsForSegment(rows, segment)
-    .map(pendingRowToParsed)
-    .filter((row): row is { catNo: string; colour: string; qty: number } => row !== null);
+  return pendingOrderRecordsFromRows(rows, segment)
+    .map(({ catNo, colour, qty }) => ({ catNo, colour, qty }));
 }
 
 export function pendingOrderTotalsFromRows(rows: Record<string, unknown>[], segment: string = "PTMT"): DualTotals {
   const totals: DualTotals = { exact: new Map(), byCode: new Map() };
-  for (const row of parsePendingOrderRows(rows, segment)) {
+  const pendingRows = pendingOrderRecordsFromRows(rows, segment);
+  totals.pendingRows = pendingRows;
+  for (const row of pendingRows) {
     addToDualTotals(totals, row.catNo, row.colour, row.qty);
   }
   return totals;
+}
+
+/**
+ * Reconcile parsed live-pending rows against the current plan roster without
+ * changing the totals used by the planner. Unmatched rows are aggregated by
+ * stable business fields so repeated validation runs produce the same report
+ * even when the source sheet contains duplicate order lines.
+ */
+export function pendingCoverageFromParsedRows(
+  rows: PendingOrderRow[],
+  rosterCodes: Iterable<string>,
+): PendingCoverageDiagnostics {
+  const roster = new Set([...rosterCodes].map(normalizeCode));
+  const unmatched = new Map<string, PendingCoverageDiagnostics["unmatchedRows"][number]>();
+  let matchedQuantity = 0;
+  let unmatchedQuantity = 0;
+  let matchedRowCount = 0;
+
+  for (const row of rows) {
+    if (roster.has(normalizeCode(row.catNo))) {
+      matchedQuantity += row.qty;
+      matchedRowCount++;
+      continue;
+    }
+
+    unmatchedQuantity += row.qty;
+    const key = JSON.stringify([row.segment, row.catNo, row.colour, row.description]);
+    const existing = unmatched.get(key);
+    if (existing) {
+      existing.quantity += row.qty;
+    } else {
+      unmatched.set(key, {
+        segment: row.segment,
+        code: row.catNo,
+        colour: row.colour,
+        description: row.description,
+        quantity: row.qty,
+        disposition: "excluded",
+        reason: "NO_ROSTER_MATCH",
+      });
+    }
+  }
+
+  const unmatchedRows = [...unmatched.values()].sort((a, b) =>
+    a.segment.localeCompare(b.segment)
+    || normalizeCode(a.code).localeCompare(normalizeCode(b.code))
+    || a.colour.localeCompare(b.colour)
+    || a.description.localeCompare(b.description),
+  );
+
+  return {
+    totalQuantity: matchedQuantity + unmatchedQuantity,
+    matchedQuantity,
+    unmatchedQuantity,
+    matchedRowCount,
+    unmatchedRowCount: unmatchedRows.length,
+    unmatchedRows,
+  };
 }
 
 export function pendingOrderParsedValues(
@@ -1477,6 +1649,7 @@ async function fetchPlumbingPlanDataInner(month: string): Promise<PlumbingPlanRo
       }
       markSkipped(masterTab, "MASTER header or supported material rows not found");
     } catch (err) {
+      if (err instanceof UpstreamTimeoutError) throw err;
       markSkipped(masterTab, `tab read failed: ${String(err)}`);
     }
   }
@@ -1499,6 +1672,7 @@ async function fetchPlumbingPlanDataInner(month: string): Promise<PlumbingPlanRo
         await sleep(1100); // throttle: Sheets API allows ~60 req/min
         values = await getTabValues(fileId, tab, "A1:Z50000");
       } catch (err) {
+        if (err instanceof UpstreamTimeoutError) throw err;
         markSkipped(tab, `tab read failed: ${String(err)}`);
         continue;
       }

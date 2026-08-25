@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parsePendingOrderRows, pendingOrderParsedValues, pendingOrderTotalsFromRows } from "./sheets";
+import {
+  parsePendingOrderRows,
+  pendingCoverageFromParsedRows,
+  pendingOrderParsedValues,
+  pendingOrderRecordsFromRows,
+  pendingOrderTotalsFromRows,
+} from "./sheets";
 
 const rows = [
   { SEGMENT: "PT", "ITEM CODE": "PT-1", COLOR: "WHITE", "BAL QTY": "10", Quantity: "999" },
@@ -70,6 +76,51 @@ test("live pending report honours its embedded Old ERP Code header", () => {
     pendingOrderParsedValues([topHeader, embeddedHeader, row], "Plumbing"),
     [{ catNo: "PS-2", colour: "WHITE", qty: 125 }],
   );
+});
+
+test("live pending records preserve segment and description for reconciliation", () => {
+  assert.deepEqual(
+    pendingOrderRecordsFromRows(
+      [{
+        SEGMENT: "CPVC",
+        "Old ERP Code": "PS-2",
+        "Item Code": "CPVC PIPE 25MM",
+        Color: "WHITE",
+        "Bal. Qty": 125,
+      }],
+      "Plumbing",
+    ),
+    [{
+      segment: "CPVC",
+      catNo: "PS-2",
+      colour: "WHITE",
+      description: "CPVC PIPE 25MM",
+      qty: 125,
+    }],
+  );
+});
+
+test("pending coverage aggregates unmatched rows with an explicit disposition", () => {
+  const coverage = pendingCoverageFromParsedRows([
+    { segment: "P", catNo: "MATCH-1", colour: "WHITE", description: "Matched", qty: 100 },
+    { segment: "P", catNo: "MISS-1", colour: "BLUE", description: "Unmatched", qty: 3 },
+    { segment: "P", catNo: "MISS-1", colour: "BLUE", description: "Unmatched", qty: 4 },
+  ], ["MATCH-1"]);
+
+  assert.equal(coverage.totalQuantity, 107);
+  assert.equal(coverage.matchedQuantity, 100);
+  assert.equal(coverage.unmatchedQuantity, 7);
+  assert.equal(coverage.matchedRowCount, 1);
+  assert.equal(coverage.unmatchedRowCount, 1);
+  assert.deepEqual(coverage.unmatchedRows[0], {
+    segment: "P",
+    code: "MISS-1",
+    colour: "BLUE",
+    description: "Unmatched",
+    quantity: 7,
+    disposition: "excluded",
+    reason: "NO_ROSTER_MATCH",
+  });
 });
 
 test("live pending parser preserves colour joins and applies legacy code alias", () => {

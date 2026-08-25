@@ -63,3 +63,4 @@
 - [Corrective capacity basis](corrective-capacity-basis.md) — weekday-only Cap/Day aligns with calendar Mon–Sat remaining days; p90 rank effects can still raise capacity.
 - [Live pending failure boundary](live-pending-failure-boundary.md) — corrective replans must fail on unavailable live pending reads, while valid zero/empty reads remain diagnostic results.
 - [Regression verifier authentication](regression-verifier-auth.md) — the CLI needs a valid existing admin account; bootstrap credentials may not match seeded accounts.
+- [Pending reconciliation drift](pending-reconciliation-drift.md) — hard-gate the item identity and residual; treat historical movement/clamp totals as warnings when live inputs drift.

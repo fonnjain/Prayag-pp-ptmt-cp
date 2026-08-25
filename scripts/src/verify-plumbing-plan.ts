@@ -14,6 +14,7 @@ import { execSync } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { classifyEndpointFailure, classifyTransportFailure } from "./regression-errors";
 
 const API_BASE = process.env["API_BASE"] ?? "http://localhost:80";
 const PLUMBING_MONTH = process.env["PLAN_MONTH"] ?? "2026-07";
@@ -78,6 +79,7 @@ type CheckResult = {
   expected: number;
   actual: number;
   pass: boolean;
+  warn?: boolean;
   tolerance?: string;
 };
 
@@ -88,6 +90,34 @@ type ValidateResponse = {
   passCount: number;
   failCount: number;
   checks: CheckResult[];
+  pendingPlanReconciliation?: {
+    sourcePendingTotal: number;
+    matchedPendingTotal: number;
+    unmatchedPendingTotal: number;
+    planMovement: number;
+    clampLoss: number;
+    unexplainedResidual: number;
+    clampedItemCount: number;
+    categories: Array<{
+      category: string;
+      itemCount: number;
+      currentPending: number;
+      pendingContribution: number;
+      pendingLostToClamping: number;
+    }>;
+    clampedItems: Array<{
+      itemCode: string;
+      colour: string;
+      category: string;
+      baseDemandBeforeCurrentPending: number;
+      currentPending: number;
+      unclampedBaseline: number;
+      planWithoutCurrentPending: number;
+      planWithCurrentPending: number;
+      pendingContribution: number;
+      pendingLostToClamping: number;
+    }>;
+  };
   inputDiagnostics?: {
     pending?: InputReadDiagnostics;
     pendingAtPlan?: InputReadDiagnostics;
@@ -109,6 +139,22 @@ type InputReadDiagnostics = {
   presentHeaders: string[];
   missingRequiredFields: string[];
   reasons: string[];
+  pendingCoverage?: {
+    totalQuantity: number;
+    matchedQuantity: number;
+    unmatchedQuantity: number;
+    matchedRowCount: number;
+    unmatchedRowCount: number;
+    unmatchedRows: Array<{
+      segment: string;
+      code: string;
+      colour: string;
+      description: string;
+      quantity: number;
+      disposition: "excluded";
+      reason: "NO_ROSTER_MATCH";
+    }>;
+  };
   error?: string;
 };
 
@@ -116,10 +162,16 @@ async function callEndpoint(url: string): Promise<ValidateResponse> {
   const delays = [15_000, 30_000, 60_000];
   let lastErr: Error | undefined;
   for (let attempt = 0; attempt <= delays.length; attempt++) {
-    const res = await fetch(url);
+    let res: Response;
+    try {
+      res = await fetch(url);
+    } catch (err) {
+      lastErr = classifyTransportFailure(url, err);
+      break;
+    }
     if (res.ok) return res.json() as Promise<ValidateResponse>;
     const body = await res.text().catch(() => "");
-    lastErr = new Error(`HTTP ${res.status} from ${url}: ${body}`);
+    lastErr = classifyEndpointFailure(url, res.status, body);
     const isSheetsQuotaError = res.status === 429
       || /quota|RESOURCE_EXHAUSTED|read requests per minute/i.test(body);
     if (attempt < delays.length && isSheetsQuotaError) {
@@ -165,7 +217,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
     try {
       res = await fetch(url, init);
     } catch (err) {
-      lastErr = err instanceof Error ? err : new Error(String(err));
+      lastErr = classifyTransportFailure(url, err);
       if (attempt >= delays.length) break;
       const wait = delays[attempt]!;
       console.log(`    ⏳  Fetch error (${lastErr.message.slice(0, 120)}) — retrying in ${wait / 1000}s …`);
@@ -174,7 +226,7 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
     }
     if (res.ok) return (await res.json()) as T;
     const body = await res.text().catch(() => "");
-    lastErr = new Error(`HTTP ${res.status} from ${url}: ${body.slice(0, 200)}`);
+    lastErr = classifyEndpointFailure(url, res.status, body.slice(0, 200));
     if (attempt < delays.length && [429, 500, 502, 503].includes(res.status)) {
       const wait = delays[attempt]!;
       console.log(`    ⏳  Got ${res.status} from ${url} — retrying in ${wait / 1000}s …`);
@@ -235,6 +287,110 @@ function addInputDiagnosticsChecks(
   });
 }
 
+function addPendingCoverageChecks(
+  checks: CheckResult[],
+  diagnostics: InputReadDiagnostics | undefined,
+): void {
+  const coverage = diagnostics?.pendingCoverage;
+  const rows = coverage?.unmatchedRows ?? [];
+  const hasCoverage = Boolean(coverage);
+  const reconciles = hasCoverage
+    && coverage!.totalQuantity === coverage!.matchedQuantity + coverage!.unmatchedQuantity;
+  const explicit = hasCoverage
+    && rows.every((row) => row.disposition === "excluded" && row.reason === "NO_ROSTER_MATCH");
+
+  checks.push({
+    name: "Pending coverage · Plumbing report includes stable unmatched-order diagnostics",
+    expected: 1,
+    actual: hasCoverage ? 1 : 0,
+    pass: hasCoverage,
+    tolerance: "pendingCoverage with unmatchedRows",
+  });
+  checks.push({
+    name: "Pending coverage · matched + unmatched quantity reconciles to source total",
+    expected: coverage?.totalQuantity ?? 0,
+    actual: hasCoverage ? coverage!.matchedQuantity + coverage!.unmatchedQuantity : 0,
+    pass: reconciles,
+    tolerance: "exact",
+  });
+  checks.push({
+    name: "Pending coverage · every unmatched row has explicit exclusion reason",
+    expected: 1,
+    actual: explicit ? 1 : 0,
+    pass: explicit,
+    tolerance: `${rows.length} stable aggregated rows`,
+  });
+  checks.push({
+    name: "Pending coverage · unmatched quantity = 3,904 baseline",
+    expected: 3_904,
+    actual: coverage?.unmatchedQuantity ?? 0,
+    pass: coverage?.unmatchedQuantity === 3_904,
+    tolerance: "exact current live-report baseline",
+  });
+}
+
+function addPendingPlanReconciliationChecks(
+  checks: CheckResult[],
+  response: ValidateResponse,
+): void {
+  const reconciliation = response.pendingPlanReconciliation;
+  const expectedMatched = reconciliation?.matchedPendingTotal ?? 0;
+  const actualIdentity = reconciliation
+    ? reconciliation.planMovement + reconciliation.clampLoss
+    : 0;
+  const identityPass = Boolean(reconciliation)
+    && Math.abs(reconciliation!.unexplainedResidual) <= 0.01;
+
+  checks.push({
+    name: "Pending-to-plan · reconciliation payload includes clamped items",
+    expected: 1,
+    actual: reconciliation?.clampedItems ? 1 : 0,
+    pass: Boolean(reconciliation?.clampedItems),
+    tolerance: "item-level pending reconciliation",
+  });
+  checks.push({
+    name: "Pending-to-plan · matched pending = movement + clamp loss",
+    expected: expectedMatched,
+    actual: actualIdentity,
+    pass: identityPass,
+    tolerance: "exact item-level identity",
+  });
+  checks.push({
+    name: "Pending-to-plan · historical July movement = 143,897",
+    expected: 143_897,
+    actual: reconciliation?.planMovement ?? 0,
+    pass: true,
+    warn: reconciliation?.planMovement !== 143_897,
+    tolerance: "2026-07 point-in-time snapshot; mismatch is data drift warning",
+  });
+  checks.push({
+    name: "Pending-to-plan · historical July clamp loss = 4,824",
+    expected: 4_824,
+    actual: reconciliation?.clampLoss ?? 0,
+    pass: true,
+    warn: reconciliation?.clampLoss !== 4_824,
+    tolerance: "2026-07 point-in-time snapshot; mismatch is data drift warning",
+  });
+  checks.push({
+    name: "Pending-to-plan · no unexplained residual",
+    expected: 0,
+    actual: reconciliation?.unexplainedResidual ?? Number.NaN,
+    pass: identityPass,
+    tolerance: "≤ 0.01 pcs",
+  });
+  if (reconciliation) {
+    const listedClampLoss = reconciliation.clampedItems
+      .reduce((sum, item) => sum + item.pendingLostToClamping, 0);
+    checks.push({
+      name: "Pending-to-plan · listed clamped items sum to clamp loss",
+      expected: reconciliation.clampLoss,
+      actual: listedClampLoss,
+      pass: Math.abs(listedClampLoss - reconciliation.clampLoss) <= 0.01,
+      tolerance: "exact",
+    });
+  }
+}
+
 function addSheetsLiteralReaderInventory(checks: CheckResult[]): void {
   const repoRoot = resolve(fileURLToPath(import.meta.url), "../../..");
   const sheetsPath = resolve(repoRoot, "artifacts/api-server/src/lib/sheets.ts");
@@ -291,7 +447,7 @@ function printSection(title: string, checks: CheckResult[]): void {
   console.log(`  ${title}`);
   console.log("─".repeat(60));
   for (const c of checks) {
-    const icon = c.pass ? "✅" : "❌";
+    const icon = c.pass ? (c.warn ? "⚠️" : "✅") : "❌";
     const tol  = c.tolerance ? ` (${c.tolerance})` : "";
     if (c.pass) {
       console.log(`${icon}  ${c.name}${tol}  →  ${fmt(c.actual)}`);
@@ -525,12 +681,14 @@ async function main(): Promise<void> {
   const weeklyCat   = plumbingResult.checks.filter(
     (c) => c.name.startsWith("Weekly ·") && !c.name.startsWith("Weekly · Plant") && !c.name.endsWith("· sum = prod req"),
   );
-  const machineChks = plumbingResult.checks.filter((c) => c.name.startsWith("Machine ·"));
+   const machineChks = plumbingResult.checks.filter((c) => c.name.startsWith("Machine ·"));
+   const pendingPlan = plumbingResult.checks.filter((c) => c.name.startsWith("Pending-to-plan ·"));
   const categories  = plumbingResult.checks.filter(
     (c) => !c.name.startsWith("GUARD") && !c.name.startsWith("ISOLATION") &&
             !c.name.startsWith("Buffer") && !c.name.startsWith("Solvent") &&
             !c.name.startsWith("Items ·") && !c.name.startsWith("KG ·") &&
-            !c.name.startsWith("Weekly ·") && !c.name.startsWith("Machine ·"),
+            !c.name.startsWith("Weekly ·") && !c.name.startsWith("Machine ·") &&
+            !c.name.startsWith("Pending-to-plan ·"),
   );
 
   printSection("Plumbing — Guard assertions", guards);
@@ -544,6 +702,10 @@ async function main(): Promise<void> {
   printSection(`Plumbing — Weekly release: per-category W1–W4 (${PLUMBING_MONTH}, ±1%)`, weeklyCat);
   printSection(`Plumbing — Weekly release: W1+W2+W3+W4 = prod req (exact)`, weeklySum);
   printSection(`Plumbing — Machine cascade guards (${PLUMBING_MONTH})`, machineChks);
+   const pendingPlanChecks: CheckResult[] = [];
+   addPendingPlanReconciliationChecks(pendingPlanChecks, plumbingResult);
+   printSection(`Plumbing — Pending-to-plan reconciliation (${PLUMBING_MONTH})`, pendingPlanChecks);
+   if (pendingPlanChecks.some((check) => !check.pass)) anyFail = true;
 
   if (!plumbingResult.allPass) {
     anyFail = true;
@@ -711,6 +873,7 @@ async function main(): Promise<void> {
     `Input diagnostics · ${plumbingResult?.segment ?? "Plumbing"} plan pending upload`,
     plumbingResult?.inputDiagnostics?.pending,
   );
+  addPendingCoverageChecks(newChecks, plumbingResult?.inputDiagnostics?.pending);
   addInputDiagnosticsChecks(
     newChecks,
     `Input diagnostics · ${ptmtResult.segment ?? "PTMT"} plan pending upload`,
@@ -832,9 +995,10 @@ async function main(): Promise<void> {
     });
 
     // NC5: Plan GET 200 + non-empty array when Plumbing FG upload is present (422 guard active)
-    const planResp = await fetch(`${API_BASE}/api/plan?month=${PLUMBING_MONTH}&segment=Plumbing`);
-    const planBody = await planResp.json() as unknown;
-    const planOk = planResp.ok && Array.isArray(planBody) && (planBody as unknown[]).length > 0;
+    const planBody = await fetchJson<unknown>(
+      `${API_BASE}/api/plan?month=${PLUMBING_MONTH}&segment=Plumbing`,
+    );
+    const planOk = Array.isArray(planBody) && planBody.length > 0;
     newChecks.push({
       name: "NC5 · GET /plan · Plumbing returns items when FG upload present (422 guard active)",
       expected: 1, actual: planOk ? 1 : 0,

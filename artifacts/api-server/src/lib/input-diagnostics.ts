@@ -1,5 +1,24 @@
 export type InputFieldRole = "code" | "colour" | "quantity";
 
+export interface PendingCoverageRow {
+  segment: string;
+  code: string;
+  colour: string;
+  description: string;
+  quantity: number;
+  disposition: "excluded";
+  reason: "NO_ROSTER_MATCH";
+}
+
+export interface PendingCoverageDiagnostics {
+  totalQuantity: number;
+  matchedQuantity: number;
+  unmatchedQuantity: number;
+  matchedRowCount: number;
+  unmatchedRowCount: number;
+  unmatchedRows: PendingCoverageRow[];
+}
+
 export interface InputReadDiagnostics {
   source: string;
   uploadId: number | null;
@@ -14,6 +33,7 @@ export interface InputReadDiagnostics {
   presentHeaders: string[];
   missingRequiredFields: InputFieldRole[];
   reasons: string[];
+  pendingCoverage?: PendingCoverageDiagnostics;
   error?: string;
 }
 
