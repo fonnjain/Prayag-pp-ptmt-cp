@@ -89,14 +89,30 @@ import {
 
 const router: IRouter = Router();
 
-// ── Planning input enforcement (uploads + explicitly allow-listed live pending) ─
+// ── Planning input enforcement (uploads + explicitly allow-listed reference reads) ─
 //
-// Scope decision (2026-08): stock and last-month pending come from uploads;
-// current pending comes from the segmented live Pending order / report sheet.
+// Scope decision (2026-08): stock, last-month pending, and current pending come
+// from uploads; current pending is deliberately kept separate from the live
+// Pending order / report sheet used by validation and corrective workflows.
 // Missing or unparseable inputs fail the plan LOUDLY — never a sheet fallback,
 // never a zero default, never a partial plan.
 // Reference data allowed live in the plan path: sales history (avg-3-month),
 // the Plumbing workbook roster/avg/multiplier columns, and BOM weights.
+
+/**
+ * PENDING SOURCE — deliberate business decision, NOT a defect.
+ *
+ * Prayag's manual planning sheets carry zero current pending for the August
+ * reference month. Until the business confirms whether the live Pending order
+ * column is deliberately narrow, manually maintained, or unmaintained, the
+ * production plan mirrors that manual process by reading the uploaded DATA
+ * workbook. That workbook is an invoice register, so its missing open-balance
+ * aliases intentionally aggregate to zero.
+ *
+ * Corrective replans do not use this switch; they continue to read live
+ * pending explicitly in corrective-engine.ts.
+ */
+export const PLAN_PENDING_SOURCE: "live" | "upload" = "upload";
 
 /** Thrown when a required planning upload is missing or empty. */
 export class MissingUploadError extends Error {
@@ -325,6 +341,33 @@ function resolveTotal(totals: DualTotals, itemCode: string, colour: string, isSi
   return totals.exact.get(itemKey(itemCode, colour)) ?? 0;
 }
 
+/**
+ * Rebuild the live-pending view used only by validation reconciliation.
+ *
+ * Production planning intentionally uses the uploaded current-pending file,
+ * while /plan/validate still measures the live Bal. Qty source. Overlaying the
+ * live values onto the already-built plan items keeps those concerns separate
+ * without comparing live pending against a plan built with uploaded pending.
+ */
+function withLivePendingForReconciliation(
+  items: PlanItemWithBom[],
+  livePending: DualTotals,
+): PlanItemWithBom[] {
+  const codeCounts = new Map<string, number>();
+  for (const item of items) {
+    const key = `${item.category}::${normalizeCode(item.itemCode)}`;
+    codeCounts.set(key, (codeCounts.get(key) ?? 0) + 1);
+  }
+  return items.map((item) => {
+    const isSingleVariant =
+      (codeCounts.get(`${item.category}::${normalizeCode(item.itemCode)}`) ?? 0) <= 1;
+    return {
+      ...item,
+      pendingOrder: resolveTotal(livePending, item.itemCode, item.colour, isSingleVariant),
+    };
+  });
+}
+
 function hasEntry(totals: DualTotals, itemCode: string, colour: string, isSingleVariant: boolean): boolean {
   if (isSingleVariant) {
     return totals.byCode.has(normalizeCode(itemCode));
@@ -393,12 +436,23 @@ async function buildPlumbingPlanItemsInner(month: string): Promise<PlanItemWithB
     db.select().from(plumbingMachineCapacityTable).where(eq(plumbingMachineCapacityTable.segment, "Plumbing")),
   ]);
 
-  // ── 2. Reference-data sheet reads (allow-listed: workbook roster/avg/multiplier,
-  // BOM, and the approved live open-balance pending source) ──
+  // ── 2. Reference-data sheet reads (allow-listed: workbook roster/avg/multiplier
+  // and BOM). Current pending is plan-only and deliberately switchable.
+  const pendingTotalsPromise = PLAN_PENDING_SOURCE === "live"
+    ? fetchLivePendingOrderTotals("Plumbing")
+    : requireUploadRows("pending_orders", "Current Pending Orders").then((rows) =>
+        sumByKey(
+          rows,
+          ["Old Item Code", "Item Code", "Item No."],
+          ["Colour", "Color", "COLOR"],
+          ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty", "Qty"],
+          { source: "uploaded pending orders · Plumbing" },
+        ),
+      );
   const [workbookRows, bomWeights, pendingTotals] = await Promise.all([
     fetchPlumbingPlanData(month),
     fetchPlumbingBomWeights(),
-    fetchLivePendingOrderTotals("Plumbing"),
+    pendingTotalsPromise,
   ]);
 
   // Reference-data sanity guard: a zero avg-3-month across the board collapses
@@ -500,8 +554,8 @@ async function buildPlumbingPlanItemsInner(month: string): Promise<PlanItemWithB
         stock:                 stockMap.get(code) ?? 0,
         stockNeedsReview:      false,
         pendingOrderLastMonth: pendingLmMap.get(code) ?? 0,
-        // Pending (current month) from the live Pending order report. The
-        // reader filters Plumbing/P/PL/AGRI and uses Bal. Qty only.
+        // Current pending is plan-only and selected through PLAN_PENDING_SOURCE.
+        // Validation/corrective paths continue to read live Bal. Qty explicitly.
         pendingOrder:          pendingTotals.byCode.get(code) ?? 0,
         // Order is display-only and annotated OUTSIDE the planning context.
         order:                 0,
@@ -564,11 +618,22 @@ async function buildPtmtPlanItemsInner(month: string, segment: string): Promise<
       requireUploadRows("last_month_pending", "Last-Month Pending"),
     ]);
 
-  // ── 2. Reference-data sheet reads (allow-listed: sales history and live
-  // open-balance pending) ──
+  // ── 2. Reference-data sheet reads (allow-listed: sales history). Current
+  // pending is plan-only and deliberately switchable.
+  const pendingTotalsPromise = PLAN_PENDING_SOURCE === "live"
+    ? fetchLivePendingOrderTotals(segment)
+    : requireUploadRows("pending_orders", "Current Pending Orders").then((rows) =>
+        sumByKey(
+          rows,
+          ["Old Item Code", "Item Code", "Item No."],
+          ["Colour", "Color", "COLOR"],
+          ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty", "Qty"],
+          { source: `uploaded pending orders · ${segment}` },
+        ),
+      );
   const [avg3MoTotals, pendingOrderTotals] = await Promise.all([
     fetchAvg3MoSaleTotals(month),
-    fetchLivePendingOrderTotals(segment),
+    pendingTotalsPromise,
   ]);
   // Reference-data sanity guard: zero sales history collapses every buffer and
   // silently under-plans across the board — refuse to plan on it. (The
@@ -1291,13 +1356,15 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     let pendingTotals: DualTotals;
     let pendingDiagnostics: ReturnType<typeof diagnoseInputRows>;
     let bufferRows: typeof bufferCategoriesTable.$inferSelect[];
+    let bandRows: typeof weeklyReleaseBandsTable.$inferSelect[];
     let sheet3Rows: PlumbingSheet3Row[];
     try {
-      [items, fgStockRows, pendingTotals, bufferRows, sheet3Rows] = await Promise.all([
+      [items, fgStockRows, pendingTotals, bufferRows, bandRows, sheet3Rows] = await Promise.all([
         buildPlanItems(month, "Plumbing"),
         loadLatestUploadRowsByKind("plumbing_fg_stock"),
         fetchLivePendingOrderTotals("Plumbing"),
         db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
+        db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
         fetchPlumbingSheet3Production(month),
       ]);
     } catch (err) {
@@ -1340,7 +1407,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
       });
       const pendingTotal = roundInt([...pendingTotals.byCode.values()].reduce((sum, qty) => sum + qty, 0));
       pendingPlanReconciliation = reconcilePendingPlan(
-        items,
+        withLivePendingForReconciliation(items, pendingTotals),
         pendingTotal,
         pendingCoverage.matchedQuantity,
         pendingCoverage.unmatchedQuantity,
@@ -1714,6 +1781,51 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
         pass: weeklySum === prodReq,
       });
     }
+
+    const weeklyInvariantViolations = items.filter((item) => {
+      const weeklyAllocations = [item.w1, item.w2, item.w3, item.w4];
+      const weeklyTotal = weeklyAllocations.reduce((sum, value) => sum + value, 0);
+      const nonZeroWeeks = weeklyAllocations
+        .map((value, index) => ({ value, week: index + 1 }))
+        .filter(({ value }) => Math.abs(value) > 0.01);
+      if (item.maxProduction <= 0) {
+        return weeklyAllocations.some((value) => Math.abs(value) > 0.01) || item.week !== null;
+      }
+      return Math.abs(weeklyTotal - item.maxProduction) > 0.01
+        || nonZeroWeeks.length !== 1
+        || Math.abs(nonZeroWeeks[0]!.value - item.maxProduction) > 0.01
+        || item.week !== nonZeroWeeks[0]!.week;
+    });
+    checks.push({
+      name: "Weekly · every planned item has exactly one release allocation",
+      expected: 0,
+      actual: weeklyInvariantViolations.length,
+      pass: weeklyInvariantViolations.length === 0,
+      tolerance: "one non-zero W column = maxProduction and agrees with week; zero plans have no allocation",
+    });
+
+    const categoriesInPlan = new Set(items.map((item) => item.category));
+    const bandRowsByCategory = new Map<string, typeof bandRows[number][]>();
+    for (const row of bandRows) {
+      const rows = bandRowsByCategory.get(row.categoryName) ?? [];
+      rows.push(row);
+      bandRowsByCategory.set(row.categoryName, rows);
+    }
+    const invalidBandCategories = [...categoriesInPlan].filter((category) => {
+      const rows = bandRowsByCategory.get(category) ?? [];
+      if (rows.length !== 1) return true;
+      const band = rows[0]!;
+      return !(band.w1Upper < band.w2Upper
+        && band.w2Upper < band.w3Upper
+        && band.w3Upper < band.w4Upper);
+    });
+    checks.push({
+      name: "Weekly · every planned category has one valid release band",
+      expected: 0,
+      actual: invalidBandCategories.length,
+      pass: invalidBandCategories.length === 0,
+      tolerance: "exactly one strictly increasing W1–W4 band per planned category",
+    });
 
     const categoryTotals: Record<string, number> = {};
     for (const [cat, total] of byCategory.entries()) categoryTotals[cat] = roundInt(total);

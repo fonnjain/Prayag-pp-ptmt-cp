@@ -224,23 +224,40 @@ export function computeItemPlan(
 /**
  * Annotates items in-place with week assignments and W1–W4 quantities.
  * Uses half-open bands: W1 = [0, w1Upper), W2 = [w1Upper, w2Upper), ...
- * Items with cover = "OS", plan ≤ 0, or cover ≥ w4Upper are left unscheduled (week = null).
+ * Positive production-required demand must always have a release week. Items with
+ * no sales history (`cover = "OS"`) or cover at/above the final band are
+ * pending-driven exceptions to the cover priority and are released in W1 so
+ * open demand cannot disappear from the weekly plan.
  */
 export function annotateWeeklyRelease(
   items: CalcPlanItem[],
   bandsByCategory: Map<string, WeeklyBandConfig>,
 ): void {
   for (const item of items) {
-    if (item.maxProduction <= 0 || item.cover === "OS") continue;
-    const band = bandsByCategory.get(item.category);
-    if (!band) continue;
+    item.week = null;
+    item.w1 = 0;
+    item.w2 = 0;
+    item.w3 = 0;
+    item.w4 = 0;
+    if (item.maxProduction <= 0) continue;
 
-    const c = item.cover as number;
+    const band = bandsByCategory.get(item.category);
+    if (!band) {
+      // A missing band must not silently discard positive demand. W1 is the
+      // conservative fallback and the validation invariant still exposes the
+      // missing category configuration separately.
+      item.week = 1;
+      item.w1 = item.maxProduction;
+      continue;
+    }
+
+    const c = item.cover === "OS" ? Number.POSITIVE_INFINITY : item.cover;
     let week: 1 | 2 | 3 | 4 | null = null;
     if (c < band.w1Upper) week = 1;
     else if (c < band.w2Upper) week = 2;
     else if (c < band.w3Upper) week = 3;
     else if (c < band.w4Upper) week = 4;
+    else week = 1;
 
     item.week = week;
     item.w1 = week === 1 ? item.maxProduction : 0;

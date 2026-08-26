@@ -4,8 +4,10 @@ import { db } from "@workspace/db";
 import { apiKeysTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { logger } from "../lib/logger";
+import { requireAdmin } from "./session-middleware";
 
 const router = Router();
+router.use(requireAdmin);
 
 function generateKey(): { raw: string; hash: string; prefix: string } {
   const random = randomBytes(32).toString("hex");
@@ -36,6 +38,9 @@ const SAFE_COLS = {
   id: apiKeysTable.id,
   name: apiKeysTable.name,
   description: apiKeysTable.description,
+  consumer: apiKeysTable.consumer,
+  scopes: apiKeysTable.scopes,
+  segmentScopes: apiKeysTable.segmentScopes,
   keyPrefix: apiKeysTable.keyPrefix,
   isActive: apiKeysTable.isActive,
   createdAt: apiKeysTable.createdAt,
@@ -56,16 +61,41 @@ router.get("/api-keys", async (_req, res): Promise<void> => {
 });
 
 router.post("/api-keys", async (req, res): Promise<void> => {
-  const { name, description } = req.body ?? {};
+  const { name, description, consumer, scopes, segmentScopes } = req.body ?? {};
   if (!name || typeof name !== "string") {
     res.status(400).json({ error: "name is required" });
     return;
   }
   try {
+    const validConsumers = new Set(["machine-analysis", "mis", "legacy"]);
+    const validScopes = new Set(["read", "write"]);
+    const validSegments = new Set(["PTMT", "Plumbing"]);
+    const requestedScopes = Array.isArray(scopes)
+      ? scopes.filter((value): value is string => typeof value === "string" && validScopes.has(value))
+      : ["read", "write"];
+    const requestedSegments = Array.isArray(segmentScopes)
+      ? segmentScopes.filter((value): value is string => typeof value === "string" && validSegments.has(value))
+      : ["PTMT", "Plumbing"];
+    if (consumer !== undefined && (typeof consumer !== "string" || !validConsumers.has(consumer))) {
+      res.status(400).json({ error: "consumer must be machine-analysis, mis, or legacy" });
+      return;
+    }
+    if (requestedScopes.length === 0 || requestedSegments.length === 0) {
+      res.status(400).json({ error: "scopes and segmentScopes must contain at least one supported value" });
+      return;
+    }
     const { raw, hash, prefix } = generateKey();
     const [row] = await db
       .insert(apiKeysTable)
-      .values({ name: name.trim(), description: description || null, keyHash: hash, keyPrefix: prefix })
+      .values({
+        name: name.trim(),
+        description: description || null,
+        consumer: consumer ?? "legacy",
+        scopes: requestedScopes,
+        segmentScopes: requestedSegments,
+        keyHash: hash,
+        keyPrefix: prefix,
+      })
       .returning();
     const { keyHash: _omit, ...safe } = row;
     res.status(201).json({ ...safe, key: raw });

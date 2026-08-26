@@ -8,8 +8,8 @@ import { LivePendingReadError } from "../lib/corrective-errors";
 import { exportPlanExcel, ITEM_COLUMNS, addLegendSheet, RED_FILL, GREEN_FILL } from "../lib/excel-export";
 import { summarizePlan, type CalcPlanItem } from "../lib/calc";
 import ExcelJS from "exceljs";
-import { requireApiKey } from "./auth-middleware";
 import { logger } from "../lib/logger";
+import { fetchLiveOrderTotals, itemKey, normalizeCode, type DualTotals } from "../lib/sheets";
 
 const router: IRouter = Router();
 
@@ -54,6 +54,54 @@ const CORRECTIVE_EXTRA_COLUMNS: Partial<ExcelJS.Column>[] = [
 type CorrectiveItem = typeof correctivePlanItemsTable.$inferSelect;
 type CorrectiveRun  = typeof correctivePlanRunsTable.$inferSelect;
 type CatCapRow = { category: string; overrideCapacity: number | null; suggestedCapacity: number };
+
+type OrderTotalsForExport = DualTotals | null;
+
+async function loadCorrectiveOrderTotals(run: CorrectiveRun): Promise<OrderTotalsForExport> {
+  try {
+    return await fetchLiveOrderTotals(run.month, run.segment === "Plumbing" ? "PLUMBING" : "PTMT");
+  } catch (err) {
+    logger.warn({ err: String(err), month: run.month, segment: run.segment }, "corrective export: Order Sheet unavailable");
+    return null;
+  }
+}
+
+type OrderItemIdentity = Pick<CorrectiveItem, "itemCode" | "colour">;
+
+function orderValueForItem(
+  item: OrderItemIdentity,
+  _items: OrderItemIdentity[],
+  totals: OrderTotalsForExport,
+): number | string {
+  if (!totals) return "N/A";
+  // Do not collapse source colours into a single corrective roster item.
+  // A code-only match would make an export look reconciled while assigning a
+  // different colour's demand to the wrong SKU.
+  return Math.round(totals.exact.get(itemKey(item.itemCode, item.colour)) ?? 0);
+}
+
+function orderFlowQty(totals: OrderTotalsForExport): number | string {
+  if (!totals) return "UNAVAILABLE";
+  return Math.round([...totals.byCode.values()].reduce((sum, qty) => sum + qty, 0));
+}
+
+function matchedOrderFlowQty(items: OrderItemIdentity[], totals: OrderTotalsForExport): number | string {
+  if (!totals) return "UNAVAILABLE";
+  return items.reduce((sum, item) => {
+    const value = orderValueForItem(item, items, totals);
+    return sum + (typeof value === "number" ? value : 0);
+  }, 0);
+}
+
+function unmatchedOrderFlowQty(items: OrderItemIdentity[], totals: OrderTotalsForExport): number | string {
+  if (!totals) return "UNAVAILABLE";
+  const rosterKeys = new Set(items.map((item) => itemKey(item.itemCode, item.colour)));
+  return Math.round(
+    [...totals.exact.entries()]
+      .filter(([key]) => !rosterKeys.has(key))
+      .reduce((sum, [, qty]) => sum + qty, 0),
+  );
+}
 
 function groupByCategory(items: CorrectiveItem[], requiredCats?: string[]): Map<string, CorrectiveItem[]> {
   const map = new Map<string, CorrectiveItem[]>();
@@ -297,7 +345,7 @@ router.patch("/corrective/runs/:id/pin", async (req, res): Promise<void> => {
 // buildCorrectiveDetailExcel is exported (not just function-scoped) so the
 // regression-suite test file can import it directly for fixture building.
 // This is intentional and the only reason for the export.
-router.patch("/corrective/runs/:id", requireApiKey, async (req, res): Promise<void> => {
+router.patch("/corrective/runs/:id", async (req, res): Promise<void> => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "invalid id" }); return; }
 
@@ -478,7 +526,11 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
 
 // ─── Shared Excel builder ─────────────────────────────────────────────────────
 
-async function buildCorrectiveExcel(run: typeof correctivePlanRunsTable.$inferSelect, items: (typeof correctivePlanItemsTable.$inferSelect)[]): Promise<Buffer> {
+async function buildCorrectiveExcel(
+  run: typeof correctivePlanRunsTable.$inferSelect,
+  items: (typeof correctivePlanItemsTable.$inferSelect)[],
+  orderTotals: OrderTotalsForExport = null,
+): Promise<Buffer> {
   const segmentLabel = run.segment ?? "PTMT";
   const wb = new ExcelJS.Workbook();
   wb.creator = "PTMT Production Planning";
@@ -503,9 +555,12 @@ async function buildCorrectiveExcel(run: typeof correctivePlanRunsTable.$inferSe
     ["Week Closed", `W${run.weekClosed}`],
     ["Daily Capacity (pcs)", run.dailyCapacity.toLocaleString()],
     ["Produced To Date (pcs)", Math.round(run.producedToDate).toLocaleString()],
-    ["New Orders This Month (pcs)", Math.round(run.newOrdersQty).toLocaleString()],
-    ["Original Month Total (pcs)", grandMinComputed.toLocaleString()],
-    ["Revised Month Total (pcs)", grandMaxComputed.toLocaleString()],
+    ["Segment Order Source Total (pcs)", orderFlowQty(orderTotals).toLocaleString()],
+    ["Matched Month Order Flow (roster pcs)", matchedOrderFlowQty(items, orderTotals).toLocaleString()],
+    ["Unmatched Month Order Flow (not in roster pcs)", unmatchedOrderFlowQty(items, orderTotals).toLocaleString()],
+    ["Open Pending Balance (pcs)", items.reduce((s, i) => s + Math.round(Number(i.pendingNow ?? 0)), 0).toLocaleString()],
+    ["Original Plan Total (pcs)", grandMinComputed.toLocaleString()],
+    ["Revised Plan Total (pcs)", grandMaxComputed.toLocaleString()],
     ["Unfulfillable This Month (pcs)", Math.round(run.unfulfillableQty).toLocaleString()],
     ...weekStats.map(ws => [
       `${ws.weekLabel}: Load Factor`,
@@ -598,6 +653,7 @@ async function buildCorrectiveStandardExcel(
   run: CorrectiveRun,
   items: CorrectiveItem[],
   segment: string,
+  orderTotals: OrderTotalsForExport = null,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "PTMT Production Planning";
@@ -647,6 +703,11 @@ async function buildCorrectiveStandardExcel(
   }
   const sumTotalRow = sumSh.addRow({ category: "TOTAL", minTotal: grandMin, maxTotal: grandMax });
   sumTotalRow.font = { bold: true };
+  sumSh.addRow([]);
+  sumSh.addRow(["Segment Order Source Total", orderFlowQty(orderTotals)]);
+  sumSh.addRow(["Matched Month Order Flow (roster)", matchedOrderFlowQty(items, orderTotals)]);
+  sumSh.addRow(["Unmatched Month Order Flow (not in roster)", unmatchedOrderFlowQty(items, orderTotals)]);
+  sumSh.addRow(["Open Pending Balance (roster)", items.reduce((s, i) => s + Math.round(Number(i.pendingNow ?? 0)), 0)]);
 
   // Run provenance footer — placed after TOTAL so it does not shift the Category header
   // row (row 2).  The two Summary sheets are identical through row 2 (headers); the NOTE
@@ -677,7 +738,7 @@ async function buildCorrectiveStandardExcel(
         stock: Math.round(item.stockNow),
         minProduction: Math.round(item.originalPlan),
         maxProduction: Math.round(item.planRev),
-        order: 0,
+        order: orderValueForItem(item, items, orderTotals),
       });
       row.getCell("maxProduction").fill = item.planRev > 0 ? RED_FILL : GREEN_FILL;
       row.getCell("minProduction").fill = item.originalPlan > 0 ? RED_FILL : GREEN_FILL;
@@ -714,6 +775,7 @@ export async function buildCorrectiveDetailExcel(
   items: CorrectiveItem[],
   catCapRows: CatCapRow[],
   segment: string,
+  orderTotals: OrderTotalsForExport = null,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "PTMT Production Planning";
@@ -782,8 +844,16 @@ export async function buildCorrectiveDetailExcel(
   const sumSh = wb.addWorksheet("Summary");
   sumSh.addRow(["As-of",                  asOfLabel]);
   sumSh.addRow(["Working Days Remaining", wdr]);
-  sumSh.addRow(["Original Month Total",   grandOrigComputed]);
-  sumSh.addRow(["Revised Month Total",    grandPlanComputed]);
+  sumSh.addRow(["Segment Order Source Total", orderFlowQty(orderTotals)]);
+  sumSh.addRow(["Matched Month Order Flow (roster pcs)", matchedOrderFlowQty(items, orderTotals)]);
+  sumSh.addRow(["Unmatched Month Order Flow (not in roster pcs)", unmatchedOrderFlowQty(items, orderTotals)]);
+  sumSh.addRow(["Open Pending Balance (roster pcs)", items.reduce((s, i) => s + Math.round(Number(i.pendingNow ?? 0)), 0)]);
+  sumSh.addRow(["Original Plan Total",   grandOrigComputed]);
+  sumSh.addRow(["Revised Plan Total",    grandPlanComputed]);
+  // Keep the old machine-readable labels for consumers that have not migrated
+  // yet. The adjacent labels above are the canonical, unambiguous names.
+  sumSh.addRow(["Original Month Total", grandOrigComputed]);
+  sumSh.addRow(["Revised Month Total", grandPlanComputed]);
   // Baseline traceability — cross-check the corrective baseline (grandOrigComputed,
   // item-level Math.round sum) against the FROZEN plan run total (frozenPlanGrandMax,
   // Σ productionPlan from plan_run_results, captured at run-creation time).
@@ -968,7 +1038,7 @@ export async function buildCorrectiveDetailExcel(
         stock: Math.round(item.stockNow),
         minProduction: Math.round(item.originalPlan),
         maxProduction: Math.round(item.planRev),
-        order: 0,
+        order: orderValueForItem(item, items, orderTotals),
         producedToDate:    Math.round(item.producedToDate),
         remainingToProduce: Math.round(item.remainingToProduce),
         // capPerDay / feasible / shortfall intentionally omitted — category-level values
@@ -1058,6 +1128,7 @@ router.get("/corrective/validate/export-totals", async (req, res): Promise<void>
   }
 
   const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
+  const orderTotals = await loadCorrectiveOrderTotals(run);
 
   const itemOrigSum = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
   const itemPlanSum = items.reduce((s, i) => s + Math.round(Number(i.planRev      ?? 0)), 0);
@@ -1072,7 +1143,7 @@ router.get("/corrective/validate/export-totals", async (req, res): Promise<void>
   // ── 1. Build Detail Excel (same builder as the actual user-facing Detail export) ──
   //    buildCorrectiveDetailExcel needs capacity rows for the cap/feasible columns.
     const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment));
-  const detailBuf = await buildCorrectiveDetailExcel(run, items, capRows, segment);
+  const detailBuf = await buildCorrectiveDetailExcel(run, items, capRows, segment, orderTotals);
   const detailWb  = new ExcelJS.Workbook();
   await detailWb.xlsx.load(detailBuf as unknown as ArrayBuffer);
   // buildCorrectiveDetailExcel writes a "Summary" sheet; values are stored as numbers.
@@ -1090,14 +1161,14 @@ router.get("/corrective/validate/export-totals", async (req, res): Promise<void>
       const rawVal = row.getCell(2).value;
       const parsed = typeof rawVal === "number" ? rawVal : NaN;
       if (!isNaN(parsed)) {
-        if (metric === "Original Month Total") detailOrigHeader = parsed;
-        if (metric === "Revised Month Total")  detailPlanHeader = parsed;
+        if (metric === "Original Plan Total") detailOrigHeader = parsed;
+        if (metric === "Revised Plan Total")  detailPlanHeader = parsed;
       }
     });
   }
 
   // ── 2. Build Standard Excel and extract the TOTAL row Min/Max ──
-  const stdBuf = await buildCorrectiveStandardExcel(run, items, segment);
+  const stdBuf = await buildCorrectiveStandardExcel(run, items, segment, orderTotals);
   const stdWb  = new ExcelJS.Workbook();
   await stdWb.xlsx.load(stdBuf as unknown as ArrayBuffer);
   const stdSumSheet = stdWb.getWorksheet("Summary");
@@ -1192,6 +1263,63 @@ router.get("/corrective/validate/export-totals", async (req, res): Promise<void>
     tolerance: "≤500 pcs — stored real is 32-bit float accumulated over all items; > 500 means the builder is reading the wrong source",
   });
 
+  const formulaMismatches = items.filter((item) => {
+    const expected = Math.round(Math.max(
+      Number(item.originalPlan ?? 0) + Math.max(Number(item.deltaNewOrders ?? 0), 0),
+      Number(item.producedToDate ?? 0),
+    ));
+    return Math.round(Number(item.planRev ?? 0)) !== expected;
+  });
+  checks.push({
+    name: `ExportArithmetic · every item revised plan obeys max(original plan + positive new orders, produced-to-date floor)`,
+    expected: 0,
+    actual: formulaMismatches.length,
+    pass: formulaMismatches.length === 0,
+    tolerance: formulaMismatches.length > 0
+      ? `first mismatch: ${formulaMismatches[0]?.itemCode ?? "unknown"}`
+      : "exact per-item check",
+  });
+
+  // The detail workbook must not silently drop order rows. Its item-level
+  // Month Order Flow column is reconciled to the same classified source used
+  // by plan display and Ops coverage.
+  let exportedOrderQty = 0;
+  const orderColumnNumber = ITEM_COLUMNS.findIndex((column) => column.key === "order") + 1;
+  for (const worksheet of detailWb.worksheets) {
+    if (worksheet.name === "Summary" || worksheet.name === "Legend") continue;
+    if (orderColumnNumber <= 0) continue;
+    for (let rowNo = 2; rowNo <= worksheet.rowCount; rowNo++) {
+      const value = worksheet.getRow(rowNo).getCell(orderColumnNumber).value;
+      if (typeof value === "number") exportedOrderQty += Math.round(value);
+    }
+  }
+  const rosterOrderKeys = new Set(items.map((item) => itemKey(item.itemCode, item.colour)));
+  const sourceOrderQty = orderTotals ? Math.round([...orderTotals.exact.values()].reduce((s, q) => s + q, 0)) : -1;
+  const matchedSourceOrderQty = orderTotals ? Math.round(
+    [...orderTotals.exact.entries()]
+      .filter(([key]) => rosterOrderKeys.has(key))
+      .reduce((sum, [, qty]) => sum + qty, 0),
+  ) : -1;
+  const unmatchedSourceOrderQty = orderTotals ? Math.round(
+    [...orderTotals.exact.entries()]
+      .filter(([key]) => !rosterOrderKeys.has(key))
+      .reduce((sum, [, qty]) => sum + qty, 0),
+  ) : -1;
+  checks.push({
+    name: `ExportArithmetic · detail item Month Order Flow equals exact-colour matched ${segment} source`,
+    expected: matchedSourceOrderQty,
+    actual: exportedOrderQty,
+    pass: matchedSourceOrderQty >= 0 && exportedOrderQty === matchedSourceOrderQty,
+    tolerance: matchedSourceOrderQty < 0 ? "Order Sheet unavailable — named source diagnostic" : "exact code+colour reconciliation",
+  });
+  checks.push({
+    name: `ExportArithmetic · matched plus unmatched order flow reconciles to classified ${segment} source`,
+    expected: sourceOrderQty,
+    actual: matchedSourceOrderQty + unmatchedSourceOrderQty,
+    pass: sourceOrderQty >= 0 && sourceOrderQty === matchedSourceOrderQty + unmatchedSourceOrderQty,
+    tolerance: sourceOrderQty < 0 ? "Order Sheet unavailable — named source diagnostic" : "exact source partition",
+  });
+
   const failCount = checks.filter((c) => !c.pass).length;
   res.json({
     month, segment,
@@ -1226,7 +1354,6 @@ router.get("/corrective/validate/schema-parity", async (req, res): Promise<void>
   }
 
   const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
-
   type CheckResult = { name: string; expected: number; actual: number; pass: boolean; tolerance?: string };
   const checks: CheckResult[] = [];
 
@@ -1400,15 +1527,16 @@ router.get("/corrective/runs/:id/export/excel", async (req, res): Promise<void> 
 
   const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
   const segLabel = run.segment ?? "PTMT";
+  const orderTotals = await loadCorrectiveOrderTotals(run);
 
   let buffer: Buffer;
   let suffix: string;
   if (format === "standard") {
-    buffer = await buildCorrectiveStandardExcel(run, items, segLabel);
+    buffer = await buildCorrectiveStandardExcel(run, items, segLabel, orderTotals);
     suffix = "Standard";
   } else {
     const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segLabel));
-    buffer = await buildCorrectiveDetailExcel(run, items, capRows, segLabel);
+    buffer = await buildCorrectiveDetailExcel(run, items, capRows, segLabel, orderTotals);
     suffix = "Detail";
   }
 
@@ -1433,9 +1561,10 @@ router.get("/corrective/runs/:id/export/pdf", async (req, res): Promise<void> =>
   }
 
   const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
+  const orderTotals = await loadCorrectiveOrderTotals(run);
 
   try {
-    const html = buildCorrectivePdfHtml(run, items as unknown as CorrectiveItemResult[]);
+    const html = buildCorrectivePdfHtml(run, items as unknown as CorrectiveItemResult[], orderTotals);
     const browser = await launchBrowser();
     try {
       const page = await browser.newPage();
@@ -1474,17 +1603,18 @@ router.get("/corrective/export/excel", async (req, res): Promise<void> => {
   }
 
   const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
+  const orderTotals = await loadCorrectiveOrderTotals(run);
 
   const itemOrigSum = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
 
   let buffer: Buffer;
   let suffix: string;
   if (format === "standard") {
-    buffer = await buildCorrectiveStandardExcel(run, items, segment);
+    buffer = await buildCorrectiveStandardExcel(run, items, segment, orderTotals);
     suffix = "Standard";
   } else {
     const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment));
-    buffer = await buildCorrectiveDetailExcel(run, items, capRows, segment);
+    buffer = await buildCorrectiveDetailExcel(run, items, capRows, segment, orderTotals);
     suffix = "Detail";
   }
 
@@ -1512,11 +1642,12 @@ router.get("/corrective/export/pdf", async (req, res): Promise<void> => {
   }
 
   const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
+  const orderTotals = await loadCorrectiveOrderTotals(run);
 
   const itemOrigSum = items.reduce((s, i) => s + Math.round(Number(i.originalPlan ?? 0)), 0);
 
   try {
-    const html = buildCorrectivePdfHtml(run, items as unknown as CorrectiveItemResult[]);
+    const html = buildCorrectivePdfHtml(run, items as unknown as CorrectiveItemResult[], orderTotals);
     const browser = await launchBrowser();
     try {
       const page = await browser.newPage();
@@ -1555,6 +1686,7 @@ const STATUS_COLOR: Record<string, string> = {
 function buildCorrectivePdfHtml(
   run: typeof correctivePlanRunsTable.$inferSelect,
   items: CorrectiveItemResult[],
+  orderTotals: OrderTotalsForExport = null,
 ): string {
   const weekStats = (run.weekStatsJson as Array<{ weekLabel: string; released: number; capacity: number; produced: number; lag: number; loadFactor: number }>) ?? [];
   const warnings = (run.warningsJson as Array<{ code: string; severity: string; message: string }>) ?? [];
@@ -1583,6 +1715,7 @@ function buildCorrectivePdfHtml(
           <td>${h(item.colour)}</td>
           <td style="text-align:right">${fmtN(item.originalPlan)}</td>
           <td style="text-align:right">${fmtN(item.producedToDate)}</td>
+          <td style="text-align:right">${orderValueForItem(item, items, orderTotals) === "N/A" ? "N/A" : fmtN(orderValueForItem(item, items, orderTotals) as number)}</td>
           <td style="text-align:right;color:${item.deltaNewOrders > 0 ? "#c2410c" : "#374151"}">${item.deltaNewOrders !== 0 ? (item.deltaNewOrders > 0 ? "+" : "") + fmtN(item.deltaNewOrders) : "—"}</td>
           <td style="text-align:right;font-weight:bold">${fmtN(item.planRev)}</td>
           <td style="text-align:right;font-weight:bold">${fmtN(item.remainingToProduce)}</td>
@@ -1601,6 +1734,7 @@ function buildCorrectivePdfHtml(
               <th style="text-align:left;padding:3px 5px">Colour</th>
               <th style="text-align:right;padding:3px 5px">Orig Plan</th>
               <th style="text-align:right;padding:3px 5px">Produced</th>
+              <th style="text-align:right;padding:3px 5px">Month Orders</th>
               <th style="text-align:right;padding:3px 5px">Orders Δ</th>
               <th style="text-align:right;padding:3px 5px">Revised</th>
               <th style="text-align:right;padding:3px 5px">Remaining</th>
@@ -1661,7 +1795,9 @@ function buildCorrectivePdfHtml(
     <div class="kpi"><div class="label">Original Plan</div><div class="val">${fmtN(run.originalMonthTotal)} pcs</div></div>
     <div class="kpi"><div class="label">Revised Plan</div><div class="val">${fmtN(run.revisedMonthTotal)} pcs</div></div>
     <div class="kpi"><div class="label">Produced To Date</div><div class="val">${fmtN(run.producedToDate)} pcs</div></div>
-    <div class="kpi"><div class="label">New Orders</div><div class="val" style="color:#c2410c">+${fmtN(run.newOrdersQty)} pcs</div></div>
+    <div class="kpi"><div class="label">Month Order Flow</div><div class="val">${orderFlowQty(orderTotals) === "UNAVAILABLE" ? "Unavailable" : fmtN(orderFlowQty(orderTotals) as number)} pcs</div></div>
+    <div class="kpi"><div class="label">Unmatched Order Flow</div><div class="val">${unmatchedOrderFlowQty(items, orderTotals) === "UNAVAILABLE" ? "Unavailable" : fmtN(unmatchedOrderFlowQty(items, orderTotals) as number)} pcs</div></div>
+    <div class="kpi"><div class="label">Open Pending Balance</div><div class="val">${fmtN(items.reduce((s, i) => s + Math.round(Number(i.pendingNow ?? 0)), 0))} pcs</div></div>
     <div class="kpi"><div class="label">Unfulfillable</div><div class="val" style="color:${run.unfulfillableQty > 0 ? "#b91c1c" : "#166534"}">${fmtN(run.unfulfillableQty)} pcs</div></div>
   </div>
 

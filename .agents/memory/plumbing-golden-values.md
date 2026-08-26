@@ -4,8 +4,8 @@ description: How Plumbing plan golden values are structured, what legitimate dri
 ---
 
 ## Current snapshot
-- Reference month: **2026-07**, snapshot taken **2026-07-28**
-- Grand total: **1,960,303** pieces · KG grand total: **449,476** kg
+- Reference month: **2026-07**, snapshot taken **2026-08-25**
+- Grand total: **2,026,860** pieces · KG grand total: **458,986** kg
 - 12 categories; ONE formula for all: `max(buffer − stock + lmPending + pending, 0)`
 - CPVC 40/244/9 items · UPVC 52/242/30 · SWR 160/134/3 · AGRI 123/82/1
 - FG Stock file: 1,042 rows (June file, uploaded 2026-07-17)
@@ -29,9 +29,11 @@ description: How Plumbing plan golden values are structured, what legitimate dri
 
 **Why:** updating goldens to match a data-loss bug silently launders the regression into the new baseline. Item counts are the smoking-gun check (exact, not ±%).
 
+Pending-driven golden boundary: the plan, KG, and weekly expectations are not source-drift warnings when their old values were captured before live pending balances entered the formula. Re-derive those expectations from a complete current run and record the pending-balance reason with the observation; do not widen their tolerances to preserve the old baseline.
+
 ## How to take a new snapshot
 1. Confirm item counts match reference (CPVC 40/244/9 · UPVC 52/242/30 · SWR 160/134/3 · AGRI 123/82/1)
 2. Confirm FG Stock row count = 1,042 (or re-verify after a new upload)
 3. Run `curl .../api/plan/validate?segment=Plumbing&month=2026-07` and extract actuals
 4. Update all arrays/constants in `artifacts/api-server/src/lib/plumbing-golden.ts` in one pass
-5. Re-run suite — expect 325/325
+5. Re-run the suite — plan, KG, weekly, item-count, and source-completeness checks should pass; unrelated live-baseline drift must remain explicitly visible.

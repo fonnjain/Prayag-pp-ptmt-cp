@@ -5,7 +5,7 @@ description: Monthly PTMT upload files change column names; silent-zero joins ar
 
 **Rule:** Every monthly PTMT upload set can rename its columns; a missed alias silently zeroes the join and the plan still "works" but is hugely wrong. Never trust a plan built from fresh uploads until the validate guards pass.
 
-**Why:** The Aug 2026 plan came out 684k instead of 618k purely from silent zeroes: FG stock qty appeared as `Closing Stock` (~498k units unjoined), LM pending qty as `Qty.` (trailing dot). Aug DATA.xlsx pending rows carry NO balance column — pending genuinely contributes 0; aliasing its `Quantity` column overshoots massively. Uploads made via the deployed app land only in the prod DB, not dev.
+**Why:** The Aug 2026 plan came out 684k instead of 618k purely from silent zeroes: FG stock qty appeared as `Closing Stock` (~498k units unjoined), LM pending qty as `Qty.` (trailing dot). Aug DATA.xlsx pending rows carry NO balance column — pending genuinely contributes 0; aliasing its `Quantity` column overshoots massively. Production history dates the last known `Balance_Qty` upload to 2026-07-07 and the first known no-balance invoice-register upload to 2026-08-05. Uploads made via the deployed app land only in the prod DB, not dev.
 
 **How to apply:**
 - Qty-column aliases live in both the uploads parser and the validate/plan sumByKey key lists — extend BOTH when a new name appears.

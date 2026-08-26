@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { logger } from "../lib/logger";
-import { requireApiKey } from "./auth-middleware";
+import { requireApiKeyScope } from "./auth-middleware";
+import { normalizePlantSegment, type PlantSegment } from "../lib/plant-segments";
 
 const browserRouter = Router();
 const machineRouter = Router();
@@ -116,6 +117,73 @@ function buildFilterQuery(req: { query: Record<string, unknown> }): URLSearchPar
     if (typeof val === "string" && val) qs.set(key, val);
   }
   return qs;
+}
+
+function segmentForPlantFilter(value: unknown): PlantSegment | null {
+  if (typeof value !== "string") return null;
+  switch (value.trim().toUpperCase()) {
+    case "PTMT":
+      return "PTMT";
+    case "PIPE":
+    case "PLUMBING":
+      return "Plumbing";
+    default:
+      return null;
+  }
+}
+
+type RecordsFilter =
+  | { query: URLSearchParams }
+  | { status: 400 | 403; body: { error: string; message: string } };
+
+function buildRecordsFilterQuery(
+  req: { query: Record<string, unknown> },
+  segmentScopes: string[],
+): RecordsFilter {
+  const rawSegment = req.query.segment;
+  const rawPlant = req.query.plant;
+  const segment = rawSegment === undefined ? null : normalizePlantSegment(rawSegment, null);
+  if (rawSegment !== undefined && !segment) {
+    return {
+      status: 400,
+      body: { error: "INVALID_SEGMENT", message: "segment must be PTMT or Plumbing." },
+    };
+  }
+
+  const plantSegment = rawPlant === undefined ? null : segmentForPlantFilter(rawPlant);
+  if (rawPlant !== undefined && !plantSegment) {
+    return {
+      status: 400,
+      body: { error: "INVALID_PLANT", message: "plant must identify PTMT or Plumbing (PTMT or PIPE)." },
+    };
+  }
+  if (segment && plantSegment && segment !== plantSegment) {
+    return {
+      status: 400,
+      body: { error: "CONFLICTING_FILTERS", message: "plant and segment identify different plant segments." },
+    };
+  }
+
+  const requestedSegment = segment ?? plantSegment;
+  if (!requestedSegment && segmentScopes.length === 1) {
+    return {
+      status: 400,
+      body: { error: "SEGMENT_REQUIRED", message: "A single-segment API key must specify segment or its plant alias." },
+    };
+  }
+  if (requestedSegment && !segmentScopes.includes(requestedSegment)) {
+    return {
+      status: 403,
+      body: { error: "FORBIDDEN", message: `API key is not scoped for ${requestedSegment}.` },
+    };
+  }
+
+  const query = buildFilterQuery(req);
+  if (requestedSegment) {
+    query.set("segment", requestedSegment);
+    if (rawPlant !== undefined) query.set("plant", requestedSegment === "Plumbing" ? "PIPE" : "PTMT");
+  }
+  return { query };
 }
 
 async function fetchSummaryFromUpstream(qs: URLSearchParams, apiKey: string): Promise<unknown> {
@@ -261,13 +329,21 @@ browserRouter.get("/plant-live/summary", async (req, res) => {
   }
 });
 
-machineRouter.get("/plant-live/records", requireApiKey, async (req, res) => {
+machineRouter.get("/plant-live/records", requireApiKeyScope("read", undefined, {
+  defaultSegment: null,
+  enforceQuerySegment: false,
+}), async (req, res) => {
   const apiKey = process.env.PRAYAG_PLANT_API_KEY;
   if (!apiKey) {
     res.status(503).json({ error: "PRAYAG_PLANT_API_KEY not configured" });
     return;
   }
-  const qs = buildFilterQuery(req);
+  const filter = buildRecordsFilterQuery(req, req.apiKey?.segmentScopes ?? []);
+  if ("status" in filter) {
+    res.status(filter.status).json(filter.body);
+    return;
+  }
+  const qs = filter.query;
   let rawBody: string | undefined;
   try {
     const upstream = await upstreamFetch(`/records?${qs}`, apiKey);

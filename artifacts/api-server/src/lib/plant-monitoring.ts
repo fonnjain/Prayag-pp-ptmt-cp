@@ -4,6 +4,7 @@ import {
   planRunResultsTable,
   planRunsTable,
   plantConfigsTable,
+  plantIngestionCacheTable,
   plantMonthSnapshotsTable,
   plantPlanVersionsTable,
   weeklyReleaseBandsTable,
@@ -17,7 +18,7 @@ import {
   refreshPlumbingActualsCache,
   type DailyActualRow,
   type PlantTargetRow,
-} from "./plant-ingestion";} from "./plant-ingestion";
+} from "./plant-ingestion";
 import type { PlanVersion, VersionTarget } from "./plant-plan-timeline";
 import {
   lastProductionDay,
