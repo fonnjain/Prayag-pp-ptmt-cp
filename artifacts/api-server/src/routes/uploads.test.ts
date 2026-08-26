@@ -9,7 +9,9 @@ import {
 } from "../lib/pending-upload-fixtures.js";
 import {
   extractPendingRows,
+  extractRows,
   PendingSheetSelectionError,
+  SheetSelectionError,
   selectPendingSheet,
 } from "./uploads.js";
 
@@ -86,6 +88,65 @@ test("an unrecognised pending-tab rename fails instead of parsing the invoice re
         "Segment",
         "Quantity",
       ]);
+      return true;
+    },
+  );
+});
+
+function workbookWithSheets(sheets: Array<{ name: string; rows: unknown[][] }>): XLSX.WorkBook {
+  const workbook = XLSX.utils.book_new();
+  for (const { name, rows } of sheets) {
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(rows), name);
+  }
+  return workbook;
+}
+
+test("all non-pending upload selectors prefer required columns over an earlier decoy", () => {
+  const currentStock = workbookWithSheets([
+    { name: "Invoice Register", rows: [["Item Code", "Quantity"], ["INV-1", 999]] },
+    { name: "Renamed export", rows: [["Item Code", "Colour", "C/Stock"], ["STOCK-1", "WHITE", 17]] },
+  ]);
+  assert.deepEqual(extractRows(currentStock, "current_stock"), [
+    { "Item Code": "STOCK-1", Colour: "WHITE", Qty: 17 },
+  ]);
+
+  const lastMonthPending = workbookWithSheets([
+    { name: "Summary", rows: [["Item Code", "Colour"], ["SUMMARY-1", "WHITE"]] },
+    { name: "Renamed pending export", rows: [["Item Code", "Colour", "Qty"], ["PENDING-1", "BLUE", 23]] },
+  ]);
+  assert.deepEqual(extractRows(lastMonthPending, "last_month_pending"), [
+    { "Item Code": "PENDING-1", Colour: "BLUE", Qty: 23 },
+  ]);
+
+  const plumbingStock = workbookWithSheets([
+    { name: "Notes", rows: [["Item Code", "Description"], ["NOTE-1", "not stock"]] },
+    { name: "Renamed FG export", rows: [["Item Code", "Item Name", "Category", "Net Stock"], ["PL-1", "PIPE", "CPVC-PIPE", 41]] },
+  ]);
+  assert.deepEqual(extractRows(plumbingStock, "plumbing_fg_stock"), [
+    { "Item Code": "PL-1", "Item Name": "PIPE", Category: "CPVC-PIPE", "Net Stock": 41 },
+  ]);
+
+  const renamedPtmt = workbookWithSheets([
+    { name: "Notes", rows: [["Description"], ["not PTMT"]] },
+    { name: "Renamed PTMT export", rows: [["Item Code", "Colour", "Qty"], ["PT-1", "WHITE", 7]] },
+  ]);
+  assert.deepEqual(extractRows(renamedPtmt, "unknown-kind"), [
+    { "Item Code": "PT-1", Colour: "WHITE", Qty: 7 },
+  ]);
+});
+
+test("non-pending selectors fail with diagnostics instead of using the first sheet", () => {
+  const workbook = workbookWithSheets([
+    { name: "Invoice Register", rows: [["Item Code", "Quantity"], ["INV-1", 999]] },
+    { name: "Renamed export", rows: [["Description"], ["not a supported upload sheet"]] },
+  ]);
+
+  assert.throws(
+    () => extractRows(workbook, "current_stock"),
+    (error: unknown) => {
+      assert.ok(error instanceof SheetSelectionError);
+      assert.equal(error.code, "CURRENT_STOCK_SHEET_NOT_FOUND");
+      assert.deepEqual(error.sheets.map((sheet) => sheet.name), ["Invoice Register", "Renamed export"]);
       return true;
     },
   );

@@ -15,24 +15,32 @@ const VALID_KINDS = new Set([
 ]);
 
 const PENDING_BALANCE_HEADERS = ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty"];
+const CURRENT_STOCK_HEADERS = ["C/Stock", "C Stock", "Closing Stock"];
+const ITEM_CODE_HEADERS = ["Item Code", "ItemCode", "Item No.", "Old Item Code"];
+const PENDING_QTY_HEADERS = ["Qty", "Qty.", ...PENDING_BALANCE_HEADERS];
 
-export interface PendingSheetDiagnostic {
+export interface SheetSelectionDiagnostic {
   name: string;
   headerRowIndex: number;
   headers: string[];
 }
 
-export class PendingSheetSelectionError extends Error {
-  readonly code = "PENDING_SHEET_NOT_FOUND";
+export type PendingSheetDiagnostic = SheetSelectionDiagnostic;
 
-  constructor(readonly sheets: PendingSheetDiagnostic[]) {
-    super(
-      "No pending-order worksheet was found. Expected an accepted open-balance column " +
-      "(Balance_Qty, Balance Qty, Bal.Qty, or Bal. Qty) or a worksheet named Pending... / PO ....",
-    );
-    this.name = "PendingSheetSelectionError";
+export class SheetSelectionError extends Error {
+  constructor(
+    readonly code: string,
+    readonly sheets: SheetSelectionDiagnostic[],
+    readonly expected: string,
+  ) {
+    super(`No ${expected} worksheet was found. ${expected} must be identified by its required columns or an accepted worksheet name.`);
+    this.name = "SheetSelectionError";
   }
 }
+
+// Kept as an exported compatibility alias for callers and tests that refer to
+// the original pending-specific error name.
+export { SheetSelectionError as PendingSheetSelectionError };
 
 router.get("/uploads", async (_req, res): Promise<void> => {
   const rows = await db
@@ -66,10 +74,11 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
     rows = extractRows(workbook, raw);
   } catch (err) {
     req.log.warn({ err }, "Failed to parse uploaded workbook");
-    if (err instanceof PendingSheetSelectionError) {
+    if (err instanceof SheetSelectionError) {
       res.status(400).json({
         error: err.code,
         message: err.message,
+        expected: err.expected,
         sheets: err.sheets,
       });
       return;
@@ -155,24 +164,52 @@ function sheetToObjects(sheet: XLSX.WorkSheet): Record<string, unknown>[] {
   return out;
 }
 
-function hasAcceptedBalanceHeader(headers: string[]): boolean {
-  const accepted = new Set(PENDING_BALANCE_HEADERS.map(normaliseHeader));
+function hasAnyHeader(headers: string[], acceptedHeaders: string[]): boolean {
+  const accepted = new Set(acceptedHeaders.map(normaliseHeader));
   return headers.some((header) => accepted.has(normaliseHeader(header)));
+}
+
+function hasCurrentStockHeader(headers: string[]): boolean {
+  return hasAnyHeader(headers, CURRENT_STOCK_HEADERS);
+}
+
+function hasPendingRowsHeader(headers: string[]): boolean {
+  return hasAnyHeader(headers, ITEM_CODE_HEADERS) && hasAnyHeader(headers, PENDING_QTY_HEADERS);
+}
+
+function hasPlumbingStockHeader(headers: string[]): boolean {
+  return hasAnyHeader(headers, ITEM_CODE_HEADERS) && hasAnyHeader(headers, ["Net Stock"]);
 }
 
 function isNamedPendingSheet(name: string): boolean {
   return /pending/i.test(name) || /^\s*po(?:\s|[-_]|$)/i.test(name);
 }
 
-export function selectPendingSheet(workbook: XLSX.WorkBook): PendingSheetDiagnostic {
-  const diagnostics = workbook.SheetNames.map((name) => inspectSheet(workbook.Sheets[name]!, name));
-  const balanceSheet = diagnostics.find((sheet) => hasAcceptedBalanceHeader(sheet.headers));
-  if (balanceSheet) return balanceSheet;
+type SheetSelectionSpec = {
+  code: string;
+  expected: string;
+  hasRequiredHeaders: (headers: string[]) => boolean;
+  isAcceptedName: (name: string) => boolean;
+};
 
-  const namedSheet = diagnostics.find((sheet) => isNamedPendingSheet(sheet.name));
+function selectSheet(workbook: XLSX.WorkBook, spec: SheetSelectionSpec): SheetSelectionDiagnostic {
+  const diagnostics = workbook.SheetNames.map((name) => inspectSheet(workbook.Sheets[name]!, name));
+  const contentSheet = diagnostics.find((sheet) => spec.hasRequiredHeaders(sheet.headers));
+  if (contentSheet) return contentSheet;
+
+  const namedSheet = diagnostics.find((sheet) => spec.isAcceptedName(sheet.name));
   if (namedSheet) return namedSheet;
 
-  throw new PendingSheetSelectionError(diagnostics);
+  throw new SheetSelectionError(spec.code, diagnostics, spec.expected);
+}
+
+export function selectPendingSheet(workbook: XLSX.WorkBook): PendingSheetDiagnostic {
+  return selectSheet(workbook, {
+    code: "PENDING_SHEET_NOT_FOUND",
+    expected: "pending-order",
+    hasRequiredHeaders: (headers) => hasAnyHeader(headers, PENDING_BALANCE_HEADERS),
+    isAcceptedName: isNamedPendingSheet,
+  });
 }
 
 export function extractPendingRows(workbook: XLSX.WorkBook): {
@@ -296,12 +333,14 @@ export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<strin
     // F.G. STOCK factory Excel → "F.G Sheet" tab.
     // Col A = Item Code, Col B = Colour, Col C = C/Stock.
     // Normalize "C/Stock" → "Qty" so sumByKey in plan.ts works unchanged.
-    const fgSheetName =
-      workbook.SheetNames.find((n) => /f\.g\.?\s*sheet/i.test(n)) ??
-      workbook.SheetNames.find((n) => /f\.g/i.test(n)) ??
-      workbook.SheetNames.find((n) => /stock/i.test(n)) ??
-      workbook.SheetNames[0];
-    const fgSheet = workbook.Sheets[fgSheetName];
+    const fgSheetSelection = selectSheet(workbook, {
+      code: "CURRENT_STOCK_SHEET_NOT_FOUND",
+      expected: "current-stock",
+      hasRequiredHeaders: hasCurrentStockHeader,
+      isAcceptedName: (name) =>
+        /f\.g\.?\s*sheet/i.test(name) || /f\.g/i.test(name) || /stock/i.test(name),
+    });
+    const fgSheet = workbook.Sheets[fgSheetSelection.name]!;
     const rows = sheetToObjects(fgSheet);
     return rows.map((row) => {
       const normalized: Record<string, unknown> = { ...row };
@@ -320,13 +359,17 @@ export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<strin
     // Columns: Item Code, Colour, Qty (already Cat-no format).
     // Per spec §4: do NOT take this from F.G. STOCK's LAST MONTH PENDING ITEMS tab
     // — that contains all-segment data (total ~275,878) not the PTMT-only figure (137,939).
-    const sheetName =
-      workbook.SheetNames.find((n) => /^ptmt$/i.test(n)) ??
-      workbook.SheetNames.find((n) => /ptmt/i.test(n)) ??
-      workbook.SheetNames.find((n) => /last.month.pending/i.test(n)) ??
-      workbook.SheetNames.find((n) => /pending/i.test(n)) ??
-      workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
+    const sheetSelection = selectSheet(workbook, {
+      code: "LAST_MONTH_PENDING_SHEET_NOT_FOUND",
+      expected: "last-month-pending",
+      hasRequiredHeaders: hasPendingRowsHeader,
+      isAcceptedName: (name) =>
+        /^ptmt$/i.test(name) ||
+        /ptmt/i.test(name) ||
+        /last.month.pending/i.test(name) ||
+        /pending/i.test(name),
+    });
+    const sheet = workbook.Sheets[sheetSelection.name]!;
     return sheetToObjects(sheet);
   }
 
@@ -345,12 +388,14 @@ export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<strin
     //
     // "TOTAL" rows and blank item codes are skipped.
     // A "Pending prod." sibling tab mirrors the negatives — use Col R of FG Stock tab only.
-    const sheetName =
-      workbook.SheetNames.find((n) => /^fg\s*stock$/i.test(n)) ??
-      workbook.SheetNames.find((n) => /fg.stock/i.test(n)) ??
-      workbook.SheetNames.find((n) => /stock/i.test(n)) ??
-      workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
+    const sheetSelection = selectSheet(workbook, {
+      code: "PLUMBING_FG_STOCK_SHEET_NOT_FOUND",
+      expected: "Plumbing FG stock",
+      hasRequiredHeaders: hasPlumbingStockHeader,
+      isAcceptedName: (name) =>
+        /^fg\s*stock$/i.test(name) || /fg.stock/i.test(name) || /stock/i.test(name),
+    });
+    const sheet = workbook.Sheets[sheetSelection.name]!;
     const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null });
 
     // Locate header row: the first row containing both "Item Code" and "Net Stock" headers
@@ -396,8 +441,13 @@ export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<strin
     return out;
   }
 
-  const sheetName = workbook.SheetNames.find((name) => /^ptmt$/i.test(name)) ?? workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
+  const sheetSelection = selectSheet(workbook, {
+    code: "PTMT_SHEET_NOT_FOUND",
+    expected: "PTMT",
+    hasRequiredHeaders: hasPendingRowsHeader,
+    isAcceptedName: (name) => /^ptmt$/i.test(name),
+  });
+  const sheet = workbook.Sheets[sheetSelection.name]!;
   return sheetToObjects(sheet);
 }
 
