@@ -173,7 +173,11 @@ function hasCurrentStockHeader(headers: string[]): boolean {
   return hasAnyHeader(headers, CURRENT_STOCK_HEADERS);
 }
 
-function hasPendingRowsHeader(headers: string[]): boolean {
+function hasPtmtSheetHeader(headers: string[]): boolean {
+  return hasAnyHeader(headers, ITEM_CODE_HEADERS) && hasAnyHeader(headers, PENDING_QTY_HEADERS);
+}
+
+function hasLastMonthPendingHeader(headers: string[]): boolean {
   return (
     hasAnyHeader(headers, ITEM_CODE_HEADERS) &&
     hasAnyHeader(headers, ["Colour", "Color"]) &&
@@ -366,7 +370,7 @@ export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<strin
     const sheetSelection = selectSheet(workbook, {
       code: "LAST_MONTH_PENDING_SHEET_NOT_FOUND",
       expected: "last-month-pending",
-      hasRequiredHeaders: hasPendingRowsHeader,
+      hasRequiredHeaders: hasLastMonthPendingHeader,
       isAcceptedName: (name) =>
         /^ptmt$/i.test(name) ||
         /ptmt/i.test(name) ||
@@ -448,7 +452,7 @@ export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<strin
   const sheetSelection = selectSheet(workbook, {
     code: "PTMT_SHEET_NOT_FOUND",
     expected: "PTMT",
-    hasRequiredHeaders: hasPendingRowsHeader,
+    hasRequiredHeaders: hasPtmtSheetHeader,
     isAcceptedName: (name) => /^ptmt$/i.test(name),
   });
   const sheet = workbook.Sheets[sheetSelection.name]!;
