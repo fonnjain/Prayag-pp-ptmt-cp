@@ -174,7 +174,11 @@ function hasCurrentStockHeader(headers: string[]): boolean {
 }
 
 function hasPendingRowsHeader(headers: string[]): boolean {
-  return hasAnyHeader(headers, ITEM_CODE_HEADERS) && hasAnyHeader(headers, PENDING_QTY_HEADERS);
+  return (
+    hasAnyHeader(headers, ITEM_CODE_HEADERS) &&
+    hasAnyHeader(headers, ["Colour", "Color"]) &&
+    hasAnyHeader(headers, PENDING_QTY_HEADERS)
+  );
 }
 
 function hasPlumbingStockHeader(headers: string[]): boolean {

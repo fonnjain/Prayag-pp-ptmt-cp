@@ -111,7 +111,7 @@ test("all non-pending upload selectors prefer required columns over an earlier d
   ]);
 
   const lastMonthPending = workbookWithSheets([
-    { name: "Summary", rows: [["Item Code", "Colour"], ["SUMMARY-1", "WHITE"]] },
+    { name: "CP", rows: [["Group", "Item code", "Qty"], ["CP", "CP-1", 999]] },
     { name: "Renamed pending export", rows: [["Item Code", "Colour", "Qty"], ["PENDING-1", "BLUE", 23]] },
   ]);
   assert.deepEqual(extractRows(lastMonthPending, "last_month_pending"), [
