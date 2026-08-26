@@ -5,7 +5,7 @@ import {
   listTabs,
   UpstreamTimeoutError,
 } from "../lib/sheets.js";
-import { handlePlanError } from "./plan.js";
+import { classifyPendingSource, handlePlanError, PLAN_PENDING_SOURCE } from "./plan.js";
 
 test("Google Sheets connector 504 becomes a named upstream timeout", async () => {
   const connectors = {
@@ -60,5 +60,23 @@ test("plan routes map an upstream timeout to a safe retryable 504 response", () 
     message: "Google Sheets did not respond in time while loading planning data. Retry shortly.",
     upstreamErrorType: "timeout",
     retryable: true,
+  });
+});
+
+test("production-plan pending source is the uploaded file while live pending remains diagnostic-only", () => {
+  assert.equal(PLAN_PENDING_SOURCE, "upload");
+  assert.deepEqual(classifyPendingSource([
+    { "Item Code": "120-WS", Colour: "WHITE", Quantity: 10 },
+  ]), {
+    layout: "invoice-register",
+    hasCodeColumn: true,
+    balanceColumns: [],
+  });
+  assert.deepEqual(classifyPendingSource([
+    { "Item Code": "120-WS", Colour: "WHITE", "Bal. Qty": 10 },
+  ]), {
+    layout: "open-balance",
+    hasCodeColumn: true,
+    balanceColumns: ["Bal. Qty"],
   });
 });

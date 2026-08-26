@@ -19,6 +19,7 @@ import sheetConfigRouter from "./sheet-config";
 import plantPlanUploadRouter from "./plant-plan-upload";
 import authRouter from "./auth";
 import { requireSession } from "./session-middleware";
+import apiV1Router from "./api-v1";
 
 const router: IRouter = Router();
 
@@ -45,6 +46,7 @@ router.use(authRouter);
 // The records feed is machine-to-machine and has its own managed Bearer API
 // key. Browser-facing plant-live reads are mounted below requireSession.
 router.use(plantLiveMachineRouter);
+router.use("/v1", apiV1Router);
 router.use(requireSession);
 
 router.use(plantLiveRouter);

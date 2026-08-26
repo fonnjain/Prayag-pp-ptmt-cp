@@ -11,6 +11,248 @@ export const getHealthzResponse = zod.object({
 })
 
 
+export const getV1PlanItemsQueryMonthRegExp = new RegExp('^\\d{4}-(0[1-9]|1[0-2])$');
+export const getV1PlanItemsQuerySegmentDefault = "PTMT";
+
+export const getV1PlanItemsQueryParams = zod.object({
+  "month": zod.string().regex(getV1PlanItemsQueryMonthRegExp).describe('Fiscal month represented as YYYY-MM.'),
+  "segment": zod.enum(['PTMT', 'Plumbing']).default(getV1PlanItemsQuerySegmentDefault)
+})
+
+export const getV1PlanItemsResponse = zod.object({
+  "month": zod.string(),
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "metadata": zod.object({
+  "snapshotDate": zod.string().date().nullable(),
+  "lifecycle": zod.enum(['future', 'open', 'grace', 'closed']),
+  "planVersions": zod.array(zod.object({
+  "kind": zod.string(),
+  "sourceId": zod.number(),
+  "sourceLabel": zod.string().nullable(),
+  "effectiveFrom": zod.string().date(),
+  "effectiveTo": zod.string().date().nullable(),
+  "targetCount": zod.number(),
+  "selection": zod.unknown(),
+  "isCurrent": zod.boolean()
+})),
+  "workingDays": zod.number(),
+  "workingDaysSource": zod.enum(['configured', 'observed', 'derived']),
+  "elapsed": zod.number(),
+  "remaining": zod.number(),
+  "mappedProduction": zod.number(),
+  "unmappedProduction": zod.number(),
+  "cache": zod.object({
+  "state": zod.enum(['fresh', 'stale', 'frozen']),
+  "ageMs": zod.number(),
+  "generatedAt": zod.string().datetime({})
+}),
+  "caveats": zod.array(zod.string())
+}),
+  "items": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "category": zod.string(),
+  "stock": zod.number(),
+  "pendingOrder": zod.number(),
+  "avg3MoSale": zod.number(),
+  "pendingLastMonth": zod.number(),
+  "bufferReq": zod.number(),
+  "minProduction": zod.number(),
+  "productionPlan": zod.number(),
+  "maxProduction": zod.number(),
+  "releaseWeek": zod.number().nullable(),
+  "w1": zod.number(),
+  "w2": zod.number(),
+  "w3": zod.number(),
+  "w4": zod.number(),
+  "produced": zod.number(),
+  "weightKgPerPiece": zod.number().nullable(),
+  "machines": zod.array(zod.string()).nullable(),
+  "machineHrs": zod.number().nullable()
+}))
+})
+
+
+export const getV1CalendarQueryMonthRegExp = new RegExp('^\\d{4}-(0[1-9]|1[0-2])$');
+export const getV1CalendarQuerySegmentDefault = "PTMT";
+
+export const getV1CalendarQueryParams = zod.object({
+  "month": zod.string().regex(getV1CalendarQueryMonthRegExp).describe('Fiscal month represented as YYYY-MM.'),
+  "segment": zod.enum(['PTMT', 'Plumbing']).default(getV1CalendarQuerySegmentDefault)
+})
+
+export const getV1CalendarResponse = zod.object({
+  "month": zod.string(),
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "metadata": zod.object({
+  "snapshotDate": zod.string().date().nullable(),
+  "lifecycle": zod.enum(['future', 'open', 'grace', 'closed']),
+  "planVersions": zod.array(zod.object({
+  "kind": zod.string(),
+  "sourceId": zod.number(),
+  "sourceLabel": zod.string().nullable(),
+  "effectiveFrom": zod.string().date(),
+  "effectiveTo": zod.string().date().nullable(),
+  "targetCount": zod.number(),
+  "selection": zod.unknown(),
+  "isCurrent": zod.boolean()
+})),
+  "workingDays": zod.number(),
+  "workingDaysSource": zod.enum(['configured', 'observed', 'derived']),
+  "elapsed": zod.number(),
+  "remaining": zod.number(),
+  "mappedProduction": zod.number(),
+  "unmappedProduction": zod.number(),
+  "cache": zod.object({
+  "state": zod.enum(['fresh', 'stale', 'frozen']),
+  "ageMs": zod.number(),
+  "generatedAt": zod.string().datetime({})
+}),
+  "caveats": zod.array(zod.string())
+}),
+  "workingDays": zod.number(),
+  "workingDaysSource": zod.string(),
+  "elapsed": zod.number(),
+  "remaining": zod.number(),
+  "workedSundays": zod.array(zod.string().date()),
+  "idleWeekdays": zod.array(zod.string().date())
+})
+
+
+export const getV1SummaryQueryMonthRegExp = new RegExp('^\\d{4}-(0[1-9]|1[0-2])$');
+export const getV1SummaryQuerySegmentDefault = "PTMT";
+
+export const getV1SummaryQueryParams = zod.object({
+  "month": zod.string().regex(getV1SummaryQueryMonthRegExp).describe('Fiscal month represented as YYYY-MM.'),
+  "segment": zod.enum(['PTMT', 'Plumbing']).default(getV1SummaryQuerySegmentDefault)
+})
+
+export const getV1SummaryResponseWeeksItemWeekMax = 4;
+
+
+
+export const getV1SummaryResponse = zod.object({
+  "month": zod.string(),
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "metadata": zod.object({
+  "snapshotDate": zod.string().date().nullable(),
+  "lifecycle": zod.enum(['future', 'open', 'grace', 'closed']),
+  "planVersions": zod.array(zod.object({
+  "kind": zod.string(),
+  "sourceId": zod.number(),
+  "sourceLabel": zod.string().nullable(),
+  "effectiveFrom": zod.string().date(),
+  "effectiveTo": zod.string().date().nullable(),
+  "targetCount": zod.number(),
+  "selection": zod.unknown(),
+  "isCurrent": zod.boolean()
+})),
+  "workingDays": zod.number(),
+  "workingDaysSource": zod.enum(['configured', 'observed', 'derived']),
+  "elapsed": zod.number(),
+  "remaining": zod.number(),
+  "mappedProduction": zod.number(),
+  "unmappedProduction": zod.number(),
+  "cache": zod.object({
+  "state": zod.enum(['fresh', 'stale', 'frozen']),
+  "ageMs": zod.number(),
+  "generatedAt": zod.string().datetime({})
+}),
+  "caveats": zod.array(zod.string())
+}),
+  "targetMax": zod.number(),
+  "targetMin": zod.number(),
+  "mappedProduced": zod.number(),
+  "totalProduced": zod.number(),
+  "unmappedProduced": zod.number(),
+  "projectedAttainmentPct": zod.number().nullish(),
+  "projectedMinAttainmentPct": zod.number().nullish(),
+  "runRatePerDay": zod.number().nullish(),
+  "ragBand": zod.union([zod.literal('green'),zod.literal('amber'),zod.literal('red'),zod.literal(null)]).nullish(),
+  "weeks": zod.array(zod.object({
+  "week": zod.number().min(1).max(getV1SummaryResponseWeeksItemWeekMax),
+  "release": zod.number(),
+  "mapped": zod.number(),
+  "unmapped": zod.number(),
+  "actual": zod.number()
+}))
+})
+
+
+export const getV1CategoriesQueryMonthRegExp = new RegExp('^\\d{4}-(0[1-9]|1[0-2])$');
+export const getV1CategoriesQuerySegmentDefault = "PTMT";
+
+export const getV1CategoriesQueryParams = zod.object({
+  "month": zod.string().regex(getV1CategoriesQueryMonthRegExp).describe('Fiscal month represented as YYYY-MM.'),
+  "segment": zod.enum(['PTMT', 'Plumbing']).default(getV1CategoriesQuerySegmentDefault)
+})
+
+export const getV1CategoriesResponse = zod.object({
+  "month": zod.string(),
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "metadata": zod.object({
+  "snapshotDate": zod.string().date().nullable(),
+  "lifecycle": zod.enum(['future', 'open', 'grace', 'closed']),
+  "planVersions": zod.array(zod.object({
+  "kind": zod.string(),
+  "sourceId": zod.number(),
+  "sourceLabel": zod.string().nullable(),
+  "effectiveFrom": zod.string().date(),
+  "effectiveTo": zod.string().date().nullable(),
+  "targetCount": zod.number(),
+  "selection": zod.unknown(),
+  "isCurrent": zod.boolean()
+})),
+  "workingDays": zod.number(),
+  "workingDaysSource": zod.enum(['configured', 'observed', 'derived']),
+  "elapsed": zod.number(),
+  "remaining": zod.number(),
+  "mappedProduction": zod.number(),
+  "unmappedProduction": zod.number(),
+  "cache": zod.object({
+  "state": zod.enum(['fresh', 'stale', 'frozen']),
+  "ageMs": zod.number(),
+  "generatedAt": zod.string().datetime({})
+}),
+  "caveats": zod.array(zod.string())
+}),
+  "categories": zod.array(zod.object({
+  "category": zod.string(),
+  "targetMin": zod.number(),
+  "targetMax": zod.number(),
+  "mappedProduced": zod.number(),
+  "unmappedProduced": zod.number(),
+  "actual": zod.number(),
+  "gap": zod.number(),
+  "attainmentPct": zod.number().nullable(),
+  "w1": zod.object({
+  "release": zod.number(),
+  "mapped": zod.number(),
+  "unmapped": zod.number(),
+  "actual": zod.number()
+}),
+  "w2": zod.object({
+  "release": zod.number(),
+  "mapped": zod.number(),
+  "unmapped": zod.number(),
+  "actual": zod.number()
+}),
+  "w3": zod.object({
+  "release": zod.number(),
+  "mapped": zod.number(),
+  "unmapped": zod.number(),
+  "actual": zod.number()
+}),
+  "w4": zod.object({
+  "release": zod.number(),
+  "mapped": zod.number(),
+  "unmapped": zod.number(),
+  "actual": zod.number()
+})
+}))
+})
+
+
 export const listBufferCategoriesQuerySegmentDefault = "PTMT";
 
 export const listBufferCategoriesQueryParams = zod.object({
@@ -1629,10 +1871,17 @@ export const backfillPlantMonitoringSnapshotBody = zod.object({
 /**
  * @summary List all API keys (hashes never returned)
  */
+
+
+
+
 export const listApiKeysResponseItem = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
+  "consumer": zod.enum(['machine-analysis', 'mis', 'legacy']).describe('The external consumer identity used to select the rate-limit policy.'),
+  "scopes": zod.array(zod.enum(['read', 'write'])).min(1).describe('Capabilities granted to this key.'),
+  "segmentScopes": zod.array(zod.enum(['PTMT', 'Plumbing'])).min(1).describe('Plant segments this key may read or mutate.'),
   "keyPrefix": zod.string().describe('First 14 chars of the key for identification — safe to display'),
   "isActive": zod.boolean(),
   "createdAt": zod.string(),
@@ -1644,9 +1893,16 @@ export const listApiKeysResponse = zod.array(listApiKeysResponseItem)
 /**
  * @summary Create a new API key — returns the full key exactly once
  */
+export const createApiKeyBodyConsumerDefault = "legacy";
+
+
+
 export const createApiKeyBody = zod.object({
   "name": zod.string().describe('Human-readable label for this key, e.g. prayag-plant.com'),
-  "description": zod.string().optional().describe('Optional notes about where this key is used')
+  "description": zod.string().optional().describe('Optional notes about where this key is used'),
+  "consumer": zod.enum(['machine-analysis', 'mis', 'legacy']).default(createApiKeyBodyConsumerDefault).describe('The external consumer identity used to select the rate-limit policy.'),
+  "scopes": zod.array(zod.enum(['read', 'write'])).min(1).optional().describe('Capabilities granted to this key.'),
+  "segmentScopes": zod.array(zod.enum(['PTMT', 'Plumbing'])).min(1).optional().describe('Plant segments this key may read or mutate.')
 })
 
 
@@ -1669,10 +1925,17 @@ export const regenerateApiKeyParams = zod.object({
   "id": zod.number()
 })
 
+
+
+
+
 export const regenerateApiKeyResponse = zod.object({
   "id": zod.number(),
   "name": zod.string(),
   "description": zod.string().nullish(),
+  "consumer": zod.enum(['machine-analysis', 'mis', 'legacy']).describe('The external consumer identity used to select the rate-limit policy.'),
+  "scopes": zod.array(zod.enum(['read', 'write'])).min(1).describe('Capabilities granted to this key.'),
+  "segmentScopes": zod.array(zod.enum(['PTMT', 'Plumbing'])).min(1).describe('Plant segments this key may read or mutate.'),
   "keyPrefix": zod.string().describe('First 14 chars of the key for identification — safe to display'),
   "isActive": zod.boolean(),
   "createdAt": zod.string(),

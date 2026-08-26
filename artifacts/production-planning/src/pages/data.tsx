@@ -50,7 +50,7 @@ const PTMT_LOCAL_UPLOAD_KINDS: UploadKindDef[] = [
   {
     kind: UploadKind.last_month_pending,
     label: "2 · LAST_MONTH_PENDING_ORDERS file",
-    hint: "LAST_MONTH_PENDING_ORDERS_<month>.xlsx — reads PTMT tab: Item Code + Colour + Qty. Provides last-month Pending Order. Total should be ~137,939.",
+    hint: "LAST_MONTH_PENDING_ORDERS_<month>.xlsx — reads the PTMT tab: Item Code + Colour + Qty. Provides last-month Pending Order for the plan.",
     required: true,
   },
 ];
@@ -1785,7 +1785,7 @@ export default function DataPage() {
                 </p>
                 <p>
                   <strong>Last-Month Pending</strong> comes from the dedicated LAST_MONTH file's PTMT tab
-                  (not from F.G. STOCK). PTMT-segment total should be ~137,939.
+                  (not from F.G. STOCK). Upload the current month’s file here; the plan reads its PTMT rows.
                 </p>
               </div>
             )}

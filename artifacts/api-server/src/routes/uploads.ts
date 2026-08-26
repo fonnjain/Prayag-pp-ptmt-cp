@@ -14,6 +14,26 @@ const VALID_KINDS = new Set([
   "plumbing_fg_stock",
 ]);
 
+const PENDING_BALANCE_HEADERS = ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty"];
+
+export interface PendingSheetDiagnostic {
+  name: string;
+  headerRowIndex: number;
+  headers: string[];
+}
+
+export class PendingSheetSelectionError extends Error {
+  readonly code = "PENDING_SHEET_NOT_FOUND";
+
+  constructor(readonly sheets: PendingSheetDiagnostic[]) {
+    super(
+      "No pending-order worksheet was found. Expected an accepted open-balance column " +
+      "(Balance_Qty, Balance Qty, Bal.Qty, or Bal. Qty) or a worksheet named Pending... / PO ....",
+    );
+    this.name = "PendingSheetSelectionError";
+  }
+}
+
 router.get("/uploads", async (_req, res): Promise<void> => {
   const rows = await db
     .select({
@@ -46,6 +66,14 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
     rows = extractRows(workbook, raw);
   } catch (err) {
     req.log.warn({ err }, "Failed to parse uploaded workbook");
+    if (err instanceof PendingSheetSelectionError) {
+      res.status(400).json({
+        error: err.code,
+        message: err.message,
+        sheets: err.sheets,
+      });
+      return;
+    }
     res.status(400).json({ error: "Could not parse the uploaded Excel file" });
     return;
   }
@@ -88,13 +116,26 @@ const HEADER_HINTS = ["item code", "item no.", "old item code", "colour", "color
  * source workbooks have title/subtotal rows before the actual column
  * headers, so we can't assume row 0 is the header.
  */
+function normaliseHeader(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
 function findHeaderRowIndex(rows: unknown[][]): number {
   for (let i = 0; i < Math.min(10, rows.length); i++) {
     const cells = (rows[i] ?? []).map((c) => String(c ?? "").trim().toLowerCase());
-    const hits = cells.filter((c) => HEADER_HINTS.includes(c)).length;
+    const hits = cells.filter((c) => HEADER_HINTS.some((hint) => normaliseHeader(hint) === normaliseHeader(c))).length;
     if (hits >= 2) return i;
   }
   return 0;
+}
+
+function inspectSheet(sheet: XLSX.WorkSheet, name: string): PendingSheetDiagnostic {
+  const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null });
+  const headerRowIndex = findHeaderRowIndex(raw);
+  const headers = (raw[headerRowIndex] ?? [])
+    .map((h) => String(h ?? "").trim())
+    .filter(Boolean);
+  return { name, headerRowIndex, headers };
 }
 
 function sheetToObjects(sheet: XLSX.WorkSheet): Record<string, unknown>[] {
@@ -112,6 +153,48 @@ function sheetToObjects(sheet: XLSX.WorkSheet): Record<string, unknown>[] {
     out.push(obj);
   }
   return out;
+}
+
+function hasAcceptedBalanceHeader(headers: string[]): boolean {
+  const accepted = new Set(PENDING_BALANCE_HEADERS.map(normaliseHeader));
+  return headers.some((header) => accepted.has(normaliseHeader(header)));
+}
+
+function isNamedPendingSheet(name: string): boolean {
+  return /pending/i.test(name) || /^\s*po(?:\s|[-_]|$)/i.test(name);
+}
+
+export function selectPendingSheet(workbook: XLSX.WorkBook): PendingSheetDiagnostic {
+  const diagnostics = workbook.SheetNames.map((name) => inspectSheet(workbook.Sheets[name]!, name));
+  const balanceSheet = diagnostics.find((sheet) => hasAcceptedBalanceHeader(sheet.headers));
+  if (balanceSheet) return balanceSheet;
+
+  const namedSheet = diagnostics.find((sheet) => isNamedPendingSheet(sheet.name));
+  if (namedSheet) return namedSheet;
+
+  throw new PendingSheetSelectionError(diagnostics);
+}
+
+export function extractPendingRows(workbook: XLSX.WorkBook): {
+  sheetName: string;
+  rows: Record<string, unknown>[];
+} {
+  const selected = selectPendingSheet(workbook);
+  const sheet = workbook.Sheets[selected.name]!;
+  const rows = sheetToObjects(sheet).map((row) => {
+    const rawCode = String(row["Old Item Code"] ?? row["Item Code"] ?? row["Item No."] ?? "");
+    const rawColour = String(row["Color"] ?? row["Colour"] ?? "");
+    const { code, colour } = applyPendingOrderAlias(rawCode, rawColour);
+    return {
+      ...row,
+      "Old Item Code": code,
+      "Item Code": code,
+      "Item No.": code,
+      Colour: colour,
+      Color: colour,
+    };
+  });
+  return { sheetName: selected.name, rows };
 }
 
 /**
@@ -200,21 +283,13 @@ export function applyPendingOrderAlias(code: string, colour: string): { code: st
   return { code: trimmedCode, colour: trimmedColour };
 }
 
-function extractRows(workbook: XLSX.WorkBook, kind: string): Record<string, unknown>[] {
+export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<string, unknown>[] {
   if (kind === "pending_orders") {
     // DATA.xlsx — shared across ALL segments (PTMT + Plumbing).
     // Store every row; plan.ts filters by segment when consuming.
     // The alias transform is applied here to all rows; it is a no-op for non-PTMT codes
     // (the suffix patterns -LSBB/-LSTBB/-LSQBB only appear in PTMT codes).
-    const sheetName = workbook.SheetNames.find((name) => /pending/i.test(name)) ?? workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const json = sheetToObjects(sheet);
-    return json.map((row) => {
-      const rawCode = String(row["Old Item Code"] ?? row["Item No."] ?? "");
-      const rawColour = String(row["Color"] ?? row["Colour"] ?? "");
-      const { code, colour } = applyPendingOrderAlias(rawCode, rawColour);
-      return { ...row, "Old Item Code": code, "Item No.": code, Colour: colour, Color: colour };
-    });
+    return extractPendingRows(workbook).rows;
   }
 
   if (kind === "current_stock") {

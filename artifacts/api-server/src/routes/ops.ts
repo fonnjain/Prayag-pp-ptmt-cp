@@ -1,6 +1,10 @@
 import { Router, type IRouter } from "express";
 import { exportTimestamp } from "../lib/export-filename";
-import { getTabValues, listTabs, SHEET_IDS, throttledGetTabValues, itemKey, normalizeCode, type DualTotals, fetchAvg3MoSaleTotals } from "../lib/sheets";
+import {
+  getTabValues, listTabs, SHEET_IDS, throttledGetTabValues, itemKey, normalizeCode,
+  classifyOrderType, getOrderType, getOrderTypeField, ORDER_TYPES_BY_SEGMENT,
+  type ClassifiedOrderSegment, type DualTotals, fetchAvg3MoSaleTotals,
+} from "../lib/sheets";
 import { logger } from "../lib/logger";
 import type * as ExcelJSType from "exceljs";
 import { db, itemMasterTable, planRunsTable, planRunResultsTable } from "@workspace/db";
@@ -158,7 +162,8 @@ const FESTIVAL_CONFIG = {
 // ─── GET /ops/orders ──────────────────────────────────────────────────────────
 router.get("/ops/orders", async (req, res): Promise<void> => {
   const fy = String(req.query.fy ?? "2026-27");
-  const cacheKey = `ops:orders:${fy}`;
+  const segment = String(req.query.segment ?? "Combined");
+  const cacheKey = `ops:orders:${fy}:${segment}`;
   const cached = getCached<unknown>(cacheKey);
   if (cached) { res.json(cached); return; }
 
@@ -173,6 +178,7 @@ router.get("/ops/orders", async (req, res): Promise<void> => {
     const monthlyTabs = FISCAL_MONTHS.filter((m) => tabs.includes(m));
 
     let allRows: Record<string, string>[] = [];
+    const failedTabs: string[] = [];
     for (const tab of monthlyTabs) {
       try {
         const values = await getTabValues(sheetId, tab, "A1:Z50000");
@@ -181,6 +187,7 @@ router.get("/ops/orders", async (req, res): Promise<void> => {
         await new Promise((r) => setTimeout(r, 300));
       } catch (err) {
         logger.warn({ err, tab }, "Failed to read order tab");
+        failedTabs.push(tab);
       }
     }
 
@@ -189,6 +196,8 @@ router.get("/ops/orders", async (req, res): Promise<void> => {
     const groupMap = new Map<string, number>();
     const channelMap = new Map<string, number>();
     const plantMap = new Map<string, number>();
+    const coverage = emptyOrderCoverage(segment);
+    const selectedRows: Record<string, string>[] = [];
 
     for (const row of allRows) {
       const value = toNum(row["Taxable Value"]);
@@ -202,6 +211,10 @@ router.get("/ops/orders", async (req, res): Promise<void> => {
       const plant = row["Location.Name"] || "Unknown";
       const doc = row["Document No."] || "";
       const customer = row["Customer.Name"] || "";
+
+      addOrderCoverageRow(coverage, row, segment);
+      if (!rowMatchesSegment(row, segment)) continue;
+      selectedRows.push(row);
 
       if (month) {
         if (!monthlyMap.has(month)) {
@@ -226,17 +239,28 @@ router.get("/ops/orders", async (req, res): Promise<void> => {
       });
 
     // Sum directly from all rows (avoids empty-monthly issue if month parsing fails)
-    const ytdValue = allRows.reduce((s, r) => s + toNum(r["Taxable Value"]), 0);
-    const ytdQty = allRows.reduce((s, r) => s + toNum(r["Quantity"]), 0);
-    const ytdDocs = new Set(allRows.map((r) => r["Document No."]).filter(Boolean)).size;
-    const ytdCustomers = new Set(allRows.map((r) => r["Customer.Name"]).filter(Boolean)).size;
+    const ytdValue = selectedRows.reduce((s, r) => s + toNum(r["Taxable Value"]), 0);
+    const ytdQty = selectedRows.reduce((s, r) => s + toNum(r["Quantity"]), 0);
+    const ytdDocs = new Set(selectedRows.map((r) => r["Document No."]).filter(Boolean)).size;
+    const ytdCustomers = new Set(selectedRows.map((r) => r["Customer.Name"]).filter(Boolean)).size;
 
     const byGroup = [...groupMap.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
     const byChannel = [...channelMap.entries()].map(([name, value]) => ({ name, value }));
     const byPlant = [...plantMap.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 10);
 
-    const result = { fy, ytdValue, ytdQty, ytdDocs, ytdCustomers, monthly, byGroup, byChannel, byPlant };
-    setCached(cacheKey, result);
+    const orderCoverage = finishOrderCoverage(coverage, segment);
+    const result = {
+      fy, segment, ytdValue, ytdQty, ytdDocs, ytdCustomers, monthly, byGroup, byChannel, byPlant,
+      orderCoverage,
+      orderData: {
+        complete: failedTabs.length === 0,
+        failedTabs,
+        note: failedTabs.length === 0
+          ? "All available fiscal-month Order Sheet tabs were read."
+          : `Order totals are incomplete: ${failedTabs.join(", ")} could not be read.`,
+      },
+    };
+    if (failedTabs.length === 0) setCached(cacheKey, result);
     res.json(result);
   } catch (err) {
     logger.error({ err }, "ops/orders failed");
@@ -424,18 +448,96 @@ router.get("/ops/sales", async (req, res): Promise<void> => {
   }
 });
 
-// ─── Order-group → segment mapping ───────────────────────────────────────────
-// The order sheet "GROUP" column uses product-category names.
-// PTMT products are always in group "PTMT".
-// Plumbing products span several groups corresponding to manufactured plumbing lines.
-const PTMT_ORDER_GROUPS   = new Set(["PTMT"]);
-const PLUMBING_ORDER_GROUPS = new Set(["C P", "CPVC", "SWR", "UPVC", "AGRI", "GARDEN PIPE", "PPR", "HDPE PIPE"]);
+// ─── Order Sheet TYPE classification ─────────────────────────────────────────
+// Keep this route on the same exact TYPE mapping as plan display annotations
+// and corrective exports. GROUP is only a compatibility fallback for old
+// layouts that did not expose TYPE.
+function rowOrderSegment(row: Record<string, unknown>): ClassifiedOrderSegment {
+  const type = getOrderTypeField(row);
+  return type.present ? classifyOrderType(type.value) : classifyOrderType(row["GROUP"]);
+}
 
-function rowMatchesSegment(group: string, segment: string): boolean {
-  if (segment === "Combined") return true;
-  if (segment === "PTMT")     return PTMT_ORDER_GROUPS.has(group);
-  if (segment === "Plumbing") return PLUMBING_ORDER_GROUPS.has(group);
-  return true; // unknown segment: include everything
+function rowMatchesSegment(row: Record<string, unknown>, segment: string): boolean {
+  const classified = rowOrderSegment(row);
+  if (segment === "Combined") return classified === "PTMT" || classified === "Plumbing";
+  return classified === segment;
+}
+
+type OrderCoverage = {
+  scope: string;
+  includedTypes: readonly string[];
+  included: { qty: number; value: number };
+  otherSegment: { qty: number; value: number };
+  excluded: { qty: number; value: number };
+  orderBook: { qty: number; value: number };
+  includedPct: number;
+  excludedByType: Array<{ type: string; qty: number; value: number }>;
+  note: string;
+};
+
+function emptyOrderCoverage(_segment: string): {
+  included: { qty: number; value: number };
+  otherSegment: { qty: number; value: number };
+  excluded: { qty: number; value: number };
+  orderBook: { qty: number; value: number };
+  byType: Map<string, { qty: number; value: number }>;
+} {
+  return {
+    included: { qty: 0, value: 0 },
+    otherSegment: { qty: 0, value: 0 },
+    excluded: { qty: 0, value: 0 },
+    orderBook: { qty: 0, value: 0 },
+    byType: new Map(),
+  };
+}
+
+function addOrderCoverageRow(
+  coverage: ReturnType<typeof emptyOrderCoverage>,
+  row: Record<string, unknown>,
+  scope: string,
+): void {
+  const qty = toNum(row["Quantity"]);
+  const value = toNum(row["Taxable Value"]);
+  const classified = rowOrderSegment(row);
+  const type = getOrderType(row) || String(row["GROUP"] ?? "").trim().toUpperCase() || "UNCLASSIFIED";
+  coverage.orderBook.qty += qty;
+  coverage.orderBook.value += value;
+  const target = classified === "Excluded"
+    ? coverage.excluded
+    : (scope === "Combined" || classified === scope)
+      ? coverage.included
+      : coverage.otherSegment;
+  target.qty += qty;
+  target.value += value;
+  const typeTotal = coverage.byType.get(type) ?? { qty: 0, value: 0 };
+  typeTotal.qty += qty;
+  typeTotal.value += value;
+  coverage.byType.set(type, typeTotal);
+}
+
+function finishOrderCoverage(
+  coverage: ReturnType<typeof emptyOrderCoverage>,
+  segment: string,
+): OrderCoverage {
+  const excludedByType = [...coverage.byType.entries()]
+    .filter(([type]) => classifyOrderType(type) === "Excluded")
+    .map(([type, totals]) => ({ type, ...totals }))
+    .sort((a, b) => b.value - a.value);
+  return {
+    scope: segment,
+    includedTypes: segment === "Combined"
+      ? [...ORDER_TYPES_BY_SEGMENT.PTMT, ...ORDER_TYPES_BY_SEGMENT.Plumbing]
+      : (ORDER_TYPES_BY_SEGMENT[segment as "PTMT" | "Plumbing"] ?? []),
+    included: coverage.included,
+    otherSegment: coverage.otherSegment,
+    excluded: coverage.excluded,
+    orderBook: coverage.orderBook,
+    includedPct: coverage.orderBook.value > 0
+      ? Number((coverage.included.value / coverage.orderBook.value * 100).toFixed(2))
+      : 0,
+    excludedByType,
+    note: "Segment totals are classified from Order Sheet TYPE. Excluded order-book rows remain visible and are not absorbed into PTMT or Plumbing.",
+  };
 }
 
 /** Returns IST-adjusted current month as YYYY-MM. */
@@ -457,33 +559,37 @@ router.get("/ops/overview", async (req, res): Promise<void> => {
   const sheetId = ORDER_SHEET_IDS[fy];
   let orderValue = 0;
   let orderQty = 0;
+  const coverage = emptyOrderCoverage(segment);
   // Track partial reads: if any monthly tab fails, the aggregate is incomplete
   // and MUST NOT be cached (a cached partial "Combined" can transiently be
   // smaller than "Plumbing", which is nonsensical downstream).
   let partialRead = false;
+  const failedTabs: string[] = [];
 
   if (sheetId) {
     try {
       const tabs = await listTabs(sheetId);
       const monthlyTabs = FISCAL_MONTHS.filter((m) => tabs.includes(m));
-      for (const tab of monthlyTabs.slice(0, 6)) { // First 6 months for speed
+      for (const tab of monthlyTabs) {
         try {
           const values = await getTabValues(sheetId, tab, "A1:Z20000");
           const rows = rowsToObjects(values);
           for (const r of rows) {
-            const group = String(r["GROUP"] ?? "").trim();
-            if (!rowMatchesSegment(group, segment)) continue;
+            addOrderCoverageRow(coverage, r, segment);
+            if (!rowMatchesSegment(r, segment)) continue;
             orderValue += toNum(r["Taxable Value"]);
             orderQty   += toNum(r["Quantity"]);
           }
           await new Promise((r) => setTimeout(r, 200));
         } catch (err) {
           partialRead = true;
+          failedTabs.push(tab);
           logger.warn({ err, tab, segment }, "overview: monthly tab read failed — result will not be cached");
         }
       }
     } catch (err) {
       partialRead = true;
+      failedTabs.push("tab listing");
       logger.warn({ err }, "overview orders fetch failed");
     }
   }
@@ -519,6 +625,14 @@ router.get("/ops/overview", async (req, res): Promise<void> => {
     segment,
     orderValue,
     orderQty,
+    orderCoverage: finishOrderCoverage(coverage, segment),
+    orderData: {
+      complete: !partialRead,
+      failedTabs,
+      note: partialRead
+        ? `Order totals are incomplete: ${failedTabs.join(", ")} could not be read.`
+        : "All available fiscal-month Order Sheet tabs were read.",
+    },
     salesValue,
     productionPlan,
     festivals: FESTIVAL_CONFIG,

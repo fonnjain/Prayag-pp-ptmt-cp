@@ -67,6 +67,10 @@ import type {
   GetPlantWeeklySummaryParams,
   GetPlumbingBomQuality200,
   GetPlumbingBomQualityParams,
+  GetV1CalendarParams,
+  GetV1CategoriesParams,
+  GetV1PlanItemsParams,
+  GetV1SummaryParams,
   HealthStatus,
   IdealHoursOverride,
   IdealHoursOverrideUpsert,
@@ -123,6 +127,15 @@ import type {
   SyncSource,
   UploadKind,
   UploadedFile,
+  V1BadRequestResponse,
+  V1CacheUnavailableResponse,
+  V1CalendarResponse,
+  V1CategoriesResponse,
+  V1ForbiddenResponse,
+  V1PlanItemsResponse,
+  V1RateLimitedResponse,
+  V1SummaryResponse,
+  V1UnauthorizedResponse,
   WarningThresholds,
   WeeklyReleaseBand,
   WeeklyReleaseBandUpdate
@@ -204,6 +217,474 @@ export function useGetHealthz<TData = Awaited<ReturnType<typeof getHealthz>>, TE
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetHealthzQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getV1PlanItemsResponse200 = {
+  data: V1PlanItemsResponse
+  status: 200
+}
+
+export type getV1PlanItemsResponse400 = {
+  data: V1BadRequestResponse
+  status: 400
+}
+
+export type getV1PlanItemsResponse401 = {
+  data: V1UnauthorizedResponse
+  status: 401
+}
+
+export type getV1PlanItemsResponse403 = {
+  data: V1ForbiddenResponse
+  status: 403
+}
+
+export type getV1PlanItemsResponse429 = {
+  data: V1RateLimitedResponse
+  status: 429
+}
+
+export type getV1PlanItemsResponse503 = {
+  data: V1CacheUnavailableResponse
+  status: 503
+}
+    
+export type getV1PlanItemsResponseSuccess = (getV1PlanItemsResponse200) & {
+  headers: Headers;
+};
+export type getV1PlanItemsResponseError = (getV1PlanItemsResponse400 | getV1PlanItemsResponse401 | getV1PlanItemsResponse403 | getV1PlanItemsResponse429 | getV1PlanItemsResponse503) & {
+  headers: Headers;
+};
+
+export type getV1PlanItemsResponse = (getV1PlanItemsResponseSuccess | getV1PlanItemsResponseError)
+
+export const getGetV1PlanItemsUrl = (params: GetV1PlanItemsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/plan/items?${stringifiedParams}` : `/api/v1/plan/items`
+}
+
+export const getV1PlanItems = async (params: GetV1PlanItemsParams, options?: RequestInit): Promise<getV1PlanItemsResponse> => {
+  
+  return customFetch<getV1PlanItemsResponse>(getGetV1PlanItemsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetV1PlanItemsQueryKey = (params?: GetV1PlanItemsParams,) => {
+    return [
+    `/api/v1/plan/items`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetV1PlanItemsQueryOptions = <TData = Awaited<ReturnType<typeof getV1PlanItems>>, TError = V1BadRequestResponse | V1UnauthorizedResponse | V1ForbiddenResponse | V1RateLimitedResponse | V1CacheUnavailableResponse>(params: GetV1PlanItemsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getV1PlanItems>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetV1PlanItemsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getV1PlanItems>>> = ({ signal }) => getV1PlanItems(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getV1PlanItems>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetV1PlanItemsQueryResult = NonNullable<Awaited<ReturnType<typeof getV1PlanItems>>>
+export type GetV1PlanItemsQueryError = V1BadRequestResponse | V1UnauthorizedResponse | V1ForbiddenResponse | V1RateLimitedResponse | V1CacheUnavailableResponse
+
+
+
+export function useGetV1PlanItems<TData = Awaited<ReturnType<typeof getV1PlanItems>>, TError = V1BadRequestResponse | V1UnauthorizedResponse | V1ForbiddenResponse | V1RateLimitedResponse | V1CacheUnavailableResponse>(
+ params: GetV1PlanItemsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getV1PlanItems>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetV1PlanItemsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getV1CalendarResponse200 = {
+  data: V1CalendarResponse
+  status: 200
+}
+
+export type getV1CalendarResponse400 = {
+  data: V1BadRequestResponse
+  status: 400
+}
+
+export type getV1CalendarResponse401 = {
+  data: V1UnauthorizedResponse
+  status: 401
+}
+
+export type getV1CalendarResponse403 = {
+  data: V1ForbiddenResponse
+  status: 403
+}
+
+export type getV1CalendarResponse429 = {
+  data: V1RateLimitedResponse
+  status: 429
+}
+
+export type getV1CalendarResponse503 = {
+  data: V1CacheUnavailableResponse
+  status: 503
+}
+    
+export type getV1CalendarResponseSuccess = (getV1CalendarResponse200) & {
+  headers: Headers;
+};
+export type getV1CalendarResponseError = (getV1CalendarResponse400 | getV1CalendarResponse401 | getV1CalendarResponse403 | getV1CalendarResponse429 | getV1CalendarResponse503) & {
+  headers: Headers;
+};
+
+export type getV1CalendarResponse = (getV1CalendarResponseSuccess | getV1CalendarResponseError)
+
+export const getGetV1CalendarUrl = (params: GetV1CalendarParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/calendar?${stringifiedParams}` : `/api/v1/calendar`
+}
+
+export const getV1Calendar = async (params: GetV1CalendarParams, options?: RequestInit): Promise<getV1CalendarResponse> => {
+  
+  return customFetch<getV1CalendarResponse>(getGetV1CalendarUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetV1CalendarQueryKey = (params?: GetV1CalendarParams,) => {
+    return [
+    `/api/v1/calendar`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetV1CalendarQueryOptions = <TData = Awaited<ReturnType<typeof getV1Calendar>>, TError = V1BadRequestResponse | V1UnauthorizedResponse | V1ForbiddenResponse | V1RateLimitedResponse | V1CacheUnavailableResponse>(params: GetV1CalendarParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getV1Calendar>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetV1CalendarQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getV1Calendar>>> = ({ signal }) => getV1Calendar(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getV1Calendar>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetV1CalendarQueryResult = NonNullable<Awaited<ReturnType<typeof getV1Calendar>>>
+export type GetV1CalendarQueryError = V1BadRequestResponse | V1UnauthorizedResponse | V1ForbiddenResponse | V1RateLimitedResponse | V1CacheUnavailableResponse
+
+
+
+export function useGetV1Calendar<TData = Awaited<ReturnType<typeof getV1Calendar>>, TError = V1BadRequestResponse | V1UnauthorizedResponse | V1ForbiddenResponse | V1RateLimitedResponse | V1CacheUnavailableResponse>(
+ params: GetV1CalendarParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getV1Calendar>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetV1CalendarQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getV1SummaryResponse200 = {
+  data: V1SummaryResponse
+  status: 200
+}
+
+export type getV1SummaryResponse400 = {
+  data: V1BadRequestResponse
+  status: 400
+}
+
+export type getV1SummaryResponse401 = {
+  data: V1UnauthorizedResponse
+  status: 401
+}
+
+export type getV1SummaryResponse403 = {
+  data: V1ForbiddenResponse
+  status: 403
+}
+
+export type getV1SummaryResponse429 = {
+  data: V1RateLimitedResponse
+  status: 429
+}
+
+export type getV1SummaryResponse503 = {
+  data: V1CacheUnavailableResponse
+  status: 503
+}
+    
+export type getV1SummaryResponseSuccess = (getV1SummaryResponse200) & {
+  headers: Headers;
+};
+export type getV1SummaryResponseError = (getV1SummaryResponse400 | getV1SummaryResponse401 | getV1SummaryResponse403 | getV1SummaryResponse429 | getV1SummaryResponse503) & {
+  headers: Headers;
+};
+
+export type getV1SummaryResponse = (getV1SummaryResponseSuccess | getV1SummaryResponseError)
+
+export const getGetV1SummaryUrl = (params: GetV1SummaryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/summary?${stringifiedParams}` : `/api/v1/summary`
+}
+
+export const getV1Summary = async (params: GetV1SummaryParams, options?: RequestInit): Promise<getV1SummaryResponse> => {
+  
+  return customFetch<getV1SummaryResponse>(getGetV1SummaryUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetV1SummaryQueryKey = (params?: GetV1SummaryParams,) => {
+    return [
+    `/api/v1/summary`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetV1SummaryQueryOptions = <TData = Awaited<ReturnType<typeof getV1Summary>>, TError = V1BadRequestResponse | V1UnauthorizedResponse | V1ForbiddenResponse | V1RateLimitedResponse | V1CacheUnavailableResponse>(params: GetV1SummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getV1Summary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetV1SummaryQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getV1Summary>>> = ({ signal }) => getV1Summary(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getV1Summary>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetV1SummaryQueryResult = NonNullable<Awaited<ReturnType<typeof getV1Summary>>>
+export type GetV1SummaryQueryError = V1BadRequestResponse | V1UnauthorizedResponse | V1ForbiddenResponse | V1RateLimitedResponse | V1CacheUnavailableResponse
+
+
+
+export function useGetV1Summary<TData = Awaited<ReturnType<typeof getV1Summary>>, TError = V1BadRequestResponse | V1UnauthorizedResponse | V1ForbiddenResponse | V1RateLimitedResponse | V1CacheUnavailableResponse>(
+ params: GetV1SummaryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getV1Summary>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetV1SummaryQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getV1CategoriesResponse200 = {
+  data: V1CategoriesResponse
+  status: 200
+}
+
+export type getV1CategoriesResponse400 = {
+  data: V1BadRequestResponse
+  status: 400
+}
+
+export type getV1CategoriesResponse401 = {
+  data: V1UnauthorizedResponse
+  status: 401
+}
+
+export type getV1CategoriesResponse403 = {
+  data: V1ForbiddenResponse
+  status: 403
+}
+
+export type getV1CategoriesResponse429 = {
+  data: V1RateLimitedResponse
+  status: 429
+}
+
+export type getV1CategoriesResponse503 = {
+  data: V1CacheUnavailableResponse
+  status: 503
+}
+    
+export type getV1CategoriesResponseSuccess = (getV1CategoriesResponse200) & {
+  headers: Headers;
+};
+export type getV1CategoriesResponseError = (getV1CategoriesResponse400 | getV1CategoriesResponse401 | getV1CategoriesResponse403 | getV1CategoriesResponse429 | getV1CategoriesResponse503) & {
+  headers: Headers;
+};
+
+export type getV1CategoriesResponse = (getV1CategoriesResponseSuccess | getV1CategoriesResponseError)
+
+export const getGetV1CategoriesUrl = (params: GetV1CategoriesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/categories?${stringifiedParams}` : `/api/v1/categories`
+}
+
+export const getV1Categories = async (params: GetV1CategoriesParams, options?: RequestInit): Promise<getV1CategoriesResponse> => {
+  
+  return customFetch<getV1CategoriesResponse>(getGetV1CategoriesUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetV1CategoriesQueryKey = (params?: GetV1CategoriesParams,) => {
+    return [
+    `/api/v1/categories`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetV1CategoriesQueryOptions = <TData = Awaited<ReturnType<typeof getV1Categories>>, TError = V1BadRequestResponse | V1UnauthorizedResponse | V1ForbiddenResponse | V1RateLimitedResponse | V1CacheUnavailableResponse>(params: GetV1CategoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getV1Categories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetV1CategoriesQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getV1Categories>>> = ({ signal }) => getV1Categories(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getV1Categories>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetV1CategoriesQueryResult = NonNullable<Awaited<ReturnType<typeof getV1Categories>>>
+export type GetV1CategoriesQueryError = V1BadRequestResponse | V1UnauthorizedResponse | V1ForbiddenResponse | V1RateLimitedResponse | V1CacheUnavailableResponse
+
+
+
+export function useGetV1Categories<TData = Awaited<ReturnType<typeof getV1Categories>>, TError = V1BadRequestResponse | V1UnauthorizedResponse | V1ForbiddenResponse | V1RateLimitedResponse | V1CacheUnavailableResponse>(
+ params: GetV1CategoriesParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getV1Categories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetV1CategoriesQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

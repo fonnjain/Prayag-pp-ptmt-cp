@@ -443,11 +443,11 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
   const { data: orders, isLoading: ordersLoading } = useQuery({
     queryKey: ["ops-orders", fy, seg],
     queryFn: async () => {
-      const res = await fetch(`/api/ops/orders?fy=${fy}`);
+      const res = await fetch(`/api/ops/orders?fy=${fy}&segment=${encodeURIComponent(seg)}`);
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
-    enabled: seg !== "Plumbing",
+    enabled: true,
   });
 
   // Current month for management summary + plan summary
@@ -612,10 +612,34 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
       )}
 
       <OverviewPlanVsActual seg={seg} month={currentMonth} />
+      {data?.orderCoverage && (
+        <div className="mb-8 rounded-lg border border-amber-200 bg-amber-50/70 px-4 py-3">
+          <div className="flex items-start gap-2">
+            <AlertCircle size={14} className="mt-0.5 shrink-0 text-amber-700" />
+            <div className="text-xs text-amber-950">
+              <p className="font-semibold">
+                Order coverage · {data.orderCoverage.scope === "Combined" ? "PTMT + Plumbing" : data.orderCoverage.scope}
+              </p>
+              <p className="mt-1">
+                Included: <strong>{fmtQty(data.orderCoverage.included.qty)} pcs</strong> · {fmtCr(data.orderCoverage.included.value)}
+                {" · "}Excluded from both segments: <strong>{fmtQty(data.orderCoverage.excluded.qty)} pcs</strong> · {fmtCr(data.orderCoverage.excluded.value)}
+                {" · "}coverage by value: <strong>{data.orderCoverage.includedPct}%</strong>
+              </p>
+              <p className="mt-1 text-amber-800">{data.orderCoverage.note}</p>
+            </div>
+          </div>
+        </div>
+      )}
+      {data?.orderData && !data.orderData.complete && (
+        <div className="mb-6 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+          <p className="font-semibold">Order coverage is incomplete</p>
+          <p className="mt-1">{data.orderData.note}</p>
+        </div>
+      )}
       {/* KPIs — live data gated, seed KPIs always show */}
       {seg === "Plumbing" ? (
         <div className="mb-8 rounded-lg border border-emerald-200 bg-emerald-50/70 px-4 py-3 text-xs text-emerald-900">
-          Plumbing order and sales feeds are not part of the PTMT Order Sheet. Use the Plumbing plan and Plan vs Actual sections above for the current Plumbing operating view.
+          Plumbing order flow is classified from the shared Order Sheet TYPE mapping. Excluded rows such as C P and HDPE PIPE remain outside PTMT and Plumbing and are shown in the coverage notice above.
         </div>
       ) : (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -628,7 +652,7 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
           <>
             <KpiCard label="Order Value YTD" value={fmtCr(data?.orderValue ?? 0)}
               sub={`FY ${fy} · ${fmtQty(data?.orderQty ?? 0)} units`} color={AMBER} />
-            <KpiCard label="Order Qty YTD" value={fmtQty(data?.orderQty ?? 0)} sub="All product groups" />
+            <KpiCard label="Order Qty YTD" value={fmtQty(data?.orderQty ?? 0)} sub="Selected TYPE segment" />
           </>
         )}
         <KpiCard label="PTMT Sales (25-26)" value={fmtQty(SEED.sales_ptmt.fy_qty["2025-26"])}
@@ -1499,9 +1523,9 @@ function ManagementReportsPage({ seg }: { seg: "PTMT" | "Plumbing" | "Combined" 
 // ─── Orders Page ──────────────────────────────────────────────────────────────
 function OrdersPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Combined" }) {
   const { data, isLoading, error, refetch, isFetching } = useQuery({
-    queryKey: ["ops-orders", fy],
+    queryKey: ["ops-orders", fy, seg],
     queryFn: async () => {
-      const res = await fetch(`/api/ops/orders?fy=${fy}`);
+      const res = await fetch(`/api/ops/orders?fy=${fy}&segment=${encodeURIComponent(seg)}`);
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -1559,7 +1583,7 @@ function OrdersPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Combi
       {(seg === "Plumbing" || seg === "Combined") && (
         <div className="mb-5 flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2.5">
           <AlertCircle size={13} className="mt-0.5 shrink-0" />
-          <span>Orders data comes from the PTMT Order Sheet (Google Sheets). Plumbing orders are tracked separately and not yet in this view.</span>
+          <span>Figures use exact Order Sheet TYPE membership. C P and HDPE PIPE are excluded from both planning segments and remain visible in the coverage summary.</span>
         </div>
       )}
 
@@ -1574,6 +1598,28 @@ function OrdersPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Combi
             <KpiCard label="Documents" value={data.ytdDocs?.toLocaleString() ?? "—"} sub="Unique orders" />
             <KpiCard label="Customers" value={data.ytdCustomers?.toLocaleString() ?? "—"} sub="Unique customers" />
           </div>
+          {data.orderCoverage && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6 text-xs">
+              <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3">
+                <p className="font-semibold text-blue-900">Segment-covered order book</p>
+                <p className="mt-1 text-blue-800">{fmtQty(data.orderCoverage.included.qty)} pcs · {fmtCr(data.orderCoverage.included.value)} · {data.orderCoverage.includedPct}% by value</p>
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-4 py-3">
+                <p className="font-semibold text-amber-900">Excluded from PTMT + Plumbing</p>
+                <p className="mt-1 text-amber-800">{fmtQty(data.orderCoverage.excluded.qty)} pcs · {fmtCr(data.orderCoverage.excluded.value)}</p>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50/60 px-4 py-3">
+                <p className="font-semibold text-slate-900">Other planning segment</p>
+                <p className="mt-1 text-slate-700">{fmtQty(data.orderCoverage.otherSegment.qty)} pcs · {fmtCr(data.orderCoverage.otherSegment.value)}</p>
+              </div>
+            </div>
+          )}
+          {data.orderData && !data.orderData.complete && (
+            <div className="mb-6 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
+              <p className="font-semibold">Order coverage is incomplete</p>
+              <p className="mt-1">{data.orderData.note}</p>
+            </div>
+          )}
 
           {/* Monthly Value */}
           <div className="bg-card border border-card-border rounded-lg p-5 mb-5">

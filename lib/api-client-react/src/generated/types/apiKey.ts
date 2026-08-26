@@ -5,12 +5,27 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { ApiKeyDescription } from './apiKeyDescription';
+import type { ApiKeyConsumer } from './apiKeyConsumer';
+import type { ApiKeyScopesItem } from './apiKeyScopesItem';
+import type { ApiKeySegmentScopesItem } from './apiKeySegmentScopesItem';
 import type { ApiKeyLastUsedAt } from './apiKeyLastUsedAt';
 
 export interface ApiKey {
   id: number;
   name: string;
   description?: ApiKeyDescription;
+  /** The external consumer identity used to select the rate-limit policy. */
+  consumer: ApiKeyConsumer;
+  /**
+   * Capabilities granted to this key.
+   * @minItems 1
+   */
+  scopes: ApiKeyScopesItem[];
+  /**
+   * Plant segments this key may read or mutate.
+   * @minItems 1
+   */
+  segmentScopes: ApiKeySegmentScopesItem[];
   /** First 14 chars of the key for identification — safe to display */
   keyPrefix: string;
   isActive: boolean;

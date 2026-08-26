@@ -34,6 +34,7 @@
 - [Plumbing monitoring tab](plumbing-monitoring-tab.md) — /monitoring/plumbing route; header tabs PTMT/Plumbing; Plumbing sidebar shows Plan Overview only; live actuals not yet wired.
 - [Plumbing FG Stock structure](plumbing-fg-stock-structure.md) — Solvent items are in *-TRADING categories (not Solvent category); detect by item name; no SWR Solvent in file; col indices: A=code B=name C=cat R=NetStock.
 - [Plumbing pending order segments](plumbing-pending-order-segments.md) — filter must include PLUMBING+P+PL+AGRI; PL=SWR Selfit+UPVC SCH40; AGRI=AGRI Pipe; PPR items under PLUMBING are safe (never in item_master).
+- [Order Sheet TYPE classification](order-sheet-type-classification.md) — TYPE is authoritative exact membership; C P and HDPE PIPE remain excluded from both planning segments.
 - [Sheet tab name normalisation](tab-normalisation.md) — order sheets use "July" not "Jul"; buildTabMap()+normTab() in seasonality-engine.ts maps full names→FiscalMonth; fixes missing Jul data (10→12 months per FY).
 - [Plumbing buffer CV methodology](plumbing-buffer-cv.md) — our engine uses category-aggregate monthly CV; golden values use item-level weighted-average CV (per-SKU); category CV is always lower; SWR Pipe gap ~-1.0.
 - [PTMT buffer multiplier locks](ptmt-multiplier-locks.md) — AI engine drifts PTMT multipliers; lock with overrideMultiplier via PATCH; PTMT_TOLERANCE=0.001; 76/76 regression suite includes per-category Max/Min.
@@ -61,7 +62,9 @@
 - [Combined operations analytics](combined-ops-analytics.md) — compare PTMT demand and Plumbing execution side by side; never fabricate a cross-unit total.
 - [Browser auth and machine routes](auth-machine-route-boundary.md) — classify machine API-key paths before applying the shared browser session guard.
 - [Build commit provenance](build-commit-provenance.md) — production bundles need the commit SHA injected at build time because stripped containers have no .git metadata.
+- [Divergent line and pending exposure](divergent-line-pending-exposure.md) — the preservation branch is a content snapshot, and production had zero plan runs after c3e7dfd on 2026-08-25.
 - [Corrective capacity basis](corrective-capacity-basis.md) — weekday-only Cap/Day aligns with calendar Mon–Sat remaining days; p90 rank effects can still raise capacity.
 - [Live pending failure boundary](live-pending-failure-boundary.md) — corrective replans must fail on unavailable live pending reads, while valid zero/empty reads remain diagnostic results.
 - [Regression verifier authentication](regression-verifier-auth.md) — the CLI needs a valid existing admin account; bootstrap credentials may not match seeded accounts.
 - [Pending reconciliation drift](pending-reconciliation-drift.md) — hard-gate the item identity and residual; treat historical movement/clamp totals as warnings when live inputs drift.
+- [Manual plan parity boundary](manual-plan-parity.md) — aligning current pending does not prove parity; compare stock, pending-last-month, and buffer inputs before changing formulas or goldens.

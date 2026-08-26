@@ -20,6 +20,7 @@ import {
   type MonitoringConfig,
   type WarningThresholds,
   type ApiKey,
+  type CreateApiKeyRequest,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -85,6 +86,8 @@ function ApiKeysTab() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [consumer, setConsumer] = useState<"machine-analysis" | "mis" | "legacy">("machine-analysis");
+  const [segmentScopes, setSegmentScopes] = useState<"PTMT" | "Plumbing" | "both">("both");
 
   const [revealedKey, setRevealedKey] = useState<{ key: string; name: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -101,7 +104,13 @@ function ApiKeysTab() {
     e.preventDefault();
     if (!name.trim()) return;
     createKey.mutate(
-      { data: { name: name.trim(), description: description.trim() || undefined } },
+      { data: {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        consumer,
+        scopes: ["read"],
+        segmentScopes: segmentScopes === "both" ? ["PTMT", "Plumbing"] : [segmentScopes],
+      } satisfies CreateApiKeyRequest },
       {
         onSuccess: (res) => {
           const r = res as unknown as ApiKey & { key: string };
@@ -158,7 +167,7 @@ function ApiKeysTab() {
             <KeyRound className="h-5 w-5" /> API Key Management
           </CardTitle>
           <CardDescription>
-            Issue API keys for external systems (e.g. prayag-plant.com) to send machine data to this platform.
+            Issue scoped read-only keys for machine analysis and MIS consumers.
             Use <code className="text-xs bg-muted px-1 py-0.5 rounded">Authorization: Bearer &lt;key&gt;</code> in request headers.
           </CardDescription>
         </CardHeader>
@@ -167,7 +176,7 @@ function ApiKeysTab() {
           {/* Create form */}
           <form onSubmit={handleCreate} className="bg-muted/30 rounded-lg border border-border/50 p-4 space-y-3">
             <div className="text-sm font-medium">Issue New Key</div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
               <div className="space-y-1.5">
                 <Label htmlFor="kname">Label <span className="text-red-500">*</span></Label>
                 <Input id="kname" placeholder="e.g. prayag-plant.com" value={name} onChange={e => setName(e.target.value)} required />
@@ -175,6 +184,22 @@ function ApiKeysTab() {
               <div className="space-y-1.5">
                 <Label htmlFor="kdesc">Description (optional)</Label>
                 <Input id="kdesc" placeholder="Machine data ingestion" value={description} onChange={e => setDescription(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="kconsumer">Consumer</Label>
+                <select id="kconsumer" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={consumer} onChange={e => setConsumer(e.target.value as typeof consumer)}>
+                  <option value="machine-analysis">Machine analysis</option>
+                  <option value="mis">MIS</option>
+                  <option value="legacy">Legacy</option>
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="kscope">Segment scope</Label>
+                <select id="kscope" className="h-10 w-full rounded-md border bg-background px-3 text-sm" value={segmentScopes} onChange={e => setSegmentScopes(e.target.value as typeof segmentScopes)}>
+                  <option value="both">PTMT + Plumbing</option>
+                  <option value="PTMT">PTMT only</option>
+                  <option value="Plumbing">Plumbing only</option>
+                </select>
               </div>
               <Button type="submit" disabled={createKey.isPending || !name.trim()} className="gap-2">
                 <Plus className="h-4 w-4" /> {createKey.isPending ? "Generating…" : "Generate Key"}
@@ -197,6 +222,7 @@ function ApiKeysTab() {
                   <TableRow>
                     <TableHead>Label</TableHead>
                     <TableHead>Key Prefix</TableHead>
+                    <TableHead>Consumer / Scope</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Last Used</TableHead>
@@ -212,6 +238,10 @@ function ApiKeysTab() {
                       </TableCell>
                       <TableCell>
                         <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono">{k.keyPrefix}…</code>
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-xs font-medium">{k.consumer ?? "legacy"}</div>
+                        <div className="text-xs text-muted-foreground">{(k.segmentScopes ?? ["PTMT", "Plumbing"]).join(" · ")}</div>
                       </TableCell>
                       <TableCell>
                         <Badge variant={k.isActive ? "default" : "secondary"} className={k.isActive ? "bg-emerald-500/15 text-emerald-700 border-emerald-500/30" : ""}>

@@ -64,7 +64,7 @@ export function createApp(): Express {
     const isHealth = req.path === "/" || req.path === "/healthz";
     const isApiKeyRoute =
       req.path === "/plant-live/records" ||
-      (req.method === "PATCH" && /^\/corrective\/runs\/[^/]+$/.test(req.path));
+      (req.method === "GET" && /^\/v1\/(plan\/items|calendar|summary|categories)$/.test(req.path));
     if (isPublicAuth || isHealth || isApiKeyRoute) {
       next();
       return;
