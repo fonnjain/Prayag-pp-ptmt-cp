@@ -29,6 +29,13 @@ CREATE TABLE IF NOT EXISTS pending_read_baselines (
   created_at                     TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
+-- The historical observation below is deliberately unreproducible: it has no
+-- persisted capture and therefore no valid exclusion fingerprint. Production
+-- may already have this table with fingerprint marked NOT NULL, so normalize
+-- that older shape before the guarded insert can run.
+ALTER TABLE pending_read_baselines
+  ALTER COLUMN fingerprint DROP NOT NULL;
+
 CREATE INDEX IF NOT EXISTS pending_read_baselines_segment_status_idx
   ON pending_read_baselines(segment, source_role, status);
 

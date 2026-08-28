@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { CapacityMonthlyStats, CategoryCapacity } from "@workspace/db";
-import { deriveMonthlyCapacitySignals, normalizeCapacityComparison } from "./capacity-engine";
+import { canonicalSuggestedCapacity, deriveMonthlyCapacitySignals, normalizeCapacityComparison } from "./capacity-engine";
 import { countWorkingDaysInWeek } from "./working-days";
 import { runPtmtPass2, selectPtmtCapacityWindow } from "./ptmt-pass2-engine";
 
@@ -47,6 +47,22 @@ test("PTMT selects recent p90 for endpoint drift and latest-month recovery", () 
     { month: "2026-08", startDate: "2026-08-01", endDate: "2026-08-31", daysObserved: 10, meanPerDay: 100, p90PerDay: 110, bestDay: 130 },
   ];
   assert.equal(selectPtmtCapacityWindow(latestAboveFull).selectedWindow, "recent90d");
+});
+
+test("recomputed PTMT suggestion stores the selected window p90", () => {
+  const row = capacity("Cistern & Seat Cover", 1120, 1200, 0);
+  row.comparisonJson!.latestMonthlyP90 = 1240;
+
+  assert.equal(canonicalSuggestedCapacity("PTMT", row), 1200);
+  assert.equal(selectPtmtCapacityWindow({
+    ...row,
+    suggestedCapacity: canonicalSuggestedCapacity("PTMT", row),
+  }).capacityPerDay, 1200);
+  assert.equal(canonicalSuggestedCapacity("Plumbing", {
+    ...row,
+    p90PerDay: 0,
+    suggestedCapacity: 0,
+  }), 0);
 });
 
 test("monthly capacity signals expose recovery and zero-production months", () => {

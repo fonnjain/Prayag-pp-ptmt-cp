@@ -5,6 +5,7 @@ import { fetchDailyActuals } from "./plant-ingestion";
 import { buildPlanItems } from "../routes/plan";
 import { logger } from "./logger";
 import { countWorkingDaysInMonth } from "./working-days";
+import { selectPtmtCapacityWindow } from "./ptmt-pass2-engine";
 
 const THIN_DATA_THRESHOLD = 10;
 
@@ -165,6 +166,23 @@ export function normalizeCapacityComparison(comparison: CapacityComparison | nul
 }
 
 /**
+ * Return the capacity value that should be persisted as the suggestion.
+ *
+ * PTMT Pass 2 uses the adaptive window selector, so its selected p90 is the
+ * canonical suggestion after recomputation. Plumbing has no adaptive Pass 2
+ * selector yet and continues to use its full-window/seed value.
+ */
+export function canonicalSuggestedCapacity(
+  segment: string,
+  row: Pick<CategoryCapacity, "category" | "p90PerDay" | "suggestedCapacity" | "overrideCapacity" | "comparisonJson">,
+): number {
+  if (segment === "PTMT") {
+    return selectPtmtCapacityWindow(row).selectedP90;
+  }
+  return row.p90PerDay > 0 ? row.p90PerDay : row.suggestedCapacity;
+}
+
+/**
  * Seed initial capacity rows for both PTMT and Plumbing segments.
  * Idempotent per category — skips rows that already exist.
  */
@@ -318,7 +336,13 @@ export async function computeCategoryCapacity(trailingDays = 90, segment = "PTMT
     const planNeedsPerDay = catPlanNeeds.get(category) ?? existing?.planNeedsPerDay ?? 0;
     const workingDaysPerWeek = existing?.workingDaysPerWeek ?? 6;
     const overrideCapacity = existing?.overrideCapacity ?? null;
-    const suggestedCapacity = computedP90 > 0 ? computedP90 : (existing?.suggestedCapacity ?? 0);
+    const suggestedCapacity = canonicalSuggestedCapacity(segment, {
+      category,
+      p90PerDay: computedP90,
+      suggestedCapacity: existing?.suggestedCapacity ?? 0,
+      overrideCapacity,
+      comparisonJson: comparison,
+    });
 
     const values = {
       segment,

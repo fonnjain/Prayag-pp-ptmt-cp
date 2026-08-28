@@ -91,3 +91,4 @@
 - [Frozen export lineage](frozen-export-lineage.md) — exports must use finalized persisted runs; retained temporary fields can backfill legacy production runs without rebuilding live inputs.
 - [Live pending evidence boundary](live-pending-evidence-boundary.md) — validation reads live pending without persisting the rejected source rows, so later sheet pulls cannot reconstruct an earlier exclusion ledger.
 - [Database migration runner](db-migration-runner.md) — incremental schema changes use numbered SQL plus startup migration, not interactive schema push.
+- [Legacy corrective provenance](legacy-corrective-provenance.md) — old corrective targets may lack frozen input snapshots, so later Temporary Plans need explicit source-state reconciliation.
