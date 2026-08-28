@@ -65,6 +65,12 @@ export const correctivePlanRunsTable = pgTable("corrective_plan_runs", {
   // deleting the run. Used to protect regression-suite golden runs from accidental
   // removal by the plant. Toggle via PATCH /corrective/runs/:id/pin.
   pinned: boolean("pinned").notNull().default(false),
+  temporaryCorrectiveTotal: real("temporary_corrective_total").notNull().default(0),
+  correctiveProductionTotal: real("corrective_production_total").notNull().default(0),
+  cannotBeMadeTotal: real("cannot_be_made_total").notNull().default(0),
+  notScheduledTotal: real("not_scheduled_total").notNull().default(0),
+  unfulfillableTotal: real("unfulfillable_total").notNull().default(0),
+  feasibilityJson: jsonb("feasibility_json").$type<Record<string, unknown> | null>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -100,6 +106,11 @@ export const correctivePlanItemsTable = pgTable("corrective_plan_items", {
   w2Rev: real("w2_rev").notNull().default(0),
   w3Rev: real("w3_rev").notNull().default(0),
   w4Rev: real("w4_rev").notNull().default(0),
+  temporaryCorrective: real("temporary_corrective").notNull().default(0),
+  correctiveProduction: real("corrective_production").notNull().default(0),
+  cannotBeMade: real("cannot_be_made").notNull().default(0),
+  cannotBeMadeReason: text("cannot_be_made_reason"),
+  feasibilityStatus: text("feasibility_status").notNull().default("not-scheduled"),
   status: text("status").notNull().default("on-plan"),
   isNewItem: integer("is_new_item").notNull().default(0),
 });

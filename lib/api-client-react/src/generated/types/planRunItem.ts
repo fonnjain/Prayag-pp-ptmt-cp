@@ -4,6 +4,11 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { PlanRunItemBufferReq } from './planRunItemBufferReq';
+import type { PlanRunItemMaterial } from './planRunItemMaterial';
+import type { PlanRunItemWeightKg } from './planRunItemWeightKg';
+import type { PlanRunItemUrgencyRank } from './planRunItemUrgencyRank';
+import type { PlanRunItemReleaseWeek } from './planRunItemReleaseWeek';
 
 export interface PlanRunItem {
   itemCode: string;
@@ -13,7 +18,25 @@ export interface PlanRunItem {
   stock: number;
   pendingCurrent: number;
   pendingLastMonth: number;
-  bufferReq: number;
+  bufferReq: PlanRunItemBufferReq;
   minProduction: number;
+  /** Frozen demand/owed quantity before machine fitting. */
+  demandPlan: number;
   productionPlan: number;
+  /** Frozen Temporary Plan demand before PTMT capacity fitting. */
+  temporaryPlan: number;
+  /** Temporary demand remaining after all four weekly category capacities are consumed. */
+  cannotBeMade: number;
+  feasibilityStatus: 'fitted' | 'not-scheduled' | 'unfulfillable';
+  dummy: number;
+  orders: number;
+  buffer: number;
+  material?: PlanRunItemMaterial;
+  weightKg?: PlanRunItemWeightKg;
+  urgencyRank?: PlanRunItemUrgencyRank;
+  releaseWeek?: PlanRunItemReleaseWeek;
+  w1?: number;
+  w2?: number;
+  w3?: number;
+  w4?: number;
 }

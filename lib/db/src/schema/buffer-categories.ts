@@ -1,11 +1,11 @@
-import { pgTable, serial, text, real, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, real, timestamp, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
 export const bufferCategoriesTable = pgTable("buffer_categories", {
   id: serial("id").primaryKey(),
   segment: text("segment").notNull().default("PTMT"),
-  name: text("name").notNull().unique(),
+  name: text("name").notNull(),
   multiplier: real("multiplier").notNull().default(1),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
   suggestedMultiplier: real("suggested_multiplier"),
@@ -22,7 +22,7 @@ export const bufferCategoriesTable = pgTable("buffer_categories", {
   dataQuality: text("data_quality"),
   zScore: real("z_score"),
   reliabilityFlag: text("reliability_flag"),
-});
+}, (table) => [unique("buffer_categories_segment_name_unique").on(table.segment, table.name)]);
 
 export const insertBufferCategorySchema = createInsertSchema(bufferCategoriesTable).omit({
   id: true,

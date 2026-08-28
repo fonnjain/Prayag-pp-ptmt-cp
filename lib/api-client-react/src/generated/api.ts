@@ -22,6 +22,10 @@ import type {
   AiAnalysisDetail,
   AiAnalysisSummary,
   AiPlantAnalysisDetail,
+  AlertActionResponse,
+  AlertHistoryResponse,
+  AlertThresholdActionResponse,
+  AlertsResponse,
   AnalyzeAiPlantBody,
   ApiKey,
   ApiKeyWithSecret,
@@ -47,9 +51,14 @@ import type {
   ExportPlanExcelParams,
   ExportPlanPdfParams,
   ExportPlantPdfParams,
+  ExportTemporaryPlanExcelParams,
   ExportWeeklyReleaseExcelParams,
   FinalizePlanRunRequest,
   FollowupAiPlantAnalysisBody,
+  GetAlertsHistoryParams,
+  GetAlertsParams,
+  GetMasterProductCoverage200,
+  GetMasterProductSourceCategories200,
   GetMonitoringActionsParams,
   GetMonitoringBacklogParams,
   GetMonitoringConfigParams,
@@ -83,6 +92,8 @@ import type {
   ListCategoryCapacitiesParams,
   ListCorrectiveRunsParams,
   ListIdealHoursOverridesParams,
+  ListMasterProductCategoryMappings200Item,
+  ListMasterProductsParams,
   ListPlanItemsParams,
   ListPlanRunsParams,
   ListPlumbingMachinesParams,
@@ -96,6 +107,7 @@ import type {
   MonitoringQuality,
   MonitoringVelocity,
   MonitoringWarnings,
+  MuteAlertRequest,
   OkResult,
   PinCorrectiveRun200,
   PinCorrectiveRun404,
@@ -121,12 +133,20 @@ import type {
   PlantWeeklySummary,
   PlumbingMachine,
   PlumbingMachineUpdate,
+  PlumbingScheduleResponse,
+  ProductListResponse,
+  ProductReclassificationInput,
   RecomputeCategoryCapacityParams,
   RecomputeSeasonalityParams,
+  ResetAlertThresholdBody,
+  ScheduleRequest,
   SeasonalityRecomputeResult,
+  SyncMasterProducts200,
   SyncSource,
+  UpdateAlertThresholdRequest,
   UploadKind,
   UploadedFile,
+  UpsertMasterProductCategoryMappingBody,
   V1BadRequestResponse,
   V1CacheUnavailableResponse,
   V1CalendarResponse,
@@ -1302,6 +1322,668 @@ export function useGetSyncStatus<TData = Awaited<ReturnType<typeof getSyncStatus
 
 
 /**
+ * @summary Read the upstream catalogue vocabulary without mutating local data
+ */
+export type getMasterProductSourceCategoriesResponse200 = {
+  data: GetMasterProductSourceCategories200
+  status: 200
+}
+
+export type getMasterProductSourceCategoriesResponse502 = {
+  data: void
+  status: 502
+}
+    
+export type getMasterProductSourceCategoriesResponseSuccess = (getMasterProductSourceCategoriesResponse200) & {
+  headers: Headers;
+};
+export type getMasterProductSourceCategoriesResponseError = (getMasterProductSourceCategoriesResponse502) & {
+  headers: Headers;
+};
+
+export type getMasterProductSourceCategoriesResponse = (getMasterProductSourceCategoriesResponseSuccess | getMasterProductSourceCategoriesResponseError)
+
+export const getGetMasterProductSourceCategoriesUrl = () => {
+
+
+  
+
+  return `/api/master-products/source-categories`
+}
+
+export const getMasterProductSourceCategories = async ( options?: RequestInit): Promise<getMasterProductSourceCategoriesResponse> => {
+  
+  return customFetch<getMasterProductSourceCategoriesResponse>(getGetMasterProductSourceCategoriesUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetMasterProductSourceCategoriesQueryKey = () => {
+    return [
+    `/api/master-products/source-categories`
+    ] as const;
+    }
+
+    
+export const getGetMasterProductSourceCategoriesQueryOptions = <TData = Awaited<ReturnType<typeof getMasterProductSourceCategories>>, TError = void>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMasterProductSourceCategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMasterProductSourceCategoriesQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMasterProductSourceCategories>>> = ({ signal }) => getMasterProductSourceCategories({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMasterProductSourceCategories>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMasterProductSourceCategoriesQueryResult = NonNullable<Awaited<ReturnType<typeof getMasterProductSourceCategories>>>
+export type GetMasterProductSourceCategoriesQueryError = void
+
+
+/**
+ * @summary Read the upstream catalogue vocabulary without mutating local data
+ */
+
+export function useGetMasterProductSourceCategories<TData = Awaited<ReturnType<typeof getMasterProductSourceCategories>>, TError = void>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMasterProductSourceCategories>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMasterProductSourceCategoriesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
+ * @summary List reviewed many-to-one catalogue category mappings
+ */
+export type listMasterProductCategoryMappingsResponse200 = {
+  data: ListMasterProductCategoryMappings200Item[]
+  status: 200
+}
+    
+export type listMasterProductCategoryMappingsResponseSuccess = (listMasterProductCategoryMappingsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listMasterProductCategoryMappingsResponse = (listMasterProductCategoryMappingsResponseSuccess)
+
+export const getListMasterProductCategoryMappingsUrl = () => {
+
+
+  
+
+  return `/api/master-products/category-mappings`
+}
+
+export const listMasterProductCategoryMappings = async ( options?: RequestInit): Promise<listMasterProductCategoryMappingsResponse> => {
+  
+  return customFetch<listMasterProductCategoryMappingsResponse>(getListMasterProductCategoryMappingsUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getListMasterProductCategoryMappingsQueryKey = () => {
+    return [
+    `/api/master-products/category-mappings`
+    ] as const;
+    }
+
+    
+export const getListMasterProductCategoryMappingsQueryOptions = <TData = Awaited<ReturnType<typeof listMasterProductCategoryMappings>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMasterProductCategoryMappings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMasterProductCategoryMappingsQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMasterProductCategoryMappings>>> = ({ signal }) => listMasterProductCategoryMappings({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMasterProductCategoryMappings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListMasterProductCategoryMappingsQueryResult = NonNullable<Awaited<ReturnType<typeof listMasterProductCategoryMappings>>>
+export type ListMasterProductCategoryMappingsQueryError = unknown
+
+
+/**
+ * @summary List reviewed many-to-one catalogue category mappings
+ */
+
+export function useListMasterProductCategoryMappings<TData = Awaited<ReturnType<typeof listMasterProductCategoryMappings>>, TError = unknown>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMasterProductCategoryMappings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListMasterProductCategoryMappingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
+ * @summary Save a reviewed catalogue category mapping
+ */
+export type upsertMasterProductCategoryMappingResponse200 = {
+  data: void
+  status: 200
+}
+
+export type upsertMasterProductCategoryMappingResponse400 = {
+  data: void
+  status: 400
+}
+    
+export type upsertMasterProductCategoryMappingResponseSuccess = (upsertMasterProductCategoryMappingResponse200) & {
+  headers: Headers;
+};
+export type upsertMasterProductCategoryMappingResponseError = (upsertMasterProductCategoryMappingResponse400) & {
+  headers: Headers;
+};
+
+export type upsertMasterProductCategoryMappingResponse = (upsertMasterProductCategoryMappingResponseSuccess | upsertMasterProductCategoryMappingResponseError)
+
+export const getUpsertMasterProductCategoryMappingUrl = () => {
+
+
+  
+
+  return `/api/master-products/category-mappings`
+}
+
+export const upsertMasterProductCategoryMapping = async (upsertMasterProductCategoryMappingBody: UpsertMasterProductCategoryMappingBody, options?: RequestInit): Promise<upsertMasterProductCategoryMappingResponse> => {
+  
+  return customFetch<upsertMasterProductCategoryMappingResponse>(getUpsertMasterProductCategoryMappingUrl(),
+  {      
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      upsertMasterProductCategoryMappingBody,)
+  }
+);}
+
+
+
+
+export const getUpsertMasterProductCategoryMappingMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertMasterProductCategoryMapping>>, TError,{data: UpsertMasterProductCategoryMappingBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof upsertMasterProductCategoryMapping>>, TError,{data: UpsertMasterProductCategoryMappingBody}, TContext> => {
+
+const mutationKey = ['upsertMasterProductCategoryMapping'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof upsertMasterProductCategoryMapping>>, {data: UpsertMasterProductCategoryMappingBody}> = (props) => {
+          const {data} = props ?? {};
+
+          return  upsertMasterProductCategoryMapping(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpsertMasterProductCategoryMappingMutationResult = NonNullable<Awaited<ReturnType<typeof upsertMasterProductCategoryMapping>>>
+    export type UpsertMasterProductCategoryMappingMutationBody = UpsertMasterProductCategoryMappingBody
+    export type UpsertMasterProductCategoryMappingMutationError = void
+
+    /**
+ * @summary Save a reviewed catalogue category mapping
+ */
+export const useUpsertMasterProductCategoryMapping = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof upsertMasterProductCategoryMapping>>, TError,{data: UpsertMasterProductCategoryMappingBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof upsertMasterProductCategoryMapping>>,
+        TError,
+        {data: UpsertMasterProductCategoryMappingBody},
+        TContext
+      > => {
+
+      const mutationOptions = getUpsertMasterProductCategoryMappingMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+/**
+ * @summary Sync the maintained catalogue copy from Prayag-Competition-Analysis
+ */
+export type syncMasterProductsResponse200 = {
+  data: SyncMasterProducts200
+  status: 200
+}
+
+export type syncMasterProductsResponse502 = {
+  data: void
+  status: 502
+}
+    
+export type syncMasterProductsResponseSuccess = (syncMasterProductsResponse200) & {
+  headers: Headers;
+};
+export type syncMasterProductsResponseError = (syncMasterProductsResponse502) & {
+  headers: Headers;
+};
+
+export type syncMasterProductsResponse = (syncMasterProductsResponseSuccess | syncMasterProductsResponseError)
+
+export const getSyncMasterProductsUrl = () => {
+
+
+  
+
+  return `/api/master-products/sync`
+}
+
+export const syncMasterProducts = async ( options?: RequestInit): Promise<syncMasterProductsResponse> => {
+  
+  return customFetch<syncMasterProductsResponse>(getSyncMasterProductsUrl(),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+
+
+
+
+export const getSyncMasterProductsMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncMasterProducts>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof syncMasterProducts>>, TError,void, TContext> => {
+
+const mutationKey = ['syncMasterProducts'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof syncMasterProducts>>, void> = () => {
+          
+
+          return  syncMasterProducts(requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SyncMasterProductsMutationResult = NonNullable<Awaited<ReturnType<typeof syncMasterProducts>>>
+    
+    export type SyncMasterProductsMutationError = void
+
+    /**
+ * @summary Sync the maintained catalogue copy from Prayag-Competition-Analysis
+ */
+export const useSyncMasterProducts = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof syncMasterProducts>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof syncMasterProducts>>,
+        TError,
+        void,
+        TContext
+      > => {
+
+      const mutationOptions = getSyncMasterProductsMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+/**
+ * @summary Compare active catalogue codes with the existing item master
+ */
+export type getMasterProductCoverageResponse200 = {
+  data: GetMasterProductCoverage200
+  status: 200
+}
+    
+export type getMasterProductCoverageResponseSuccess = (getMasterProductCoverageResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getMasterProductCoverageResponse = (getMasterProductCoverageResponseSuccess)
+
+export const getGetMasterProductCoverageUrl = () => {
+
+
+  
+
+  return `/api/master-products/coverage`
+}
+
+export const getMasterProductCoverage = async ( options?: RequestInit): Promise<getMasterProductCoverageResponse> => {
+  
+  return customFetch<getMasterProductCoverageResponse>(getGetMasterProductCoverageUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetMasterProductCoverageQueryKey = () => {
+    return [
+    `/api/master-products/coverage`
+    ] as const;
+    }
+
+    
+export const getGetMasterProductCoverageQueryOptions = <TData = Awaited<ReturnType<typeof getMasterProductCoverage>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMasterProductCoverage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMasterProductCoverageQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMasterProductCoverage>>> = ({ signal }) => getMasterProductCoverage({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMasterProductCoverage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMasterProductCoverageQueryResult = NonNullable<Awaited<ReturnType<typeof getMasterProductCoverage>>>
+export type GetMasterProductCoverageQueryError = unknown
+
+
+/**
+ * @summary Compare active catalogue codes with the existing item master
+ */
+
+export function useGetMasterProductCoverage<TData = Awaited<ReturnType<typeof getMasterProductCoverage>>, TError = unknown>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMasterProductCoverage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMasterProductCoverageQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
+ * @summary List the complete product review roster for a planning segment
+ */
+export type listMasterProductsResponse200 = {
+  data: ProductListResponse
+  status: 200
+}
+
+export type listMasterProductsResponse400 = {
+  data: void
+  status: 400
+}
+
+export type listMasterProductsResponse500 = {
+  data: void
+  status: 500
+}
+    
+export type listMasterProductsResponseSuccess = (listMasterProductsResponse200) & {
+  headers: Headers;
+};
+export type listMasterProductsResponseError = (listMasterProductsResponse400 | listMasterProductsResponse500) & {
+  headers: Headers;
+};
+
+export type listMasterProductsResponse = (listMasterProductsResponseSuccess | listMasterProductsResponseError)
+
+export const getListMasterProductsUrl = (params?: ListMasterProductsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/master-products/products?${stringifiedParams}` : `/api/master-products/products`
+}
+
+export const listMasterProducts = async (params?: ListMasterProductsParams, options?: RequestInit): Promise<listMasterProductsResponse> => {
+  
+  return customFetch<listMasterProductsResponse>(getListMasterProductsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getListMasterProductsQueryKey = (params?: ListMasterProductsParams,) => {
+    return [
+    `/api/master-products/products`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getListMasterProductsQueryOptions = <TData = Awaited<ReturnType<typeof listMasterProducts>>, TError = void>(params?: ListMasterProductsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMasterProducts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListMasterProductsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listMasterProducts>>> = ({ signal }) => listMasterProducts(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listMasterProducts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListMasterProductsQueryResult = NonNullable<Awaited<ReturnType<typeof listMasterProducts>>>
+export type ListMasterProductsQueryError = void
+
+
+/**
+ * @summary List the complete product review roster for a planning segment
+ */
+
+export function useListMasterProducts<TData = Awaited<ReturnType<typeof listMasterProducts>>, TError = void>(
+ params?: ListMasterProductsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listMasterProducts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListMasterProductsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
+ * @summary Reclassify a planning-roster product with an audit reason
+ */
+export type reclassifyMasterProductResponse200 = {
+  data: void
+  status: 200
+}
+
+export type reclassifyMasterProductResponse400 = {
+  data: void
+  status: 400
+}
+
+export type reclassifyMasterProductResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type reclassifyMasterProductResponseSuccess = (reclassifyMasterProductResponse200) & {
+  headers: Headers;
+};
+export type reclassifyMasterProductResponseError = (reclassifyMasterProductResponse400 | reclassifyMasterProductResponse404) & {
+  headers: Headers;
+};
+
+export type reclassifyMasterProductResponse = (reclassifyMasterProductResponseSuccess | reclassifyMasterProductResponseError)
+
+export const getReclassifyMasterProductUrl = (itemCode: string,
+    colour: string,) => {
+
+
+  
+
+  return `/api/master-products/products/${itemCode}/${colour}`
+}
+
+export const reclassifyMasterProduct = async (itemCode: string,
+    colour: string,
+    productReclassificationInput: ProductReclassificationInput, options?: RequestInit): Promise<reclassifyMasterProductResponse> => {
+  
+  return customFetch<reclassifyMasterProductResponse>(getReclassifyMasterProductUrl(itemCode,colour),
+  {      
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      productReclassificationInput,)
+  }
+);}
+
+
+
+
+export const getReclassifyMasterProductMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reclassifyMasterProduct>>, TError,{itemCode: string;colour: string;data: ProductReclassificationInput}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reclassifyMasterProduct>>, TError,{itemCode: string;colour: string;data: ProductReclassificationInput}, TContext> => {
+
+const mutationKey = ['reclassifyMasterProduct'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reclassifyMasterProduct>>, {itemCode: string;colour: string;data: ProductReclassificationInput}> = (props) => {
+          const {itemCode,colour,data} = props ?? {};
+
+          return  reclassifyMasterProduct(itemCode,colour,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReclassifyMasterProductMutationResult = NonNullable<Awaited<ReturnType<typeof reclassifyMasterProduct>>>
+    export type ReclassifyMasterProductMutationBody = ProductReclassificationInput
+    export type ReclassifyMasterProductMutationError = void
+
+    /**
+ * @summary Reclassify a planning-roster product with an audit reason
+ */
+export const useReclassifyMasterProduct = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reclassifyMasterProduct>>, TError,{itemCode: string;colour: string;data: ProductReclassificationInput}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reclassifyMasterProduct>>,
+        TError,
+        {itemCode: string;colour: string;data: ProductReclassificationInput},
+        TContext
+      > => {
+
+      const mutationOptions = getReclassifyMasterProductMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+/**
  * @summary Run the weekly corrective re-plan engine
  */
 export type runCorrectiveReplanResponse200 = {
@@ -1314,6 +1996,11 @@ export type runCorrectiveReplanResponse400 = {
   status: 400
 }
 
+export type runCorrectiveReplanResponse422 = {
+  data: void
+  status: 422
+}
+
 export type runCorrectiveReplanResponse500 = {
   data: void
   status: 500
@@ -1322,7 +2009,7 @@ export type runCorrectiveReplanResponse500 = {
 export type runCorrectiveReplanResponseSuccess = (runCorrectiveReplanResponse200) & {
   headers: Headers;
 };
-export type runCorrectiveReplanResponseError = (runCorrectiveReplanResponse400 | runCorrectiveReplanResponse500) & {
+export type runCorrectiveReplanResponseError = (runCorrectiveReplanResponse400 | runCorrectiveReplanResponse422 | runCorrectiveReplanResponse500) & {
   headers: Headers;
 };
 
@@ -2935,6 +3622,99 @@ export function useExportPlanExcel<TData = Awaited<ReturnType<typeof exportPlanE
 
 
 
+/**
+ * Export-only demand-true Temporary Plan from the latest finalized temporary run. It is the demand source before machine capacity is applied.
+ */
+export type exportTemporaryPlanExcelResponse200 = {
+  data: Blob
+  status: 200
+}
+    
+export type exportTemporaryPlanExcelResponseSuccess = (exportTemporaryPlanExcelResponse200) & {
+  headers: Headers;
+};
+;
+
+export type exportTemporaryPlanExcelResponse = (exportTemporaryPlanExcelResponseSuccess)
+
+export const getExportTemporaryPlanExcelUrl = (params: ExportTemporaryPlanExcelParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/plan/export/temporary-excel?${stringifiedParams}` : `/api/plan/export/temporary-excel`
+}
+
+export const exportTemporaryPlanExcel = async (params: ExportTemporaryPlanExcelParams, options?: RequestInit): Promise<exportTemporaryPlanExcelResponse> => {
+  
+  return customFetch<exportTemporaryPlanExcelResponse>(getExportTemporaryPlanExcelUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getExportTemporaryPlanExcelQueryKey = (params?: ExportTemporaryPlanExcelParams,) => {
+    return [
+    `/api/plan/export/temporary-excel`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getExportTemporaryPlanExcelQueryOptions = <TData = Awaited<ReturnType<typeof exportTemporaryPlanExcel>>, TError = unknown>(params: ExportTemporaryPlanExcelParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportTemporaryPlanExcel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportTemporaryPlanExcelQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportTemporaryPlanExcel>>> = ({ signal }) => exportTemporaryPlanExcel(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportTemporaryPlanExcel>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportTemporaryPlanExcelQueryResult = NonNullable<Awaited<ReturnType<typeof exportTemporaryPlanExcel>>>
+export type ExportTemporaryPlanExcelQueryError = unknown
+
+
+
+export function useExportTemporaryPlanExcel<TData = Awaited<ReturnType<typeof exportTemporaryPlanExcel>>, TError = unknown>(
+ params: ExportTemporaryPlanExcelParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportTemporaryPlanExcel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportTemporaryPlanExcelQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
 export type exportPlanPdfResponse200 = {
   data: Blob
   status: 200
@@ -3828,6 +4608,283 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(mutationOptions);
     }
     
+export type getPlanRunScheduleRequestResponse200 = {
+  data: ScheduleRequest
+  status: 200
+}
+
+export type getPlanRunScheduleRequestResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type getPlanRunScheduleRequestResponseSuccess = (getPlanRunScheduleRequestResponse200) & {
+  headers: Headers;
+};
+export type getPlanRunScheduleRequestResponseError = (getPlanRunScheduleRequestResponse404) & {
+  headers: Headers;
+};
+
+export type getPlanRunScheduleRequestResponse = (getPlanRunScheduleRequestResponseSuccess | getPlanRunScheduleRequestResponseError)
+
+export const getGetPlanRunScheduleRequestUrl = (id: number,) => {
+
+
+  
+
+  return `/api/plan/runs/${id}/schedule-request`
+}
+
+export const getPlanRunScheduleRequest = async (id: number, options?: RequestInit): Promise<getPlanRunScheduleRequestResponse> => {
+  
+  return customFetch<getPlanRunScheduleRequestResponse>(getGetPlanRunScheduleRequestUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetPlanRunScheduleRequestQueryKey = (id?: number,) => {
+    return [
+    `/api/plan/runs/${id}/schedule-request`
+    ] as const;
+    }
+
+    
+export const getGetPlanRunScheduleRequestQueryOptions = <TData = Awaited<ReturnType<typeof getPlanRunScheduleRequest>>, TError = void>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlanRunScheduleRequest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPlanRunScheduleRequestQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlanRunScheduleRequest>>> = ({ signal }) => getPlanRunScheduleRequest(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPlanRunScheduleRequest>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPlanRunScheduleRequestQueryResult = NonNullable<Awaited<ReturnType<typeof getPlanRunScheduleRequest>>>
+export type GetPlanRunScheduleRequestQueryError = void
+
+
+
+export function useGetPlanRunScheduleRequest<TData = Awaited<ReturnType<typeof getPlanRunScheduleRequest>>, TError = void>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPlanRunScheduleRequest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPlanRunScheduleRequestQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
+ * Run a finalized Plumbing plan through the external pipe and fitting machine scheduler.
+ */
+export type schedulePlumbingPlanRunResponse200 = {
+  data: PlumbingScheduleResponse
+  status: 200
+}
+
+export type schedulePlumbingPlanRunResponse404 = {
+  data: void
+  status: 404
+}
+
+export type schedulePlumbingPlanRunResponse422 = {
+  data: void
+  status: 422
+}
+
+export type schedulePlumbingPlanRunResponse502 = {
+  data: void
+  status: 502
+}
+    
+export type schedulePlumbingPlanRunResponseSuccess = (schedulePlumbingPlanRunResponse200) & {
+  headers: Headers;
+};
+export type schedulePlumbingPlanRunResponseError = (schedulePlumbingPlanRunResponse404 | schedulePlumbingPlanRunResponse422 | schedulePlumbingPlanRunResponse502) & {
+  headers: Headers;
+};
+
+export type schedulePlumbingPlanRunResponse = (schedulePlumbingPlanRunResponseSuccess | schedulePlumbingPlanRunResponseError)
+
+export const getSchedulePlumbingPlanRunUrl = (id: number,) => {
+
+
+  
+
+  return `/api/plan/runs/${id}/schedule`
+}
+
+export const schedulePlumbingPlanRun = async (id: number, options?: RequestInit): Promise<schedulePlumbingPlanRunResponse> => {
+  
+  return customFetch<schedulePlumbingPlanRunResponse>(getSchedulePlumbingPlanRunUrl(id),
+  {      
+    ...options,
+    method: 'POST'
+    
+    
+  }
+);}
+
+
+
+
+export const getSchedulePlumbingPlanRunMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof schedulePlumbingPlanRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof schedulePlumbingPlanRun>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['schedulePlumbingPlanRun'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof schedulePlumbingPlanRun>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  schedulePlumbingPlanRun(id,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SchedulePlumbingPlanRunMutationResult = NonNullable<Awaited<ReturnType<typeof schedulePlumbingPlanRun>>>
+    
+    export type SchedulePlumbingPlanRunMutationError = void
+
+    export const useSchedulePlumbingPlanRun = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof schedulePlumbingPlanRun>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof schedulePlumbingPlanRun>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+
+      const mutationOptions = getSchedulePlumbingPlanRunMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type exportFrozenPlanExcelResponse200 = {
+  data: Blob
+  status: 200
+}
+
+export type exportFrozenPlanExcelResponse404 = {
+  data: void
+  status: 404
+}
+    
+export type exportFrozenPlanExcelResponseSuccess = (exportFrozenPlanExcelResponse200) & {
+  headers: Headers;
+};
+export type exportFrozenPlanExcelResponseError = (exportFrozenPlanExcelResponse404) & {
+  headers: Headers;
+};
+
+export type exportFrozenPlanExcelResponse = (exportFrozenPlanExcelResponseSuccess | exportFrozenPlanExcelResponseError)
+
+export const getExportFrozenPlanExcelUrl = (id: number,) => {
+
+
+  
+
+  return `/api/plan/runs/${id}/export/excel`
+}
+
+export const exportFrozenPlanExcel = async (id: number, options?: RequestInit): Promise<exportFrozenPlanExcelResponse> => {
+  
+  return customFetch<exportFrozenPlanExcelResponse>(getExportFrozenPlanExcelUrl(id),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getExportFrozenPlanExcelQueryKey = (id?: number,) => {
+    return [
+    `/api/plan/runs/${id}/export/excel`
+    ] as const;
+    }
+
+    
+export const getExportFrozenPlanExcelQueryOptions = <TData = Awaited<ReturnType<typeof exportFrozenPlanExcel>>, TError = void>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportFrozenPlanExcel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportFrozenPlanExcelQueryKey(id);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportFrozenPlanExcel>>> = ({ signal }) => exportFrozenPlanExcel(id, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, enabled: !!(id), ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportFrozenPlanExcel>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportFrozenPlanExcelQueryResult = NonNullable<Awaited<ReturnType<typeof exportFrozenPlanExcel>>>
+export type ExportFrozenPlanExcelQueryError = void
+
+
+
+export function useExportFrozenPlanExcel<TData = Awaited<ReturnType<typeof exportFrozenPlanExcel>>, TError = void>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportFrozenPlanExcel>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportFrozenPlanExcelQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
 /**
  * @summary Frozen "as issued" plan vs live rebuild "if re-run today"
  */
@@ -7702,3 +8759,559 @@ export function useGetPlantLiveSummary<TData = Awaited<ReturnType<typeof getPlan
 
   return query;
 }
+
+
+
+
+
+export type getAlertsResponse200 = {
+  data: AlertsResponse
+  status: 200
+}
+
+export type getAlertsResponse400 = {
+  data: void
+  status: 400
+}
+
+export type getAlertsResponse502 = {
+  data: void
+  status: 502
+}
+    
+export type getAlertsResponseSuccess = (getAlertsResponse200) & {
+  headers: Headers;
+};
+export type getAlertsResponseError = (getAlertsResponse400 | getAlertsResponse502) & {
+  headers: Headers;
+};
+
+export type getAlertsResponse = (getAlertsResponseSuccess | getAlertsResponseError)
+
+export const getGetAlertsUrl = (params: GetAlertsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/alerts?${stringifiedParams}` : `/api/alerts`
+}
+
+export const getAlerts = async (params: GetAlertsParams, options?: RequestInit): Promise<getAlertsResponse> => {
+  
+  return customFetch<getAlertsResponse>(getGetAlertsUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetAlertsQueryKey = (params?: GetAlertsParams,) => {
+    return [
+    `/api/alerts`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetAlertsQueryOptions = <TData = Awaited<ReturnType<typeof getAlerts>>, TError = void>(params: GetAlertsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAlerts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAlertsQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAlerts>>> = ({ signal }) => getAlerts(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAlerts>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAlertsQueryResult = NonNullable<Awaited<ReturnType<typeof getAlerts>>>
+export type GetAlertsQueryError = void
+
+
+
+export function useGetAlerts<TData = Awaited<ReturnType<typeof getAlerts>>, TError = void>(
+ params: GetAlertsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAlerts>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAlertsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type getAlertsHistoryResponse200 = {
+  data: AlertHistoryResponse
+  status: 200
+}
+    
+export type getAlertsHistoryResponseSuccess = (getAlertsHistoryResponse200) & {
+  headers: Headers;
+};
+;
+
+export type getAlertsHistoryResponse = (getAlertsHistoryResponseSuccess)
+
+export const getGetAlertsHistoryUrl = (params: GetAlertsHistoryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : value.toString())
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/alerts/history?${stringifiedParams}` : `/api/alerts/history`
+}
+
+export const getAlertsHistory = async (params: GetAlertsHistoryParams, options?: RequestInit): Promise<getAlertsHistoryResponse> => {
+  
+  return customFetch<getAlertsHistoryResponse>(getGetAlertsHistoryUrl(params),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetAlertsHistoryQueryKey = (params?: GetAlertsHistoryParams,) => {
+    return [
+    `/api/alerts/history`, ...(params ? [params]: [])
+    ] as const;
+    }
+
+    
+export const getGetAlertsHistoryQueryOptions = <TData = Awaited<ReturnType<typeof getAlertsHistory>>, TError = unknown>(params: GetAlertsHistoryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAlertsHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAlertsHistoryQueryKey(params);
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAlertsHistory>>> = ({ signal }) => getAlertsHistory(params, { signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAlertsHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAlertsHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof getAlertsHistory>>>
+export type GetAlertsHistoryQueryError = unknown
+
+
+
+export function useGetAlertsHistory<TData = Awaited<ReturnType<typeof getAlertsHistory>>, TError = unknown>(
+ params: GetAlertsHistoryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAlertsHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAlertsHistoryQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type acknowledgeAlertResponse200 = {
+  data: AlertActionResponse
+  status: 200
+}
+
+export type acknowledgeAlertResponse401 = {
+  data: void
+  status: 401
+}
+
+export type acknowledgeAlertResponse403 = {
+  data: void
+  status: 403
+}
+    
+export type acknowledgeAlertResponseSuccess = (acknowledgeAlertResponse200) & {
+  headers: Headers;
+};
+export type acknowledgeAlertResponseError = (acknowledgeAlertResponse401 | acknowledgeAlertResponse403) & {
+  headers: Headers;
+};
+
+export type acknowledgeAlertResponse = (acknowledgeAlertResponseSuccess | acknowledgeAlertResponseError)
+
+export const getAcknowledgeAlertUrl = (id: number,) => {
+
+
+  
+
+  return `/api/alerts/${id}/acknowledge`
+}
+
+export const acknowledgeAlert = async (id: number, options?: RequestInit): Promise<acknowledgeAlertResponse> => {
+  
+  return customFetch<acknowledgeAlertResponse>(getAcknowledgeAlertUrl(id),
+  {      
+    ...options,
+    method: 'PATCH'
+    
+    
+  }
+);}
+
+
+
+
+export const getAcknowledgeAlertMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acknowledgeAlert>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof acknowledgeAlert>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['acknowledgeAlert'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof acknowledgeAlert>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  acknowledgeAlert(id,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AcknowledgeAlertMutationResult = NonNullable<Awaited<ReturnType<typeof acknowledgeAlert>>>
+    
+    export type AcknowledgeAlertMutationError = void
+
+    export const useAcknowledgeAlert = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof acknowledgeAlert>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof acknowledgeAlert>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+
+      const mutationOptions = getAcknowledgeAlertMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type muteAlertResponse200 = {
+  data: AlertActionResponse
+  status: 200
+}
+
+export type muteAlertResponse400 = {
+  data: void
+  status: 400
+}
+
+export type muteAlertResponse401 = {
+  data: void
+  status: 401
+}
+
+export type muteAlertResponse403 = {
+  data: void
+  status: 403
+}
+    
+export type muteAlertResponseSuccess = (muteAlertResponse200) & {
+  headers: Headers;
+};
+export type muteAlertResponseError = (muteAlertResponse400 | muteAlertResponse401 | muteAlertResponse403) & {
+  headers: Headers;
+};
+
+export type muteAlertResponse = (muteAlertResponseSuccess | muteAlertResponseError)
+
+export const getMuteAlertUrl = (id: number,) => {
+
+
+  
+
+  return `/api/alerts/${id}/mute`
+}
+
+export const muteAlert = async (id: number,
+    muteAlertRequest: MuteAlertRequest, options?: RequestInit): Promise<muteAlertResponse> => {
+  
+  return customFetch<muteAlertResponse>(getMuteAlertUrl(id),
+  {      
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      muteAlertRequest,)
+  }
+);}
+
+
+
+
+export const getMuteAlertMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof muteAlert>>, TError,{id: number;data: MuteAlertRequest}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof muteAlert>>, TError,{id: number;data: MuteAlertRequest}, TContext> => {
+
+const mutationKey = ['muteAlert'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof muteAlert>>, {id: number;data: MuteAlertRequest}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  muteAlert(id,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MuteAlertMutationResult = NonNullable<Awaited<ReturnType<typeof muteAlert>>>
+    export type MuteAlertMutationBody = MuteAlertRequest
+    export type MuteAlertMutationError = void
+
+    export const useMuteAlert = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof muteAlert>>, TError,{id: number;data: MuteAlertRequest}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof muteAlert>>,
+        TError,
+        {id: number;data: MuteAlertRequest},
+        TContext
+      > => {
+
+      const mutationOptions = getMuteAlertMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type updateAlertThresholdResponse200 = {
+  data: AlertThresholdActionResponse
+  status: 200
+}
+
+export type updateAlertThresholdResponse400 = {
+  data: void
+  status: 400
+}
+
+export type updateAlertThresholdResponse401 = {
+  data: void
+  status: 401
+}
+
+export type updateAlertThresholdResponse403 = {
+  data: void
+  status: 403
+}
+    
+export type updateAlertThresholdResponseSuccess = (updateAlertThresholdResponse200) & {
+  headers: Headers;
+};
+export type updateAlertThresholdResponseError = (updateAlertThresholdResponse400 | updateAlertThresholdResponse401 | updateAlertThresholdResponse403) & {
+  headers: Headers;
+};
+
+export type updateAlertThresholdResponse = (updateAlertThresholdResponseSuccess | updateAlertThresholdResponseError)
+
+export const getUpdateAlertThresholdUrl = (code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7',) => {
+
+
+  
+
+  return `/api/alerts/thresholds/${code}`
+}
+
+export const updateAlertThreshold = async (code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7',
+    updateAlertThresholdRequest: UpdateAlertThresholdRequest, options?: RequestInit): Promise<updateAlertThresholdResponse> => {
+  
+  return customFetch<updateAlertThresholdResponse>(getUpdateAlertThresholdUrl(code),
+  {      
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      updateAlertThresholdRequest,)
+  }
+);}
+
+
+
+
+export const getUpdateAlertThresholdMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAlertThreshold>>, TError,{code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';data: UpdateAlertThresholdRequest}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAlertThreshold>>, TError,{code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';data: UpdateAlertThresholdRequest}, TContext> => {
+
+const mutationKey = ['updateAlertThreshold'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAlertThreshold>>, {code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';data: UpdateAlertThresholdRequest}> = (props) => {
+          const {code,data} = props ?? {};
+
+          return  updateAlertThreshold(code,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAlertThresholdMutationResult = NonNullable<Awaited<ReturnType<typeof updateAlertThreshold>>>
+    export type UpdateAlertThresholdMutationBody = UpdateAlertThresholdRequest
+    export type UpdateAlertThresholdMutationError = void
+
+    export const useUpdateAlertThreshold = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAlertThreshold>>, TError,{code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';data: UpdateAlertThresholdRequest}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAlertThreshold>>,
+        TError,
+        {code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';data: UpdateAlertThresholdRequest},
+        TContext
+      > => {
+
+      const mutationOptions = getUpdateAlertThresholdMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
+export type resetAlertThresholdResponse200 = {
+  data: AlertThresholdActionResponse
+  status: 200
+}
+    
+export type resetAlertThresholdResponseSuccess = (resetAlertThresholdResponse200) & {
+  headers: Headers;
+};
+;
+
+export type resetAlertThresholdResponse = (resetAlertThresholdResponseSuccess)
+
+export const getResetAlertThresholdUrl = (code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7',) => {
+
+
+  
+
+  return `/api/alerts/thresholds/${code}/reset`
+}
+
+export const resetAlertThreshold = async (code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7',
+    resetAlertThresholdBody: ResetAlertThresholdBody, options?: RequestInit): Promise<resetAlertThresholdResponse> => {
+  
+  return customFetch<resetAlertThresholdResponse>(getResetAlertThresholdUrl(code),
+  {      
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      resetAlertThresholdBody,)
+  }
+);}
+
+
+
+
+export const getResetAlertThresholdMutationOptions = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetAlertThreshold>>, TError,{code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';data: ResetAlertThresholdBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resetAlertThreshold>>, TError,{code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';data: ResetAlertThresholdBody}, TContext> => {
+
+const mutationKey = ['resetAlertThreshold'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resetAlertThreshold>>, {code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';data: ResetAlertThresholdBody}> = (props) => {
+          const {code,data} = props ?? {};
+
+          return  resetAlertThreshold(code,data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResetAlertThresholdMutationResult = NonNullable<Awaited<ReturnType<typeof resetAlertThreshold>>>
+    export type ResetAlertThresholdMutationBody = ResetAlertThresholdBody
+    export type ResetAlertThresholdMutationError = unknown
+
+    export const useResetAlertThreshold = <TError = unknown,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetAlertThreshold>>, TError,{code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';data: ResetAlertThresholdBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resetAlertThreshold>>,
+        TError,
+        {code: 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7';data: ResetAlertThresholdBody},
+        TContext
+      > => {
+
+      const mutationOptions = getResetAlertThresholdMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }

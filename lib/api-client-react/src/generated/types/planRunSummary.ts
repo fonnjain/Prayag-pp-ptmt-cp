@@ -4,21 +4,37 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { PlanRunSummaryPlanType } from './planRunSummaryPlanType';
+import type { PlanRunSummaryTemporaryRunId } from './planRunSummaryTemporaryRunId';
 import type { PlanRunSummaryStatus } from './planRunSummaryStatus';
 import type { PlanRunSummaryEffectiveFrom } from './planRunSummaryEffectiveFrom';
 import type { PlanRunSummaryNote } from './planRunSummaryNote';
+import type { PlanRunSummaryPlanStatusReason } from './planRunSummaryPlanStatusReason';
+import type { PlanRunSummaryPass2 } from './planRunSummaryPass2';
 
 export interface PlanRunSummary {
   id: number;
   month: string;
   segment: string;
+  planType: PlanRunSummaryPlanType;
+  temporaryRunId: PlanRunSummaryTemporaryRunId;
   asOfAt: string;
   status: PlanRunSummaryStatus;
   /** Date this issued plan version begins governing monitoring; null only for legacy runs. */
   effectiveFrom: PlanRunSummaryEffectiveFrom;
   note: PlanRunSummaryNote;
+  /** Audit reason when the issued plan has a known provenance or status concern. */
+  planStatusReason: PlanRunSummaryPlanStatusReason;
+  /** @nullable */
+  pass2: PlanRunSummaryPass2;
   itemCount: number;
   grandMinTotal: number;
   grandMaxTotal: number;
+  /** Issued/demand quantity owed by the plan. */
+  grandDemandTotal: number;
+  /** Executable quantity; null for demand-only Temporary Plans. */
+  grandFittedTotal: number | null;
+  demandBasis: 'demand';
+  fittedBasis: 'executable' | null;
   createdAt: string;
 }

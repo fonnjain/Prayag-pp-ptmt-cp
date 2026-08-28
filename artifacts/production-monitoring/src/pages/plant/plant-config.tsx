@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Settings, RefreshCw, Plus, Save, CloudDownload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { fmtDate } from "@/lib/utils";
+import { DateInput } from "@/components/date-input";
 
 export default function PlantConfig({ month }: { month: string }) {
   const { data, isLoading, refetch } = useGetPlantConfig(
@@ -162,8 +163,8 @@ export default function PlantConfig({ month }: { month: string }) {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="snap">Snapshot Date</Label>
-              <Input id="snap" type="date" placeholder={cfg.snapshotDate ?? "leave blank for auto"}
-                value={snapshotDate} onChange={(e) => setSnapshotDate(e.target.value)} />
+              <DateInput id="snap" placeholder="dd-mm-yyyy (leave blank for auto)"
+                value={snapshotDate} onChange={setSnapshotDate} />
               <div className="text-xs text-muted-foreground">Current: {cfg.snapshotDate ? fmtDate(cfg.snapshotDate) : "auto (last data date)"}</div>
             </div>
           </div>

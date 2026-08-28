@@ -11,6 +11,7 @@ import {
   Package,
   Unlink,
 } from "lucide-react";
+import { fmtDate } from "@/lib/utils";
 
 const CATEGORY_ORDER = [
   "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
@@ -142,7 +143,7 @@ export default function PlumbingMonitoring({ month, selectedCategory }: { month:
           <h1 className="text-2xl font-bold tracking-tight">Plumbing Production Monitoring</h1>
           <p className="text-muted-foreground text-sm mt-0.5">
             Sheet3 actuals vs weekly release plan · {month}
-            {data?.lastDataDate ? ` · data through ${data.lastDataDate}` : ""}
+            {data?.lastDataDate ? ` · data through ${fmtDate(data.lastDataDate)}` : ""}
             {data ? ` · ${data.workingDaysElapsed} working days` : ""}
           </p>
         </div>
@@ -207,7 +208,7 @@ export default function PlumbingMonitoring({ month, selectedCategory }: { month:
               <div>
                 <strong>NOT STARTED:</strong>{" "}
                 {notStarted.map((c) => c.category).join(", ")} — zero production recorded as of{" "}
-                {data.lastDataDate ?? "today"}. Plan requires{" "}
+                 {fmtDate(data.lastDataDate) || "today"}. Plan requires{" "}
                 {fmtN(notStarted.reduce((s, c) => s + c.totalRelease, 0))} pcs.
               </div>
             </div>

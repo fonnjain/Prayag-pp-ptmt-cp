@@ -1,3 +1,5 @@
+- [Dummy stock vocabulary](dummy-stock-glossary.md) — dummy stock, pending order last month, pendingOrderLastMonth, and DUMMY are one oversold-production commitment.
+- [Source segment validation](source-segment-validation.md) — validate category vocabulary, not folder names, before assigning stock or pending data to a segment.
 - [Monitoring dashboard route separation](monitoring-dashboard-route-separation.md) — Plant landing `/` must stay separate from the PTMT machine dashboard route so visible nav links never redirect to the wrong dashboard.
 - [wouter catch-all](wouter-catchall.md) — a pathless `<Route component={...}/>` is the catch-all; `path="/:rest*"` silently fails to match `/`.
 - [Plumbing BOM dual-tab merge](plumbing-bom-dual-tab.md) — read NEW tab first (fixed cols A/B + J/K), then Combined (header-detected); Combined overwrites; 1,567 merged codes; never pick just one tab.
@@ -5,6 +7,7 @@
 - [Sanity full-history semantics](sanity-full-history.md) — engine date-filters all; judge completeness on IN-WINDOW stats not whole-file; multi-workbook/optional-empty/out-of-window are not blockers.
 - [orval query options](orval-query-options.md) — generated react-query hooks require `queryKey` in the options type; pass `enabled` via an `any`-cast helper.
 - [Live data setup](live-data-setup.md) — sheet reads need the `google-sheet` connector (not Drive); re-seed `source_config` after task-agent merges (DB rows don't carry over).
+- [Planning versus machine sources](planning-vs-machine-sources.md) — PTMT planning needs a Production/P-DATA workbook; Date Sheet machine files prove run hours but cannot supply planning piece actuals.
 - [Prod reference-data seeding](prod-reference-data-seeding.md) — publish copies schema not rows; seed `source_config` idempotently on boot before listen, or prod pulls/plans/exports come back blank.
 - [Data-gating scope](gating-and-pull-scope.md) — gate Plan/Reports on division-level data, not the month; a pull loads full history and the engine date-filters per month.
 - [Sanity model provenance](sanity-provenance.md) — store sanity_model/tier/downgraded on import_batches; footer resolves finding→batch→default so it never shows "n/a".
@@ -45,6 +48,7 @@
 - [Pending open-balance source](pending-open-balance-source.md) — current pending is unfulfilled `Bal. Qty`; invoice `Quantity` is never a substitute and invoice-only layouts remain explicit structural zero.
 - [Planning uploads-only isolation](planning-isolation.md) — plan build reads stock/pending from uploads only (loud named 422 when missing); sheet reads gated by allow-list guard in sheets.ts; Order column display-only.
 - [Plan-run baseline citation](plan-run-baseline.md) — corrective replans cite frozen plan runs; engine stays live unless route passes planRunId; cited runs undeletable; drift keys need category.
+- [Demand vs executable plan basis](plan-basis-semantics.md) — issued demand is owed quantity; executable fitted quantity is for production monitoring, with explicit basis labels.
 - [Corrective run dedupe](corrective-run-dedupe.md) — fingerprint(Math.fround-quantized full content) + pg advisory lock; `real` columns break strict float equality.
 - [Ops overview partial cache](ops-overview-partial-cache.md) — never cache a live-sheet aggregate when any tab read failed; suite live checks use fetchJson + evaluateWithRetry.
 - [Plant-live proxy auth](plant-live-proxy.md) — /api/plant-live/records requires a managed Bearer API key (only route using validateApiKey); upstream fetches have 20s timeout; document 401/503 in openapi.
@@ -53,11 +57,13 @@
 - [Plumbing machine cascade](plumbing-machine-cascade.md) — 9 PIPE + 24 MOULDING in plumbing_machine_capacity; cascade runs after annotateWeeklyRelease; AGRI Pipe → flex only (MC3/MC4/MC5); Solvent unconstrained; machineW1-W4 on PlanItemWithBom; DataPage has no month prop (panel derives from new Date()).
 - [Plumbing plan run casing](plumbing-plan-run-casing.md) — POST /plan/runs requires segment="Plumbing" (title-case); "PLUMBING" produces 0 items silently; GET /plan normalises internally but the plan-runs route does not.
 - [Corrective empty-baseline guard](corrective-empty-baseline-guard.md) — POST /corrective/replan returns 422 EMPTY_BASELINE when live rebuild yields 0 items+0 categories; prevents silent zero plan passing as a real result.
-- [Bundle freshness CI check](bundle-freshness-ci.md) — verify-plumbing-plan.ts section 0a uses git log + statSync to assert dist/index.cjs ≥ last commit touching api-server/src; ESM requires import.meta.url not __dirname.
+ - [Bundle freshness CI check](bundle-freshness-ci.md) — verify-plumbing-plan.ts section 0a uses git log + statSync to assert dist/index.cjs ≥ last commit touching api-server/src; ESM requires import.meta.url not __dirname.
+ - [Regression commit identity](regression-commit-identity.md) — a regression result is attributable only when the API healthz commit matches the feature under test; restart stale API processes before comparison.
 - [Corrective export totals](corrective-export-totals.md) — header "Revised Month Total" must derive from sum(Math.round(planRev) per item), not run.revisedMonthTotal (real float); gap can reach 100 pcs.
 - [Plumbing monitoring cache](plumbing-monitoring-cache.md) — always use the shared SWR-cached getter, never computePlumbingMonitoringPayload directly; sync invalidates+pre-warms; startup pre-warms in parallel with sync.
 - [Prod plan runs creation](prod-plan-runs-creation.md) — plan_run rows created in dev never reach production on publish; must POST to the prod API explicitly after any output-affecting fix.
 - [Plant monitoring version freeze](plant-monitoring-version-freeze.md) — completed months are immutable; versioned reporting must retain historical items and show each week’s governing plans.
+- [Plant live metric provenance](plant-live-metric-provenance.md) — preserve upstream live ratios transparently; fix denominator defects in the machine-analysis service.
 - [Same-day plan revisions](same-day-plan-revisions.md) — canonicalize duplicate effective dates by source issuance, retain superseded audit data, and reconstruct legacy zeroed weeks.
 - [Combined operations analytics](combined-ops-analytics.md) — compare PTMT demand and Plumbing execution side by side; never fabricate a cross-unit total.
 - [Browser auth and machine routes](auth-machine-route-boundary.md) — classify machine API-key paths before applying the shared browser session guard.
@@ -67,4 +73,21 @@
 - [Live pending failure boundary](live-pending-failure-boundary.md) — corrective replans must fail on unavailable live pending reads, while valid zero/empty reads remain diagnostic results.
 - [Regression verifier authentication](regression-verifier-auth.md) — the CLI needs a valid existing admin account; bootstrap credentials may not match seeded accounts.
 - [Pending reconciliation drift](pending-reconciliation-drift.md) — hard-gate the item identity and residual; treat historical movement/clamp totals as warnings when live inputs drift.
+- [Pending alias parity](pending-alias-parity.md) — apply pending identity aliases before both diagnostics and plan aggregation, or a reported match can still contribute zero.
 - [Manual plan parity boundary](manual-plan-parity.md) — aligning current pending does not prove parity; compare stock, pending-last-month, and buffer inputs before changing formulas or goldens.
+- [CP Stage 0 source gate](cp-stage0-source-gate.md) — CP dummy stock stays blocked until the current 12-tab workbook is parsed item-detail-only with per-tab totals.
+- [Regression development drift](regression-development-drift.md) — warn only on documented live-baseline drift; keep structural and source-integrity checks strict.
+- [Plan-run input alignment](plan-run-input-alignment.md) — duplicate code/colour keys require ordinal input/result pairing; key-only joins inflate category totals.
+- [Golden invariant drift](golden-invariant-drift.md) — validate every golden's component sums and row identities before attributing live-input variance.
+- [GCE publish promotion failures](gce-publish-promotion.md) — a successful image build can still fail VM readiness; the prior successful deployment remains live when no runtime logs are emitted.
+- [Catalogue sync policy](catalogue-sync-policy.md) — exact clean divisions map to PTMT/Plumbing/CP; excluded and combined values stay visible but unmapped until reviewed.
+- [Catalogue coverage gate](catalogue-coverage-gate.md) — the synced catalogue is not a strict superset; review gaps or preserve a union before any roster swap.
+- [Nullable plan buffers](nullable-plan-buffers.md) — unresolved classifications stay NULL end to end; remove legacy DB defaults and never restore a fallback multiplier downstream.
+- [Temporary plan export](temporary-plan-export.md) — frozen run exports read persisted rows; keep Temporary→Production lineage and external scheduling separate from local Pass 2 fitting.
+- [PTMT p90 drift](capacity-p90-drift.md) — capacity drift compares monthly p90s; reuse historical ingestion snapshots to avoid quota-driven incomplete recomputes.
+- [Monthly p90 variability](monthly-p90-variability.md) — CV is population SD/mean over positive monthly p90s; above 25% flags neither adaptive window as reliable alone.
+- [Residual confidence](residual-confidence.md) — Pass 2 residuals must be split by high-CV versus stable/unflagged category evidence, not shown as one undifferentiated shortfall.
+- [Plumbing scheduler adapter](plumbing-scheduler-adapter.md) — external schedule results echo kind/calendar; route and BOM gaps must remain explicit rather than failing or silently disappearing.
+- [Frozen export lineage](frozen-export-lineage.md) — exports must use finalized persisted runs; retained temporary fields can backfill legacy production runs without rebuilding live inputs.
+- [Live pending evidence boundary](live-pending-evidence-boundary.md) — validation reads live pending without persisting the rejected source rows, so later sheet pulls cannot reconstruct an earlier exclusion ledger.
+- [Database migration runner](db-migration-runner.md) — incremental schema changes use numbered SQL plus startup migration, not interactive schema push.

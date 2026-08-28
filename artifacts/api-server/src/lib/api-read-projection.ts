@@ -47,10 +47,13 @@ type PlanItem = {
   pendingOrder: number;
   avg3MoSale: number;
   pendingLastMonth: number;
-  bufferReq: number;
+  bufferReq: number | null;
   minProduction: number;
+  demandPlan: number;
   productionPlan: number;
   maxProduction: number;
+  fittedProduction: number;
+  planBasis: "fitted" | "demand";
   releaseWeek: number | null;
   w1: number;
   w2: number;
@@ -89,6 +92,9 @@ export type ApiReadProjection = {
   items: PlanItem[];
   summary: {
     targetMax: number;
+    demandTargetMax: number;
+    fittedTargetMax: number;
+    targetBasis: "fitted" | "demand";
     targetMin: number;
     mappedProduced: number;
     totalProduced: number;
@@ -122,6 +128,11 @@ const inFlight = new Map<string, Promise<ApiReadProjection>>();
 const n = (value: unknown): number => {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+};
+const nullableNumber = (value: unknown): number | null => {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
 };
 const round = (value: number): number => Math.round(value * 100) / 100;
 const itemKey = (code: string, colour: string) => `${normalizeCodeStrict(code)}|${String(colour ?? "").trim().toUpperCase()}`;
@@ -231,7 +242,12 @@ async function readLocalProjection(month: string, segment: PlantSegment): Promis
   const targetRows = resultRows.length > 0
     ? resultRows
     : Array.isArray(savedPayload?.targetsJson) ? savedPayload.targetsJson as Array<Record<string, unknown>> : [];
+  // Monitoring is executable-target based. A finalized temporary run is
+  // intentionally demand-only; a production run (including a scheduled
+  // Plumbing run) exposes its fitted productionPlan as the target.
+  const targetBasis: "fitted" | "demand" = run?.planType === "temporary" ? "demand" : "fitted";
   const items: PlanItem[] = targetRows.map((row) => {
+    const rawRow = row as Record<string, unknown>;
     const code = String(row.itemCode ?? "");
     const colour = String(row.colour ?? "");
     const input = inputMap.get(itemKey(code, colour));
@@ -245,10 +261,13 @@ async function readLocalProjection(month: string, segment: PlantSegment): Promis
       pendingOrder: n(input?.pendingCurrent),
       avg3MoSale: n(input?.avg3MoSale),
       pendingLastMonth: n(input?.pendingLastMonth),
-      bufferReq: n(row.bufferReq),
+      bufferReq: nullableNumber(row.bufferReq),
       minProduction: n(row.minProduction),
+      demandPlan: n(rawRow.demandPlan ?? rawRow.temporaryPlan ?? rawRow.productionPlan),
       productionPlan: n(row.productionPlan),
       maxProduction: n(row.productionPlan),
+      fittedProduction: n(row.productionPlan),
+      planBasis: targetBasis,
       releaseWeek: row.releaseWeek == null ? null : n(row.releaseWeek),
       w1: n(row.w1), w2: n(row.w2), w3: n(row.w3), w4: n(row.w4),
       produced: n(actualByKey.get(itemKey(code, colour)) ?? actualByCode.get(normalizeCodeStrict(code))),
@@ -303,7 +322,9 @@ async function readLocalProjection(month: string, segment: PlantSegment): Promis
       w1: catRows[0], w2: catRows[1], w3: catRows[2], w4: catRows[3],
     };
   });
-  const targetMax = items.reduce((sum, row) => sum + row.maxProduction, 0);
+  const fittedTargetMax = items.reduce((sum, row) => sum + row.fittedProduction, 0);
+  const demandTargetMax = items.reduce((sum, row) => sum + row.demandPlan, 0);
+  const targetMax = targetBasis === "fitted" ? fittedTargetMax : demandTargetMax;
   const targetMin = items.reduce((sum, row) => sum + row.minProduction, 0);
   const runRatePerDay = elapsed > 0 ? round(mappedProduction / elapsed) : null;
   const projected = runRatePerDay === null ? null : round(runRatePerDay * workingDays);
@@ -333,7 +354,8 @@ async function readLocalProjection(month: string, segment: PlantSegment): Promis
       calendar: { workingDays, workingDaysSource: workingResolution.workingDaysSource, elapsed, remaining, workedSundays, idleWeekdays },
       items,
       summary: {
-        targetMax: round(targetMax), targetMin: round(targetMin), mappedProduced: round(mappedProduction), totalProduced: round(totalProduction),
+         targetMax: round(targetMax), demandTargetMax: round(demandTargetMax), fittedTargetMax: round(fittedTargetMax),
+         targetBasis, targetMin: round(targetMin), mappedProduced: round(mappedProduction), totalProduced: round(totalProduction),
         unmappedProduced: round(unmappedProduction), projectedAttainmentPct, projectedMinAttainmentPct, runRatePerDay,
         ragBand: projectedAttainmentPct === null ? null : projectedAttainmentPct >= 95 ? "green" : projectedAttainmentPct >= 85 ? "amber" : "red",
         weeks,

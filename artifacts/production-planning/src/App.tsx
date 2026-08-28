@@ -13,6 +13,9 @@ import CategoryPage from "@/pages/category";
 import ExportPage from "@/pages/export";
 import RunsPage from "@/pages/runs";
 import CorrectivePage from "@/pages/corrective";
+import ProductsPage from "@/pages/products";
+import AlertsPage from "@/pages/alerts";
+import { ActivityTracker } from "@/lib/activity-tracker";
 
 const queryClient = new QueryClient();
 
@@ -21,7 +24,10 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={DataPage} />
+      <Route path="/data" component={DataPage} />
       <Route path="/summary" component={SummaryPage} />
+      <Route path="/products" component={ProductsPage} />
+      <Route path="/alerts" component={AlertsPage} />
       <Route path="/category/:slug" component={CategoryPage} />
       <Route path="/runs" component={RunsPage} />
       <Route path="/export" component={ExportPage} />
@@ -53,7 +59,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     return <LoginPage />;
   }
 
-  return <>{children}</>;
+  return <><ActivityTracker app="production-planning" />{children}</>;
 }
 
 function App() {

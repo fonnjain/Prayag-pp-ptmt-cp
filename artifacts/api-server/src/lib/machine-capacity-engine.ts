@@ -33,6 +33,7 @@
 
 import type { PlumbingMachineCapacity } from "@workspace/db";
 import type { CalcPlanItem } from "./calc";
+import { isSunday } from "./working-days";
 
 export type PlanItemForCascade = CalcPlanItem & {
   weightKg?: number;
@@ -63,16 +64,24 @@ export interface MachineCascadeResult {
 
 /** Calendar Mon–Sat count for each week partition (W1=1–7, W2=8–14, W3=15–21, W4=22–end). */
 export function isCalendarWorkingDay(year: number, month: number, day: number): boolean {
-  return new Date(Date.UTC(year, month - 1, day)).getUTCDay() !== 0;
+  const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return !isSunday(iso);
 }
 
-export function calendarWorkingDaysInWeek(year: number, month: number, weekNum: 1 | 2 | 3 | 4): number {
+export function calendarWorkingDaysInWeek(
+  year: number,
+  month: number,
+  weekNum: 1 | 2 | 3 | 4,
+  workedSundayDates: Iterable<string> = [],
+): number {
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
   const startDay = weekNum === 1 ? 1 : weekNum === 2 ? 8 : weekNum === 3 ? 15 : 22;
   const endDay = weekNum === 4 ? daysInMonth : startDay + 6;
+  const workedSundays = new Set(workedSundayDates);
   let count = 0;
   for (let d = startDay; d <= endDay; d++) {
-    if (isCalendarWorkingDay(year, month, d)) count++;
+    const iso = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    if (isCalendarWorkingDay(year, month, d) || workedSundays.has(iso)) count++;
   }
   return count;
 }
@@ -135,6 +144,7 @@ export function runMachineCascade(
   items: PlanItemForCascade[],
   machines: PlumbingMachineCapacity[],
   month: string,
+  workedSundayDates: Iterable<string> = [],
 ): MachineCascadeResult {
   const [yearStr, monthStr] = month.split("-");
   const year  = parseInt(yearStr ?? "2026", 10);
@@ -150,7 +160,7 @@ export function runMachineCascade(
 
   // ── Per-week capacity: distribute machine.workingDays proportionally by calendar split ──
   const calDays = new Map<WeekIdx, number>(
-    WEEKS.map(w => [w, calendarWorkingDaysInWeek(year, mon, w)]),
+    WEEKS.map(w => [w, calendarWorkingDaysInWeek(year, mon, w, workedSundayDates)]),
   );
   const totalCalDays = WEEKS.reduce((s, w) => s + (calDays.get(w) ?? 0), 0) || 1;
 

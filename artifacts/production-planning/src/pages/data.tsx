@@ -23,10 +23,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { cn, fmtDateTime } from "@/lib/utils";
+import { cn, fmtDate, fmtDateTime } from "@/lib/utils";
 import { RefreshCw } from "lucide-react";
 
 type UploadKindDef = { kind: (typeof UploadKind)[keyof typeof UploadKind]; label: string; hint: string; required: boolean };
+const HIGH_MONTHLY_P90_CV_PCT = 25;
 
 // ── Global uploads — shared by ALL segments ──────────────────────────────────
 // Upload once; the plan engine routes rows to PTMT or Plumbing via the Segment column.
@@ -247,6 +248,16 @@ function headroomColor(headroom: number, planNeedsPerDay: number): string {
   return "text-green-700";
 }
 
+function monthLabel(month: string): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  if (!year || !monthNumber) return month;
+  return new Date(Date.UTC(year, monthNumber - 1, 1)).toLocaleDateString("en-IN", {
+    month: "short",
+    year: "2-digit",
+    timeZone: "UTC",
+  });
+}
+
 function CapacityTable() {
   const { segment } = useSegment();
   const { data, isLoading, refetch } = useListCategoryCapacities({ segment } as any);
@@ -257,6 +268,7 @@ function CapacityTable() {
 
   const rows = (data as unknown as CategoryCapacity[] | undefined) ?? [];
   const lastComputedAt = rows.map(r => r.lastComputedAt).filter(Boolean).sort().at(-1);
+  const monthlyMonths = [...new Set(rows.flatMap(row => row.comparison?.monthly?.map(month => month.month) ?? []))].sort();
 
   function appliedCapacity(row: CategoryCapacity): number {
     return row.overrideCapacity != null ? row.overrideCapacity : row.suggestedCapacity;
@@ -302,8 +314,9 @@ function CapacityTable() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div className="text-xs text-gray-500">
-          <strong>Suggested</strong> = p90 of trailing 90-day daily output (from {actualsSource}). <strong>Applied</strong> = Override if set, else Suggested — consumed by all levelling modules.
+          <strong>Suggested</strong> = full-window p90 of daily output (from {actualsSource}). <strong>Applied</strong> = Override if set, else Suggested — consumed by all levelling modules.
           {lastComputedAt && <span className="ml-2">Last recomputed: {fmtDateTime(lastComputedAt)}.</span>}
+           {segment === "PTMT" && <span className="ml-2">Pass 2 selects recent 90d when endpoint drift exceeds 20% or latest monthly p90 is above full-window p90. Monthly p90 CV is population SD ÷ mean across positive-production months; above {HIGH_MONTHLY_P90_CV_PCT}% means neither window is reliable alone.</span>}
           {segment === "Plumbing" && <span className="ml-2 text-amber-600">Plumbing actuals feed not yet wired — all values show thin-data until connected.</span>}
         </div>
         <Button size="sm" onClick={handleRecompute} disabled={(recompute as { isPending?: boolean }).isPending} className="shrink-0">
@@ -330,8 +343,13 @@ function CapacityTable() {
                 <th className="px-3 py-2 text-right">Suggested</th>
                 <th className="px-3 py-2 text-right">Override</th>
                 <th className="px-3 py-2 text-right font-bold text-gray-800">Applied</th>
-                <th className="px-3 py-2 text-right">Mean</th>
-                <th className="px-3 py-2 text-right">p90</th>
+                <th className="px-3 py-2 text-right">Pass 2 selected</th>
+                <th className="px-3 py-2 text-right">Full mean</th>
+                <th className="px-3 py-2 text-right">Full p90</th>
+                <th className="px-3 py-2 text-right">90d p90</th>
+                <th className="px-3 py-2 text-right" title="Change from the first positive-production month to the latest">Endpoint drift</th>
+                <th className="px-3 py-2 text-right" title="Change from the lowest positive monthly p90 to the latest">Recovery drift</th>
+                <th className="px-3 py-2 text-right" title="Population standard deviation divided by mean across positive-production monthly p90s; above 25% means neither window is reliable alone">Monthly p90 CV</th>
                 <th className="px-3 py-2 text-right">Best day</th>
                 <th className="px-3 py-2 text-right">Days obs.</th>
                 <th className="px-3 py-2 text-right">Plan needs/day</th>
@@ -349,6 +367,11 @@ function CapacityTable() {
                       {row.category}
                       {row.isThinData === 1 && (
                         <span className="ml-1 text-xs text-amber-600" title="Fewer than 10 producing days observed">⚠ thin data</span>
+                      )}
+                      {(row.comparison?.zeroProductionMonths?.length ?? 0) > 0 && (
+                        <div className="text-[10px] text-amber-700 font-normal" title="Months with no positive-production observations">
+                          ⚠ no production: {row.comparison?.zeroProductionMonths.map(monthLabel).join(", ")}
+                        </div>
                       )}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-600">
@@ -368,11 +391,49 @@ function CapacityTable() {
                     <td className="px-3 py-2 text-right tabular-nums font-semibold">
                       {Math.round(applied).toLocaleString()}
                     </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      <div className="font-semibold">{Math.round(row.selectedCapacity ?? row.suggestedCapacity).toLocaleString()}</div>
+                      <div className="text-[10px] text-gray-500">{row.selectedWindow === "recent90d" ? "recent 90d" : "full window"}</div>
+                       {(row.comparison?.monthlyP90CvPct ?? 0) > HIGH_MONTHLY_P90_CV_PCT && (
+                         <div className="text-[10px] text-amber-700" title="Monthly p90 variability is high; neither full nor recent window should be treated as reliable alone">
+                           ⚠ volatile series
+                         </div>
+                       )}
+                    </td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-500">
                       {Math.round(row.meanPerDay).toLocaleString()}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-500">
                       {Math.round(row.p90PerDay).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                      {row.comparison?.recent90d ? Math.round(row.comparison.recent90d.p90PerDay).toLocaleString() : "—"}
+                    </td>
+                    <td className={cn(
+                      "px-3 py-2 text-right tabular-nums",
+                      row.comparison?.driftPct != null && Math.abs(row.comparison.driftPct) > 20
+                        ? "text-amber-700 font-semibold"
+                        : "text-gray-500",
+                    )}>
+                      {row.comparison?.driftPct == null ? "—" : `${row.comparison.driftPct > 0 ? "+" : ""}${row.comparison.driftPct.toFixed(1)}%`}
+                    </td>
+                    <td className={cn(
+                      "px-3 py-2 text-right tabular-nums",
+                      row.comparison?.recoveryDriftPct != null && Math.abs(row.comparison.recoveryDriftPct) > 20
+                        ? "text-amber-700 font-semibold"
+                        : "text-gray-500",
+                    )}>
+                      {row.comparison?.recoveryDriftPct == null ? "—" : `${row.comparison.recoveryDriftPct > 0 ? "+" : ""}${row.comparison.recoveryDriftPct.toFixed(1)}%`}
+                    </td>
+                    <td className={cn(
+                      "px-3 py-2 text-right tabular-nums",
+                      row.comparison?.monthlyP90CvPct != null && row.comparison.monthlyP90CvPct > HIGH_MONTHLY_P90_CV_PCT
+                        ? "text-red-700 font-semibold"
+                        : "text-gray-500",
+                    )}>
+                      {row.comparison?.monthlyP90CvPct == null
+                        ? "—"
+                        : `${row.comparison.monthlyP90CvPct.toFixed(1)}%`}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-gray-500">
                       {Math.round(row.bestDay).toLocaleString()}
@@ -391,6 +452,50 @@ function CapacityTable() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {segment === "PTMT" && monthlyMonths.length > 0 && (
+        <div className="space-y-2">
+          <div>
+            <h3 className="text-sm font-semibold text-gray-800">PTMT monthly p90 history</h3>
+            <p className="text-xs text-gray-500">
+              Each cell is that category&apos;s monthly p90 (pcs/day). <span className="font-semibold text-amber-700">0*</span> means no positive-production days were observed and is not used as capacity evidence.
+            </p>
+          </div>
+          <div className="overflow-x-auto rounded-md border text-sm">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-50 text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                  <th className="px-3 py-2 text-left">Category</th>
+                  {monthlyMonths.map(month => <th key={month} className="px-3 py-2 text-right">{monthLabel(month)}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {rows.map(row => {
+                  const monthlyByMonth = new Map((row.comparison?.monthly ?? []).map(month => [month.month, month]));
+                  return (
+                    <tr key={row.category} className="hover:bg-gray-50">
+                      <td className="px-3 py-2 font-medium whitespace-nowrap">{row.category}</td>
+                      {monthlyMonths.map(month => {
+                        const stats = monthlyByMonth.get(month);
+                        const isZero = stats?.daysObserved === 0;
+                        return (
+                          <td
+                            key={month}
+                            className={cn("px-3 py-2 text-right tabular-nums", isZero ? "text-amber-700 font-semibold" : "text-gray-600")}
+                            title={isZero ? "No positive-production days observed in this month" : undefined}
+                          >
+                            {stats ? `${Math.round(stats.p90PerDay).toLocaleString()}${isZero ? "*" : ""}` : "—"}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -766,9 +871,7 @@ function abbreviateId(id: string) {
 }
 
 function fmtDriveDate(iso: string) {
-  const d = new Date(iso);
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  return fmtDate(iso);
 }
 
 type ResolvedFeed = {

@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from "react";
+import { fmtDateTime } from "@/lib/utils";
+import { DateInput } from "@/components/date-input";
 import { 
   useListItemWeights, 
   useUpsertItemWeight,
@@ -155,8 +157,7 @@ function ApiKeysTab() {
   }
 
   function fmtDate(s: string | null | undefined) {
-    if (!s) return "Never";
-    return new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    return fmtDateTime(s) || "Never";
   }
 
   return (
@@ -589,7 +590,7 @@ function MonitoringConfigTab({ month }: { month: string }) {
             </div>
             <div className="grid gap-2">
               <Label htmlFor="snapshotDate">Snapshot Date Override (Optional)</Label>
-              <Input id="snapshotDate" type="date" value={snapshotDate} onChange={e => setSnapshotDate(e.target.value)} />
+              <DateInput id="snapshotDate" value={snapshotDate} onChange={setSnapshotDate} />
               <p className="text-xs text-muted-foreground">Forces calculations to behave as if this is the current date.</p>
             </div>
           </div>

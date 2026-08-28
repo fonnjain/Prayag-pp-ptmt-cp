@@ -48,6 +48,7 @@ export interface LifecyclePlantBundle extends PlantBundle {
 
 export interface PlantSnapshotSourceInfo {
   targetSource: "finalized_plan_run";
+  targetBasis?: "fitted" | "demand";
   planRunId: number;
   planAsOfAt: string;
   weeklyTargetSource: "plan_run_snapshot" | "legacy_frozen_inputs";
@@ -90,7 +91,7 @@ export interface LegacyWeeklyResult {
   category: string;
   productionPlan: number;
   minProduction: number;
-  bufferReq: number;
+  bufferReq: number | null;
 }
 
 export interface LegacyWeeklyInput {
@@ -552,13 +553,14 @@ async function loadFinalizedTargets(month: string, segment: MonitoringSegment = 
   planItems: WeeklyInputPlanItem[];
   weeklyTargetSource: PlantSnapshotSourceInfo["weeklyTargetSource"];
   weeklyBandSnapshot: PlantSnapshotSourceInfo["weeklyBandSnapshot"];
+  targetBasis: "fitted" | "demand";
   versionTimeline: PlanVersion[];
 } | null> {
   const [run] = await db
     .select()
     .from(planRunsTable)
     .where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, segment), eq(planRunsTable.status, "finalized")))
-    .orderBy(desc(planRunsTable.id))
+    .orderBy(sql`CASE WHEN ${planRunsTable.planType} = 'production' THEN 0 ELSE 1 END`, desc(planRunsTable.id))
     .limit(1);
   if (!run) return null;
   const [results, versionTimeline] = await Promise.all([
@@ -600,6 +602,7 @@ async function loadFinalizedTargets(month: string, segment: MonitoringSegment = 
   }
   return {
     run,
+    targetBasis: run.planType === "temporary" ? "demand" : "fitted",
     planItems,
     weeklyTargetSource,
     weeklyBandSnapshot,
@@ -741,6 +744,7 @@ function graceActualsUnavailableBundle(
 ): LifecyclePlantBundle {
   const sourceInfo = {
     targetSource: "finalized_plan_run",
+    targetBasis: finalized.targetBasis,
     planRunId: finalized.run.id,
     weeklyTargetSource: finalized.weeklyTargetSource,
     acceptsLateActuals: true,
@@ -851,6 +855,7 @@ export async function captureClosedPlantMonth(
   const capturedAt = new Date();
   const sourceInfo: PlantSnapshotSourceInfo = {
     targetSource: "finalized_plan_run",
+    targetBasis: finalized.targetBasis,
     planRunId: finalized.run.id,
     planAsOfAt: finalized.run.asOfAt.toISOString(),
     weeklyTargetSource: finalized.weeklyTargetSource,
@@ -941,6 +946,7 @@ export async function computeLifecyclePlantMonitoring(
 ): Promise<{
   bundle: LifecyclePlantBundle;
   weekly: PlantWeeklySummary;
+  planItems?: CalcPlanItem[];
 }> {
   const lifecycle = resolvePlantMonthLifecycle(month, now);
   const { row, config } = await loadConfig(month, segment);
@@ -970,6 +976,7 @@ export async function computeLifecyclePlantMonitoring(
   );
   let targets: PlantTargetRow[];
   let planItems: WeeklyInputPlanItem[] = [];
+  let alertPlanItems: CalcPlanItem[] | undefined;
   let sourceInfo: Record<string, unknown> | null = null;
   let versionTimeline: PlanVersion[] = [];
   let actuals: DailyActualRow[];
@@ -994,6 +1001,7 @@ export async function computeLifecyclePlantMonitoring(
     versionTimeline = finalized.versionTimeline;
     sourceInfo = {
       targetSource: "finalized_plan_run",
+      targetBasis: finalized.targetBasis,
       planRunId: finalized.run.id,
       weeklyTargetSource: finalized.weeklyTargetSource,
       acceptsLateActuals: true,
@@ -1011,6 +1019,7 @@ export async function computeLifecyclePlantMonitoring(
   } else {
     actuals = await fetchActuals(month, {});
     const liveItems = await buildPlanItems(month, segment);
+    alertPlanItems = liveItems;
     versionTimeline = await fetchMonitoringPlanTimeline(month, segment);
     const latestVersion = versionTimeline.at(-1);
     targets = latestVersion ? latestVersion.targets.map((item) => ({
@@ -1065,7 +1074,7 @@ export async function computeLifecyclePlantMonitoring(
     versionTimeline,
   );
   bundle.warnings = [...bundle.warnings, ...buildPlantWeeklyWarnings(weekly)];
-  return { bundle, weekly };
+  return { bundle, weekly, planItems: alertPlanItems };
 }
 
 export function selectUnfrozenClosedMonths(

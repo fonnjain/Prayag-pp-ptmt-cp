@@ -1,0 +1,4 @@
+ALTER TABLE plan_run_results
+  ADD COLUMN IF NOT EXISTS material TEXT,
+  ADD COLUMN IF NOT EXISTS weight_kg REAL,
+  ADD COLUMN IF NOT EXISTS urgency_rank INTEGER;

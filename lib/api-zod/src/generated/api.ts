@@ -56,7 +56,7 @@ export const getV1PlanItemsResponse = zod.object({
   "pendingOrder": zod.number(),
   "avg3MoSale": zod.number(),
   "pendingLastMonth": zod.number(),
-  "bufferReq": zod.number(),
+  "bufferReq": zod.number().nullable(),
   "minProduction": zod.number(),
   "productionPlan": zod.number(),
   "maxProduction": zod.number(),
@@ -412,6 +412,104 @@ export const getSyncStatusResponse = zod.array(getSyncStatusResponseItem)
 
 
 /**
+ * @summary Read the upstream catalogue vocabulary without mutating local data
+ */
+export const getMasterProductSourceCategoriesResponse = zod.object({
+
+})
+
+
+/**
+ * @summary List reviewed many-to-one catalogue category mappings
+ */
+export const listMasterProductCategoryMappingsResponseItem = zod.object({
+
+})
+export const listMasterProductCategoryMappingsResponse = zod.array(listMasterProductCategoryMappingsResponseItem)
+
+
+/**
+ * @summary Save a reviewed catalogue category mapping
+ */
+export const upsertMasterProductCategoryMappingBody = zod.object({
+  "division": zod.string(),
+  "rawCategory": zod.string().nullish(),
+  "segment": zod.enum(['PTMT', 'Plumbing', 'CP']),
+  "planningCategory": zod.string()
+})
+
+
+/**
+ * @summary Sync the maintained catalogue copy from Prayag-Competition-Analysis
+ */
+export const syncMasterProductsResponse = zod.object({
+
+})
+
+
+/**
+ * @summary Compare active catalogue codes with the existing item master
+ */
+export const getMasterProductCoverageResponse = zod.object({
+
+})
+
+
+/**
+ * @summary List the complete product review roster for a planning segment
+ */
+export const listMasterProductsQuerySegmentDefault = "PTMT";
+
+export const listMasterProductsQueryParams = zod.object({
+  "segment": zod.enum(['PTMT', 'Plumbing', 'CP']).default(listMasterProductsQuerySegmentDefault),
+  "status": zod.enum(['classified', 'unclassified', 'ambiguous']).optional(),
+  "category": zod.string().optional(),
+  "source": zod.enum(['workbook', 'catalogue', 'seed']).optional(),
+  "search": zod.string().optional()
+})
+
+export const listMasterProductsResponse = zod.object({
+  "rows": zod.array(zod.object({
+  "key": zod.string(),
+  "segment": zod.enum(['PTMT', 'Plumbing', 'CP']),
+  "itemCode": zod.string(),
+  "colour": zod.string().nullable(),
+  "productName": zod.string().nullable(),
+  "division": zod.string().nullable(),
+  "category": zod.string(),
+  "status": zod.enum(['classified', 'unclassified', 'ambiguous']),
+  "source": zod.union([zod.literal('workbook'),zod.literal('catalogue'),zod.literal('seed'),zod.literal(null)]).nullable(),
+  "note": zod.string().nullable(),
+  "inCatalogue": zod.boolean(),
+  "inPlanningWorkbook": zod.boolean(),
+  "lastSeenProductionMonth": zod.string().nullable(),
+  "pendingQuantity": zod.number(),
+  "dummyQuantity": zod.number(),
+  "bufferReq": zod.number().nullable(),
+  "auditCount": zod.number()
+})),
+  "total": zod.number(),
+  "categories": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Reclassify a planning-roster product with an audit reason
+ */
+export const reclassifyMasterProductParams = zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string()
+})
+
+export const reclassifyMasterProductBody = zod.object({
+  "segment": zod.enum(['PTMT', 'Plumbing', 'CP']),
+  "category": zod.string(),
+  "status": zod.enum(['classified', 'unclassified', 'ambiguous']),
+  "reason": zod.string()
+})
+
+
+/**
  * @summary Run the weekly corrective re-plan engine
  */
 export const runCorrectiveReplanBody = zod.object({
@@ -712,8 +810,46 @@ export const listCategoryCapacitiesResponseItem = zod.object({
   "suggestedCapacity": zod.number(),
   "overrideCapacity": zod.number().nullish(),
   "appliedCapacity": zod.number().describe('override if set, else suggested — all modules use this'),
+  "selectedCapacity": zod.number().describe('Capacity selected for PTMT Pass 2: override if set, otherwise the adaptive full\/recent window value'),
+  "selectedWindow": zod.enum(['fullWindow', 'recent90d']).describe('Window selected for PTMT Pass 2'),
   "workingDaysPerWeek": zod.number(),
   "planNeedsPerDay": zod.number(),
+  "windowStartDate": zod.string().date().nullish(),
+  "windowEndDate": zod.string().date().nullish(),
+  "comparison": zod.union([zod.object({
+  "fullWindow": zod.object({
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date(),
+  "daysObserved": zod.number(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number()
+}),
+  "recent90d": zod.object({
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date(),
+  "daysObserved": zod.number(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number()
+}),
+  "monthly": zod.array(zod.object({
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date(),
+  "daysObserved": zod.number(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number()
+}).and(zod.object({
+  "month": zod.string()
+}))),
+  "driftPct": zod.number().nullable().describe('Endpoint drift from first positive-production month to latest positive-production month'),
+  "recoveryDriftPct": zod.number().nullable().describe('Recovery drift from the minimum positive monthly p90 to the latest positive monthly p90'),
+  "monthlyP90CvPct": zod.number().nullable().describe('Population coefficient of variation across positive monthly p90s, expressed as a percentage; high values mean neither window is reliable alone'),
+  "latestMonthlyP90": zod.number().nullable(),
+  "minPositiveMonthlyP90": zod.number().nullable(),
+  "zeroProductionMonths": zod.array(zod.string()).describe('Months with no positive-production observations; not capacity zeros')
+}),zod.null()]).optional(),
   "lastComputedAt": zod.string()
 })
 export const listCategoryCapacitiesResponse = zod.array(listCategoryCapacitiesResponseItem)
@@ -740,8 +876,46 @@ export const updateCategoryCapacityResponse = zod.object({
   "suggestedCapacity": zod.number(),
   "overrideCapacity": zod.number().nullish(),
   "appliedCapacity": zod.number().describe('override if set, else suggested — all modules use this'),
+  "selectedCapacity": zod.number().describe('Capacity selected for PTMT Pass 2: override if set, otherwise the adaptive full\/recent window value'),
+  "selectedWindow": zod.enum(['fullWindow', 'recent90d']).describe('Window selected for PTMT Pass 2'),
   "workingDaysPerWeek": zod.number(),
   "planNeedsPerDay": zod.number(),
+  "windowStartDate": zod.string().date().nullish(),
+  "windowEndDate": zod.string().date().nullish(),
+  "comparison": zod.union([zod.object({
+  "fullWindow": zod.object({
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date(),
+  "daysObserved": zod.number(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number()
+}),
+  "recent90d": zod.object({
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date(),
+  "daysObserved": zod.number(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number()
+}),
+  "monthly": zod.array(zod.object({
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date(),
+  "daysObserved": zod.number(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number()
+}).and(zod.object({
+  "month": zod.string()
+}))),
+  "driftPct": zod.number().nullable().describe('Endpoint drift from first positive-production month to latest positive-production month'),
+  "recoveryDriftPct": zod.number().nullable().describe('Recovery drift from the minimum positive monthly p90 to the latest positive monthly p90'),
+  "monthlyP90CvPct": zod.number().nullable().describe('Population coefficient of variation across positive monthly p90s, expressed as a percentage; high values mean neither window is reliable alone'),
+  "latestMonthlyP90": zod.number().nullable(),
+  "minPositiveMonthlyP90": zod.number().nullable(),
+  "zeroProductionMonths": zod.array(zod.string()).describe('Months with no positive-production observations; not capacity zeros')
+}),zod.null()]).optional(),
   "lastComputedAt": zod.string()
 })
 
@@ -768,8 +942,46 @@ export const recomputeCategoryCapacityResponseItem = zod.object({
   "suggestedCapacity": zod.number(),
   "overrideCapacity": zod.number().nullish(),
   "appliedCapacity": zod.number().describe('override if set, else suggested — all modules use this'),
+  "selectedCapacity": zod.number().describe('Capacity selected for PTMT Pass 2: override if set, otherwise the adaptive full\/recent window value'),
+  "selectedWindow": zod.enum(['fullWindow', 'recent90d']).describe('Window selected for PTMT Pass 2'),
   "workingDaysPerWeek": zod.number(),
   "planNeedsPerDay": zod.number(),
+  "windowStartDate": zod.string().date().nullish(),
+  "windowEndDate": zod.string().date().nullish(),
+  "comparison": zod.union([zod.object({
+  "fullWindow": zod.object({
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date(),
+  "daysObserved": zod.number(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number()
+}),
+  "recent90d": zod.object({
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date(),
+  "daysObserved": zod.number(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number()
+}),
+  "monthly": zod.array(zod.object({
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date(),
+  "daysObserved": zod.number(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number()
+}).and(zod.object({
+  "month": zod.string()
+}))),
+  "driftPct": zod.number().nullable().describe('Endpoint drift from first positive-production month to latest positive-production month'),
+  "recoveryDriftPct": zod.number().nullable().describe('Recovery drift from the minimum positive monthly p90 to the latest positive monthly p90'),
+  "monthlyP90CvPct": zod.number().nullable().describe('Population coefficient of variation across positive monthly p90s, expressed as a percentage; high values mean neither window is reliable alone'),
+  "latestMonthlyP90": zod.number().nullable(),
+  "minPositiveMonthlyP90": zod.number().nullable(),
+  "zeroProductionMonths": zod.array(zod.string()).describe('Months with no positive-production observations; not capacity zeros')
+}),zod.null()]).optional(),
   "lastComputedAt": zod.string()
 })
 export const recomputeCategoryCapacityResponse = zod.array(recomputeCategoryCapacityResponseItem)
@@ -853,7 +1065,7 @@ export const listPlanItemsResponseItem = zod.object({
   "category": zod.string(),
   "avg3MoSale": zod.number(),
   "stock": zod.number(),
-  "bufferReq": zod.number(),
+  "bufferReq": zod.number().nullable(),
   "minProduction": zod.number(),
   "maxProduction": zod.number(),
   "pendingOrderLastMonth": zod.number(),
@@ -913,6 +1125,17 @@ export const exportPlanExcelQuerySegmentDefault = "PTMT";
 export const exportPlanExcelQueryParams = zod.object({
   "month": zod.string(),
   "segment": zod.string().default(exportPlanExcelQuerySegmentDefault)
+})
+
+
+/**
+ * Export-only demand-true Temporary Plan from the latest finalized temporary run. It is the demand source before machine capacity is applied.
+ */
+export const exportTemporaryPlanExcelQuerySegmentDefault = "PTMT";
+
+export const exportTemporaryPlanExcelQueryParams = zod.object({
+  "month": zod.string(),
+  "segment": zod.string().default(exportTemporaryPlanExcelQuerySegmentDefault)
 })
 
 
@@ -998,9 +1221,13 @@ export const updateWeeklyReleaseBandResponse = zod.object({
 })
 
 
+export const createPlanRunBodyPlanTypeDefault = "production";
+
 export const createPlanRunBody = zod.object({
   "month": zod.string(),
   "segment": zod.string().optional(),
+  "planType": zod.enum(['temporary', 'production']).default(createPlanRunBodyPlanTypeDefault).describe('Temporary is demand-true and never issued to the floor; production is the machine-feasible lineage.'),
+  "temporaryRunId": zod.number().nullish().describe('Temporary Plan that this Production Plan was fitted from.'),
   "note": zod.string().optional(),
   "effectiveFrom": zod.string().date().optional().describe('Date within the plan month when this issued version begins governing monitoring.')
 })
@@ -1013,14 +1240,73 @@ export const listPlanRunsQueryParams = zod.object({
   "segment": zod.string().default(listPlanRunsQuerySegmentDefault)
 })
 
+export const listPlanRunsResponsePass2CategoriesItemWorkingDaysMin = 4;
+export const listPlanRunsResponsePass2CategoriesItemWorkingDaysMax = 4;
+
+export const listPlanRunsResponsePass2CategoriesItemWeeklyCapacityMin = 4;
+export const listPlanRunsResponsePass2CategoriesItemWeeklyCapacityMax = 4;
+
+export const listPlanRunsResponsePass2CategoriesItemWeeklyReleaseMin = 4;
+export const listPlanRunsResponsePass2CategoriesItemWeeklyReleaseMax = 4;
+
+
+
 export const listPlanRunsResponseItem = zod.object({
   "id": zod.number(),
   "month": zod.string(),
   "segment": zod.string(),
+  "planType": zod.enum(['temporary', 'production']),
+  "temporaryRunId": zod.number().nullable(),
   "asOfAt": zod.string().datetime({}),
   "status": zod.enum(['draft', 'finalized']),
   "effectiveFrom": zod.string().date().nullable().describe('Date this issued plan version begins governing monitoring; null only for legacy runs.'),
   "note": zod.string().nullable(),
+  "planStatusReason": zod.string().nullable().describe('Audit reason when the issued plan has a known provenance or status concern.'),
+  "pass2": zod.object({
+  "workingDays": zod.number(),
+  "workedSundayDates": zod.array(zod.string().date()),
+  "categories": zod.array(zod.object({
+  "category": zod.string(),
+  "fullP90": zod.number(),
+  "recent90dP90": zod.number(),
+  "driftPct": zod.number().nullable(),
+  "recoveryDriftPct": zod.number().nullish().describe('Recovery drift from the minimum positive monthly p90 to the latest positive monthly p90'),
+  "monthlyP90CvPct": zod.number().nullish().describe('Population coefficient of variation across positive monthly p90s, expressed as a percentage; high values mean neither window is reliable alone'),
+  "latestMonthlyP90": zod.number().nullish(),
+  "minPositiveMonthlyP90": zod.number().nullish(),
+  "zeroProductionMonths": zod.array(zod.string()).optional().describe('Months with no positive-production observations; not capacity zeros'),
+  "monthly": zod.array(zod.object({
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date(),
+  "daysObserved": zod.number(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number()
+}).and(zod.object({
+  "month": zod.string()
+}))).optional().describe('Monthly p90 evidence used by this Pass 2 category selection'),
+  "selectedWindow": zod.enum(['fullWindow', 'recent90d']),
+  "selectedP90": zod.number(),
+  "overrideCapacity": zod.number().nullable(),
+  "capacityPerDay": zod.number(),
+  "workingDays": zod.array(zod.number()).min(listPlanRunsResponsePass2CategoriesItemWorkingDaysMin).max(listPlanRunsResponsePass2CategoriesItemWorkingDaysMax),
+  "weeklyCapacity": zod.array(zod.number()).min(listPlanRunsResponsePass2CategoriesItemWeeklyCapacityMin).max(listPlanRunsResponsePass2CategoriesItemWeeklyCapacityMax),
+  "weeklyRelease": zod.array(zod.number()).min(listPlanRunsResponsePass2CategoriesItemWeeklyReleaseMin).max(listPlanRunsResponsePass2CategoriesItemWeeklyReleaseMax),
+  "temporaryPlan": zod.number(),
+  "productionPlan": zod.number(),
+  "cannotBeMade": zod.number()
+})),
+  "invariants": zod.object({
+  "conservation": zod.boolean(),
+  "weeklyCapacity": zod.boolean(),
+  "weeklySum": zod.boolean(),
+  "dummyPriority": zod.boolean(),
+  "temporaryPlanUnchanged": zod.boolean(),
+  "temporaryPlanTotal": zod.number(),
+  "productionPlanTotal": zod.number(),
+  "cannotBeMadeTotal": zod.number()
+})
+}).nullable(),
   "itemCount": zod.number(),
   "grandMinTotal": zod.number(),
   "grandMaxTotal": zod.number(),
@@ -1055,15 +1341,74 @@ export const getPlanRunParams = zod.object({
   "id": zod.number()
 })
 
+export const getPlanRunResponseRunPass2CategoriesItemWorkingDaysMin = 4;
+export const getPlanRunResponseRunPass2CategoriesItemWorkingDaysMax = 4;
+
+export const getPlanRunResponseRunPass2CategoriesItemWeeklyCapacityMin = 4;
+export const getPlanRunResponseRunPass2CategoriesItemWeeklyCapacityMax = 4;
+
+export const getPlanRunResponseRunPass2CategoriesItemWeeklyReleaseMin = 4;
+export const getPlanRunResponseRunPass2CategoriesItemWeeklyReleaseMax = 4;
+
+
+
 export const getPlanRunResponse = zod.object({
   "run": zod.object({
   "id": zod.number(),
   "month": zod.string(),
   "segment": zod.string(),
+  "planType": zod.enum(['temporary', 'production']),
+  "temporaryRunId": zod.number().nullable(),
   "asOfAt": zod.string().datetime({}),
   "status": zod.enum(['draft', 'finalized']),
   "effectiveFrom": zod.string().date().nullable().describe('Date this issued plan version begins governing monitoring; null only for legacy runs.'),
   "note": zod.string().nullable(),
+  "planStatusReason": zod.string().nullable().describe('Audit reason when the issued plan has a known provenance or status concern.'),
+  "pass2": zod.object({
+  "workingDays": zod.number(),
+  "workedSundayDates": zod.array(zod.string().date()),
+  "categories": zod.array(zod.object({
+  "category": zod.string(),
+  "fullP90": zod.number(),
+  "recent90dP90": zod.number(),
+  "driftPct": zod.number().nullable(),
+  "recoveryDriftPct": zod.number().nullish().describe('Recovery drift from the minimum positive monthly p90 to the latest positive monthly p90'),
+  "monthlyP90CvPct": zod.number().nullish().describe('Population coefficient of variation across positive monthly p90s, expressed as a percentage; high values mean neither window is reliable alone'),
+  "latestMonthlyP90": zod.number().nullish(),
+  "minPositiveMonthlyP90": zod.number().nullish(),
+  "zeroProductionMonths": zod.array(zod.string()).optional().describe('Months with no positive-production observations; not capacity zeros'),
+  "monthly": zod.array(zod.object({
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date(),
+  "daysObserved": zod.number(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number()
+}).and(zod.object({
+  "month": zod.string()
+}))).optional().describe('Monthly p90 evidence used by this Pass 2 category selection'),
+  "selectedWindow": zod.enum(['fullWindow', 'recent90d']),
+  "selectedP90": zod.number(),
+  "overrideCapacity": zod.number().nullable(),
+  "capacityPerDay": zod.number(),
+  "workingDays": zod.array(zod.number()).min(getPlanRunResponseRunPass2CategoriesItemWorkingDaysMin).max(getPlanRunResponseRunPass2CategoriesItemWorkingDaysMax),
+  "weeklyCapacity": zod.array(zod.number()).min(getPlanRunResponseRunPass2CategoriesItemWeeklyCapacityMin).max(getPlanRunResponseRunPass2CategoriesItemWeeklyCapacityMax),
+  "weeklyRelease": zod.array(zod.number()).min(getPlanRunResponseRunPass2CategoriesItemWeeklyReleaseMin).max(getPlanRunResponseRunPass2CategoriesItemWeeklyReleaseMax),
+  "temporaryPlan": zod.number(),
+  "productionPlan": zod.number(),
+  "cannotBeMade": zod.number()
+})),
+  "invariants": zod.object({
+  "conservation": zod.boolean(),
+  "weeklyCapacity": zod.boolean(),
+  "weeklySum": zod.boolean(),
+  "dummyPriority": zod.boolean(),
+  "temporaryPlanUnchanged": zod.boolean(),
+  "temporaryPlanTotal": zod.number(),
+  "productionPlanTotal": zod.number(),
+  "cannotBeMadeTotal": zod.number()
+})
+}).nullable(),
   "itemCount": zod.number(),
   "grandMinTotal": zod.number(),
   "grandMaxTotal": zod.number(),
@@ -1077,14 +1422,164 @@ export const getPlanRunResponse = zod.object({
   "stock": zod.number(),
   "pendingCurrent": zod.number(),
   "pendingLastMonth": zod.number(),
-  "bufferReq": zod.number(),
+  "bufferReq": zod.number().nullable(),
   "minProduction": zod.number(),
-  "productionPlan": zod.number()
+  "productionPlan": zod.number(),
+  "temporaryPlan": zod.number().describe('Frozen Temporary Plan demand before PTMT capacity fitting.'),
+  "cannotBeMade": zod.number().describe('Temporary demand remaining after all four weekly category capacities are consumed.'),
+  "dummy": zod.number(),
+  "orders": zod.number(),
+  "buffer": zod.number(),
+  "material": zod.string().nullish(),
+  "weightKg": zod.number().nullish(),
+  "urgencyRank": zod.number().nullish(),
+  "releaseWeek": zod.number().nullish(),
+  "w1": zod.number().optional(),
+  "w2": zod.number().optional(),
+  "w3": zod.number().optional(),
+  "w4": zod.number().optional()
 }))
 })
 
 
 export const deletePlanRunParams = zod.object({
+  "id": zod.number()
+})
+
+
+export const getPlanRunScheduleRequestParams = zod.object({
+  "id": zod.number()
+})
+
+export const getPlanRunScheduleRequestResponse = zod.object({
+  "contract": zod.object({
+  "name": zod.string(),
+  "version": zod.number(),
+  "segment": zod.string(),
+  "month": zod.string(),
+  "period": zod.enum(['week', 'month']),
+  "sourceRunId": zod.number(),
+  "sourcePlanType": zod.enum(['temporary', 'production']),
+  "lineageTemporaryRunId": zod.number().nullable(),
+  "fields": zod.array(zod.string())
+}),
+  "items": zod.array(zod.object({
+  "itemCode": zod.string(),
+  "colour": zod.string(),
+  "quantity": zod.number(),
+  "material": zod.string().nullable(),
+  "weightKg": zod.number().nullable(),
+  "category": zod.string(),
+  "urgencyRank": zod.number()
+}))
+})
+
+
+/**
+ * Run a finalized Plumbing plan through the external pipe and fitting machine scheduler.
+ */
+export const schedulePlumbingPlanRunParams = zod.object({
+  "id": zod.number()
+})
+
+export const schedulePlumbingPlanRunResponseMonthRegExp = new RegExp('^\\d{4}-\\d{2}$');
+
+export const schedulePlumbingPlanRunResponseWeekDaysMin = 4;
+export const schedulePlumbingPlanRunResponseWeekDaysMax = 4;
+
+
+export const schedulePlumbingPlanRunResponseResultsItemWeekDaysMin = 4;
+export const schedulePlumbingPlanRunResponseResultsItemWeekDaysMax = 4;
+
+export const schedulePlumbingPlanRunResponseResultsMin = 2;
+export const schedulePlumbingPlanRunResponseResultsMax = 2;
+
+
+
+export const schedulePlumbingPlanRunResponse = zod.object({
+  "batchId": zod.string().uuid(),
+  "sourceRunId": zod.number(),
+  "month": zod.string().regex(schedulePlumbingPlanRunResponseMonthRegExp),
+  "segment": zod.enum(['Plumbing']),
+  "week_days": zod.array(zod.number().min(1)).min(schedulePlumbingPlanRunResponseWeekDaysMin).max(schedulePlumbingPlanRunResponseWeekDaysMax),
+  "worked_sunday_dates": zod.array(zod.string().date()).optional(),
+  "materials": zod.array(zod.enum(['CPVC', 'UPVC', 'SWR', 'AGRI'])).optional(),
+  "demand": zod.object({
+  "pieces": zod.number(),
+  "item_count": zod.number(),
+  "kg": zod.number().nullish()
+}),
+  "scheduled": zod.object({
+  "pieces": zod.number(),
+  "kg": zod.number().nullish(),
+  "hours": zod.number()
+}),
+  "unfinished": zod.object({
+  "pieces": zod.number(),
+  "kg": zod.number(),
+  "hours": zod.number()
+}),
+  "capacity_hours": zod.number(),
+  "idle_hours": zod.number(),
+  "downtime_hours_lost": zod.number(),
+  "downtime_machine_days": zod.number(),
+  "unallocated_hours": zod.number(),
+  "unroutable": zod.array(zod.object({
+  "kind": zod.enum(['pipe', 'fitting']),
+  "item_code": zod.string(),
+  "material": zod.string(),
+  "qty_pcs": zod.number(),
+  "reason": zod.string()
+})).optional(),
+  "results": zod.array(zod.object({
+  "kind": zod.enum(['pipe', 'fitting']),
+  "week_days": zod.array(zod.number().min(1)).min(schedulePlumbingPlanRunResponseResultsItemWeekDaysMin).max(schedulePlumbingPlanRunResponseResultsItemWeekDaysMax),
+  "blocks": zod.array(zod.object({
+
+})),
+  "weekly_fill": zod.array(zod.object({
+
+})),
+  "unfinished": zod.array(zod.object({
+
+})),
+  "total_capacity_hrs": zod.number().optional(),
+  "total_scheduled_hrs": zod.number().optional(),
+  "total_idle_hrs": zod.number().optional(),
+  "total_scheduled_pcs": zod.number().optional(),
+  "total_scheduled_kg": zod.number().nullish(),
+  "total_unfinished_pcs": zod.number().optional(),
+  "total_unfinished_kg": zod.number().optional(),
+  "total_unfinished_hours": zod.number().optional(),
+  "total_downtime_hours_lost": zod.number().optional(),
+  "total_downtime_machine_days": zod.number().optional(),
+  "unfinished_capability": zod.array(zod.object({
+  "item_code": zod.string().optional(),
+  "material": zod.string().optional(),
+  "remaining_pcs": zod.number().optional(),
+  "remaining_kg": zod.number().optional(),
+  "remaining_hours": zod.number().optional(),
+  "capable_machines": zod.array(zod.object({
+  "machine_id": zod.string().optional(),
+  "locked_out": zod.boolean().nullish(),
+  "capacity_hours": zod.number().optional(),
+  "scheduled_hours": zod.number().optional(),
+  "idle_hours": zod.number().optional(),
+  "peak_utilisation_pct": zod.number().optional(),
+  "saturated": zod.boolean().optional()
+})).optional()
+})).optional()
+})).min(schedulePlumbingPlanRunResponseResultsMin).max(schedulePlumbingPlanRunResponseResultsMax),
+  "solventsExcludedAsUnconstrained": zod.number().optional(),
+  "solventExclusions": zod.array(zod.object({
+  "item_code": zod.string(),
+  "category": zod.string(),
+  "qty_pcs": zod.number()
+})).optional()
+})
+
+
+export const exportFrozenPlanExcelParams = zod.object({
   "id": zod.number()
 })
 
@@ -1131,14 +1626,73 @@ export const finalizePlanRunBody = zod.object({
   "effectiveFrom": zod.string().date().optional().describe('Optional final effective date for this issued plan version.')
 })
 
+export const finalizePlanRunResponsePass2CategoriesItemWorkingDaysMin = 4;
+export const finalizePlanRunResponsePass2CategoriesItemWorkingDaysMax = 4;
+
+export const finalizePlanRunResponsePass2CategoriesItemWeeklyCapacityMin = 4;
+export const finalizePlanRunResponsePass2CategoriesItemWeeklyCapacityMax = 4;
+
+export const finalizePlanRunResponsePass2CategoriesItemWeeklyReleaseMin = 4;
+export const finalizePlanRunResponsePass2CategoriesItemWeeklyReleaseMax = 4;
+
+
+
 export const finalizePlanRunResponse = zod.object({
   "id": zod.number(),
   "month": zod.string(),
   "segment": zod.string(),
+  "planType": zod.enum(['temporary', 'production']),
+  "temporaryRunId": zod.number().nullable(),
   "asOfAt": zod.string().datetime({}),
   "status": zod.enum(['draft', 'finalized']),
   "effectiveFrom": zod.string().date().nullable().describe('Date this issued plan version begins governing monitoring; null only for legacy runs.'),
   "note": zod.string().nullable(),
+  "planStatusReason": zod.string().nullable().describe('Audit reason when the issued plan has a known provenance or status concern.'),
+  "pass2": zod.object({
+  "workingDays": zod.number(),
+  "workedSundayDates": zod.array(zod.string().date()),
+  "categories": zod.array(zod.object({
+  "category": zod.string(),
+  "fullP90": zod.number(),
+  "recent90dP90": zod.number(),
+  "driftPct": zod.number().nullable(),
+  "recoveryDriftPct": zod.number().nullish().describe('Recovery drift from the minimum positive monthly p90 to the latest positive monthly p90'),
+  "monthlyP90CvPct": zod.number().nullish().describe('Population coefficient of variation across positive monthly p90s, expressed as a percentage; high values mean neither window is reliable alone'),
+  "latestMonthlyP90": zod.number().nullish(),
+  "minPositiveMonthlyP90": zod.number().nullish(),
+  "zeroProductionMonths": zod.array(zod.string()).optional().describe('Months with no positive-production observations; not capacity zeros'),
+  "monthly": zod.array(zod.object({
+  "startDate": zod.string().date(),
+  "endDate": zod.string().date(),
+  "daysObserved": zod.number(),
+  "meanPerDay": zod.number(),
+  "p90PerDay": zod.number(),
+  "bestDay": zod.number()
+}).and(zod.object({
+  "month": zod.string()
+}))).optional().describe('Monthly p90 evidence used by this Pass 2 category selection'),
+  "selectedWindow": zod.enum(['fullWindow', 'recent90d']),
+  "selectedP90": zod.number(),
+  "overrideCapacity": zod.number().nullable(),
+  "capacityPerDay": zod.number(),
+  "workingDays": zod.array(zod.number()).min(finalizePlanRunResponsePass2CategoriesItemWorkingDaysMin).max(finalizePlanRunResponsePass2CategoriesItemWorkingDaysMax),
+  "weeklyCapacity": zod.array(zod.number()).min(finalizePlanRunResponsePass2CategoriesItemWeeklyCapacityMin).max(finalizePlanRunResponsePass2CategoriesItemWeeklyCapacityMax),
+  "weeklyRelease": zod.array(zod.number()).min(finalizePlanRunResponsePass2CategoriesItemWeeklyReleaseMin).max(finalizePlanRunResponsePass2CategoriesItemWeeklyReleaseMax),
+  "temporaryPlan": zod.number(),
+  "productionPlan": zod.number(),
+  "cannotBeMade": zod.number()
+})),
+  "invariants": zod.object({
+  "conservation": zod.boolean(),
+  "weeklyCapacity": zod.boolean(),
+  "weeklySum": zod.boolean(),
+  "dummyPriority": zod.boolean(),
+  "temporaryPlanUnchanged": zod.boolean(),
+  "temporaryPlanTotal": zod.number(),
+  "productionPlanTotal": zod.number(),
+  "cannotBeMadeTotal": zod.number()
+})
+}).nullable(),
   "itemCount": zod.number(),
   "grandMinTotal": zod.number(),
   "grandMaxTotal": zod.number(),
@@ -1283,6 +1837,7 @@ export const getMonitoringQualityResponse = zod.object({
   "outputKg": zod.number(),
   "rejectionKg": zod.number().nullable(),
   "rejectionPct": zod.number().nullable(),
+  "totalCountBasis": zod.enum(['net', 'gross']),
   "goodOutputKg": zod.number().nullable()
 }))
 })
@@ -2045,6 +2600,7 @@ export const getPlantLiveSummaryResponse = zod.object({
   "total_count": zod.number().nullish(),
   "reject_count": zod.number().nullish(),
   "rejection_pct": zod.number().nullish(),
+  "total_count_basis": zod.enum(['net', 'gross']),
   "actual_hours": zod.number().nullish(),
   "ideal_hours": zod.number().nullish(),
   "unit": zod.string(),
@@ -2066,6 +2622,7 @@ export const getPlantLiveSummaryResponse = zod.object({
   "total_count": zod.number().nullish(),
   "reject_count": zod.number().nullish(),
   "rejection_pct": zod.number().nullish(),
+  "total_count_basis": zod.enum(['net', 'gross']),
   "actual_hours": zod.number().nullish(),
   "ideal_hours": zod.number().nullish(),
   "unit": zod.string(),
@@ -2073,4 +2630,247 @@ export const getPlantLiveSummaryResponse = zod.object({
   "baseline_set": zod.boolean().optional(),
   "warnings": zod.array(zod.string()).optional()
 }))
+})
+
+
+export const getAlertsQueryMonthRegExp = new RegExp('^\\d{4}-(0[1-9]|1[0-2])$');
+
+
+export const getAlertsQueryParams = zod.object({
+  "month": zod.string().regex(getAlertsQueryMonthRegExp),
+  "segment": zod.enum(['PTMT', 'Plumbing'])
+})
+
+export const getAlertsResponse = zod.object({
+  "month": zod.string(),
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "summary": zod.object({
+  "total": zod.number(),
+  "fired": zod.number(),
+  "muted": zod.number(),
+  "suppressed": zod.number(),
+  "clear": zod.number(),
+  "quantityAtStake": zod.number()
+}),
+  "alerts": zod.array(zod.object({
+  "id": zod.number().nullable(),
+  "code": zod.enum(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7']),
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "month": zod.string(),
+  "severity": zod.enum(['red']),
+  "state": zod.enum(['clear', 'fired', 'muted', 'suppressed']),
+  "title": zod.string(),
+  "action": zod.string(),
+  "message": zod.string(),
+  "value": zod.number().nullable(),
+  "threshold": zod.number().nullable(),
+  "difference": zod.number().nullable(),
+  "quantity": zod.number(),
+  "details": zod.record(zod.string(), zod.unknown()),
+  "sourceLinks": zod.array(zod.object({
+  "label": zod.string(),
+  "href": zod.string()
+})),
+  "firstSeenAt": zod.string().datetime({}).nullable(),
+  "lastEvaluatedAt": zod.string().datetime({}),
+  "acknowledgedAt": zod.string().datetime({}).nullable(),
+  "acknowledgedBy": zod.string().nullable(),
+  "mutedUntil": zod.string().datetime({}).nullable(),
+  "muteReason": zod.string().nullable(),
+  "suppressedReason": zod.string().nullable()
+})),
+  "thresholds": zod.array(zod.object({
+  "code": zod.enum(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7']),
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "name": zod.string(),
+  "description": zod.string(),
+  "value": zod.number(),
+  "defaultValue": zod.number(),
+  "unit": zod.string(),
+  "scope": zod.string(),
+  "observedMin": zod.number().nullable(),
+  "observedMax": zod.number().nullable(),
+  "wouldFireCount": zod.number(),
+  "updatedBy": zod.string().nullable(),
+  "updatedAt": zod.string().datetime({})
+}))
+})
+
+
+export const getAlertsHistoryQueryLimitDefault = 100;
+export const getAlertsHistoryQueryLimitMax = 500;
+
+
+
+export const getAlertsHistoryQueryParams = zod.object({
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "limit": zod.number().min(1).max(getAlertsHistoryQueryLimitMax).default(getAlertsHistoryQueryLimitDefault)
+})
+
+export const getAlertsHistoryResponse = zod.object({
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "history": zod.array(zod.object({
+  "id": zod.number(),
+  "alertId": zod.number(),
+  "code": zod.string(),
+  "segment": zod.string(),
+  "month": zod.string(),
+  "state": zod.string(),
+  "value": zod.number().nullable(),
+  "threshold": zod.number().nullable(),
+  "difference": zod.number().nullable(),
+  "quantity": zod.number(),
+  "message": zod.string(),
+  "details": zod.record(zod.string(), zod.unknown()),
+  "sourceLinks": zod.array(zod.object({
+  "label": zod.string(),
+  "href": zod.string()
+})),
+  "occurredAt": zod.string().datetime({}),
+  "actor": zod.string().nullable(),
+  "action": zod.string()
+}))
+})
+
+
+export const acknowledgeAlertParams = zod.object({
+  "id": zod.number()
+})
+
+export const acknowledgeAlertResponse = zod.object({
+  "ok": zod.boolean(),
+  "alert": zod.object({
+  "id": zod.number().nullable(),
+  "code": zod.enum(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7']),
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "month": zod.string(),
+  "severity": zod.enum(['red']),
+  "state": zod.enum(['clear', 'fired', 'muted', 'suppressed']),
+  "title": zod.string(),
+  "action": zod.string(),
+  "message": zod.string(),
+  "value": zod.number().nullable(),
+  "threshold": zod.number().nullable(),
+  "difference": zod.number().nullable(),
+  "quantity": zod.number(),
+  "details": zod.record(zod.string(), zod.unknown()),
+  "sourceLinks": zod.array(zod.object({
+  "label": zod.string(),
+  "href": zod.string()
+})),
+  "firstSeenAt": zod.string().datetime({}).nullable(),
+  "lastEvaluatedAt": zod.string().datetime({}),
+  "acknowledgedAt": zod.string().datetime({}).nullable(),
+  "acknowledgedBy": zod.string().nullable(),
+  "mutedUntil": zod.string().datetime({}).nullable(),
+  "muteReason": zod.string().nullable(),
+  "suppressedReason": zod.string().nullable()
+})
+})
+
+
+export const muteAlertParams = zod.object({
+  "id": zod.number()
+})
+
+
+
+
+export const muteAlertBody = zod.object({
+  "reason": zod.string().min(1),
+  "mutedUntil": zod.string().datetime({})
+})
+
+export const muteAlertResponse = zod.object({
+  "ok": zod.boolean(),
+  "alert": zod.object({
+  "id": zod.number().nullable(),
+  "code": zod.enum(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7']),
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "month": zod.string(),
+  "severity": zod.enum(['red']),
+  "state": zod.enum(['clear', 'fired', 'muted', 'suppressed']),
+  "title": zod.string(),
+  "action": zod.string(),
+  "message": zod.string(),
+  "value": zod.number().nullable(),
+  "threshold": zod.number().nullable(),
+  "difference": zod.number().nullable(),
+  "quantity": zod.number(),
+  "details": zod.record(zod.string(), zod.unknown()),
+  "sourceLinks": zod.array(zod.object({
+  "label": zod.string(),
+  "href": zod.string()
+})),
+  "firstSeenAt": zod.string().datetime({}).nullable(),
+  "lastEvaluatedAt": zod.string().datetime({}),
+  "acknowledgedAt": zod.string().datetime({}).nullable(),
+  "acknowledgedBy": zod.string().nullable(),
+  "mutedUntil": zod.string().datetime({}).nullable(),
+  "muteReason": zod.string().nullable(),
+  "suppressedReason": zod.string().nullable()
+})
+})
+
+
+export const updateAlertThresholdParams = zod.object({
+  "code": zod.enum(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7'])
+})
+
+export const updateAlertThresholdBodyValueMin = 0;
+
+
+
+
+export const updateAlertThresholdBody = zod.object({
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "value": zod.number().min(updateAlertThresholdBodyValueMin),
+  "reason": zod.string().min(1)
+})
+
+export const updateAlertThresholdResponse = zod.object({
+  "ok": zod.boolean(),
+  "threshold": zod.object({
+  "code": zod.enum(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7']),
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "name": zod.string(),
+  "description": zod.string(),
+  "value": zod.number(),
+  "defaultValue": zod.number(),
+  "unit": zod.string(),
+  "scope": zod.string(),
+  "observedMin": zod.number().nullable(),
+  "observedMax": zod.number().nullable(),
+  "wouldFireCount": zod.number(),
+  "updatedBy": zod.string().nullable(),
+  "updatedAt": zod.string().datetime({})
+})
+})
+
+
+export const resetAlertThresholdParams = zod.object({
+  "code": zod.enum(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7'])
+})
+
+export const resetAlertThresholdBody = zod.object({
+  "segment": zod.enum(['PTMT', 'Plumbing'])
+})
+
+export const resetAlertThresholdResponse = zod.object({
+  "ok": zod.boolean(),
+  "threshold": zod.object({
+  "code": zod.enum(['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7']),
+  "segment": zod.enum(['PTMT', 'Plumbing']),
+  "name": zod.string(),
+  "description": zod.string(),
+  "value": zod.number(),
+  "defaultValue": zod.number(),
+  "unit": zod.string(),
+  "scope": zod.string(),
+  "observedMin": zod.number().nullable(),
+  "observedMax": zod.number().nullable(),
+  "wouldFireCount": zod.number(),
+  "updatedBy": zod.string().nullable(),
+  "updatedAt": zod.string().datetime({})
+})
 })

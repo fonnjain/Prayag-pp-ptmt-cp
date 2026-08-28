@@ -19,7 +19,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { cn } from "@/lib/utils";
+import { cn, fmtDate, fmtDateTime } from "@/lib/utils";
+import { DateInput } from "@/components/date-input";
 import {
   BarChart,
   Bar,
@@ -61,10 +62,6 @@ function fmtPcs(n: number) {
 function fmtPct(n: number) {
   return `${(n * 100).toFixed(1)}%`;
 }
-function fmtDt(iso: string) {
-  return new Date(iso).toLocaleString("en-IN", { dateStyle: "short", timeStyle: "short" });
-}
-
 // ─── StatusBadge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
@@ -458,6 +455,9 @@ function RevisedReleaseTable({
               <th className="px-2 py-2 text-right">New Orders Δ</th>
               <th className="px-2 py-2 text-right">Revised</th>
               <th className="px-2 py-2 text-right font-bold text-gray-800">Remaining</th>
+              <th className="px-2 py-2 text-right text-blue-700">Temporary</th>
+              <th className="px-2 py-2 text-right text-green-700">Fitted</th>
+              <th className="px-2 py-2 text-right text-red-700">Cannot</th>
               <th className="px-2 py-2 text-right">Cover</th>
               <th className="px-2 py-2 text-center font-bold text-gray-800">New W</th>
               {remainingWeeks.map(w => (
@@ -503,6 +503,14 @@ function RevisedReleaseTable({
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">{fmtPcs(item.planRev)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums font-bold">{fmtPcs(item.remainingToProduce)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-blue-700">{fmtPcs(item.temporaryCorrective ?? 0)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-green-700">{fmtPcs(item.correctiveProduction ?? 0)}</td>
+                  <td
+                    className="px-2 py-1.5 text-right tabular-nums text-red-700"
+                    title={item.cannotBeMadeReason ?? undefined}
+                  >
+                    {(item.cannotBeMade ?? 0) > 0 ? fmtPcs(item.cannotBeMade ?? 0) : "—"}
+                  </td>
                   <td className="px-2 py-1.5 text-right tabular-nums">
                     {item.coverNow !== null && item.coverNow !== undefined
                       ? <span className={cn(item.coverNow < 0.2 ? "text-red-700 font-bold" : item.coverNow < 0.5 ? "text-orange-600" : "text-gray-600")}>
@@ -541,7 +549,7 @@ function RevisedReleaseTable({
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={20} className="px-3 py-6 text-center text-sm text-gray-400">
+                  <td colSpan={24} className="px-3 py-6 text-center text-sm text-gray-400">
                   No items match the current filters.
                 </td>
               </tr>
@@ -570,6 +578,9 @@ interface EngineCategoryResult {
   feasibleAtRunRate?: number;
   runRateDivergenceFlag?: boolean;
   flags?: string[];
+  temporaryCorrective: number;
+  correctiveProduction: number;
+  cannotBeMade: number;
 }
 
 function CategoryFeasibilityTable({
@@ -618,6 +629,9 @@ function CategoryFeasibilityTable({
               <th className="px-2 py-2 text-right">Revised Plan</th>
               <th className="px-2 py-2 text-right">Produced</th>
               <th className="px-2 py-2 text-right">Remaining</th>
+              <th className="px-2 py-2 text-right text-blue-700">Temporary</th>
+              <th className="px-2 py-2 text-right text-green-700">Fitted</th>
+              <th className="px-2 py-2 text-right text-red-700">Cannot</th>
               <th className="px-2 py-2 text-right">Cap/Day</th>
               <th className="px-2 py-2 text-center">Method</th>
               <th className="px-2 py-2 text-right text-blue-700">Feasible (capacity)</th>
@@ -649,6 +663,15 @@ function CategoryFeasibilityTable({
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums font-bold">
                     {fmtPcs(cat.remaining)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-blue-700">
+                    {fmtPcs(cat.temporaryCorrective ?? 0)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-green-700">
+                    {fmtPcs(cat.correctiveProduction ?? 0)}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-red-700">
+                    {(cat.cannotBeMade ?? 0) > 0 ? fmtPcs(cat.cannotBeMade ?? 0) : "—"}
                   </td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">
                     {fmtPcs(cat.capPerDay)}
@@ -739,7 +762,7 @@ function CategoryRollup({ result }: { result: CorrectiveReplanResult }) {
   return (
     <div>
       <p className="text-xs text-gray-500 mb-3">
-        Revised weekly release per category. Dashed line = one week's capacity ({fmtPcs(weekCapacity)} pcs).
+        Fitted weekly release per category. Dashed line = one week's capacity ({fmtPcs(weekCapacity)} pcs).
       </p>
       <ResponsiveContainer width="100%" height={220}>
         <BarChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 40 }}>
@@ -771,14 +794,14 @@ function HeaderSummary({ result }: { result: CorrectiveReplanResult }) {
   const totalReleasedForClosed = closedWeekStats.reduce((s, ws) => s + ws.released, 0);
 
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
       <div className="rounded-md border bg-white px-3 py-2.5">
         <p className="text-xs text-gray-500">
           {(result as unknown as { asOfDate?: string | null }).asOfDate ? "As of" : "Week closed"}
         </p>
         <p className="text-2xl font-bold">
           {(result as unknown as { asOfDate?: string | null }).asOfDate
-            ? new Date((result as unknown as { asOfDate: string }).asOfDate + "T00:00:00Z").toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+            ? fmtDate((result as unknown as { asOfDate: string }).asOfDate)
             : `W${result.weekClosed}`}
         </p>
         {(result as unknown as { workingDaysUsed?: number; workingDaysRemaining?: number }).workingDaysUsed !== undefined ? (
@@ -821,6 +844,24 @@ function HeaderSummary({ result }: { result: CorrectiveReplanResult }) {
         <p className="text-xs text-gray-400">
           {outlookFeasible ? `✅ Achievable (cap: ${fmtPcs(remainingCapacity)})` : `⚠ Exceeds remaining capacity by ${fmtPcs(outlook - remainingCapacity)}`}
         </p>
+      </div>
+      <div className={cn(
+        "rounded-md border px-3 py-2.5",
+        result.invariants.allPass ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200",
+      )}>
+        <p className="text-xs text-gray-500">Corrective feasibility</p>
+        <p className={cn("text-xl font-bold", result.invariants.allPass ? "text-green-700" : "text-red-700")}>
+          {result.invariants.allPass ? "PASS" : "CHECK"}
+        </p>
+        <p className="text-xs text-gray-500">
+          {fmtPcs(result.categories.reduce((sum, cat) => sum + (cat.correctiveProduction ?? 0), 0))} fitted ·{" "}
+          {fmtPcs(result.unfulfillableQty)} cannot
+        </p>
+        {result.segment === "Plumbing" && result.schedulerWeekOffset !== null && (
+          <p className="text-[10px] text-gray-400">
+            Scheduler W1 → W{1 + result.schedulerWeekOffset}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -990,7 +1031,7 @@ function RunHistory({ month, segment, selectedRunId, onSelect }: { month: string
               </button>
             </div>
           </div>
-          <div className="text-gray-500">{fmtDt(String(run.createdAt))}</div>
+          <div className="text-gray-500">{fmtDateTime(String(run.createdAt))}</div>
           <div className="text-gray-400 mt-0.5">
             Revised: {fmtPcs(run.revisedMonthTotal)} pcs
           </div>
@@ -1131,10 +1172,9 @@ export default function CorrectivePage() {
               {mode === "asOfDate" && (
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">As of date</label>
-                  <Input
-                    type="date"
+                  <DateInput
                     value={asOfDate}
-                    onChange={e => setAsOfDate(e.target.value)}
+                    onChange={setAsOfDate}
                     className="w-40 h-8 text-sm"
                   />
                 </div>
@@ -1163,7 +1203,7 @@ export default function CorrectivePage() {
             {replan.isPending && (
               <div className="rounded-md bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-700 animate-pulse">
                 ⚙ Running {segment} corrective re-plan — computing revised requirements
-                {mode === "asOfDate" ? ` as of ${asOfDate}` : `, capacity-levelling across W${weekClosed + 1}–W4`}…
+                {mode === "asOfDate" ? ` as of ${fmtDate(asOfDate)}` : `, capacity-levelling across W${weekClosed + 1}–W4`}…
               </div>
             )}
 

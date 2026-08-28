@@ -1,0 +1,2222 @@
+{
+  "generatedAt": "2026-08-26",
+  "source": {
+    "catalogue": "competition-analysis",
+    "catalogueProductsFetched": 6223,
+    "junePendingUploadId": 7,
+    "junePendingFile": "LAST MONTH PENDING ORDERS JUNE 2026.xlsx",
+    "julyPendingUploadId": 9,
+    "julyPendingFile": "LAST MONTH PENDING ORDERS JULY 2026.xlsx"
+  },
+  "coverage": [
+    {
+      "segment": "PTMT",
+      "inBoth": 1382,
+      "masterOnly": 731,
+      "itemMasterOnly": 133,
+      "itemMasterOnlyProducts": [
+        {
+          "code": "1151",
+          "category": "Accessorise",
+          "colour": "IVORY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "120.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "121-JJM",
+          "category": "Cocks Standard",
+          "colour": "IVORY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "121.0",
+          "category": "Cocks Standard",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "123.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1231.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "124.0",
+          "category": "Cocks Standard",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1241.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "127.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "129.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1291.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "130.0",
+          "category": "Cocks Standard",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "131-NP",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "131.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1311.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "132.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1321.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1323.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1332.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "134.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1341.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "135.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1351.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "136.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "137.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1375-P",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1375-SG",
+          "category": "Cocks Premium",
+          "colour": "0",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1375-SR",
+          "category": "Cocks Premium",
+          "colour": "0",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1375-SW",
+          "category": "Cocks Premium",
+          "colour": "0",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1375.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "138.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "139.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1391.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "140.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "141.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1411.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "142.0",
+          "category": "Cocks Standard",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1421.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "143.0",
+          "category": "Cocks Standard",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1431.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "144.0",
+          "category": "Cocks Standard",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1441.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "145.0",
+          "category": "Cocks Standard",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1451.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "146-BP",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "146.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1461.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "147-BP",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "147.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1471.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "148-BP",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "148.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1481.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1491.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "150.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1501.0",
+          "category": "Cocks Standard",
+          "colour": "BURGUNDY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "165.0",
+          "category": "Ball Cock",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "168.0",
+          "category": "Ball Cock",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "169.0",
+          "category": "Ball Cock",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "170.0",
+          "category": "Ball Cock",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "171.0",
+          "category": "Ball Cock",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "172.0",
+          "category": "Ball Cock",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "173.0",
+          "category": "Ball Cock",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "174.0",
+          "category": "Ball Cock",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "186.0",
+          "category": "Cocks Standard",
+          "colour": "IVORY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1861.0",
+          "category": "Cocks Standard",
+          "colour": "IVORY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1872",
+          "category": "Faucets & Jetsprays & Shower",
+          "colour": "IVORY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1882",
+          "category": "Faucets & Jetsprays & Shower",
+          "colour": "IVORY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1892",
+          "category": "Faucets & Jetsprays & Shower",
+          "colour": "IVORY",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "191-A",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "194-A",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "195-A",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "1951-A",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "196-A",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "198-A",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "200-A",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "501",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "501-N",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "501-S",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "502",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "503",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "503-N",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "504",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "505",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "506",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "507",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "508",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "511",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "512",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "513",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "514",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "514-T",
+          "category": "Cistern & Seat Cover",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "515",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "516",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "517",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "518",
+          "category": "Cistern & Seat Cover",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "701",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "701-N",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "702",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "703",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "704",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "705",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "706",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "708",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "721",
+          "category": "Cistern & Seat Cover",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "722",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "723",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "724",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "725",
+          "category": "Cistern & Seat Cover",
+          "colour": "BLUE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "BEA-44A",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "BEA-47A",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "BEA-47AB",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "BEA-84",
+          "category": "Faucets & Jetsprays & Shower",
+          "colour": ".",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "BEA-84B",
+          "category": "Faucets & Jetsprays & Shower",
+          "colour": "WHITE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "BEA-84T",
+          "category": "Faucets & Jetsprays & Shower",
+          "colour": "WHITE",
+          "cataloguePresence": [],
+          "reason": "not-found-anywhere-in-catalogue"
+        },
+        {
+          "code": "CB-02",
+          "category": "Accessorise",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "CF-01",
+          "category": "Accessorise",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "CF-03",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "CH-01",
+          "category": "Accessorise",
+          "colour": "WHITE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "CNS-15",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "CP Fittings / Faucets | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "CNS-20",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "CP Fittings / Faucets | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "CS-01",
+          "category": "Accessorise",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "DB-01",
+          "category": "Accessorise",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "DB-02",
+          "category": "Accessorise",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "DB-04",
+          "category": "Accessorise",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "DF-01",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "H-86",
+          "category": "Faucets & Jetsprays & Shower",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "CP (QUAA / FERN)"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "H-87",
+          "category": "Faucets & Jetsprays & Shower",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "CP (QUAA / FERN)"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "H-88",
+          "category": "Faucets & Jetsprays & Shower",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "CP (QUAA / FERN)"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "LB-01",
+          "category": "Accessorise",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "SB-01",
+          "category": "Accessorise",
+          "colour": "WHITE",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "SF-01",
+          "category": "Accessorise",
+          "colour": ".",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        },
+        {
+          "code": "SP-02",
+          "category": "Accessorise",
+          "colour": "IVORY",
+          "cataloguePresence": [
+            {
+              "segment": null,
+              "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings"
+            }
+          ],
+          "reason": "catalogue-code-present-under-other-segment"
+        }
+      ]
+    },
+    {
+      "segment": "Plumbing",
+      "inBoth": 934,
+      "masterOnly": 1327,
+      "itemMasterOnly": 18,
+      "itemMasterOnlyProducts": [
+        {
+          "code": "4763W",
+          "colour": "",
+          "category": "SWR Fitting",
+          "cataloguePresence": []
+        },
+        {
+          "code": "5771-W",
+          "colour": "",
+          "category": "SWR Fitting",
+          "cataloguePresence": []
+        },
+        {
+          "code": "C521S",
+          "colour": "",
+          "category": "CPVC Fitting",
+          "cataloguePresence": []
+        },
+        {
+          "code": "EWS04",
+          "colour": "",
+          "category": "CPVC Solvent",
+          "cataloguePresence": []
+        },
+        {
+          "code": "EWS05",
+          "colour": "",
+          "category": "CPVC Solvent",
+          "cataloguePresence": []
+        },
+        {
+          "code": "PU-4TB",
+          "colour": "",
+          "category": "UPVC Fitting",
+          "cataloguePresence": []
+        },
+        {
+          "code": "PU-5TB",
+          "colour": "",
+          "category": "UPVC Fitting",
+          "cataloguePresence": []
+        },
+        {
+          "code": "PU13T",
+          "colour": "",
+          "category": "UPVC Pipe",
+          "cataloguePresence": []
+        },
+        {
+          "code": "PW11C",
+          "colour": "",
+          "category": "SWR Pipe",
+          "cataloguePresence": []
+        },
+        {
+          "code": "PW91C",
+          "colour": "",
+          "category": "SWR Pipe",
+          "cataloguePresence": []
+        },
+        {
+          "code": "U21T L",
+          "colour": "",
+          "category": "UPVC Fitting",
+          "cataloguePresence": []
+        },
+        {
+          "code": "U22TL",
+          "colour": "",
+          "category": "UPVC Fitting",
+          "cataloguePresence": []
+        },
+        {
+          "code": "U23TL",
+          "colour": "",
+          "category": "UPVC Fitting",
+          "cataloguePresence": []
+        },
+        {
+          "code": "U27 L",
+          "colour": "",
+          "category": "UPVC Fitting",
+          "cataloguePresence": []
+        },
+        {
+          "code": "U28L",
+          "colour": "",
+          "category": "UPVC Fitting",
+          "cataloguePresence": []
+        },
+        {
+          "code": "U29 L",
+          "colour": "",
+          "category": "UPVC Fitting",
+          "cataloguePresence": []
+        },
+        {
+          "code": "UH72",
+          "colour": "",
+          "category": "UPVC Fitting",
+          "cataloguePresence": []
+        },
+        {
+          "code": "UH76",
+          "colour": "",
+          "category": "UPVC Fitting",
+          "cataloguePresence": []
+        }
+      ]
+    },
+    {
+      "segment": "CP",
+      "inBoth": 0,
+      "masterOnly": 1137,
+      "itemMasterOnly": 0,
+      "itemMasterOnlyProducts": []
+    }
+  ],
+  "ptmtCodeCounts": {
+    "existingItemMaster": 1515,
+    "rawCatalogue": 2113,
+    "safeMergedRoster": 2246
+  },
+  "julyPendingRerun": {
+    "benchmark": {
+      "source": 168695,
+      "rosterMatched": 150077,
+      "unmatched": 18618
+    },
+    "existingItemMaster": {
+      "source": 168695,
+      "rosterMatched": 95591,
+      "unmatched": 73104,
+      "sourceRowCount": 245,
+      "unmatchedRowCount": 38
+    },
+    "rawCatalogueOnly": {
+      "source": 168695,
+      "rosterMatched": 137043,
+      "unmatched": 31652,
+      "sourceRowCount": 245,
+      "unmatchedRowCount": 30,
+      "unmatchedRows": [
+        {
+          "sourceRow": 176,
+          "code": "501",
+          "colour": "WHITE",
+          "originalCode": "501",
+          "originalColour": "WHITE",
+          "quantity": 502,
+          "description": ""
+        },
+        {
+          "sourceRow": 177,
+          "code": "502",
+          "colour": "WHITE",
+          "originalCode": "502",
+          "originalColour": "WHITE",
+          "quantity": 51,
+          "description": ""
+        },
+        {
+          "sourceRow": 178,
+          "code": "701",
+          "colour": "WHITE",
+          "originalCode": "701",
+          "originalColour": "WHITE",
+          "quantity": 6914,
+          "description": ""
+        },
+        {
+          "sourceRow": 179,
+          "code": "701",
+          "colour": "PINK",
+          "originalCode": "701",
+          "originalColour": "PINK",
+          "quantity": 820,
+          "description": ""
+        },
+        {
+          "sourceRow": 180,
+          "code": "701",
+          "colour": "BLUE",
+          "originalCode": "701",
+          "originalColour": "BLUE",
+          "quantity": 44,
+          "description": ""
+        },
+        {
+          "sourceRow": 181,
+          "code": "701",
+          "colour": "IVORY",
+          "originalCode": "701",
+          "originalColour": "IVORY",
+          "quantity": 50,
+          "description": ""
+        },
+        {
+          "sourceRow": 182,
+          "code": "702",
+          "colour": "WHITE",
+          "originalCode": "702",
+          "originalColour": "WHITE",
+          "quantity": 100,
+          "description": ""
+        },
+        {
+          "sourceRow": 183,
+          "code": "704",
+          "colour": "WHITE",
+          "originalCode": "704",
+          "originalColour": "WHITE",
+          "quantity": 465,
+          "description": ""
+        },
+        {
+          "sourceRow": 184,
+          "code": "513",
+          "colour": "WHITE",
+          "originalCode": "513",
+          "originalColour": "WHITE",
+          "quantity": 1407,
+          "description": ""
+        },
+        {
+          "sourceRow": 185,
+          "code": "513",
+          "colour": "PINK",
+          "originalCode": "513",
+          "originalColour": "PINK",
+          "quantity": 120,
+          "description": ""
+        },
+        {
+          "sourceRow": 186,
+          "code": "513",
+          "colour": "BLUE",
+          "originalCode": "513",
+          "originalColour": "BLUE",
+          "quantity": 49,
+          "description": ""
+        },
+        {
+          "sourceRow": 187,
+          "code": "516",
+          "colour": "WHITE",
+          "originalCode": "516",
+          "originalColour": "WHITE",
+          "quantity": 379,
+          "description": ""
+        },
+        {
+          "sourceRow": 188,
+          "code": "DB-02",
+          "colour": "WHITE",
+          "originalCode": "DB-02",
+          "originalColour": "WHITE",
+          "quantity": 141,
+          "description": ""
+        },
+        {
+          "sourceRow": 189,
+          "code": "DB-02L",
+          "colour": "WHITE",
+          "originalCode": "DB-02L",
+          "originalColour": "WHITE",
+          "quantity": 305,
+          "description": ""
+        },
+        {
+          "sourceRow": 190,
+          "code": "DF-01",
+          "colour": "WHITE",
+          "originalCode": "DF-01",
+          "originalColour": "WHITE",
+          "quantity": 40,
+          "description": ""
+        },
+        {
+          "sourceRow": 191,
+          "code": "SP-02",
+          "colour": "WHITE",
+          "originalCode": "SP-02",
+          "originalColour": "WHITE",
+          "quantity": 342,
+          "description": ""
+        },
+        {
+          "sourceRow": 195,
+          "code": "LB-01",
+          "colour": "WHITE",
+          "originalCode": "LB-01",
+          "originalColour": "WHITE",
+          "quantity": 593,
+          "description": ""
+        },
+        {
+          "sourceRow": 207,
+          "code": "323-K",
+          "colour": "WHITE",
+          "originalCode": "323-K",
+          "originalColour": "WHITE",
+          "quantity": 5530,
+          "description": ""
+        },
+        {
+          "sourceRow": 208,
+          "code": "324-K",
+          "colour": "WHITE",
+          "originalCode": "324-K",
+          "originalColour": "WHITE",
+          "quantity": 11911,
+          "description": ""
+        },
+        {
+          "sourceRow": 210,
+          "code": "PTA-3",
+          "colour": "WHITE",
+          "originalCode": "PTA-3",
+          "originalColour": "WHITE",
+          "quantity": 15,
+          "description": ""
+        },
+        {
+          "sourceRow": 211,
+          "code": "PTA-12",
+          "colour": "WHITE",
+          "originalCode": "PTA-12",
+          "originalColour": "WHITE",
+          "quantity": 21,
+          "description": ""
+        },
+        {
+          "sourceRow": 212,
+          "code": "PTA-15",
+          "colour": "WHITE",
+          "originalCode": "PTA-15",
+          "originalColour": "WHITE",
+          "quantity": 71,
+          "description": ""
+        },
+        {
+          "sourceRow": 213,
+          "code": "PTA-18",
+          "colour": "WHITE",
+          "originalCode": "PTA-18",
+          "originalColour": "WHITE",
+          "quantity": 140,
+          "description": ""
+        },
+        {
+          "sourceRow": 214,
+          "code": "PTA-50",
+          "colour": "WHITE",
+          "originalCode": "PTA-50",
+          "originalColour": "WHITE",
+          "quantity": 29,
+          "description": ""
+        },
+        {
+          "sourceRow": 215,
+          "code": "PTA-78",
+          "colour": "WHITE",
+          "originalCode": "PTA-78",
+          "originalColour": "WHITE",
+          "quantity": 83,
+          "description": ""
+        },
+        {
+          "sourceRow": 216,
+          "code": "PTA-84",
+          "colour": "WHITE",
+          "originalCode": "PTA-84",
+          "originalColour": "WHITE",
+          "quantity": 50,
+          "description": ""
+        },
+        {
+          "sourceRow": 242,
+          "code": "CH-01",
+          "colour": "WHITE",
+          "originalCode": "CH-01",
+          "originalColour": "WHITE",
+          "quantity": 540,
+          "description": ""
+        },
+        {
+          "sourceRow": 243,
+          "code": "CS-01",
+          "colour": "WHITE",
+          "originalCode": "CS-01",
+          "originalColour": "WHITE",
+          "quantity": 540,
+          "description": ""
+        },
+        {
+          "sourceRow": 244,
+          "code": "PH-01",
+          "colour": ".",
+          "originalCode": "PH-01",
+          "originalColour": ".",
+          "quantity": 200,
+          "description": ""
+        },
+        {
+          "sourceRow": 245,
+          "code": "PH-02",
+          "colour": ".",
+          "originalCode": "PH-02",
+          "originalColour": ".",
+          "quantity": 200,
+          "description": ""
+        }
+      ]
+    },
+    "safeMergedRoster": {
+      "source": 168695,
+      "rosterMatched": 150140,
+      "unmatched": 18555,
+      "sourceRowCount": 245,
+      "unmatchedRowCount": 12,
+      "unmatchedRows": [
+        {
+          "sourceRow": 189,
+          "code": "DB-02L",
+          "colour": "WHITE",
+          "originalCode": "DB-02L",
+          "originalColour": "WHITE",
+          "quantity": 305,
+          "description": ""
+        },
+        {
+          "sourceRow": 207,
+          "code": "323-K",
+          "colour": "WHITE",
+          "originalCode": "323-K",
+          "originalColour": "WHITE",
+          "quantity": 5530,
+          "description": ""
+        },
+        {
+          "sourceRow": 208,
+          "code": "324-K",
+          "colour": "WHITE",
+          "originalCode": "324-K",
+          "originalColour": "WHITE",
+          "quantity": 11911,
+          "description": ""
+        },
+        {
+          "sourceRow": 210,
+          "code": "PTA-3",
+          "colour": "WHITE",
+          "originalCode": "PTA-3",
+          "originalColour": "WHITE",
+          "quantity": 15,
+          "description": ""
+        },
+        {
+          "sourceRow": 211,
+          "code": "PTA-12",
+          "colour": "WHITE",
+          "originalCode": "PTA-12",
+          "originalColour": "WHITE",
+          "quantity": 21,
+          "description": ""
+        },
+        {
+          "sourceRow": 212,
+          "code": "PTA-15",
+          "colour": "WHITE",
+          "originalCode": "PTA-15",
+          "originalColour": "WHITE",
+          "quantity": 71,
+          "description": ""
+        },
+        {
+          "sourceRow": 213,
+          "code": "PTA-18",
+          "colour": "WHITE",
+          "originalCode": "PTA-18",
+          "originalColour": "WHITE",
+          "quantity": 140,
+          "description": ""
+        },
+        {
+          "sourceRow": 214,
+          "code": "PTA-50",
+          "colour": "WHITE",
+          "originalCode": "PTA-50",
+          "originalColour": "WHITE",
+          "quantity": 29,
+          "description": ""
+        },
+        {
+          "sourceRow": 215,
+          "code": "PTA-78",
+          "colour": "WHITE",
+          "originalCode": "PTA-78",
+          "originalColour": "WHITE",
+          "quantity": 83,
+          "description": ""
+        },
+        {
+          "sourceRow": 216,
+          "code": "PTA-84",
+          "colour": "WHITE",
+          "originalCode": "PTA-84",
+          "originalColour": "WHITE",
+          "quantity": 50,
+          "description": ""
+        },
+        {
+          "sourceRow": 244,
+          "code": "PH-01",
+          "colour": ".",
+          "originalCode": "PH-01",
+          "originalColour": ".",
+          "quantity": 200,
+          "description": ""
+        },
+        {
+          "sourceRow": 245,
+          "code": "PH-02",
+          "colour": ".",
+          "originalCode": "PH-02",
+          "originalColour": ".",
+          "quantity": 200,
+          "description": ""
+        }
+      ]
+    },
+    "interpretation": "The raw catalogue is not a safe replacement because 133 existing PTMT codes are absent from its PTMT division. Preserving those codes in a merged roster produces the expected-scale result; do not switch until each code is reviewed."
+  },
+  "juneResolutionLoss": {
+    "source": 137939,
+    "rosterMatched": 102886,
+    "planResolved": 102663,
+    "unmatched": 35053,
+    "resolutionLoss": 223,
+    "resolutionLossRowCount": 2,
+    "unmatchedRowCount": 43,
+    "rows": [
+      {
+        "sourceRow": 43,
+        "code": "186",
+        "colour": "IVORY",
+        "originalCode": "186",
+        "originalColour": "IVORY",
+        "quantity": 193,
+        "description": "",
+        "reason": "AMBIGUOUS_ROSTER_MATCH",
+        "candidates": [
+          {
+            "code": "186",
+            "colour": "IVORY",
+            "category": "Accessorise"
+          },
+          {
+            "code": "186",
+            "colour": "IVORY",
+            "category": "Cocks Standard"
+          },
+          {
+            "code": "186",
+            "colour": "WHITE",
+            "category": "Accessorise"
+          },
+          {
+            "code": "186",
+            "colour": "WHITE",
+            "category": "Cocks Standard"
+          }
+        ]
+      },
+      {
+        "sourceRow": 101,
+        "code": "1813-CR",
+        "colour": "R BLUE",
+        "originalCode": "1813-CR",
+        "originalColour": "R BLUE",
+        "quantity": 30,
+        "description": "",
+        "reason": "COLOUR_MISMATCH",
+        "candidates": [
+          {
+            "code": "1813-CR",
+            "colour": ".",
+            "category": "Faucets & Jetsprays & Shower"
+          },
+          {
+            "code": "1813-CR",
+            "colour": "R.BLUE",
+            "category": "Faucets & Jetsprays & Shower"
+          }
+        ]
+      }
+    ],
+    "interpretation": "The 223 pieces were not roster misses. They matched an item code, then failed the second-stage code/colour/category resolution."
+  },
+  "coverageAudit": {
+    "trailingDotZero": {
+      "notFoundGapCodes": 87,
+      "resolvedCodes": 56,
+      "rule": "uppercase and trim, then remove one trailing .0",
+      "codes": [
+        "120.0",
+        "121.0",
+        "123.0",
+        "1231.0",
+        "124.0",
+        "1241.0",
+        "127.0",
+        "129.0",
+        "1291.0",
+        "130.0",
+        "131.0",
+        "1311.0",
+        "132.0",
+        "1321.0",
+        "1323.0",
+        "1332.0",
+        "134.0",
+        "1341.0",
+        "135.0",
+        "1351.0",
+        "136.0",
+        "137.0",
+        "1375.0",
+        "138.0",
+        "139.0",
+        "1391.0",
+        "140.0",
+        "141.0",
+        "1411.0",
+        "142.0",
+        "1421.0",
+        "143.0",
+        "1431.0",
+        "144.0",
+        "1441.0",
+        "145.0",
+        "1451.0",
+        "146.0",
+        "1461.0",
+        "147.0",
+        "1471.0",
+        "148.0",
+        "1481.0",
+        "1491.0",
+        "150.0",
+        "1501.0",
+        "165.0",
+        "168.0",
+        "169.0",
+        "170.0",
+        "171.0",
+        "172.0",
+        "173.0",
+        "174.0",
+        "186.0",
+        "1861.0"
+      ],
+      "conclusion": "These code identities resolve to active PTMT catalogue codes and should be canonicalized rather than preserved as separate products."
+    },
+    "combinedDivision": {
+      "otherSegmentGapCodes": 46,
+      "exactCombinedCodes": 41,
+      "division": "Ceramic Sanitaryware | PTMT & Plastic Fittings",
+      "itemMasterCategoryByCode": {
+        "Cistern & Seat Cover": 28,
+        "Accessorise": 13
+      },
+      "codes": [
+        "501",
+        "502",
+        "503",
+        "504",
+        "506",
+        "507",
+        "508",
+        "511",
+        "512",
+        "513",
+        "514",
+        "514-T",
+        "515",
+        "516",
+        "517",
+        "518",
+        "701",
+        "702",
+        "703",
+        "704",
+        "705",
+        "706",
+        "708",
+        "721",
+        "722",
+        "723",
+        "724",
+        "725",
+        "CB-02",
+        "CF-01",
+        "CF-03",
+        "CH-01",
+        "CS-01",
+        "DB-01",
+        "DB-02",
+        "DB-04",
+        "DF-01",
+        "LB-01",
+        "SB-01",
+        "SF-01",
+        "SP-02"
+      ],
+      "proposedRule": "Map this exact pairing to PTMT because one component division maps to PTMT; keep other mixed or unknown combinations under review."
+    },
+    "otherSegmentExceptions": [
+      {
+        "code": "CNS-15",
+        "presence": [
+          {
+            "segment": null,
+            "category": "Allied (Concealed)",
+            "division": "CP Fittings / Faucets | PTMT & Plastic Fittings",
+            "itemCode": "CNS-15"
+          }
+        ]
+      },
+      {
+        "code": "CNS-20",
+        "presence": [
+          {
+            "segment": null,
+            "category": "Allied (Concealed)",
+            "division": "CP Fittings / Faucets | PTMT & Plastic Fittings",
+            "itemCode": "CNS-20"
+          }
+        ]
+      },
+      {
+        "code": "H-86",
+        "presence": [
+          {
+            "segment": null,
+            "category": null,
+            "division": "CP (QUAA / FERN)",
+            "itemCode": "H-86"
+          }
+        ]
+      },
+      {
+        "code": "H-87",
+        "presence": [
+          {
+            "segment": null,
+            "category": null,
+            "division": "CP (QUAA / FERN)",
+            "itemCode": "H-87"
+          }
+        ]
+      },
+      {
+        "code": "H-88",
+        "presence": [
+          {
+            "segment": null,
+            "category": null,
+            "division": "CP (QUAA / FERN)",
+            "itemCode": "H-88"
+          }
+        ]
+      }
+    ],
+    "residualManualReview": [
+      {
+        "code": "1151",
+        "category": "Accessorise",
+        "colour": "IVORY",
+        "cataloguePresence": []
+      },
+      {
+        "code": "121-JJM",
+        "category": "Cocks Standard",
+        "colour": "IVORY",
+        "cataloguePresence": []
+      },
+      {
+        "code": "131-NP",
+        "category": "Cocks Standard",
+        "colour": "BURGUNDY",
+        "cataloguePresence": []
+      },
+      {
+        "code": "1375-P",
+        "category": "Cocks Standard",
+        "colour": "BURGUNDY",
+        "cataloguePresence": []
+      },
+      {
+        "code": "1375-SG",
+        "category": "Cocks Premium",
+        "colour": "0",
+        "cataloguePresence": []
+      },
+      {
+        "code": "1375-SR",
+        "category": "Cocks Premium",
+        "colour": "0",
+        "cataloguePresence": []
+      },
+      {
+        "code": "1375-SW",
+        "category": "Cocks Premium",
+        "colour": "0",
+        "cataloguePresence": []
+      },
+      {
+        "code": "146-BP",
+        "category": "Cocks Standard",
+        "colour": "BURGUNDY",
+        "cataloguePresence": []
+      },
+      {
+        "code": "147-BP",
+        "category": "Cocks Standard",
+        "colour": "BURGUNDY",
+        "cataloguePresence": []
+      },
+      {
+        "code": "148-BP",
+        "category": "Cocks Standard",
+        "colour": "BURGUNDY",
+        "cataloguePresence": []
+      },
+      {
+        "code": "1872",
+        "category": "Faucets & Jetsprays & Shower",
+        "colour": "IVORY",
+        "cataloguePresence": []
+      },
+      {
+        "code": "1882",
+        "category": "Faucets & Jetsprays & Shower",
+        "colour": "IVORY",
+        "cataloguePresence": []
+      },
+      {
+        "code": "1892",
+        "category": "Faucets & Jetsprays & Shower",
+        "colour": "IVORY",
+        "cataloguePresence": []
+      },
+      {
+        "code": "191-A",
+        "category": "Accessorise",
+        "colour": ".",
+        "cataloguePresence": []
+      },
+      {
+        "code": "194-A",
+        "category": "Accessorise",
+        "colour": ".",
+        "cataloguePresence": []
+      },
+      {
+        "code": "195-A",
+        "category": "Accessorise",
+        "colour": ".",
+        "cataloguePresence": []
+      },
+      {
+        "code": "1951-A",
+        "category": "Accessorise",
+        "colour": ".",
+        "cataloguePresence": []
+      },
+      {
+        "code": "196-A",
+        "category": "Accessorise",
+        "colour": ".",
+        "cataloguePresence": []
+      },
+      {
+        "code": "198-A",
+        "category": "Accessorise",
+        "colour": ".",
+        "cataloguePresence": []
+      },
+      {
+        "code": "200-A",
+        "category": "Accessorise",
+        "colour": ".",
+        "cataloguePresence": []
+      },
+      {
+        "code": "501-N",
+        "category": "Cistern & Seat Cover",
+        "colour": "BLUE",
+        "cataloguePresence": []
+      },
+      {
+        "code": "501-S",
+        "category": "Cistern & Seat Cover",
+        "colour": "BLUE",
+        "cataloguePresence": []
+      },
+      {
+        "code": "503-N",
+        "category": "Cistern & Seat Cover",
+        "colour": "BLUE",
+        "cataloguePresence": []
+      },
+      {
+        "code": "505",
+        "category": "Cistern & Seat Cover",
+        "colour": "BLUE",
+        "cataloguePresence": []
+      },
+      {
+        "code": "701-N",
+        "category": "Cistern & Seat Cover",
+        "colour": "BLUE",
+        "cataloguePresence": []
+      },
+      {
+        "code": "BEA-44A",
+        "category": "Accessorise",
+        "colour": ".",
+        "cataloguePresence": []
+      },
+      {
+        "code": "BEA-47A",
+        "category": "Accessorise",
+        "colour": ".",
+        "cataloguePresence": []
+      },
+      {
+        "code": "BEA-47AB",
+        "category": "Accessorise",
+        "colour": ".",
+        "cataloguePresence": []
+      },
+      {
+        "code": "BEA-84",
+        "category": "Faucets & Jetsprays & Shower",
+        "colour": ".",
+        "cataloguePresence": []
+      },
+      {
+        "code": "BEA-84B",
+        "category": "Faucets & Jetsprays & Shower",
+        "colour": "WHITE",
+        "cataloguePresence": []
+      },
+      {
+        "code": "BEA-84T",
+        "category": "Faucets & Jetsprays & Shower",
+        "colour": "WHITE",
+        "cataloguePresence": []
+      },
+      {
+        "code": "CNS-15",
+        "category": "Accessorise",
+        "colour": ".",
+        "cataloguePresence": [
+          {
+            "segment": null,
+            "category": "Allied (Concealed)",
+            "division": "CP Fittings / Faucets | PTMT & Plastic Fittings",
+            "itemCode": "CNS-15"
+          }
+        ]
+      },
+      {
+        "code": "CNS-20",
+        "category": "Accessorise",
+        "colour": ".",
+        "cataloguePresence": [
+          {
+            "segment": null,
+            "category": "Allied (Concealed)",
+            "division": "CP Fittings / Faucets | PTMT & Plastic Fittings",
+            "itemCode": "CNS-20"
+          }
+        ]
+      },
+      {
+        "code": "H-86",
+        "category": "Faucets & Jetsprays & Shower",
+        "colour": "IVORY",
+        "cataloguePresence": [
+          {
+            "segment": null,
+            "category": null,
+            "division": "CP (QUAA / FERN)",
+            "itemCode": "H-86"
+          }
+        ]
+      },
+      {
+        "code": "H-87",
+        "category": "Faucets & Jetsprays & Shower",
+        "colour": "IVORY",
+        "cataloguePresence": [
+          {
+            "segment": null,
+            "category": null,
+            "division": "CP (QUAA / FERN)",
+            "itemCode": "H-87"
+          }
+        ]
+      },
+      {
+        "code": "H-88",
+        "category": "Faucets & Jetsprays & Shower",
+        "colour": "IVORY",
+        "cataloguePresence": [
+          {
+            "segment": null,
+            "category": null,
+            "division": "CP (QUAA / FERN)",
+            "itemCode": "H-88"
+          }
+        ]
+      }
+    ],
+    "colourPlaceholder": {
+      "gapCodeCount": 22,
+      "gapItemMasterRowCount": 26,
+      "allPtmtItemMasterRowCount": 116,
+      "conclusion": "A period is a general no-colour placeholder in the PTMT roster and should be normalized consistently before exact colour joins."
+    }
+  }
+}

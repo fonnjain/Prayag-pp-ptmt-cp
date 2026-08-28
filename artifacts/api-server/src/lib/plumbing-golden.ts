@@ -214,7 +214,6 @@ export const PTMT_AUG_STOCK_121O_WHITE = 6_644;
 export const PTMT_AUG_LM_TOTAL         = 168_695;
 export const PTMT_AUG_PENDING_TOTAL    = 7_993; // live Pending order / report Bal. Qty, verified 2026-08-25
 export const PLUMBING_AUG_PENDING_TOTAL = 85_825; // live Pending order / report Bal. Qty, verified 2026-08-25
-export const PLUMBING_UNMATCHED_PENDING_TOTAL = 1_938; // live Plumbing pending rows without a current plan-roster code, verified 2026-08-25
 // Re-verified 2026-08-21 against the live Sale 26-27 "May,Jun,July'26"
 // rolling tab: 16,114 total / 3 = 5,371 monthly average.
 export const PTMT_AUG_AVG3MO_144O_WHITE = 5_371;
@@ -439,3 +438,177 @@ export const PLUMBING_MON_CAT_W2: Record<string, number> = {
 
 /** ±1% tolerance for monitoring W1/W2 mapped actuals. */
 export const PLUMBING_MON_TOLERANCE = 0.01;
+
+export type GoldenIntegrityFamily =
+  | "plumbing.pieces"
+  | "plumbing.kg"
+  | "plumbing.weekly"
+  | "plumbing.replan"
+  | "plumbing.monitoring"
+  | "ptmt.july.max"
+  | "ptmt.july.min"
+  | "ptmt.august.max"
+  | "ptmt.august.min";
+
+export type GoldenIntegrityCheck = {
+  id: string;
+  family: GoldenIntegrityFamily;
+  name: string;
+  expected: number;
+  actual: number;
+  delta: number;
+  pass: boolean;
+};
+
+const goldenSum = <T>(rows: T[], value: (row: T) => number): number =>
+  rows.reduce((sum, row) => sum + value(row), 0);
+
+/**
+ * Validate the frozen baselines before using them as regression expectations.
+ *
+ * A failing check here describes a defect in the expectation set itself. The
+ * corresponding live-data checks must be reported separately because no input
+ * set can satisfy an internally inconsistent golden.
+ */
+export function getGoldenIntegrityChecks(): GoldenIntegrityCheck[] {
+  const checks: GoldenIntegrityCheck[] = [];
+  const add = (
+    id: string,
+    family: GoldenIntegrityFamily,
+    name: string,
+    expected: number,
+    actual: number,
+  ) => checks.push({
+    id,
+    family,
+    name,
+    expected,
+    actual,
+    delta: actual - expected,
+    pass: actual === expected,
+  });
+
+  add(
+    "plumbing-pieces-total",
+    "plumbing.pieces",
+    "Plumbing category pieces sum = grand total",
+    PLUMBING_GRAND_TOTAL,
+    goldenSum(PLUMBING_GOLDEN, (row) => row.expected),
+  );
+  add(
+    "plumbing-kg-total",
+    "plumbing.kg",
+    "Plumbing category KG sum = grand total",
+    PLUMBING_KG_GRAND_TOTAL,
+    goldenSum(PLUMBING_KG_GOLDEN, (row) => row.expectedKg),
+  );
+  add(
+    "ptmt-july-max-total",
+    "ptmt.july.max",
+    "PTMT July category Max sum = grand total",
+    PTMT_GRAND_MAX,
+    goldenSum(PTMT_CATEGORY_GOLDEN, (row) => row.maxExpected),
+  );
+  add(
+    "ptmt-july-min-total",
+    "ptmt.july.min",
+    "PTMT July category Min sum = grand total",
+    PTMT_GRAND_MIN,
+    goldenSum(PTMT_CATEGORY_GOLDEN, (row) => row.minExpected),
+  );
+  add(
+    "ptmt-august-max-total",
+    "ptmt.august.max",
+    "PTMT August category Max sum = grand total",
+    PTMT_AUG_GRAND_MAX,
+    goldenSum(PTMT_AUG_CATEGORY_GOLDEN, (row) => row.maxExpected),
+  );
+  add(
+    "ptmt-august-min-total",
+    "ptmt.august.min",
+    "PTMT August category Min sum = grand total",
+    PTMT_AUG_GRAND_MIN,
+    goldenSum(PTMT_AUG_CATEGORY_GOLDEN, (row) => row.minExpected),
+  );
+
+  for (const row of PLUMBING_WEEKLY_GOLDEN) {
+    const pieces = PLUMBING_GOLDEN.find((golden) => golden.cat === row.cat)?.expected ?? 0;
+    add(
+      `plumbing-weekly-category-${row.cat}`,
+      "plumbing.weekly",
+      `Plumbing weekly ${row.cat} W1–W4 sum = category pieces`,
+      pieces,
+      row.w1 + row.w2 + row.w3 + row.w4,
+    );
+  }
+  for (const week of ["w1", "w2", "w3", "w4"] as const) {
+    add(
+      `plumbing-weekly-plant-${week}`,
+      "plumbing.weekly",
+      `Plumbing weekly category ${week.toUpperCase()} sum = plant total`,
+      PLUMBING_WEEKLY_PLANT[week],
+      goldenSum(PLUMBING_WEEKLY_GOLDEN, (row) => row[week]),
+    );
+  }
+
+  for (const row of PLUMBING_REPLAN_GOLDEN) {
+    add(
+      `plumbing-replan-identity-${row.cat}`,
+      "plumbing.replan",
+      `Plumbing replan ${row.cat} produced + remaining = plan`,
+      row.plan,
+      row.produced + row.remaining,
+    );
+    add(
+      `plumbing-replan-shortfall-${row.cat}`,
+      "plumbing.replan",
+      `Plumbing replan ${row.cat} shortfall = max(remaining − feasible, 0)`,
+      Math.max(row.remaining - row.feasible, 0),
+      row.shortfall,
+    );
+  }
+  add(
+    "plumbing-replan-produced-total",
+    "plumbing.replan",
+    "Plumbing replan produced sum = grand total",
+    PLUMBING_REPLAN_TOTAL_PRODUCED,
+    goldenSum(PLUMBING_REPLAN_GOLDEN, (row) => row.produced),
+  );
+  add(
+    "plumbing-replan-remaining-total",
+    "plumbing.replan",
+    "Plumbing replan remaining sum = grand total",
+    PLUMBING_REPLAN_TOTAL_REMAINING,
+    goldenSum(PLUMBING_REPLAN_GOLDEN, (row) => row.remaining),
+  );
+  add(
+    "plumbing-replan-feasible-total",
+    "plumbing.replan",
+    "Plumbing replan feasible sum = grand total",
+    PLUMBING_REPLAN_TOTAL_FEASIBLE,
+    goldenSum(PLUMBING_REPLAN_GOLDEN, (row) => row.feasible),
+  );
+  add(
+    "plumbing-replan-shortfall-total",
+    "plumbing.replan",
+    "Plumbing replan shortfall sum = grand total",
+    PLUMBING_REPLAN_TOTAL_SHORTFALL,
+    goldenSum(PLUMBING_REPLAN_GOLDEN, (row) => row.shortfall),
+  );
+  add(
+    "plumbing-monitoring-w1-total",
+    "plumbing.monitoring",
+    "Plumbing monitoring W1 category sum = plant mapped total",
+    PLUMBING_MON_W1_MAPPED,
+    goldenSum(Object.values(PLUMBING_MON_CAT_W1), (value) => value),
+  );
+  add(
+    "plumbing-monitoring-w2-total",
+    "plumbing.monitoring",
+    "Plumbing monitoring W2 category sum = plant mapped total",
+    PLUMBING_MON_W2_MAPPED,
+    goldenSum(Object.values(PLUMBING_MON_CAT_W2), (value) => value),
+  );
+
+  return checks;
+}

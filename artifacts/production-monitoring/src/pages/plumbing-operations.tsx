@@ -4,6 +4,7 @@ import { AlertTriangle, CheckSquare, Database, FileCog, PackageMinus, RefreshCw,
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { fmtDate } from "@/lib/utils";
 
 type Mode = "actions" | "backlog" | "ai" | "settings";
 
@@ -200,7 +201,7 @@ export default function PlumbingOperations({ month, mode }: { month: string; mod
             <CardHeader><CardTitle className="flex items-center gap-2"><Database className="h-4 w-4" /> Plumbing source</CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
               <p>Actuals: <strong>Sheet3</strong> daily production feed.</p>
-              <p>Last data date: <strong>{data.lastDataDate ?? "Unavailable"}</strong></p>
+               <p>Last data date: <strong>{fmtDate(data.lastDataDate) || "Unavailable"}</strong></p>
               <p>Categories: <strong>12 Plumbing categories</strong></p>
             </CardContent>
           </Card>

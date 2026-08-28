@@ -40,6 +40,7 @@ import PlumbingConfig from "@/pages/plumbing-config";
 import PlumbingReports from "@/pages/plumbing-reports";
 import PlumbingOperations from "@/pages/plumbing-operations";
 import PlanImport from "@/pages/plant/plan-import";
+import { ActivityTracker } from "@/lib/activity-tracker";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -209,7 +210,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     return <LoginPage />;
   }
 
-  return <>{children}</>;
+  return <><ActivityTracker app="production-monitoring" />{children}</>;
 }
 
 function App() {

@@ -28,13 +28,19 @@ export default function Quality({ month }: { month: string }) {
   const machines = data.machines || [];
   const activeMachines = machines.filter((m: any) => !m.isGrinder && m.runHours > 0);
   const grinders = machines.filter((m: any) => m.isGrinder);
+  const totalCountBasis = activeMachines[0]?.totalCountBasis ?? machines[0]?.totalCountBasis;
+  const rejectionPctLabel = totalCountBasis === "net"
+    ? "Rejection % · rejects ÷ good output"
+    : totalCountBasis === "gross"
+      ? "Rejection % · rejects ÷ total manufactured"
+      : "Rejection %";
 
   return (
     <div className="space-y-6 max-w-[1400px] mx-auto pb-10">
       <header className="mb-8 flex items-start justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-2">Machine Utilisation & Quality</h1>
-          <p className="text-muted-foreground">Performance by machine for {month}</p>
+          <p className="text-muted-foreground">Performance by machine for {month} · {rejectionPctLabel}</p>
         </div>
         <Button variant="outline" size="sm" onClick={() => exportXlsx(`quality-${month}`, [
           { name: "Machines", rows: activeMachines.map((m: any) => ({ Machine: m.machineId, RunHours: m.runHours, IdealHours: m.idealHours, UtilisationPct: m.utilisationPct, OutputKg: m.outputKg, RejectionKg: m.rejectionKg, RejectionPct: m.rejectionPct, GoodOutputKg: m.goodOutputKg })) },
@@ -69,7 +75,7 @@ export default function Quality({ month }: { month: string }) {
                   <TableHead className="text-right">Utilisation</TableHead>
                   <TableHead className="text-right">Output (kg)</TableHead>
                   <TableHead className="text-right">Rejection (kg)</TableHead>
-                  <TableHead className="text-right">Rejection Pct</TableHead>
+                  <TableHead className="text-right">{rejectionPctLabel}</TableHead>
                   <TableHead className="text-right">Good Output (kg)</TableHead>
                 </TableRow>
               </TableHeader>

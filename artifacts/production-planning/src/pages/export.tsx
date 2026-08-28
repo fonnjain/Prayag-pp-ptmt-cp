@@ -13,7 +13,18 @@ async function downloadFile(url: string, filename: string) {
   const response = await fetch(url);
   if (!response.ok) {
     const text = await response.text().catch(() => "");
-    throw new Error(text || `Export failed with status ${response.status}`);
+    let detail = text;
+    try {
+      const payload = JSON.parse(text) as { message?: unknown; error?: unknown };
+      detail = typeof payload.message === "string"
+        ? payload.message
+        : typeof payload.error === "string"
+          ? payload.error
+          : text;
+    } catch {
+      // Keep the raw response when the server did not return JSON.
+    }
+    throw new Error(detail || `Export failed with status ${response.status}`);
   }
   const blob = await response.blob();
   const objectUrl = URL.createObjectURL(blob);
@@ -26,7 +37,7 @@ async function downloadFile(url: string, filename: string) {
   URL.revokeObjectURL(objectUrl);
 }
 
-type ExportKind = "excel" | "pdf" | "weekly-excel" | "corrective-excel-standard" | "corrective-excel-detail" | "corrective-pdf";
+type ExportKind = "temporary-excel" | "excel" | "pdf" | "weekly-excel" | "corrective-excel-standard" | "corrective-excel-detail" | "corrective-pdf";
 
 function DownloadPair({
   title,
@@ -58,6 +69,7 @@ function DownloadPair({
         <Button
           size="sm"
           className="flex-1 gap-1.5"
+            data-testid={`${excelKind}-export-button`}
           onClick={() => onDownload(excelKind)}
           disabled={downloading === excelKind}
         >
@@ -106,7 +118,10 @@ export default function ExportPage() {
     try {
       let path: string;
       let filename: string;
-      if (kind === "excel") {
+        if (kind === "temporary-excel") {
+          path = `plan/export/temporary-excel?month=${month}&segment=${encodeURIComponent(segment)}`;
+          filename = `${prefix}_Temporary_Plan_${month}.xlsx`;
+        } else if (kind === "excel") {
         path = `plan/export/excel?month=${month}&segment=${encodeURIComponent(segment)}`;
         filename = `${prefix}_Production_Plan_${month}.xlsx`;
       } else if (kind === "pdf") {
@@ -129,10 +144,13 @@ export default function ExportPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not generate the file.";
       const isMissingRun = msg.includes("No corrective run");
+      const isMissingFinalizedPlan = msg.includes("NO_FINALIZED_") || msg.includes("No finalized");
       toast({
         title: "Export failed",
         description: isMissingRun
           ? "No corrective re-plan found for this month. Run the Corrective Plan first."
+          : isMissingFinalizedPlan
+            ? "No finalized plan run is available for this month. Finalize the Temporary and Production Plans in Plan Runs first."
           : "Could not generate the file. Make sure the plan data is loaded.",
         variant: "destructive",
       });
@@ -162,11 +180,35 @@ export default function ExportPage() {
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500 mb-3">Production Plan</h3>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Card className="flex flex-col border-amber-200">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold text-amber-900">1 · Temporary Plan</CardTitle>
+                <p className="text-xs text-gray-600 mt-1">
+                  The demand-true plan, before machine capacity is applied. Shows what is needed; the Production Plan shows what can be made. Per item: demand quantity, of which dummy stock, of which orders, of which buffer.
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">Export-only source snapshot; not issued to the floor.</p>
+              </CardHeader>
+              <CardContent className="mt-auto pt-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 border-amber-300 text-amber-800 hover:bg-amber-50 w-full"
+                  onClick={() => handleExport("temporary-excel")}
+                  disabled={downloading === "temporary-excel"}
+                >
+                  <FileSpreadsheet size={14} />
+                  {downloading === "temporary-excel" ? "Generating…" : "Download Temporary Plan Excel"}
+                </Button>
+              </CardContent>
+            </Card>
             <DownloadPair
-              title="Full Production Plan"
+              title="2 · Full Production Plan"
               description={segment === "Plumbing"
-                ? "12 sheets: Summary, each Plumbing category, and a Legend."
-                : "9 sheets: Summary, the 7 category sheets, and a colour-rule Legend."}
+                ? "Capacity-fitted result from the finalized Plumbing machine-app schedule, with scheduled and Cannot Be Made quantities per item."
+                : "Capacity-fitted result from the finalized PTMT Pass 2 run, with Production Plan and Cannot Be Made quantities per item."}
+              extraNote={segment === "Plumbing"
+                ? "Source: finalized pipe + fitting machine schedule; solvent demand is shown as an unconstrained pass-through."
+                : "Source: finalized PTMT Pass 2 output; the Temporary Plan is retained as lineage."}
               excelKind="excel"
               pdfKind="pdf"
               downloading={downloading}
@@ -174,12 +216,12 @@ export default function ExportPage() {
             />
             <Card className="flex flex-col border-blue-200">
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-semibold text-blue-900">Weekly Release Plan</CardTitle>
+                <CardTitle className="text-sm font-semibold text-blue-900">3 · Weekly Release Plan</CardTitle>
                 <p className="text-xs text-gray-600 mt-1">
-                  One sheet per category: items colour-coded by release week (W1–W4) based on cover ratio.
+                  One sheet per category: the capacity-fitted W1–W4 allocation from the same finalized Production Plan.
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Cover = Stock ÷ Avg 3-Mo Sale. Band thresholds are editable per category.
+                  The workbook asserts Σ W1..W4 = Production Plan total. No cover-ratio banding is used.
                 </p>
               </CardHeader>
               <CardContent className="mt-auto pt-2">

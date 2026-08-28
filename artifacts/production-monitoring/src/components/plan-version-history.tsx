@@ -66,16 +66,18 @@ function formatIssuedAt(issuedAt: string | null | undefined): string {
   if (!issuedAt) return "Not recorded";
   const parsed = new Date(issuedAt);
   if (Number.isNaN(parsed.getTime())) return issuedAt;
-  return new Intl.DateTimeFormat("en-IN", {
+  const formatted = new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
-    month: "short",
+    month: "2-digit",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: true,
+    hour12: false,
     timeZone: "Asia/Kolkata",
-    timeZoneName: "short",
-  }).format(parsed);
+  }).formatToParts(parsed);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    formatted.find((item) => item.type === type)?.value ?? "";
+  return `${part("day")}-${part("month")}-${part("year")} ${part("hour")}:${part("minute")} IST`;
 }
 
 function selectionRule(reason: SelectionReason): string {

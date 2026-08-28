@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { launchBrowser } from "../lib/browser";
 import { exportTimestamp } from "../lib/export-filename";
 import { db, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable, planRunsTable, planRunResultsTable } from "@workspace/db";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, ne } from "drizzle-orm";
 import { runCorrectiveReplan, type CorrectiveItemResult } from "../lib/corrective-engine";
 import { LivePendingReadError } from "../lib/corrective-errors";
 import { exportPlanExcel, ITEM_COLUMNS, addLegendSheet, RED_FILL, GREEN_FILL } from "../lib/excel-export";
@@ -10,6 +10,7 @@ import { summarizePlan, type CalcPlanItem } from "../lib/calc";
 import ExcelJS from "exceljs";
 import { logger } from "../lib/logger";
 import { fetchLiveOrderTotals, itemKey, normalizeCode, type DualTotals } from "../lib/sheets";
+import { handlePlanError } from "./plan";
 
 const router: IRouter = Router();
 
@@ -43,6 +44,11 @@ const PLUMBING_CATS_ORDER = [
 const CORRECTIVE_EXTRA_COLUMNS: Partial<ExcelJS.Column>[] = [
   { header: "Produced To Date",     key: "producedToDate",    width: 16 },
   { header: "Remaining To Produce", key: "remainingToProduce", width: 18 },
+  { header: "Temporary Corrective", key: "temporaryCorrective", width: 20 },
+  { header: "Fitted Production",    key: "correctiveProduction", width: 18 },
+  { header: "Cannot Be Made",       key: "cannotBeMade",       width: 16 },
+  { header: "Cannot-Be-Made Reason", key: "cannotBeMadeReason", width: 28 },
+  { header: "Feasibility State",    key: "feasibilityStatus", width: 18 },
   { header: "Capacity/Day",         key: "capPerDay",          width: 34 },
   { header: "Feasible",             key: "feasible",           width: 12 },
   { header: "Shortfall",            key: "shortfall",          width: 12 },
@@ -151,6 +157,21 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
   const seg = (typeof segment === "string" && segment.trim()) ? segment.trim() : "PTMT";
   const effectiveWeekClosed = asOfDate !== undefined ? 0 : (weekClosed as number);
 
+  // Do not route unknown segments through the PTMT builder. Besides producing
+  // misleading source joins, that would let pending validation fail before the
+  // empty-baseline guard can return its named response.
+  if (seg !== "PTMT" && seg !== "Plumbing") {
+    res.status(422).json({
+      error: "EMPTY_BASELINE",
+      message: `Corrective replan for ${seg}/${month} has no supported planning baseline.`,
+      segment: seg,
+      month,
+      baselinePlanRunId: null,
+      baselineSource: "live",
+    });
+    return;
+  }
+
   // When weekClosed=0 and no asOfDate, default to today so workingDaysRemaining
   // reflects actual days left in the month (not the full month count).
   // This mirrors the Plumbing GET /plan/corrective-replan which defaults asOfDate=today.
@@ -179,6 +200,10 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
       res.status(400).json({ error: `Plan run #${planRunId} is still a draft — finalize it before citing it as the corrective baseline` });
       return;
     }
+    if (baseline.planType === "temporary") {
+      res.status(400).json({ error: `Temporary Plan #${planRunId} cannot be used as a production corrective baseline` });
+      return;
+    }
     resolvedPlanRunId = planRunId;
   } else if (planRunId === undefined) {
     const [latest] = await db
@@ -188,6 +213,7 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
         eq(planRunsTable.month, month),
         eq(planRunsTable.segment, seg),
         eq(planRunsTable.status, "finalized"),
+        ne(planRunsTable.planType, "temporary"),
       ))
       .orderBy(desc(planRunsTable.id))
       .limit(1);
@@ -249,7 +275,16 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
       });
       return;
     }
-    res.status(500).json({ error: "Corrective replan failed", detail: String(err) });
+    // Corrective PTMT can use the same upload-backed baseline builder as the
+    // plan route. Surface its named input failures as client-actionable 422s
+    // instead of collapsing them into the old generic 500 response.
+    try {
+      handlePlanError(res, err);
+    } catch {
+      // Preserve the generic 500 for unexpected programming/database failures;
+      // only the named planning-input classes above should become 422s.
+      res.status(500).json({ error: "Corrective replan failed", detail: String(err) });
+    }
   }
 });
 
@@ -449,6 +484,8 @@ router.get("/corrective/runs", async (req, res): Promise<void> => {
     originalMonthTotal: r.originalMonthTotal,
     revisedMonthTotal: r.revisedMonthTotal,
     unfulfillableQty: r.unfulfillableQty,
+    notScheduledTotal: r.notScheduledTotal,
+    unfulfillableTotal: r.unfulfillableTotal,
     planRunId: r.planRunId ?? null,
     pinned: r.pinned ?? false,
     warnings: r.warningsJson,
@@ -472,6 +509,18 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
   }
 
   const items = await db.select().from(correctivePlanItemsTable).where(eq(correctivePlanItemsTable.runId, run.id));
+  const feasibility = (run.feasibilityJson ?? {}) as {
+    schedulerWeekOffset?: number | null;
+    schedulerOriginalWeeks?: number[];
+    invariants?: {
+      temporaryCorrectiveUnchanged: boolean;
+      noClosedWeekRelease: boolean;
+      weeklyCapacity: boolean;
+      producedFloor: boolean;
+      reconciliation: boolean;
+      allPass: boolean;
+    };
+  };
 
   res.json({
     runId: run.id,
@@ -487,11 +536,31 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
     originalMonthTotal: run.originalMonthTotal,
     revisedMonthTotal: run.revisedMonthTotal,
     unfulfillableQty: run.unfulfillableQty,
+    temporaryCorrectiveTotal: run.temporaryCorrectiveTotal,
+    correctiveProductionTotal: run.correctiveProductionTotal,
+    cannotBeMadeTotal: run.cannotBeMadeTotal,
+    notScheduledTotal: run.notScheduledTotal,
+    unfulfillableTotal: run.unfulfillableTotal,
+    feasibility: run.feasibilityJson,
+    schedulerWeekOffset: typeof feasibility.schedulerWeekOffset === "number" ? feasibility.schedulerWeekOffset : null,
+    schedulerOriginalWeeks: feasibility.schedulerOriginalWeeks ?? [],
+    invariants: feasibility.invariants ?? {
+      temporaryCorrectiveUnchanged: true,
+      noClosedWeekRelease: true,
+      weeklyCapacity: true,
+      producedFloor: true,
+      reconciliation: true,
+      allPass: true,
+    },
+    workingDaysRemaining: run.workingDaysRemaining ?? 0,
     planRunId: run.planRunId ?? null,
     frozenPlanGrandMax: run.frozenPlanGrandMax ?? null,
     pinned: run.pinned ?? false,
     weekStats: run.weekStatsJson,
     warnings: run.warningsJson,
+    categories: run.categoriesJson ?? [],
+    unplannedProduction: [],
+    unplannedTotal: 0,
     items: items.map(i => ({
       itemCode: i.itemCode,
       colour: i.colour,
@@ -518,6 +587,11 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
       w2Rev: i.w2Rev,
       w3Rev: i.w3Rev,
       w4Rev: i.w4Rev,
+      temporaryCorrective: i.temporaryCorrective,
+      correctiveProduction: i.correctiveProduction,
+      cannotBeMade: i.cannotBeMade,
+      cannotBeMadeReason: i.cannotBeMadeReason,
+      feasibilityStatus: i.feasibilityStatus,
       status: i.status,
       isNewItem: i.isNewItem === 1,
     })),
@@ -562,6 +636,10 @@ async function buildCorrectiveExcel(
     ["Original Plan Total (pcs)", grandMinComputed.toLocaleString()],
     ["Revised Plan Total (pcs)", grandMaxComputed.toLocaleString()],
     ["Unfulfillable This Month (pcs)", Math.round(run.unfulfillableQty).toLocaleString()],
+    ["Temporary Corrective Demand (pcs)", Math.round(run.temporaryCorrectiveTotal).toLocaleString()],
+    ["Fitted Corrective Production (pcs)", Math.round(run.correctiveProductionTotal).toLocaleString()],
+    ["Cannot Be Made (pcs)", Math.round(run.cannotBeMadeTotal).toLocaleString()],
+    ["Scheduler Week Offset", run.feasibilityJson && typeof run.feasibilityJson.schedulerWeekOffset === "number" ? String(run.feasibilityJson.schedulerWeekOffset) : "—"],
     ...weekStats.map(ws => [
       `${ws.weekLabel}: Load Factor`,
       `${ws.loadFactor.toFixed(2)}× (${Math.round(ws.released).toLocaleString()} vs cap ${Math.round(ws.capacity).toLocaleString()})`,
@@ -583,6 +661,11 @@ async function buildCorrectiveExcel(
     { header: "Revised Plan", key: "planRev", width: 12 },
     { header: "Rev Plan (kg)", key: "kgRev", width: 14 },
     { header: "Remaining", key: "remainingToProduce", width: 12 },
+     { header: "Temporary Corrective", key: "temporaryCorrective", width: 18 },
+     { header: "Fitted Production", key: "correctiveProduction", width: 16 },
+     { header: "Cannot Be Made", key: "cannotBeMade", width: 15 },
+     { header: "Cannot-Be-Made Reason", key: "cannotBeMadeReason", width: 28 },
+     { header: "Feasibility State", key: "feasibilityStatus", width: 18 },
     { header: "Remaining (kg)", key: "remainingKg", width: 14 },
     { header: "Cover Now", key: "coverNow", width: 12 },
     { header: "New Wk", key: "newWeek", width: 10 },
@@ -607,6 +690,11 @@ async function buildCorrectiveExcel(
       deltaNewOrders: Math.round(item.deltaNewOrders),
       planRev: Math.round(item.planRev),
       remainingToProduce: Math.round(item.remainingToProduce),
+      temporaryCorrective: Math.round(item.temporaryCorrective),
+      correctiveProduction: Math.round(item.correctiveProduction),
+      cannotBeMade: Math.round(item.cannotBeMade),
+      cannotBeMadeReason: item.cannotBeMadeReason ?? "",
+      feasibilityStatus: item.feasibilityStatus,
       coverNow: item.coverNow !== null ? item.coverNow.toFixed(2) : "OS",
       newWeek: item.newWeek ? `W${item.newWeek}` : "—",
       w1Rev: Math.round(item.w1Rev) || "",
@@ -937,6 +1025,27 @@ export async function buildCorrectiveDetailExcel(
   const detTotalRow = sumSh.addRow(["TOTAL", grandPlan, grandProd, grandRem, "", grandFeas, grandShort]);
   detTotalRow.font = { bold: true };
 
+  sumSh.addRow([]);
+  const fitHdr = sumSh.addRow([
+    "Category", "Temporary Corrective", "Fitted Production", "Cannot Be Made", "Reconciliation",
+  ]);
+  fitHdr.font = { bold: true };
+  for (const [cat, catItems] of byCategory) {
+    const temporary = catItems.reduce((sum, item) => sum + Math.round(item.temporaryCorrective), 0);
+    const fitted = catItems.reduce((sum, item) => sum + Math.round(item.correctiveProduction), 0);
+    const cannot = catItems.reduce((sum, item) => sum + Math.round(item.cannotBeMade), 0);
+    sumSh.addRow([cat, temporary, fitted, cannot, temporary === fitted + cannot ? "PASS" : "FAIL"]);
+  }
+  sumSh.addRow([
+    "TOTAL",
+    Math.round(run.temporaryCorrectiveTotal),
+    Math.round(run.correctiveProductionTotal),
+    Math.round(run.cannotBeMadeTotal),
+    Math.round(run.temporaryCorrectiveTotal) ===
+      Math.round(run.correctiveProductionTotal) + Math.round(run.cannotBeMadeTotal)
+      ? "PASS" : "FAIL",
+  ]).font = { bold: true };
+
   // ZERO_CAP_WITH_PRODUCTION — critical engine warning: category produced pcs but Cap/Day = 0.
   // Surfaced here on the Summary (not on item rows) because it is category-level and severity: critical.
   const zeroCaps = engineCats.filter(c => (c.flags ?? []).includes("ZERO_CAP_WITH_PRODUCTION"));
@@ -1041,6 +1150,10 @@ export async function buildCorrectiveDetailExcel(
         order: orderValueForItem(item, items, orderTotals),
         producedToDate:    Math.round(item.producedToDate),
         remainingToProduce: Math.round(item.remainingToProduce),
+         temporaryCorrective: Math.round(item.temporaryCorrective),
+         correctiveProduction: Math.round(item.correctiveProduction),
+         cannotBeMade: Math.round(item.cannotBeMade),
+         cannotBeMadeReason: item.cannotBeMadeReason ?? "",
         // capPerDay / feasible / shortfall intentionally omitted — category-level values
         // are shown in the KPI row below items; putting them on every item row causes
         // column aggregation to be ~N× too large.
@@ -1719,6 +1832,10 @@ function buildCorrectivePdfHtml(
           <td style="text-align:right;color:${item.deltaNewOrders > 0 ? "#c2410c" : "#374151"}">${item.deltaNewOrders !== 0 ? (item.deltaNewOrders > 0 ? "+" : "") + fmtN(item.deltaNewOrders) : "—"}</td>
           <td style="text-align:right;font-weight:bold">${fmtN(item.planRev)}</td>
           <td style="text-align:right;font-weight:bold">${fmtN(item.remainingToProduce)}</td>
+           <td style="text-align:right;color:#1d4ed8">${fmtN(item.temporaryCorrective)}</td>
+           <td style="text-align:right;color:#166534">${fmtN(item.correctiveProduction)}</td>
+           <td style="text-align:right;color:#b91c1c">${item.cannotBeMade > 0 ? fmtN(item.cannotBeMade) : "—"}</td>
+           <td style="font-size:8px;color:#7f1d1d">${h(item.cannotBeMadeReason ?? "")}</td>
           <td style="text-align:right">${item.coverNow !== null ? item.coverNow.toFixed(2) : "OS"}</td>
           <td style="text-align:center">${item.newWeek ? `<span style="background:${WEEK_COLORS[(item.newWeek ?? 1) - 1]};color:#fff;padding:1px 6px;border-radius:3px;font-weight:bold">W${item.newWeek}</span>` : "—"}</td>
           <td><span style="background:${STATUS_BG[item.status] ?? "#f3f4f6"};color:${STATUS_COLOR[item.status] ?? "#374151"};padding:1px 5px;border-radius:3px;font-size:9px">${STATUS_LABEL[item.status] ?? item.status}</span></td>
@@ -1738,6 +1855,10 @@ function buildCorrectivePdfHtml(
               <th style="text-align:right;padding:3px 5px">Orders Δ</th>
               <th style="text-align:right;padding:3px 5px">Revised</th>
               <th style="text-align:right;padding:3px 5px">Remaining</th>
+               <th style="text-align:right;padding:3px 5px">Temporary</th>
+               <th style="text-align:right;padding:3px 5px">Fitted</th>
+               <th style="text-align:right;padding:3px 5px">Cannot</th>
+               <th style="text-align:left;padding:3px 5px">Reason</th>
               <th style="text-align:right;padding:3px 5px">Cover</th>
               <th style="text-align:center;padding:3px 5px">New Wk</th>
               <th style="text-align:left;padding:3px 5px">Status</th>
@@ -1799,6 +1920,9 @@ function buildCorrectivePdfHtml(
     <div class="kpi"><div class="label">Unmatched Order Flow</div><div class="val">${unmatchedOrderFlowQty(items, orderTotals) === "UNAVAILABLE" ? "Unavailable" : fmtN(unmatchedOrderFlowQty(items, orderTotals) as number)} pcs</div></div>
     <div class="kpi"><div class="label">Open Pending Balance</div><div class="val">${fmtN(items.reduce((s, i) => s + Math.round(Number(i.pendingNow ?? 0)), 0))} pcs</div></div>
     <div class="kpi"><div class="label">Unfulfillable</div><div class="val" style="color:${run.unfulfillableQty > 0 ? "#b91c1c" : "#166534"}">${fmtN(run.unfulfillableQty)} pcs</div></div>
+     <div class="kpi"><div class="label">Temporary Corrective</div><div class="val">${fmtN(run.temporaryCorrectiveTotal)} pcs</div></div>
+     <div class="kpi"><div class="label">Fitted Production</div><div class="val" style="color:#166534">${fmtN(run.correctiveProductionTotal)} pcs</div></div>
+     <div class="kpi"><div class="label">Scheduler Offset</div><div class="val">${run.feasibilityJson && typeof run.feasibilityJson.schedulerWeekOffset === "number" ? `+${run.feasibilityJson.schedulerWeekOffset} weeks` : "—"}</div></div>
   </div>
 
   ${(() => {
@@ -1807,7 +1931,8 @@ function buildCorrectivePdfHtml(
     // capacity table, which showed 0 for Plumbing and caused the Cap/Day=0
     // export regression).
     const cats = (run.categoriesJson as Array<{
-      category: string; plan: number; produced: number; remaining: number;
+       category: string; plan: number; produced: number; remaining: number;
+       temporaryCorrective: number; correctiveProduction: number; cannotBeMade: number;
       capPerDay: number; feasible: number; shortfall: number;
       capacityMethod?: string; capacityDays?: number | null;
       feasibleAtRunRate?: number; runRateDivergenceFlag?: boolean;
@@ -1834,6 +1959,9 @@ function buildCorrectivePdfHtml(
         <td style="text-align:right">${fmtN(c.plan)}</td>
         <td style="text-align:right">${fmtN(c.produced)}</td>
         <td style="text-align:right">${fmtN(c.remaining)}</td>
+         <td style="text-align:right;color:#1d4ed8">${fmtN(c.temporaryCorrective)}</td>
+         <td style="text-align:right;color:#166534">${fmtN(c.correctiveProduction)}</td>
+         <td style="text-align:right;color:#b91c1c">${fmtN(c.cannotBeMade)}</td>
         <td style="text-align:right;font-weight:bold">${fmtN(c.capPerDay)}</td>
         <td style="text-align:center;color:#6b7280">${h(c.capacityMethod ?? "—")}${c.capacityDays ? ` (${c.capacityDays}d)` : ""}</td>
         <td style="text-align:right;color:#1d4ed8">${fmtN(c.feasible)}</td>
@@ -1851,7 +1979,7 @@ function buildCorrectivePdfHtml(
   <table style="margin-bottom:12px">
     <thead><tr>
       <th>Category</th><th style="text-align:right">Plan (Rev)</th><th style="text-align:right">Produced</th>
-      <th style="text-align:right">Remaining</th><th style="text-align:right">Cap/Day</th><th style="text-align:center">Method</th>
+       <th style="text-align:right">Remaining</th><th style="text-align:right">Temporary</th><th style="text-align:right">Fitted</th><th style="text-align:right">Cannot</th><th style="text-align:right">Cap/Day</th><th style="text-align:center">Method</th>
       <th style="text-align:right;color:#1d4ed8">Feasible (capacity)</th>
       <th style="text-align:right;color:#4338ca">Feasible (run-rate)</th>
       <th style="text-align:right">Shortfall</th><th style="text-align:center">Divergence</th>

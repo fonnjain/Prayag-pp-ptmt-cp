@@ -13,7 +13,14 @@ const SegmentContext = createContext<SegmentContextValue>({
 });
 
 export function SegmentProvider({ children }: { children: ReactNode }) {
-  const [segment, setSegment] = useState<Segment>("PTMT");
+  const [segment, setSegmentState] = useState<Segment>(() => {
+    const stored = window.localStorage.getItem("prayag-planning-segment");
+    return stored === "Plumbing" ? "Plumbing" : "PTMT";
+  });
+  const setSegment = (next: Segment) => {
+    window.localStorage.setItem("prayag-planning-segment", next);
+    setSegmentState(next);
+  };
   return (
     <SegmentContext.Provider value={{ segment, setSegment }}>
       {children}

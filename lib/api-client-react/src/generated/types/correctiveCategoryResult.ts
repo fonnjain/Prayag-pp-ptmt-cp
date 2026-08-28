@@ -31,4 +31,9 @@ export interface CorrectiveCategoryResult {
   flags: string[];
   /** Total remaining kg for Plumbing categories; 0 for PTMT */
   kgRemaining: number;
+  temporaryCorrective: number;
+  correctiveProduction: number;
+  cannotBeMade: number;
+  notScheduled: number;
+  unfulfillable: number;
 }

@@ -10,3 +10,9 @@ The pending-to-plan reconciliation must hard-fail only on the item-level identit
 **How to apply:** Keep the historical target values and current observed values visible in validation output, but do not let a mismatch alone make the endpoint or CLI regression result fail. Exact historical reproduction is available through frozen pending-input snapshots captured with plan runs.
 
 This guidance does not apply to the pending-driven plan, KG, or weekly goldens. Those baselines describe a plan built without open orders; now that live pending balances are part of the formula, their expected values must be re-derived and the reason for each observation recorded rather than softened as source drift.
+
+Reviewed pending-exclusion policies are also source-specific: a changed upload must stay blocked until its quantity ceiling and exclusion fingerprint are reviewed, rather than being silently accepted as ordinary drift.
+
+**Why:** A valid-looking replacement can contain real rows that do not belong to the planning roster; accepting an unreviewed fingerprint would create a partial demand snapshot while appearing healthy.
+
+**How to apply:** Return a named input error for an over-limit or unknown exclusion set, and preserve the source diagnostics so the upload can be reviewed and explicitly approved later.

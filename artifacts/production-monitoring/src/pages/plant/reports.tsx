@@ -3,6 +3,7 @@ import { FileText, FileSpreadsheet, Download, Loader2, AlertCircle, ClipboardLis
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { fmtDateTime, fmtDate } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
@@ -121,11 +122,7 @@ export default function PlantReports({ month }: { month: string }) {
   }
 
   function formatDate(iso: string) {
-    try {
-      return new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
-    } catch {
-      return iso;
-    }
+    return fmtDateTime(iso);
   }
 
   const cards = [
@@ -275,7 +272,7 @@ export default function PlantReports({ month }: { month: string }) {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-sm font-mono text-xs">{item.filename}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{item.snapshotDate ?? "–"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{fmtDate(item.snapshotDate) || "–"}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{formatDate(item.createdAt)}</TableCell>
                     <TableCell>
                       <Button

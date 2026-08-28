@@ -134,10 +134,15 @@ function CrossAppNav() {
   const path = window.location.pathname;
   const isOps = path.startsWith("/ops-dashboard");
   const isMon = path.startsWith("/monitoring");
+  const isProducts = path === "/products" || path.startsWith("/products/");
+  const isAlerts = path === "/alerts" || path.startsWith("/alerts/");
+  const isPlanning = !isOps && !isMon && !isProducts && !isAlerts;
   const tabs = [
     { label: "Ops Dashboard",         href: "/ops-dashboard/", active: isOps },
     { label: "Production Monitoring", href: "/monitoring/plant", active: isMon },
-    { label: "Production Planning",   href: "/",              active: !isOps && !isMon },
+    { label: "Production Planning",   href: "/",              active: isPlanning },
+    { label: "Products",              href: "/products",       active: isProducts },
+    { label: "Alerts",                href: "/alerts",         active: isAlerts },
   ];
   return (
     <nav className="fixed top-0 left-0 right-0 z-30 h-9 flex items-center px-4 gap-1 border-b border-sidebar-border bg-sidebar">

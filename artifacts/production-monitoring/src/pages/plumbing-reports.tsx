@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { FileText, Download, RefreshCw, ExternalLink } from "lucide-react";
+import { fmtDateTime } from "@/lib/utils";
 
 interface Run {
   id: number;
@@ -19,10 +20,6 @@ function fmtN(n: number | null | undefined) {
   if (n == null) return "–";
   return Math.round(n).toLocaleString("en-IN");
 }
-function fmtDate(s: string) {
-  return new Date(s).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-}
-
 export default function PlumbingReports({ month }: { month: string }) {
   const [runs, setRuns]         = useState<Run[]>([]);
   const [loading, setLoading]   = useState(false);
@@ -148,7 +145,7 @@ export default function PlumbingReports({ month }: { month: string }) {
                       <td className="py-2.5 px-3 text-right font-mono">{fmtN(run.revisedMonthTotal)}</td>
                       <td className="py-2.5 px-3 text-right font-mono">{fmtN(run.producedToDate)}</td>
                       <td className="py-2.5 px-3 text-muted-foreground text-xs max-w-[200px] truncate">{run.note ?? "—"}</td>
-                      <td className="py-2.5 px-3 text-xs text-muted-foreground whitespace-nowrap">{fmtDate(run.createdAt)}</td>
+                      <td className="py-2.5 px-3 text-xs text-muted-foreground whitespace-nowrap">{fmtDateTime(run.createdAt)}</td>
                       <td className="py-2.5 px-4">
                         <div className="flex gap-2 justify-end">
                           <Button

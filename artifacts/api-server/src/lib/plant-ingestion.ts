@@ -1,6 +1,6 @@
 import { db, plantIngestionCacheTable, plantSourceConfigsTable, itemMasterTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import { fetchPlumbingSheet3Production, getTabValues, SHEET_IDS, itemKey, normalizeCode } from "./sheets";
+import { fetchPlumbingSheet3Production, getTabValues, getWorkbookIdForMonth, listTabs, SHEET_IDS, itemKey, normalizeCode } from "./sheets";
 import { logger } from "./logger";
 import { buildPlanItems } from "../routes/plan";
 import { getPlanVersionTimeline, type PlanVersion } from "./plant-plan-timeline";
@@ -136,11 +136,42 @@ export async function fetchDailyActuals(
   const daysInMonth = new Date(y, m, 0).getDate();
   const endDate = `${y}-${String(m).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
 
+  const [source] = await db.select({ fileId: plantSourceConfigsTable.fileId })
+    .from(plantSourceConfigsTable)
+    .where(and(
+      eq(plantSourceConfigsTable.month, month),
+      eq(plantSourceConfigsTable.segment, segment),
+    ));
+  let workbookId = source?.fileId ?? null;
+  if (!workbookId && segment === "PTMT") {
+    try {
+      workbookId = await getWorkbookIdForMonth("PTMT", month);
+    } catch (err) {
+      if (options.requireFresh) throw err;
+      logger.warn({ month, segment, err: String(err) }, "plant-ingestion: monthly workbook resolution failed");
+    }
+  }
+  if (!workbookId) {
+    const error = new Error(`No ${segment} production workbook is configured for ${month}`);
+    if (options.requireFresh) throw error;
+    logger.warn({ month, segment }, "plant-ingestion: no month-specific production workbook configured");
+    return cached ? (cached.rawActualsJson as DailyActualRow[]) : [];
+  }
+
   let rows: string[][];
+  let sourceTab: string;
   try {
-    rows = await getTabValues(SHEET_IDS.ptmtAnuj, "Production", "A1:F500000");
+    const tabs = await listTabs(workbookId);
+    sourceTab =
+      tabs.find((tab) => tab.trim().toLowerCase() === "production") ??
+      tabs.find((tab) => tab.trim().toLowerCase() === "p-data") ??
+      "";
+    if (!sourceTab) {
+      throw new Error(`No Production or P-DATA tab found in PTMT workbook ${workbookId}`);
+    }
+    rows = await getTabValues(workbookId, sourceTab, "A1:F500000");
   } catch (err) {
-    logger.error({ err, month }, "plant-ingestion: failed to read PTMT ANUJ Production tab");
+    logger.error({ err, month, workbookId }, "plant-ingestion: failed to read monthly Production tab");
     if (options.requireFresh) throw err;
     return cached ? (cached.rawActualsJson as DailyActualRow[]) : [];
   }
@@ -152,7 +183,21 @@ export async function fetchDailyActuals(
     return [];
   }
 
-  const header = rows[0].map((h) => String(h ?? "").trim().toLowerCase());
+  // Older monthly workbooks keep the data in P-DATA, preceded by a
+  // formula/summary row. Locate the real header instead of assuming row 1.
+  const headerRowIndex = rows.findIndex((row) => {
+    const headers = row.map((h) => String(h ?? "").trim().toLowerCase());
+    return headers.some((h) => h === "date") &&
+      headers.some((h) => h === "code" || h.includes("code")) &&
+      headers.some((h) => h === "qty" || h.includes("quantity"));
+  });
+  if (headerRowIndex < 0) {
+    const error = new Error(`PTMT ${sourceTab} tab has no recognised Date/Code/Qty header`);
+    if (options.requireFresh) throw error;
+    logger.warn({ month, workbookId, sourceTab }, "plant-ingestion: monthly actuals tab has no recognised header");
+    return [];
+  }
+  const header = rows[headerRowIndex].map((h) => String(h ?? "").trim().toLowerCase());
   const fi = (pred: (h: string) => boolean, fallback: number) => {
     const idx = header.findIndex(pred);
     return idx >= 0 ? idx : fallback;
@@ -164,7 +209,7 @@ export async function fetchDailyActuals(
   const gi = fi((h) => h.includes("group"), 4);
 
   const result: DailyActualRow[] = [];
-  for (let i = 1; i < rows.length; i++) {
+  for (let i = headerRowIndex + 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row || !row[di]) continue;
     const dateStr = parseDate(String(row[di] ?? ""));
@@ -194,7 +239,7 @@ export async function fetchDailyActuals(
     await db.insert(plantIngestionCacheTable).values({ month, segment, snapshotDate: lastDate, rawActualsJson: result });
   }
 
-  logger.info({ month, rowCount: result.length, lastDate }, "plant-ingestion: fetched actuals from PTMT ANUJ");
+  logger.info({ month, segment, workbookId, sourceTab, rowCount: result.length, lastDate }, "plant-ingestion: fetched monthly production actuals");
   return result;
 }
 

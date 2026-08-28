@@ -444,7 +444,7 @@ export default function CategoryPage() {
                             {item.pendingOrder.toFixed(0)}
                           </TableCell>
                           <TableCell className="text-right">{item.pendingOrderLastMonth.toFixed(0)}</TableCell>
-                          <TableCell className="text-right">{item.bufferReq.toFixed(1)}</TableCell>
+                          <TableCell className="text-right">{item.bufferReq === null ? "Demand only" : item.bufferReq.toFixed(1)}</TableCell>
                           <TableCell className="text-right">{item.stock.toFixed(0)}</TableCell>
                           <TableCell className={cn("text-right font-medium", item.minProduction > 0 ? "bg-red-50 text-red-800" : "bg-green-50 text-green-800")}>
                             {item.minProduction.toFixed(1)}

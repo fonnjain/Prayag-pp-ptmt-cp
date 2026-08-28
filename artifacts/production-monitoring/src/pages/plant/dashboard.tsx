@@ -100,6 +100,7 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
   const unavailableReason = (bundle as any).unavailableReason as string | null;
   const contextWithMetadata = context as any;
   const sourceInfo = contextWithMetadata.sourceInfo as any;
+  const targetBasis = sourceInfo?.targetBasis === "fitted" ? "executable fitted production" : "issued demand";
 
   const categories = selectedCategory
     ? allCategories.filter((c) => c.category === selectedCategory)
@@ -178,7 +179,7 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
               <Badge variant="outline" className={`ml-1 text-xs ${lifecycleBadge(lifecycle)}`}>{lifecycleLabel(lifecycle)}</Badge>
             </h1>
             <p className="text-muted-foreground text-sm">
-              NOS (pieces) against Production Plan — {month} · {context.elapsed}/{context.workingDays} working days elapsed
+              NOS (pieces) against {targetBasis} target — {month} · {context.elapsed}/{context.workingDays} working days elapsed
               {` (${contextWithMetadata.workingDaysSource ?? "derived"})`}
               {context.snapshotDate ? ` · snapshot ${fmtDate(context.snapshotDate)}` : ""}
               {contextWithMetadata.capturedAt ? ` · frozen ${fmtDate(contextWithMetadata.capturedAt)}` : ""}
@@ -195,7 +196,7 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => exportXlsx(`plant-dashboard-${month}`, [
-              { name: "Plant Summary", rows: [{ Scope: selectedCategory ?? "Plant", Month: month, AttainmentCumPct: displayPlant.attainmentCumPct, ProducedToDate: displayPlant.producedToDate, TargetMax: displayPlant.targetMax, TargetMin: displayPlant.targetMin, ProjectedAttainmentPct: displayPlant.projectedAttainmentPct, RAG: displayPlant.ragBand }] },
+               { name: "Plant Summary", rows: [{ Scope: selectedCategory ?? "Plant", Month: month, TargetBasis: targetBasis, AttainmentCumPct: displayPlant.attainmentCumPct, ProducedToDate: displayPlant.producedToDate, TargetMax: displayPlant.targetMax, TargetMin: displayPlant.targetMin, ProjectedAttainmentPct: displayPlant.projectedAttainmentPct, RAG: displayPlant.ragBand }] },
               { name: "Categories", rows: categories.map((c: any) => ({ Category: c.category, ProducedToDate: c.producedToDate, TargetMax: c.targetMax, TargetMin: c.targetMin, AttainmentCumPct: c.attainmentCumPct, ProjectedAttainmentPct: c.projectedAttainmentPct, RAG: c.ragBand })) },
             ])}>
               <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
@@ -281,6 +282,9 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
                 </Badge>
               )}
             </CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Attainment is actual ÷ released target. Carry-in is shown separately and raises the effective target used for gap planning.
+            </p>
           </CardHeader>
           <CardContent className="pt-0">
             <div className="grid grid-cols-4 gap-3">
@@ -335,7 +339,9 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
                         <div className="text-center text-xs text-muted-foreground">—</div>
                       ) : (
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-muted-foreground">Attainment</span>
+                          <span className="text-xs text-muted-foreground">
+                            {wk.carryover > 0 ? "Attainment vs released" : "Attainment"}
+                          </span>
                           <span className={`text-sm font-bold font-mono ${textCls}`}>{pct(wk.attainmentPct)}</span>
                         </div>
                       )}
@@ -530,6 +536,12 @@ function fmtLive(n: number | null | undefined, dec = 1): string {
   return n.toFixed(dec);
 }
 
+function rejectionPctLabel(basis: string | undefined): string {
+  if (basis === "net") return "Rejection % · rejects ÷ good output";
+  if (basis === "gross") return "Rejection % · rejects ÷ total manufactured";
+  return "Rejection %";
+}
+
 function LiveMachinePanel({
   liveData,
   isLoading,
@@ -552,6 +564,7 @@ function LiveMachinePanel({
     : [];
   const period = liveData?.period;
   const figuresGated = liveData?.figures_gated === true;
+  const rejectionLabel = rejectionPctLabel(liveData?.overall?.total_count_basis);
   const errorCopy = isError
     ? classifyPlantLiveError(
       { message: (error as any)?.message ?? String(error), data: (error as any)?.data },
@@ -605,7 +618,7 @@ function LiveMachinePanel({
                   <th className="text-right py-2 px-3 font-medium">Utilisation</th>
                   <th className="text-right py-2 px-3 font-medium">Output Eff.</th>
                   <th className="text-right py-2 px-3 font-medium">Output (kg)</th>
-                  <th className="text-right py-2 px-3 font-medium">Rejection %</th>
+                  <th className="text-right py-2 px-3 font-medium">{rejectionLabel}</th>
                   <th className="text-right py-2 pl-3 font-medium">Run / Ideal hrs</th>
                 </tr>
               </thead>

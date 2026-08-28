@@ -5,6 +5,10 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { CategoryCapacityOverrideCapacity } from './categoryCapacityOverrideCapacity';
+import type { CategoryCapacitySelectedWindow } from './categoryCapacitySelectedWindow';
+import type { CategoryCapacityWindowStartDate } from './categoryCapacityWindowStartDate';
+import type { CategoryCapacityWindowEndDate } from './categoryCapacityWindowEndDate';
+import type { CategoryCapacityComparison } from './categoryCapacityComparison';
 
 export interface CategoryCapacity {
   id: number;
@@ -20,7 +24,14 @@ export interface CategoryCapacity {
   overrideCapacity?: CategoryCapacityOverrideCapacity;
   /** override if set, else suggested — all modules use this */
   appliedCapacity: number;
+  /** Capacity selected for PTMT Pass 2: override if set, otherwise the adaptive full/recent window value */
+  selectedCapacity: number;
+  /** Window selected for PTMT Pass 2 */
+  selectedWindow: CategoryCapacitySelectedWindow;
   workingDaysPerWeek: number;
   planNeedsPerDay: number;
+  windowStartDate?: CategoryCapacityWindowStartDate;
+  windowEndDate?: CategoryCapacityWindowEndDate;
+  comparison?: CategoryCapacityComparison;
   lastComputedAt: string;
 }

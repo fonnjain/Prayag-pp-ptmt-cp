@@ -4,6 +4,7 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { V1PlanItemBufferReq } from './v1PlanItemBufferReq';
 import type { V1PlanItemReleaseWeek } from './v1PlanItemReleaseWeek';
 import type { V1PlanItemWeightKgPerPiece } from './v1PlanItemWeightKgPerPiece';
 import type { V1PlanItemMachines } from './v1PlanItemMachines';
@@ -17,7 +18,7 @@ export interface V1PlanItem {
   pendingOrder: number;
   avg3MoSale: number;
   pendingLastMonth: number;
-  bufferReq: number;
+  bufferReq: V1PlanItemBufferReq;
   minProduction: number;
   productionPlan: number;
   maxProduction: number;

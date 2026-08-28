@@ -38,6 +38,14 @@ export interface CorrectiveItemResult {
   w2Rev: number;
   w3Rev: number;
   w4Rev: number;
+  /** Demand-true corrective quantity before capacity fitting */
+  temporaryCorrective: number;
+  /** Quantity fitted into open-week capacity or machine schedule */
+  correctiveProduction: number;
+  /** Temporary corrective quantity not fitted in the open window */
+  cannotBeMade: number;
+  cannotBeMadeReason?: string | null;
+  feasibilityStatus: 'fitted' | 'not-scheduled' | 'unfulfillable';
   status: string;
   isNewItem: boolean;
 }

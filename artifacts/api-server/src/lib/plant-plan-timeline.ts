@@ -10,7 +10,7 @@ import {
   correctivePlanItemsTable,
   weeklyReleaseBandsTable,
 } from "@workspace/db";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import { annotateWeeklyRelease, type CalcPlanItem } from "./calc";
 
 export type PlanVersionKind = "run" | "import" | "corrective";
@@ -194,6 +194,22 @@ export async function savePlanVersionSnapshot(input: {
     .onConflictDoNothing();
 }
 
+async function excludeTemporaryRunSnapshots(
+  snapshots: (typeof plantPlanVersionsTable.$inferSelect)[],
+): Promise<(typeof plantPlanVersionsTable.$inferSelect)[]> {
+  const temporaryRunIds = snapshots
+    .filter((snapshot) => snapshot.kind === "run")
+    .map((snapshot) => snapshot.sourceId);
+  if (temporaryRunIds.length === 0) return snapshots;
+
+  const temporaryRuns = await db
+    .select({ id: planRunsTable.id })
+    .from(planRunsTable)
+    .where(and(inArray(planRunsTable.id, temporaryRunIds), eq(planRunsTable.planType, "temporary")));
+  const temporaryIds = new Set(temporaryRuns.map((run) => run.id));
+  return snapshots.filter((snapshot) => !(snapshot.kind === "run" && temporaryIds.has(snapshot.sourceId)));
+}
+
 /**
  * Return plan versions in the order in which they governed production. Source
  * status is checked here rather than trusting a snapshot alone, so draft runs
@@ -208,6 +224,7 @@ export async function getPlanVersionTimeline(month: string, segment: string): Pr
     .from(plantPlanVersionsTable)
     .where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, segment)))
     .orderBy(asc(plantPlanVersionsTable.effectiveFrom), asc(plantPlanVersionsTable.createdAt), asc(plantPlanVersionsTable.id));
+  snapshots = await excludeTemporaryRunSnapshots(snapshots);
   if (snapshots.length === 0) {
     let hydration = pendingLegacyHydrations.get(key);
     if (!hydration) {
@@ -220,6 +237,7 @@ export async function getPlanVersionTimeline(month: string, segment: string): Pr
       .from(plantPlanVersionsTable)
       .where(and(eq(plantPlanVersionsTable.month, month), eq(plantPlanVersionsTable.segment, segment)))
       .orderBy(asc(plantPlanVersionsTable.effectiveFrom), asc(plantPlanVersionsTable.createdAt), asc(plantPlanVersionsTable.id));
+    snapshots = await excludeTemporaryRunSnapshots(snapshots);
   }
 
   const runIds = snapshots.filter((row) => row.kind === "run").map((row) => row.sourceId);
@@ -376,6 +394,7 @@ async function hydrateLegacyPlanVersions(month: string, segment: string): Promis
       eq(planRunsTable.month, month),
       eq(planRunsTable.segment, segment),
       eq(planRunsTable.status, "finalized"),
+      ne(planRunsTable.planType, "temporary"),
     )).orderBy(asc(planRunsTable.createdAt)),
     db.select().from(plantPlanUploadsTable).where(and(
       eq(plantPlanUploadsTable.month, month),

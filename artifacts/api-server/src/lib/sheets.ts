@@ -6,6 +6,8 @@ import { logger } from "./logger";
 import {
   diagnoseInputRows,
   type InputReadDiagnostics,
+  type PendingPlanResolutionRow,
+  type PendingPlanDiagnostics,
   type PendingCoverageDiagnostics,
 } from "./input-diagnostics";
 
@@ -681,17 +683,18 @@ function tabMatchesAllMonths(tabName: string, months: { monthIndex0: number }[])
 /** Placeholder tokens some source sheets use for "no colour variant" — normalized to blank so they match real blanks. */
 const NO_COLOUR_PLACEHOLDERS = new Set(["0", ".", "NORMAL"]);
 
-function normalizeColour(colour: unknown): string {
+export function normalizeColour(colour: unknown): string {
   const trimmed = String(colour ?? "").trim().toUpperCase();
-  return NO_COLOUR_PLACEHOLDERS.has(trimmed) ? "" : trimmed;
+  if (NO_COLOUR_PLACEHOLDERS.has(trimmed)) return "";
+  return trimmed.replace(/[.\s]+/g, " ").trim();
 }
 
 export function itemKey(itemCode: unknown, colour: unknown): string {
-  return `${String(itemCode ?? "").trim().toUpperCase()}::${normalizeColour(colour)}`;
+  return `${normalizeCode(itemCode)}::${normalizeColour(colour)}`;
 }
 
 export function normalizeCode(itemCode: unknown): string {
-  return String(itemCode ?? "").trim().toUpperCase();
+  return String(itemCode ?? "").trim().toUpperCase().replace(/\.0$/, "");
 }
 
 // ── Order Sheet TYPE → planning segment ─────────────────────────────────────
@@ -775,6 +778,8 @@ export interface DualTotals {
   byCode: Map<string, number>;
   diagnostics?: InputReadDiagnostics;
   pendingRows?: PendingOrderRow[];
+  /** Segment-filtered raw report rows retained for point-in-time audit evidence. */
+  rawRows?: Record<string, unknown>[];
 }
 
 function addToDualTotals(totals: DualTotals, code: unknown, colour: unknown, qty: number): void {
@@ -1197,7 +1202,7 @@ export async function fetchLiveOrderTotals(month: string, group: string = "PTMT"
  * and their colour is forced to BLUE.
  * Verified: 123-LSB/BLUE = 184 (via alias from 123-LSBB/BLACK).
  */
-function applyPendingOrderAlias(code: string, colour: string): { code: string; colour: string } {
+export function applyPendingOrderAlias(code: string, colour: string): { code: string; colour: string } {
   // Order matters — check longer suffixes first to avoid partial replacement
   const patterns: [RegExp, string][] = [
     [/(-LSQBB)$/i, "-LSQB"],
@@ -1289,6 +1294,134 @@ export interface PendingOrderRow {
   qty: number;
 }
 
+/**
+ * The roster identity used by the pending-to-plan join.
+ *
+ * PTMT can contain the same code in more than one category.  In that case the
+ * variant count is category-scoped, exactly like the plan builder's item
+ * resolution.  Plumbing normally has one code-only row, but carrying category
+ * here keeps both segments on the same join contract.
+ */
+export interface PendingRosterItem {
+  itemCode: string;
+  colour: string;
+  category?: string;
+}
+
+export type PendingJoinMode = "code" | "code_colour";
+
+export interface PendingRosterIndex {
+  byCode: Map<string, PendingRosterItem[]>;
+  byCategoryAndCode: Map<string, PendingRosterItem[]>;
+}
+
+export function pendingRosterItemKey(item: PendingRosterItem): string {
+  return `${String(item.category ?? "").trim().toUpperCase()}::${itemKey(item.itemCode, item.colour)}`;
+}
+
+function pendingRosterCategoryKey(category: unknown, itemCode: unknown): string {
+  return `${String(category ?? "").trim().toUpperCase()}::${normalizeCode(itemCode)}`;
+}
+
+/**
+ * Build the one roster index shared by pending diagnostics and plan
+ * construction.  Do not replace this with a global code count: duplicate
+ * PTMT codes are valid when they belong to different categories.
+ */
+export function buildPendingRosterIndex(
+  rosterItems: Iterable<PendingRosterItem>,
+): PendingRosterIndex {
+  const byCode = new Map<string, PendingRosterItem[]>();
+  const byCategoryAndCode = new Map<string, PendingRosterItem[]>();
+  for (const item of rosterItems) {
+    const code = normalizeCode(item.itemCode);
+    if (!code) continue;
+    const codeItems = byCode.get(code) ?? [];
+    codeItems.push(item);
+    byCode.set(code, codeItems);
+
+    if (item.category !== undefined && String(item.category).trim() !== "") {
+      const scopedKey = pendingRosterCategoryKey(item.category, item.itemCode);
+      const scopedItems = byCategoryAndCode.get(scopedKey) ?? [];
+      scopedItems.push(item);
+      byCategoryAndCode.set(scopedKey, scopedItems);
+    }
+  }
+  return { byCode, byCategoryAndCode };
+}
+
+/**
+ * Return the resolution mode for one actual plan row.  A single variant in a
+ * category accepts any source colour (the master often stores "0"/blank);
+ * multiple variants require the normalized code+colour key.
+ */
+export function pendingJoinModeForItem(
+  index: PendingRosterIndex,
+  item: PendingRosterItem,
+): PendingJoinMode {
+  const code = normalizeCode(item.itemCode);
+  const allCandidates = index.byCode.get(code) ?? [];
+  const scopedCandidates = item.category === undefined || String(item.category).trim() === ""
+    ? allCandidates
+    : index.byCategoryAndCode.get(pendingRosterCategoryKey(item.category, item.itemCode)) ?? [];
+  return scopedCandidates.length <= 1 ? "code" : "code_colour";
+}
+
+function pendingRowMatchesRoster(
+  row: PendingOrderRow,
+  index: PendingRosterIndex,
+): boolean {
+  return resolvePendingRowToRosterItem(row, index).status === "resolved";
+}
+
+export type PendingRowResolution =
+  | { status: "resolved"; item: PendingRosterItem }
+  | { status: "unmatched" }
+  | { status: "colour-mismatch" }
+  | { status: "ambiguous" };
+
+/**
+ * Resolve one source row to at most one roster item. A code that appears in
+ * multiple categories cannot use category-local code-only matching because the
+ * source row carries no category discriminator; it must resolve to exactly one
+ * normalized code+colour candidate or remain explicitly excluded.
+ */
+export function resolvePendingRowToRosterItem(
+  row: PendingOrderRow,
+  index: PendingRosterIndex,
+): PendingRowResolution {
+  const aliased = applyPendingOrderAlias(row.catNo, row.colour);
+  const candidates = index.byCode.get(normalizeCode(aliased.code)) ?? [];
+  if (candidates.length === 0) return { status: "unmatched" };
+
+  if (candidates.length === 1) return { status: "resolved", item: candidates[0]! };
+
+  const exactCandidates = candidates.filter((candidate) =>
+    itemKey(candidate.itemCode, candidate.colour) === itemKey(aliased.code, aliased.colour),
+  );
+  if (exactCandidates.length === 1) return { status: "resolved", item: exactCandidates[0]! };
+  const categoryKeys = new Set(
+    candidates.map((candidate) => String(candidate.category ?? "").trim().toUpperCase()),
+  );
+  if (categoryKeys.size > 1 || exactCandidates.length > 1) return { status: "ambiguous" };
+  return { status: "colour-mismatch" };
+}
+
+export function pendingTotalsByRosterItem(
+  rows: PendingOrderRow[],
+  rosterItems: Iterable<PendingRosterItem>,
+): Map<string, number> {
+  const index = buildPendingRosterIndex(rosterItems);
+  const totals = new Map<string, number>();
+  for (const row of rows) {
+    const resolution = resolvePendingRowToRosterItem(row, index);
+    if (resolution.status !== "resolved") continue;
+    const key = pendingRosterItemKey(resolution.item);
+    totals.set(key, (totals.get(key) ?? 0) + row.qty);
+  }
+  return totals;
+}
+
 function pendingRowDescription(row: Record<string, unknown>, code: string): string {
   // The live report's embedded header leaves the descriptive item text under
   // the top-level "Item Code" key while the actual code is under "Old ERP Code".
@@ -1334,12 +1467,138 @@ export function parsePendingOrderRows(
 
 export function pendingOrderTotalsFromRows(rows: Record<string, unknown>[], segment: string = "PTMT"): DualTotals {
   const totals: DualTotals = { exact: new Map(), byCode: new Map() };
-  const pendingRows = pendingOrderRecordsFromRows(rows, segment);
+  const sourceRows = pendingRowsForSegment(rows, segment);
+  totals.rawRows = sourceRows;
+  const pendingRows = pendingOrderRecordsFromRows(sourceRows, segment);
   totals.pendingRows = pendingRows;
   for (const row of pendingRows) {
     addToDualTotals(totals, row.catNo, row.colour, row.qty);
   }
+  totals.diagnostics = diagnoseInputRows(sourceRows, {
+    code: ["Old ERP Code", "Item Code", "Item No."],
+    colour: ["Colour", "Color", "COLOR", "COLUOR"],
+    quantity: ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"],
+  }, { source: `pending order rows · ${segment}` });
   return totals;
+}
+
+/**
+ * Reconcile uploaded pending demand through the same two-stage join used by
+ * PTMT planning:
+ *   source → roster by code → plan item by code/colour rules.
+ *
+ * A single roster variant is intentionally code-only because its colour is
+ * often a placeholder. Multi-variant codes require an exact colour match.
+ * Keeping unmatched and colour-resolution losses separate prevents a valid
+ * code with the wrong colour from being reported as successfully planned.
+ */
+export function pendingPlanDiagnosticsFromParsedRows(
+  rows: PendingOrderRow[],
+  rosterItems: Iterable<PendingRosterItem>,
+  options: { sourceRole?: string } = {},
+): PendingPlanDiagnostics {
+  const sourceRole = options.sourceRole ?? "pending_current";
+  const rosterIndex = buildPendingRosterIndex(rosterItems);
+
+  const unmatched = new Map<string, PendingPlanDiagnostics["unmatchedRows"][number]>();
+  const resolutionLoss = new Map<string, PendingPlanDiagnostics["resolutionLossRows"][number]>();
+  let sourceQuantity = 0;
+  let rosterMatchedQuantity = 0;
+  let planResolvedQuantity = 0;
+  let rosterMatchedRowCount = 0;
+  let planResolvedRowCount = 0;
+
+  const addDiagnostic = (
+    target: Map<string, PendingPlanResolutionRow>,
+    row: PendingOrderRow,
+    disposition: PendingPlanResolutionRow["disposition"],
+    reason: PendingPlanResolutionRow["reason"],
+  ) => {
+    const key = JSON.stringify([row.segment, sourceRole, row.catNo, row.colour, row.description, disposition, reason]);
+    const existing = target.get(key);
+    if (existing) existing.quantity += row.qty;
+    else target.set(key, {
+      segment: row.segment,
+      sourceRole,
+      code: row.catNo,
+      colour: row.colour,
+      description: row.description,
+      quantity: row.qty,
+      disposition,
+      reason,
+    });
+  };
+
+  for (const row of rows) {
+    sourceQuantity += row.qty;
+    const aliased = applyPendingOrderAlias(row.catNo, row.colour);
+    const candidates = rosterIndex.byCode.get(normalizeCode(aliased.code)) ?? [];
+    if (candidates.length === 0) {
+      addDiagnostic(unmatched, row, "unmatched", "NO_ROSTER_MATCH");
+      continue;
+    }
+
+    rosterMatchedQuantity += row.qty;
+    rosterMatchedRowCount++;
+    const resolution = resolvePendingRowToRosterItem(row, rosterIndex);
+    if (resolution.status === "resolved") {
+      planResolvedQuantity += row.qty;
+      planResolvedRowCount++;
+    } else {
+      addDiagnostic(
+        resolutionLoss,
+        row,
+        "resolution-loss",
+        resolution.status === "ambiguous" ? "AMBIGUOUS_ROSTER_MATCH" : "COLOUR_MISMATCH",
+      );
+    }
+  }
+
+  const sortRows = (a: PendingPlanResolutionRow, b: PendingPlanResolutionRow) =>
+    a.segment.localeCompare(b.segment)
+    || a.sourceRole.localeCompare(b.sourceRole)
+    || normalizeCode(a.code).localeCompare(normalizeCode(b.code))
+    || a.colour.localeCompare(b.colour)
+    || a.description.localeCompare(b.description);
+  const unmatchedRows = [...unmatched.values()].sort(sortRows);
+  const resolutionLossRows = [...resolutionLoss.values()].sort(sortRows);
+  const unmatchedQuantity = sourceQuantity - rosterMatchedQuantity;
+  const resolutionLossQuantity = rosterMatchedQuantity - planResolvedQuantity;
+  // Calculate the reconciliation from the retained evidence rows rather than
+  // from the stage totals above.  The stage totals describe the join outcome;
+  // the row totals prove that every excluded source row was actually retained
+  // with a disposition.  If a future parser branch increments a stage counter
+  // without adding its diagnostic row, the residual must become non-zero.
+  const unmatchedEvidenceQuantity = unmatchedRows.reduce((sum, row) => sum + row.quantity, 0);
+  const resolutionLossEvidenceQuantity = resolutionLossRows.reduce((sum, row) => sum + row.quantity, 0);
+  const explainedExclusionQuantity = unmatchedEvidenceQuantity + resolutionLossEvidenceQuantity;
+  const unexplainedResidual = sourceQuantity - planResolvedQuantity - explainedExclusionQuantity;
+
+  return {
+    sourceRole,
+    sourceRowCount: rows.length,
+    sourceQuantity,
+    rosterMatchedQuantity,
+    planResolvedQuantity,
+    unmatchedQuantity,
+    resolutionLossQuantity,
+    rosterMatchedRowCount,
+    planResolvedRowCount,
+    unmatchedRowCount: unmatchedRows.length,
+    resolutionLossRowCount: resolutionLossRows.length,
+    unmatchedRows,
+    resolutionLossRows,
+    reconciliation: {
+      sourceQuantity,
+      joinedQuantity: planResolvedQuantity,
+      explainedExclusionQuantity,
+      unexplainedResidual,
+      reconciled:
+        Math.abs(unmatchedQuantity - unmatchedEvidenceQuantity) <= 0.01
+        && Math.abs(resolutionLossQuantity - resolutionLossEvidenceQuantity) <= 0.01
+        && Math.abs(unexplainedResidual) <= 0.01,
+    },
+  };
 }
 
 /**
@@ -1420,13 +1679,14 @@ export async function fetchLivePendingOrderTotals(segment: string = "PTMT"): Pro
     // all columns A through X without a hard row cap that would truncate large sheets.
     const values = await throttledGetTabValues(SHEET_IDS.pendingOrder, "report", "A1:X50000");
     const rows = pendingReportRowsToObjects(values);
-    const diagnostics = diagnoseInputRows(rows, {
+    // Keep diagnostics scoped to the same segment-filtered rows retained in
+    // `rawRows`; the other segment must not inflate this capture's counts.
+    const totals = pendingOrderTotalsFromRows(rows, segment);
+    const diagnostics = diagnoseInputRows(totals.rawRows ?? [], {
       code: ["Old ERP Code", "Item Code", "Item No."],
       colour: ["Colour", "Color", "COLOR", "COLUOR"],
       quantity: ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"],
     }, { source: `${SHEET_LABELS.pendingOrder} / report · ${segment}` });
-
-    const totals = pendingOrderTotalsFromRows(rows, segment);
 
     totals.diagnostics = diagnostics;
     logger.info({ segment, diagnostics }, "fetchLivePendingOrderTotals: source diagnostics");

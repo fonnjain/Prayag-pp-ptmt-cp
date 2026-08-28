@@ -8,6 +8,7 @@ import type { MachineQualityIdealHours } from './machineQualityIdealHours';
 import type { MachineQualityUtilisationPct } from './machineQualityUtilisationPct';
 import type { MachineQualityRejectionKg } from './machineQualityRejectionKg';
 import type { MachineQualityRejectionPct } from './machineQualityRejectionPct';
+import type { MachineQualityTotalCountBasis } from './machineQualityTotalCountBasis';
 import type { MachineQualityGoodOutputKg } from './machineQualityGoodOutputKg';
 
 export interface MachineQuality {
@@ -19,5 +20,6 @@ export interface MachineQuality {
   outputKg: number;
   rejectionKg: MachineQualityRejectionKg;
   rejectionPct: MachineQualityRejectionPct;
+  totalCountBasis: MachineQualityTotalCountBasis;
   goodOutputKg: MachineQualityGoodOutputKg;
 }

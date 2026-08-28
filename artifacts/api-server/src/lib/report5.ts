@@ -7,12 +7,15 @@ export interface MachineDayRecord {
   outputKg: number;
 }
 
+export type TotalCountBasis = "net" | "gross";
+
 export interface MachineMonthRecord {
   machineId: string;
   idealHours: number | null;
   totalRunHours: number;
   totalOutputKg: number;
   rejectionKg: number | null;
+  total_count_basis: TotalCountBasis;
   isGrinder: boolean;
   days: MachineDayRecord[];
 }
@@ -151,6 +154,9 @@ export async function parseReport5(sheetId: string, month: string): Promise<Repo
       totalRunHours,
       totalOutputKg,
       rejectionKg,
+      // Report-5 is the PTMT source; its validated rejection measure is
+      // rejects divided by total manufactured (gross).
+      total_count_basis: "gross",
       isGrinder: /grinder/i.test(machineId),
       days,
     });

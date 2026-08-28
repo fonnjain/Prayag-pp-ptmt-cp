@@ -77,6 +77,23 @@ test("reconcilePendingPlan exposes item-level clamp loss and exact identity", ()
   }]);
 });
 
+test("unclassified items produce a nullable buffer and demand-only plan", () => {
+  const item = computeItemPlan({
+    itemCode: "324-K",
+    colour: "WHITE",
+    avg3MoSaleTotal3Mo: 11911 * 3,
+    stock: 5000,
+    stockNeedsReview: false,
+    pendingOrderLastMonth: 300,
+    pendingOrder: 700,
+    order: 0,
+  }, "Unclassified", null);
+
+  assert.equal(item.bufferReq, null);
+  assert.equal(item.minProduction, 1000);
+  assert.equal(item.maxProduction, 1000);
+});
+
 function weeklyItem(
   itemCode: string,
   category: string,

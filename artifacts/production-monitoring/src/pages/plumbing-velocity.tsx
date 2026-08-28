@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RefreshCw, TrendingUp, Activity, AlertTriangle } from "lucide-react";
 import { classifyPlantLiveError } from "@/lib/plant-live-error";
+import { fmtDate } from "@/lib/utils";
 
 function fmt(n: number | null | undefined, dec = 0): string {
   if (n == null) return "–";
@@ -67,7 +68,7 @@ function MonitoringFallback({ data, month }: { data: PlumbingMonitoringData; mon
           <CardTitle className="text-base">Monthly Monitoring — Sheet3</CardTitle>
           <p className="text-xs text-muted-foreground">
             Plumbing production monitoring remains available for {month}
-            {data.lastDataDate ? ` · data through ${data.lastDataDate}` : ""}
+            {data.lastDataDate ? ` · data through ${fmtDate(data.lastDataDate)}` : ""}
             {data.workingDaysElapsed ? ` · ${data.workingDaysElapsed} working days` : ""}
           </p>
         </CardHeader>
@@ -195,17 +196,41 @@ export default function PlumbingVelocity({ month }: { month: string }) {
   );
   const [monitoring, setMonitoring] = useState<PlumbingMonitoringData | null>(null);
   const [monitoringLoading, setMonitoringLoading] = useState(true);
-  const [monitoringError, setMonitoringError] = useState<string | null>(null);
+  const [monitoringError, setMonitoringError] = useState<{
+    status: number;
+    detail: string;
+    source: string;
+    tabs: string[];
+  } | null>(null);
 
   async function loadMonitoring() {
     setMonitoringLoading(true);
     setMonitoringError(null);
     try {
       const response = await fetch(`/api/monitoring/dashboard?month=${encodeURIComponent(month)}&segment=Plumbing`);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        let body: any = null;
+        try { body = await response.json(); } catch { /* retain the HTTP status */ }
+        throw {
+          status: response.status,
+          detail: body?.detail ?? body?.error ?? `HTTP ${response.status}`,
+          source: body?.workbookId ? `Plumbing workbook ${body.workbookId}` : "Plumbing monitoring workbook",
+          tabs: Array.isArray(body?.skippedTabs) ? body.skippedTabs : [],
+        };
+      }
       setMonitoring(await response.json() as PlumbingMonitoringData);
     } catch (err) {
-      setMonitoringError(err instanceof Error ? err.message : "Failed to load monthly monitoring data");
+      if (err && typeof err === "object" && "status" in err) {
+        const failure = err as { status: number; detail: string; source: string; tabs: string[] };
+        setMonitoringError(failure);
+      } else {
+        setMonitoringError({
+          status: 0,
+          detail: err instanceof Error ? err.message : "Failed to load monthly monitoring data",
+          source: "Plumbing monitoring workbook",
+          tabs: [],
+        });
+      }
     } finally {
       setMonitoringLoading(false);
     }
@@ -250,27 +275,10 @@ export default function PlumbingVelocity({ month }: { month: string }) {
   );
 
   if (isError) {
-    const msg = (error as any)?.message ?? String(error);
-    const errorData = (error as any)?.data as { code?: string; upstreamErrorType?: string } | undefined;
-    const is503 = msg.includes("503");
-    const isTimeout = msg.includes("504") || errorData?.code === "UPSTREAM_TIMEOUT" || errorData?.upstreamErrorType === "timeout";
-
-    let heading: string;
-    let detail: string;
-    let hint: string;
-    if (is503) {
-      heading = "Plant live API not configured";
-      detail = "The PRAYAG_PLANT_API_KEY secret is missing in the production environment. Deploy environments do not inherit dev secrets automatically — add it via the deployment secrets panel.";
-      hint = `Diagnostic: GET /api/plant-live/periods lists valid period tokens. GET /api/plant-live/summary?period=${month}&plant=PIPE shows the raw status.`;
-    } else if (isTimeout) {
-      heading = "Plant live API timed out";
-      detail = "The upstream prayag-plant.com service did not respond within 20 s. The service may be slow, overloaded, or temporarily unreachable. Check the server log for details or increase UPSTREAM_TIMEOUT_MS if the service consistently needs more time.";
-      hint = `Diagnostic: GET /api/plant-live/summary?period=${month}&plant=PIPE — if it also times out, the upstream itself is the bottleneck.`;
-    } else {
-      heading = "Could not load plant live data";
-      detail = `The upstream plant service returned an error (${msg}). Check that prayag-plant.com is reachable and the API key is valid.`;
-      hint = `Diagnostic: GET /api/plant-live/periods lists valid period tokens. GET /api/plant-live/summary?period=${month}&plant=PIPE shows the raw status.`;
-    }
+    const copy = classifyPlantLiveError({
+      message: (error as any)?.message ?? String(error),
+      data: (error as any)?.data,
+    }, month);
 
     return (
       <div className="space-y-6 max-w-[1200px] mx-auto pb-10">
@@ -278,9 +286,9 @@ export default function PlumbingVelocity({ month }: { month: string }) {
           <TrendingUp className="h-6 w-6 text-primary" /> PIPE Plant Velocity
         </h1>
         <div className="text-sm bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-4 space-y-1">
-          <p className="font-semibold text-red-600">{heading}</p>
-          <p className="text-red-600/80">{detail}</p>
-          <p className="text-red-600/60 text-xs pt-1">{hint}</p>
+          <p className="font-semibold text-red-600">{copy.heading}</p>
+          <p className="text-red-600/80">{copy.detail}</p>
+          <p className="text-red-600/60 text-xs pt-1">{copy.hint}</p>
         </div>
         <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isRefetching} className="gap-2">
           <RefreshCw className={`h-3.5 w-3.5 ${isRefetching ? "animate-spin" : ""}`} />
@@ -333,7 +341,12 @@ export default function PlumbingVelocity({ month }: { month: string }) {
       {monitoringError && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          Monthly monitoring data could not be loaded ({monitoringError}).
+            <div className="min-w-0">
+              <p className="font-semibold">Monthly monitoring source unavailable</p>
+              <p>{monitoringError.source} · status {monitoringError.status || "unknown"}</p>
+              {monitoringError.tabs.length > 0 && <p>Affected tab(s): {monitoringError.tabs.join(", ")}</p>}
+              <p>{monitoringError.detail} Retry after the source workbook is available.</p>
+            </div>
         </div>
       )}
 
@@ -390,7 +403,7 @@ export default function PlumbingVelocity({ month }: { month: string }) {
                   <th className="text-right py-2.5 px-3 font-medium text-muted-foreground">Reject (kg)</th>
                   <th className="text-right py-2.5 px-3 font-medium text-muted-foreground">Rej %</th>
                   <th className="text-right py-2.5 px-3 font-medium text-muted-foreground">Run hrs</th>
-                  <th className="text-right py-2.5 px-3 font-medium text-muted-foreground">Util %</th>
+                  <th className="text-right py-2.5 px-3 font-medium text-muted-foreground">Util % (run ÷ ideal)</th>
                   <th className="text-right py-2.5 px-4 font-medium text-muted-foreground">Cum Good (kg)</th>
                 </tr>
               </thead>
@@ -398,7 +411,7 @@ export default function PlumbingVelocity({ month }: { month: string }) {
                 {rows.map((row) => (
                   <tr key={row.date} className="hover:bg-muted/20">
                     <td className="py-2 px-4 font-medium">
-                      <span>{row.date}</span>
+                      <span>{fmtDate(row.date)}</span>
                       {row.isNonCalendarWorkingDay && (
                         <Badge variant="outline" className="ml-2 border-amber-300 bg-amber-50 px-1.5 py-0 text-[10px] font-medium text-amber-700">
                           Sun — worked

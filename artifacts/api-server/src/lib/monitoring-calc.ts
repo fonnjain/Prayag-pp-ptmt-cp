@@ -1,4 +1,10 @@
-import type { MachineMonthRecord } from "./report5";
+import type { MachineMonthRecord, TotalCountBasis } from "./report5";
+import {
+  calendarDates,
+  countCalendarWorkingDays,
+  countWorkingDaysInMonth as countCanonicalWorkingDaysInMonth,
+  isSunday,
+} from "./working-days";
 
 export interface CalendarModel {
   workingDays: number;
@@ -6,33 +12,23 @@ export interface CalendarModel {
   remaining: number;
 }
 
-const SUNDAYS_OFF = new Set<number>([]); // computed dynamically below
-
-function isSunday(dateIso: string): boolean {
-  return new Date(`${dateIso}T00:00:00Z`).getUTCDay() === 0;
-}
-
 /** Counts working days (non-Sunday) from the 1st of the month through `throughDateIso` inclusive. */
 export function countWorkingDaysElapsed(month: string, throughDateIso: string | null): number {
   if (!throughDateIso) return 0;
-  const [y, m] = month.split("-").map(Number);
-  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const throughDay = Number(throughDateIso.slice(8, 10));
-  let count = 0;
-  for (let d = 1; d <= Math.min(throughDay, lastDay); d++) {
-    const iso = `${month}-${String(d).padStart(2, "0")}`;
-    if (!isSunday(iso)) count++;
-  }
-  void SUNDAYS_OFF;
-  return count;
+  return countCalendarWorkingDays(month, throughDay);
 }
 
 /** Calendar fallback when a plant has not configured the month explicitly. */
 export function countWorkingDaysInMonth(month: string): number {
-  const [y, m] = month.split("-").map(Number);
-  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
-  return countWorkingDaysElapsed(month, `${month}-${String(lastDay).padStart(2, "0")}`);
+  return countWorkingDaysInMonthCanonical(month);
 }
+
+function countWorkingDaysInMonthCanonical(month: string): number {
+  return countCanonicalWorkingDaysInMonth(month);
+}
+
+export { calendarDates, isSunday };
 
 export function buildCalendarModel(workingDays: number, elapsed: number): CalendarModel {
   return { workingDays, elapsed, remaining: Math.max(workingDays - elapsed, 0) };
@@ -183,6 +179,7 @@ export interface MachineQuality {
   outputKg: number;
   rejectionKg: number | null;
   rejectionPct: number | null;
+  totalCountBasis: TotalCountBasis;
   goodOutputKg: number | null;
 }
 
@@ -190,11 +187,13 @@ export function computeMachineQuality(machine: MachineMonthRecord, idealHoursOve
   const idealHours = idealHoursOverride ?? machine.idealHours;
   const utilisationPct =
     idealHours !== null && idealHours > 0 ? round2((machine.totalRunHours / idealHours) * 100) : null;
-  const rejectionPct =
-    machine.rejectionKg !== null && machine.totalOutputKg > 0
-      ? round2((machine.rejectionKg / machine.totalOutputKg) * 100)
-      : null;
   const goodOutputKg = machine.rejectionKg !== null ? round2(machine.totalOutputKg - machine.rejectionKg) : null;
+  const rejectionDenominator =
+    machine.total_count_basis === "net" ? goodOutputKg : machine.totalOutputKg;
+  const rejectionPct =
+    machine.rejectionKg !== null && rejectionDenominator !== null && rejectionDenominator > 0
+      ? round2((machine.rejectionKg / rejectionDenominator) * 100)
+      : null;
 
   return {
     machineId: machine.machineId,
@@ -205,6 +204,7 @@ export function computeMachineQuality(machine: MachineMonthRecord, idealHoursOve
     outputKg: machine.totalOutputKg,
     rejectionKg: machine.rejectionKg,
     rejectionPct,
+    totalCountBasis: machine.total_count_basis,
     goodOutputKg,
   };
 }
@@ -310,13 +310,16 @@ export function buildQualityWarnings(machines: MachineQuality[], thresholds: War
   const warnings: Warning[] = [];
   for (const m of machines) {
     if (m.isGrinder) continue;
+    const rejectionMeaning = m.totalCountBasis === "net"
+      ? "rejects ÷ good output"
+      : "rejects ÷ total manufactured";
     if (m.rejectionPct !== null) {
       if (m.rejectionPct > thresholds.highRejectionCritical) {
         warnings.push({
           code: "HIGH_REJECTION",
           severity: "critical",
           scope: m.machineId,
-          message: `${m.machineId} rejection ${m.rejectionPct}% exceeds critical threshold`,
+          message: `${m.machineId} rejection ${m.rejectionPct}% (${rejectionMeaning}) exceeds critical threshold`,
           value: m.rejectionPct,
           threshold: thresholds.highRejectionCritical,
           source: "quality",
@@ -326,7 +329,7 @@ export function buildQualityWarnings(machines: MachineQuality[], thresholds: War
           code: "HIGH_REJECTION",
           severity: "high",
           scope: m.machineId,
-          message: `${m.machineId} rejection ${m.rejectionPct}% exceeds threshold`,
+          message: `${m.machineId} rejection ${m.rejectionPct}% (${rejectionMeaning}) exceeds threshold`,
           value: m.rejectionPct,
           threshold: thresholds.highRejectionHigh,
           source: "quality",

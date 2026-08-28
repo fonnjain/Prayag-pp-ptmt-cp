@@ -218,6 +218,135 @@ paths:
                 items:
                   $ref: "#/components/schemas/SyncSource"
 
+  /master-products/source-categories:
+    get:
+      operationId: getMasterProductSourceCategories
+      tags: [masterProducts]
+      summary: Read the upstream catalogue vocabulary without mutating local data
+      responses:
+        "200":
+          description: Distinct upstream divisions and categories with mapping status
+          content:
+            application/json:
+              schema: { type: object }
+        "502":
+          description: Upstream catalogue unavailable or invalid
+
+  /master-products/category-mappings:
+    get:
+      operationId: listMasterProductCategoryMappings
+      tags: [masterProducts]
+      summary: List reviewed many-to-one catalogue category mappings
+      responses:
+        "200":
+          description: Reviewed mappings
+          content:
+            application/json:
+              schema: { type: array, items: { type: object } }
+    put:
+      operationId: upsertMasterProductCategoryMapping
+      tags: [masterProducts]
+      summary: Save a reviewed catalogue category mapping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [division, segment, planningCategory]
+              properties:
+                division: { type: string }
+                rawCategory: { type: [string, "null"] }
+                segment: { type: string, enum: [PTMT, Plumbing, CP] }
+                planningCategory: { type: string }
+      responses:
+        "200": { description: Mapping saved }
+        "400": { description: Invalid or unsafe mapping }
+
+  /master-products/sync:
+    post:
+      operationId: syncMasterProducts
+      tags: [masterProducts]
+      summary: Sync the maintained catalogue copy from Prayag-Competition-Analysis
+      responses:
+        "200":
+          description: Sync counts and source vocabulary report
+          content:
+            application/json:
+              schema: { type: object }
+        "502": { description: Upstream catalogue unavailable or sync failed }
+
+  /master-products/coverage:
+    get:
+      operationId: getMasterProductCoverage
+      tags: [masterProducts]
+      summary: Compare active catalogue codes with the existing item master
+      responses:
+        "200":
+          description: Per-segment coverage, including review details
+          content:
+            application/json:
+              schema: { type: object }
+
+  /master-products/products:
+    get:
+      operationId: listMasterProducts
+      tags: [masterProducts]
+      summary: List the complete product review roster for a planning segment
+      parameters:
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, enum: [PTMT, Plumbing, CP], default: PTMT }
+        - name: status
+          in: query
+          required: false
+          schema: { type: string, enum: [classified, unclassified, ambiguous] }
+        - name: category
+          in: query
+          required: false
+          schema: { type: string }
+        - name: source
+          in: query
+          required: false
+          schema: { type: string, enum: [workbook, catalogue, seed] }
+        - name: search
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: Products with classification, source, demand, and buffer provenance
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProductListResponse" }
+        "400": { description: Invalid filter }
+        "500": { description: Product roster unavailable }
+
+  /master-products/products/{itemCode}/{colour}:
+    patch:
+      operationId: reclassifyMasterProduct
+      tags: [masterProducts]
+      summary: Reclassify a planning-roster product with an audit reason
+      parameters:
+        - name: itemCode
+          in: path
+          required: true
+          schema: { type: string }
+        - name: colour
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProductReclassificationInput" }
+      responses:
+        "200": { description: Product reclassified }
+        "400": { description: Invalid reclassification }
+        "404": { description: Product is not in the planning roster }
+
   /corrective/replan:
     post:
       operationId: runCorrectiveReplan
@@ -238,6 +367,8 @@ paths:
                 $ref: "#/components/schemas/CorrectiveReplanResult"
         "400":
           description: Bad request
+        "422":
+          description: Required finalized Temporary Plan or PTMT capacity input is unavailable
         "500":
           description: Engine error
 
@@ -631,7 +762,30 @@ paths:
           schema: { type: string, default: "PTMT" }
       responses:
         "200":
-          description: Excel workbook of the production plan
+          description: Excel workbook of the finalized capacity-fitted production plan, including Cannot Be Made per item
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /plan/export/temporary-excel:
+    get:
+      operationId: exportTemporaryPlanExcel
+      tags: [plan]
+      description: "Export-only demand-true Temporary Plan from the latest finalized temporary run. It is the demand source before machine capacity is applied."
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string }
+        - name: segment
+          in: query
+          required: false
+          schema: { type: string, default: "PTMT" }
+      responses:
+        "200":
+          description: Excel workbook of the demand-true Temporary Plan
           content:
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema:
@@ -675,7 +829,7 @@ paths:
           schema: { type: string, default: "PTMT" }
       responses:
         "200":
-          description: Excel workbook of the weekly release plan
+          description: Excel workbook of the finalized capacity-fitted weekly allocation; its Summary asserts Σ W1..W4 = Production Plan total
           content:
             application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema:
@@ -859,6 +1013,67 @@ paths:
       responses:
         "204":
           description: Run deleted
+        "404":
+          description: Not found
+
+  /plan/runs/{id}/schedule-request:
+    get:
+      operationId: getPlanRunScheduleRequest
+      tags: [plan]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Demand lines ready for an external capacity scheduler
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleRequest"
+        "404":
+          description: Not found
+
+  /plan/runs/{id}/schedule:
+    post:
+      operationId: schedulePlumbingPlanRun
+      tags: [plan]
+      description: Run a finalized Plumbing plan through the external pipe and fitting machine scheduler.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Separate pipe and fitting ScheduleResults plus merged display totals
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlumbingScheduleResponse"
+        "404":
+          description: Not found
+        "422":
+          description: Run is not a finalized Plumbing run
+        "502":
+          description: Machine scheduler rejected or could not process the request
+
+  /plan/runs/{id}/export/excel:
+    get:
+      operationId: exportFrozenPlanExcel
+      tags: [plan]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Excel export generated from persisted frozen rows
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema: { type: string, format: binary }
         "404":
           description: Not found
 
@@ -1756,6 +1971,139 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlantLiveError"
 
+  /alerts:
+    get:
+      operationId: getAlerts
+      tags: [alerts]
+      parameters:
+        - name: month
+          in: query
+          required: true
+          schema: { type: string, pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
+        - name: segment
+          in: query
+          required: true
+          schema: { type: string, enum: [PTMT, Plumbing] }
+      responses:
+        "200":
+          description: Evaluated alert rules for one segment and month
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AlertsResponse" }
+        "400": { description: Invalid alert scope }
+        "502": { description: Alert evaluation failed }
+
+  /alerts/history:
+    get:
+      operationId: getAlertsHistory
+      tags: [alerts]
+      parameters:
+        - name: segment
+          in: query
+          required: true
+          schema: { type: string, enum: [PTMT, Plumbing] }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 500, default: 100 }
+      responses:
+        "200":
+          description: Alert state-change history
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AlertHistoryResponse" }
+
+  /alerts/{id}/acknowledge:
+    patch:
+      operationId: acknowledgeAlert
+      tags: [alerts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Alert acknowledged
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AlertActionResponse" }
+        "401": { description: Authentication required }
+        "403": { description: Admin access required }
+
+  /alerts/{id}/mute:
+    patch:
+      operationId: muteAlert
+      tags: [alerts]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MuteAlertRequest" }
+      responses:
+        "200":
+          description: Alert muted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AlertActionResponse" }
+        "400": { description: Invalid mute request }
+        "401": { description: Authentication required }
+        "403": { description: Admin access required }
+
+  /alerts/thresholds/{code}:
+    put:
+      operationId: updateAlertThreshold
+      tags: [alerts]
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string, enum: [R1, R2, R3, R4, R5, R6, R7] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateAlertThresholdRequest" }
+      responses:
+        "200":
+          description: Threshold updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AlertThresholdActionResponse" }
+        "400": { description: Invalid threshold }
+        "401": { description: Authentication required }
+        "403": { description: Admin access required }
+
+  /alerts/thresholds/{code}/reset:
+    post:
+      operationId: resetAlertThreshold
+      tags: [alerts]
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string, enum: [R1, R2, R3, R4, R5, R6, R7] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [segment]
+              properties:
+                segment: { type: string, enum: [PTMT, Plumbing] }
+      responses:
+        "200":
+          description: Threshold reset
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AlertThresholdActionResponse" }
+
 components:
   securitySchemes:
     apiKeyAuth:
@@ -1847,7 +2195,7 @@ components:
         pendingOrder: { type: number }
         avg3MoSale: { type: number }
         pendingLastMonth: { type: number }
-        bufferReq: { type: number }
+        bufferReq: { type: ["number", "null"] }
         minProduction: { type: number }
         productionPlan: { type: number }
         maxProduction: { type: number }
@@ -2059,7 +2407,7 @@ components:
         category: { type: string }
         avg3MoSale: { type: number }
         stock: { type: number }
-        bufferReq: { type: number }
+        bufferReq: { type: ["number", "null"] }
         minProduction: { type: number }
         maxProduction: { type: number }
         pendingOrderLastMonth: { type: number }
@@ -2093,10 +2441,12 @@ components:
         category: { type: string }
         minTotal: { type: number }
         maxTotal: { type: number }
+        demandPcs: { type: number, description: "Issued/demand quantity for the category." }
+        fittedPcs: { type: ["number", "null"], description: "Executable quantity for the category; null when not scheduled." }
 
     PlanSummary:
       type: object
-      required: [month, categories, grandMinTotal, grandMaxTotal]
+      required: [month, categories, grandMinTotal, grandMaxTotal, grandDemandTotal, grandFittedTotal, demandBasis, fittedBasis]
       properties:
         month: { type: string }
         categories:
@@ -2104,7 +2454,11 @@ components:
           items:
             $ref: "#/components/schemas/CategorySummary"
         grandMinTotal: { type: number }
-        grandMaxTotal: { type: number }
+        grandMaxTotal: { type: number, description: "Compatibility alias for the issued demand total." }
+        grandDemandTotal: { type: number, description: "Issued/demand quantity owed by the plan." }
+        grandFittedTotal: { type: ["number", "null"], description: "Executable quantity from the finalized Production run; null when only a Temporary run exists." }
+        demandBasis: { type: string, enum: [demand] }
+        fittedBasis: { type: ["string", "null"], enum: [executable, null] }
 
     CreatePlanRunRequest:
       type: object
@@ -2112,6 +2466,14 @@ components:
       properties:
         month: { type: string }
         segment: { type: string }
+        planType:
+          type: string
+          enum: [temporary, production]
+          default: production
+          description: Temporary is demand-true and never issued to the floor; production is the machine-feasible lineage.
+        temporaryRunId:
+          type: ["integer", "null"]
+          description: Temporary Plan that this Production Plan was fitted from.
         note: { type: string }
         effectiveFrom:
           type: string
@@ -2128,11 +2490,13 @@ components:
 
     PlanRunSummary:
       type: object
-      required: [id, month, segment, asOfAt, status, effectiveFrom, note, itemCount, grandMinTotal, grandMaxTotal, createdAt]
+      required: [id, month, segment, planType, temporaryRunId, asOfAt, status, effectiveFrom, note, planStatusReason, pass2, itemCount, grandMinTotal, grandMaxTotal, grandDemandTotal, grandFittedTotal, demandBasis, fittedBasis, createdAt]
       properties:
         id: { type: integer }
         month: { type: string }
         segment: { type: string }
+        planType: { type: string, enum: [temporary, production] }
+        temporaryRunId: { type: ["integer", "null"] }
         asOfAt: { type: string, format: date-time }
         status: { type: string, enum: [draft, finalized] }
         effectiveFrom:
@@ -2140,14 +2504,25 @@ components:
           format: date
           description: Date this issued plan version begins governing monitoring; null only for legacy runs.
         note: { type: ["string", "null"] }
+        planStatusReason:
+          type: ["string", "null"]
+          description: Audit reason when the issued plan has a known provenance or status concern.
+        pass2:
+          allOf:
+            - $ref: "#/components/schemas/PlanRunPass2Audit"
+          nullable: true
         itemCount: { type: integer }
         grandMinTotal: { type: number }
-        grandMaxTotal: { type: number }
+        grandMaxTotal: { type: number, description: "Compatibility alias for the issued demand total." }
+        grandDemandTotal: { type: number, description: "Issued/demand quantity owed by the plan." }
+        grandFittedTotal: { type: ["number", "null"], description: "Executable quantity; null for demand-only Temporary Plans." }
+        demandBasis: { type: string, enum: [demand] }
+        fittedBasis: { type: ["string", "null"], enum: [executable, null] }
         createdAt: { type: string, format: date-time }
 
     PlanRunItem:
       type: object
-      required: [itemCode, colour, category, avg3MoSale, stock, pendingCurrent, pendingLastMonth, bufferReq, minProduction, productionPlan]
+      required: [itemCode, colour, category, avg3MoSale, stock, pendingCurrent, pendingLastMonth, bufferReq, minProduction, demandPlan, productionPlan, temporaryPlan, cannotBeMade, feasibilityStatus, dummy, orders, buffer]
       properties:
         itemCode: { type: string }
         colour: { type: string }
@@ -2156,9 +2531,89 @@ components:
         stock: { type: number }
         pendingCurrent: { type: number }
         pendingLastMonth: { type: number }
-        bufferReq: { type: number }
+        bufferReq: { type: ["number", "null"] }
         minProduction: { type: number }
-        productionPlan: { type: number }
+        demandPlan: { type: number, description: "Frozen demand/owed quantity before machine fitting." }
+        productionPlan: { type: number, description: "Executable quantity for a fitted Production Plan; demand quantity for a Temporary Plan." }
+        temporaryPlan: { type: number, description: "Frozen Temporary Plan demand before PTMT capacity fitting." }
+        cannotBeMade: { type: number, description: "Temporary demand remaining after all four weekly category capacities are consumed." }
+        feasibilityStatus: { type: string, enum: [fitted, not-scheduled, unfulfillable] }
+        dummy: { type: number }
+        orders: { type: number }
+        buffer: { type: number }
+        material: { type: ["string", "null"] }
+        weightKg: { type: ["number", "null"] }
+        urgencyRank: { type: ["integer", "null"] }
+        releaseWeek: { type: ["integer", "null"] }
+        w1: { type: number }
+        w2: { type: number }
+        w3: { type: number }
+        w4: { type: number }
+
+    PlanRunPass2Audit:
+      type: object
+      required: [workingDays, workedSundayDates, categories, invariants]
+      properties:
+        workingDays: { type: integer }
+        workedSundayDates:
+          type: array
+          items: { type: string, format: date }
+        categories:
+          type: array
+          items:
+            type: object
+            required: [category, fullP90, recent90dP90, driftPct, selectedWindow, selectedP90, overrideCapacity, capacityPerDay, workingDays, weeklyCapacity, weeklyRelease, temporaryPlan, productionPlan, cannotBeMade]
+            properties:
+              category: { type: string }
+              fullP90: { type: number }
+              recent90dP90: { type: number }
+              driftPct: { type: ["number", "null"] }
+              recoveryDriftPct: { type: ["number", "null"], description: "Recovery drift from the minimum positive monthly p90 to the latest positive monthly p90" }
+              monthlyP90CvPct: { type: ["number", "null"], description: "Population coefficient of variation across positive monthly p90s, expressed as a percentage; high values mean neither window is reliable alone" }
+              latestMonthlyP90: { type: ["number", "null"] }
+              minPositiveMonthlyP90: { type: ["number", "null"] }
+              zeroProductionMonths:
+                type: array
+                items: { type: string }
+                description: "Months with no positive-production observations; not capacity zeros"
+              monthly:
+                type: array
+                items: { $ref: "#/components/schemas/CapacityMonthlyStats" }
+                description: "Monthly p90 evidence used by this Pass 2 category selection"
+              selectedWindow: { type: string, enum: [fullWindow, recent90d] }
+              selectedP90: { type: number }
+              overrideCapacity: { type: ["number", "null"] }
+              capacityPerDay: { type: number }
+              workingDays:
+                type: array
+                minItems: 4
+                maxItems: 4
+                items: { type: integer }
+              weeklyCapacity:
+                type: array
+                minItems: 4
+                maxItems: 4
+                items: { type: number }
+              weeklyRelease:
+                type: array
+                minItems: 4
+                maxItems: 4
+                items: { type: number }
+              temporaryPlan: { type: number }
+              productionPlan: { type: number }
+              cannotBeMade: { type: number }
+        invariants:
+          type: object
+          required: [conservation, weeklyCapacity, weeklySum, dummyPriority, temporaryPlanUnchanged, temporaryPlanTotal, productionPlanTotal, cannotBeMadeTotal]
+          properties:
+            conservation: { type: boolean }
+            weeklyCapacity: { type: boolean }
+            weeklySum: { type: boolean }
+            dummyPriority: { type: boolean }
+            temporaryPlanUnchanged: { type: boolean }
+            temporaryPlanTotal: { type: number }
+            productionPlanTotal: { type: number }
+            cannotBeMadeTotal: { type: number }
 
     PlanRunDetail:
       type: object
@@ -2170,6 +2625,155 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PlanRunItem"
+
+    ScheduleRequest:
+      type: object
+      required: [contract, items]
+      properties:
+        contract:
+          type: object
+          required: [name, version, segment, month, period, sourceRunId, sourcePlanType, lineageTemporaryRunId, fields]
+          properties:
+            name: { type: string }
+            version: { type: integer }
+            segment: { type: string }
+            month: { type: string }
+            period: { type: string, enum: [week, month] }
+            sourceRunId: { type: integer }
+            sourcePlanType: { type: string, enum: [temporary, production] }
+            lineageTemporaryRunId: { type: ["integer", "null"] }
+            fields:
+              type: array
+              items: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            required: [itemCode, colour, quantity, material, weightKg, category, urgencyRank]
+            properties:
+              itemCode: { type: string }
+              colour: { type: string }
+              quantity: { type: integer }
+              material: { type: ["string", "null"] }
+              weightKg: { type: ["number", "null"] }
+              category: { type: string }
+              urgencyRank: { type: integer }
+
+    PlumbingScheduleResponse:
+      type: object
+      required: [batchId, sourceRunId, month, segment, week_days, demand, scheduled, unfinished, capacity_hours, idle_hours, downtime_hours_lost, downtime_machine_days, unallocated_hours, results, merged]
+      properties:
+        batchId: { type: string, format: uuid }
+        sourceRunId: { type: integer }
+        month: { type: string, pattern: "^\\d{4}-\\d{2}$" }
+        segment: { type: string, enum: [Plumbing] }
+        week_days:
+          type: array
+          minItems: 4
+          maxItems: 4
+          items: { type: integer, minimum: 1 }
+        worked_sunday_dates:
+          type: array
+          items: { type: string, format: date }
+        materials:
+          type: array
+          items: { type: string, enum: [CPVC, UPVC, SWR, AGRI] }
+        demand:
+          type: object
+          required: [pieces, item_count]
+          properties:
+            pieces: { type: number }
+            item_count: { type: integer }
+            kg: { type: ["number", "null"] }
+        scheduled:
+          type: object
+          required: [pieces, hours]
+          properties:
+            pieces: { type: number }
+            kg: { type: ["number", "null"] }
+            hours: { type: number }
+        unfinished:
+          type: object
+          required: [pieces, kg, hours]
+          properties:
+            pieces: { type: number }
+            kg: { type: number }
+            hours: { type: number }
+        capacity_hours: { type: number }
+        idle_hours: { type: number }
+        downtime_hours_lost: { type: number }
+        downtime_machine_days: { type: number }
+        unallocated_hours: { type: number }
+        unroutable:
+          type: array
+          items:
+            type: object
+            required: [kind, item_code, material, qty_pcs, reason]
+            properties:
+              kind: { type: string, enum: [pipe, fitting] }
+              item_code: { type: string }
+              material: { type: string }
+              qty_pcs: { type: number }
+              reason: { type: string }
+        results:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items:
+            type: object
+            required: [kind, week_days, blocks, weekly_fill, unfinished]
+            properties:
+              kind: { type: string, enum: [pipe, fitting] }
+              week_days:
+                type: array
+                minItems: 4
+                maxItems: 4
+                items: { type: integer, minimum: 1 }
+              blocks: { type: array, items: { type: object } }
+              weekly_fill: { type: array, items: { type: object } }
+              unfinished: { type: array, items: { type: object } }
+              total_capacity_hrs: { type: number }
+              total_scheduled_hrs: { type: number }
+              total_idle_hrs: { type: number }
+              total_scheduled_pcs: { type: number }
+              total_scheduled_kg: { type: ["number", "null"] }
+              total_unfinished_pcs: { type: number }
+              total_unfinished_kg: { type: number }
+              total_unfinished_hours: { type: number }
+              total_downtime_hours_lost: { type: number }
+              total_downtime_machine_days: { type: number }
+              unfinished_capability:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    item_code: { type: string }
+                    material: { type: string }
+                    remaining_pcs: { type: number }
+                    remaining_kg: { type: number }
+                    remaining_hours: { type: number }
+                    capable_machines:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          machine_id: { type: string }
+                          locked_out: { type: ["boolean", "null"] }
+                          capacity_hours: { type: number }
+                          scheduled_hours: { type: number }
+                          idle_hours: { type: number }
+                          peak_utilisation_pct: { type: number }
+                          saturated: { type: boolean }
+        solventsExcludedAsUnconstrained: { type: integer }
+        solventExclusions:
+          type: array
+          items:
+            type: object
+            required: [item_code, category, qty_pcs]
+            properties:
+              item_code: { type: string }
+              category: { type: string }
+              qty_pcs: { type: number }
 
     PlanRunDriftCategory:
       type: object
@@ -2434,6 +3038,7 @@ components:
         - outputKg
         - rejectionKg
         - rejectionPct
+        - totalCountBasis
         - goodOutputKg
       properties:
         machineId: { type: string }
@@ -2444,6 +3049,7 @@ components:
         outputKg: { type: number }
         rejectionKg: { type: ["number", "null"] }
         rejectionPct: { type: ["number", "null"] }
+        totalCountBasis: { type: string, enum: [net, gross] }
         goodOutputKg: { type: ["number", "null"] }
 
     MonitoringQuality:
@@ -3100,7 +3706,7 @@ components:
 
     CorrectiveItemResult:
       type: object
-      required: [itemCode, colour, category, avg3MoSale, bufferMultiplier, stockOpen, producedToDate, stockNow, pendingAtPlan, pendingNow, pendingLastMonth, originalPlan, bufferReqRev, planRev, remainingToProduce, kgRev, remainingKg, deltaNewOrders, deltaProduction, deltaNet, w1Rev, w2Rev, w3Rev, w4Rev, status, isNewItem]
+      required: [itemCode, colour, category, avg3MoSale, bufferMultiplier, stockOpen, producedToDate, stockNow, pendingAtPlan, pendingNow, pendingLastMonth, originalPlan, bufferReqRev, planRev, remainingToProduce, kgRev, remainingKg, deltaNewOrders, deltaProduction, deltaNet, w1Rev, w2Rev, w3Rev, w4Rev, temporaryCorrective, correctiveProduction, cannotBeMade, feasibilityStatus, status, isNewItem]
       properties:
         itemCode: { type: string }
         colour: { type: string }
@@ -3129,12 +3735,17 @@ components:
         w2Rev: { type: number }
         w3Rev: { type: number }
         w4Rev: { type: number }
+        temporaryCorrective: { type: number, description: "Demand-true corrective quantity before capacity fitting" }
+        correctiveProduction: { type: number, description: "Quantity fitted into open-week capacity or machine schedule" }
+        cannotBeMade: { type: number, description: "Temporary corrective quantity not fitted in the open window" }
+        cannotBeMadeReason: { type: ["string", "null"] }
+        feasibilityStatus: { type: string, enum: [fitted, not-scheduled, unfulfillable] }
         status: { type: string }
         isNewItem: { type: boolean }
 
     CorrectiveCategoryResult:
       type: object
-      required: [category, plan, produced, producedCapped, remaining, capPerDay, feasible, shortfall, productionLag, newDemandDelta, capacityShortfall, flags, kgRemaining]
+      required: [category, plan, produced, producedCapped, remaining, capPerDay, feasible, shortfall, productionLag, newDemandDelta, capacityShortfall, flags, kgRemaining, temporaryCorrective, correctiveProduction, cannotBeMade, notScheduled, unfulfillable]
       properties:
         category: { type: string }
         plan: { type: number, description: "Sum of revised plan (planRev) per item in this category" }
@@ -3152,10 +3763,15 @@ components:
           items: { type: string }
           description: "UNFULFILLABLE_THIS_MONTH | NOT_STARTED | NO_DEMONSTRATED_CAPACITY"
         kgRemaining: { type: number, description: "Total remaining kg for Plumbing categories; 0 for PTMT" }
+        temporaryCorrective: { type: number }
+        correctiveProduction: { type: number }
+        cannotBeMade: { type: number }
+        notScheduled: { type: number }
+        unfulfillable: { type: number }
 
     CorrectiveReplanResult:
       type: object
-      required: [runId, month, segment, weekClosed, workingDaysUsed, workingDaysRemaining, dailyCapacity, workingDaysPerWeek, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, weekStats, warnings, items, categories, unplannedTotal]
+      required: [runId, month, segment, weekClosed, workingDaysUsed, workingDaysRemaining, dailyCapacity, workingDaysPerWeek, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, notScheduledQty, unfulfillableOnlyQty, weekStats, warnings, items, categories, unplannedTotal, schedulerWeekOffset, schedulerOriginalWeeks, invariants]
       properties:
         runId: { type: integer }
         month: { type: string }
@@ -3171,7 +3787,9 @@ components:
         newOrdersQty: { type: number }
         originalMonthTotal: { type: number }
         revisedMonthTotal: { type: number }
-        unfulfillableQty: { type: number }
+        unfulfillableQty: { type: number, description: "Backward-compatible aggregate residual." }
+        notScheduledQty: { type: number, description: "Residual demand with no assignment yet, but not classified as impossible." }
+        unfulfillableOnlyQty: { type: number, description: "Residual demand classified as impossible within the route/capacity/window." }
         weekStats:
           type: array
           items: { $ref: "#/components/schemas/CorrectiveWeekStat" }
@@ -3198,10 +3816,25 @@ components:
         baselineSource: { type: string, enum: [frozen-run, live], description: "Where the original plan baseline came from" }
         unplannedTotal: { type: integer, description: "Sum of unplannedProduction quantities" }
         frozenPlanGrandMax: { type: ["integer", "null"], description: "Grand total (pcs) from the cited baseline plan run's results rows; null when no frozen baseline or run predates drift tracking" }
+        schedulerWeekOffset: { type: ["integer", "null"], description: "Persisted offset from scheduler-local weeks to original month weeks" }
+        schedulerOriginalWeeks:
+          type: array
+          items: { type: integer }
+          description: "Original weeks represented by scheduler-local W1 onward"
+        invariants:
+          type: object
+          required: [temporaryCorrectiveUnchanged, noClosedWeekRelease, weeklyCapacity, producedFloor, reconciliation, allPass]
+          properties:
+            temporaryCorrectiveUnchanged: { type: boolean }
+            noClosedWeekRelease: { type: boolean }
+            weeklyCapacity: { type: boolean }
+            producedFloor: { type: boolean }
+            reconciliation: { type: boolean }
+            allPass: { type: boolean }
 
     CategoryCapacity:
       type: object
-      required: [id, category, meanPerDay, p90PerDay, bestDay, daysObserved, trailingDays, isThinData, suggestedCapacity, workingDaysPerWeek, planNeedsPerDay, appliedCapacity, lastComputedAt]
+      required: [id, category, meanPerDay, p90PerDay, bestDay, daysObserved, trailingDays, isThinData, suggestedCapacity, workingDaysPerWeek, planNeedsPerDay, appliedCapacity, selectedCapacity, selectedWindow, lastComputedAt]
       properties:
         id: { type: integer }
         category: { type: string }
@@ -3214,9 +3847,55 @@ components:
         suggestedCapacity: { type: number }
         overrideCapacity: { type: ["number", "null"] }
         appliedCapacity: { type: number, description: "override if set, else suggested — all modules use this" }
+        selectedCapacity: { type: number, description: "Capacity selected for PTMT Pass 2: override if set, otherwise the adaptive full/recent window value" }
+        selectedWindow: { type: string, enum: [fullWindow, recent90d], description: "Window selected for PTMT Pass 2" }
         workingDaysPerWeek: { type: integer }
         planNeedsPerDay: { type: number }
+        windowStartDate: { type: ["string", "null"], format: date }
+        windowEndDate: { type: ["string", "null"], format: date }
+        comparison:
+          oneOf:
+            - $ref: "#/components/schemas/CapacityComparison"
+            - type: "null"
         lastComputedAt: { type: string }
+
+    CapacityWindowStats:
+      type: object
+      required: [startDate, endDate, daysObserved, meanPerDay, p90PerDay, bestDay]
+      properties:
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        daysObserved: { type: integer }
+        meanPerDay: { type: number }
+        p90PerDay: { type: number }
+        bestDay: { type: number }
+
+    CapacityMonthlyStats:
+      allOf:
+        - $ref: "#/components/schemas/CapacityWindowStats"
+        - type: object
+          required: [month]
+          properties:
+            month: { type: string }
+
+    CapacityComparison:
+      type: object
+      required: [fullWindow, recent90d, monthly, driftPct, recoveryDriftPct, monthlyP90CvPct, latestMonthlyP90, minPositiveMonthlyP90, zeroProductionMonths]
+      properties:
+        fullWindow: { $ref: "#/components/schemas/CapacityWindowStats" }
+        recent90d: { $ref: "#/components/schemas/CapacityWindowStats" }
+        monthly:
+          type: array
+          items: { $ref: "#/components/schemas/CapacityMonthlyStats" }
+        driftPct: { type: ["number", "null"], description: "Endpoint drift from first positive-production month to latest positive-production month" }
+        recoveryDriftPct: { type: ["number", "null"], description: "Recovery drift from the minimum positive monthly p90 to the latest positive monthly p90" }
+        monthlyP90CvPct: { type: ["number", "null"], description: "Population coefficient of variation across positive monthly p90s, expressed as a percentage; high values mean neither window is reliable alone" }
+        latestMonthlyP90: { type: ["number", "null"] }
+        minPositiveMonthlyP90: { type: ["number", "null"] }
+        zeroProductionMonths:
+          type: array
+          items: { type: string }
+          description: "Months with no positive-production observations; not capacity zeros"
 
     CategoryCapacityUpdate:
       type: object
@@ -3226,7 +3905,7 @@ components:
 
     CorrectivePlanRunSummary:
       type: object
-      required: [id, segment, month, weekClosed, dailyCapacity, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, pinned, warnings, createdAt]
+      required: [id, segment, month, weekClosed, dailyCapacity, producedToDate, newOrdersQty, originalMonthTotal, revisedMonthTotal, unfulfillableQty, notScheduledTotal, unfulfillableTotal, pinned, warnings, createdAt]
       properties:
         id: { type: integer }
         segment: { type: string }
@@ -3240,6 +3919,8 @@ components:
         originalMonthTotal: { type: number }
         revisedMonthTotal: { type: number }
         unfulfillableQty: { type: number }
+        notScheduledTotal: { type: number }
+        unfulfillableTotal: { type: number }
         planRunId: { type: ["integer", "null"], description: "Immutable plan run cited as the baseline (null = live rebuild)" }
         pinned: { type: boolean, description: "When true, deletion and frozen-baseline changes are blocked." }
         warnings:
@@ -3380,7 +4061,7 @@ components:
 
     PlantLiveMachineMetrics:
       type: object
-      required: [headline, headline_label, headline_rating, unit]
+      required: [headline, headline_label, headline_rating, total_count_basis, unit]
       properties:
         headline: { type: ["number", "null"] }
         headline_label: { type: string }
@@ -3395,6 +4076,7 @@ components:
         total_count: { type: ["number", "null"] }
         reject_count: { type: ["number", "null"] }
         rejection_pct: { type: ["number", "null"] }
+        total_count_basis: { type: string, enum: [net, gross] }
         actual_hours: { type: ["number", "null"] }
         ideal_hours: { type: ["number", "null"] }
         unit: { type: string }
@@ -3570,3 +4252,194 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/MachineUnfulfillableItem"
+
+    ProductListRow:
+      type: object
+      required: [key, segment, itemCode, colour, productName, division, category, status, source, note, inCatalogue, inPlanningWorkbook, lastSeenProductionMonth, pendingQuantity, dummyQuantity, bufferReq, auditCount]
+      properties:
+        key: { type: string }
+        segment: { type: string, enum: [PTMT, Plumbing, CP] }
+        itemCode: { type: string }
+        colour: { type: ["string", "null"] }
+        productName: { type: ["string", "null"] }
+        division: { type: ["string", "null"] }
+        category: { type: string }
+        status: { type: string, enum: [classified, unclassified, ambiguous] }
+        source: { type: ["string", "null"], enum: [workbook, catalogue, seed, null] }
+        note: { type: ["string", "null"] }
+        inCatalogue: { type: boolean }
+        inPlanningWorkbook: { type: boolean }
+        lastSeenProductionMonth: { type: ["string", "null"] }
+        pendingQuantity: { type: number }
+        dummyQuantity: { type: number }
+        bufferReq: { type: ["number", "null"] }
+        auditCount: { type: integer }
+
+    ProductListResponse:
+      type: object
+      required: [rows, total, categories]
+      properties:
+        rows:
+          type: array
+          items: { $ref: "#/components/schemas/ProductListRow" }
+        total: { type: integer }
+        categories:
+          type: array
+          items: { type: string }
+
+    ProductReclassificationInput:
+      type: object
+      required: [segment, category, status, reason]
+      properties:
+        segment: { type: string, enum: [PTMT, Plumbing, CP] }
+        category: { type: string }
+        status: { type: string, enum: [classified, unclassified, ambiguous] }
+        reason: { type: string }
+
+    AlertState:
+      type: string
+      enum: [clear, fired, muted, suppressed]
+
+    AlertSeverity:
+      type: string
+      enum: [red]
+
+    AlertSourceLink:
+      type: object
+      required: [label, href]
+      properties:
+        label: { type: string }
+        href: { type: string }
+
+    Alert:
+      type: object
+      required: [id, code, segment, month, severity, state, title, action, message, value, threshold, difference, quantity, details, sourceLinks, firstSeenAt, lastEvaluatedAt, acknowledgedAt, acknowledgedBy, mutedUntil, muteReason, suppressedReason]
+      properties:
+        id: { type: ["integer", "null"] }
+        code: { type: string, enum: [R1, R2, R3, R4, R5, R6, R7] }
+        segment: { type: string, enum: [PTMT, Plumbing] }
+        month: { type: string }
+        severity: { $ref: "#/components/schemas/AlertSeverity" }
+        state: { $ref: "#/components/schemas/AlertState" }
+        title: { type: string }
+        action: { type: string }
+        message: { type: string }
+        value: { type: ["number", "null"] }
+        threshold: { type: ["number", "null"] }
+        difference: { type: ["number", "null"] }
+        quantity: { type: number }
+        details: { type: object, additionalProperties: true }
+        sourceLinks:
+          type: array
+          items: { $ref: "#/components/schemas/AlertSourceLink" }
+        firstSeenAt: { type: ["string", "null"], format: date-time }
+        lastEvaluatedAt: { type: string, format: date-time }
+        acknowledgedAt: { type: ["string", "null"], format: date-time }
+        acknowledgedBy: { type: ["string", "null"] }
+        mutedUntil: { type: ["string", "null"], format: date-time }
+        muteReason: { type: ["string", "null"] }
+        suppressedReason: { type: ["string", "null"] }
+
+    AlertThreshold:
+      type: object
+      required: [code, segment, name, description, value, defaultValue, unit, scope, observedMin, observedMax, wouldFireCount, updatedBy, updatedAt]
+      properties:
+        code: { type: string, enum: [R1, R2, R3, R4, R5, R6, R7] }
+        segment: { type: string, enum: [PTMT, Plumbing] }
+        name: { type: string }
+        description: { type: string }
+        value: { type: number }
+        defaultValue: { type: number }
+        unit: { type: string }
+        scope: { type: string }
+        observedMin: { type: ["number", "null"] }
+        observedMax: { type: ["number", "null"] }
+        wouldFireCount: { type: integer }
+        updatedBy: { type: ["string", "null"] }
+        updatedAt: { type: string, format: date-time }
+
+    AlertSummary:
+      type: object
+      required: [total, fired, muted, suppressed, clear, quantityAtStake]
+      properties:
+        total: { type: integer }
+        fired: { type: integer }
+        muted: { type: integer }
+        suppressed: { type: integer }
+        clear: { type: integer }
+        quantityAtStake: { type: number }
+
+    AlertsResponse:
+      type: object
+      required: [month, segment, summary, alerts, thresholds]
+      properties:
+        month: { type: string }
+        segment: { type: string, enum: [PTMT, Plumbing] }
+        summary: { $ref: "#/components/schemas/AlertSummary" }
+        alerts:
+          type: array
+          items: { $ref: "#/components/schemas/Alert" }
+        thresholds:
+          type: array
+          items: { $ref: "#/components/schemas/AlertThreshold" }
+
+    AlertHistoryEvent:
+      type: object
+      required: [id, alertId, code, segment, month, state, value, threshold, difference, quantity, message, details, sourceLinks, occurredAt, actor, action]
+      properties:
+        id: { type: integer }
+        alertId: { type: integer }
+        code: { type: string }
+        segment: { type: string }
+        month: { type: string }
+        state: { type: string }
+        value: { type: ["number", "null"] }
+        threshold: { type: ["number", "null"] }
+        difference: { type: ["number", "null"] }
+        quantity: { type: number }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+        sourceLinks:
+          type: array
+          items: { $ref: "#/components/schemas/AlertSourceLink" }
+        occurredAt: { type: string, format: date-time }
+        actor: { type: ["string", "null"] }
+        action: { type: string }
+
+    AlertHistoryResponse:
+      type: object
+      required: [segment, history]
+      properties:
+        segment: { type: string, enum: [PTMT, Plumbing] }
+        history:
+          type: array
+          items: { $ref: "#/components/schemas/AlertHistoryEvent" }
+
+    MuteAlertRequest:
+      type: object
+      required: [reason, mutedUntil]
+      properties:
+        reason: { type: string, minLength: 1 }
+        mutedUntil: { type: string, format: date-time }
+
+    UpdateAlertThresholdRequest:
+      type: object
+      required: [segment, value, reason]
+      properties:
+        segment: { type: string, enum: [PTMT, Plumbing] }
+        value: { type: number, minimum: 0 }
+        reason: { type: string, minLength: 1 }
+
+    AlertActionResponse:
+      type: object
+      required: [ok, alert]
+      properties:
+        ok: { type: boolean }
+        alert: { $ref: "#/components/schemas/Alert" }
+
+    AlertThresholdActionResponse:
+      type: object
+      required: [ok, threshold]
+      properties:
+        ok: { type: boolean }
+        threshold: { $ref: "#/components/schemas/AlertThreshold" }

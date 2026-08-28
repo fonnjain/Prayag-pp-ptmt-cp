@@ -12,6 +12,7 @@ import type { PlantLiveMachineMetricsGoodCount } from './plantLiveMachineMetrics
 import type { PlantLiveMachineMetricsTotalCount } from './plantLiveMachineMetricsTotalCount';
 import type { PlantLiveMachineMetricsRejectCount } from './plantLiveMachineMetricsRejectCount';
 import type { PlantLiveMachineMetricsRejectionPct } from './plantLiveMachineMetricsRejectionPct';
+import type { PlantLiveMachineMetricsTotalCountBasis } from './plantLiveMachineMetricsTotalCountBasis';
 import type { PlantLiveMachineMetricsActualHours } from './plantLiveMachineMetricsActualHours';
 import type { PlantLiveMachineMetricsIdealHours } from './plantLiveMachineMetricsIdealHours';
 
@@ -29,6 +30,7 @@ export interface PlantLiveMachineMetrics {
   total_count?: PlantLiveMachineMetricsTotalCount;
   reject_count?: PlantLiveMachineMetricsRejectCount;
   rejection_pct?: PlantLiveMachineMetricsRejectionPct;
+  total_count_basis: PlantLiveMachineMetricsTotalCountBasis;
   actual_hours?: PlantLiveMachineMetricsActualHours;
   ideal_hours?: PlantLiveMachineMetricsIdealHours;
   unit: string;

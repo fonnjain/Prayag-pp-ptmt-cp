@@ -21,8 +21,12 @@ export * from "./plumbing-machine-capacity";
 export * from "./plant-plan-uploads";
 export * from "./plant-plan-versions";
 export * from "./plant-month-snapshots";
+export * from "./master-products";
 export * from "./users";
 export * from "./sessions";
+export * from "./alerts";
+export * from "./plan-schedule-results";
 // Legacy auth tables remain exported for compatibility with inactive
 // transitional modules; browser auth uses users/user_sessions above.
 export * from "./user-auth";
+export * from "./user-activity";

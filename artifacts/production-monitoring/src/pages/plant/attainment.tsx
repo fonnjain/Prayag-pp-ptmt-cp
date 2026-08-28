@@ -31,6 +31,9 @@ export default function PlantAttainment({ month, selectedCategory }: { month: st
   const weekly = weeklyRaw as any;
 
   const { categories: allCategories, items, variancePareto, mixFlags, plant, context } = bundle;
+  const targetBasis = (context as any).sourceInfo?.targetBasis === "fitted"
+    ? "executable fitted production"
+    : "issued demand";
 
   const categories = selectedCategory
     ? allCategories.filter((c) => c.category === selectedCategory)
@@ -63,7 +66,7 @@ export default function PlantAttainment({ month, selectedCategory }: { month: st
         <div>
           <h1 className="text-3xl font-bold tracking-tight mb-1">Plan vs Actual Attainment</h1>
           <p className="text-muted-foreground text-sm">
-            Plant/category/item plan vs actual — {month} · {context.elapsed}/{context.workingDays} days elapsed
+             Plant/category/item {targetBasis} target vs actual — {month} · {context.elapsed}/{context.workingDays} days elapsed
             {selectedCategory ? ` · filtered: ${selectedCategory}` : ""}
           </p>
         </div>
@@ -87,7 +90,7 @@ export default function PlantAttainment({ month, selectedCategory }: { month: st
         {/* Overview tab: category summary */}
         <TabsContent value="overview" className="space-y-4 mt-4">
           <Card>
-            <CardHeader><CardTitle>Category Produced vs Max PP</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Category Produced vs {targetBasis} target</CardTitle></CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={Math.max(180, categories.length * 44)}>
                 <BarChart data={categories.map((c) => ({
@@ -324,7 +327,7 @@ export default function PlantAttainment({ month, selectedCategory }: { month: st
                               <Fragment key={wk.week}>
                                 <th className={`py-1.5 px-2 font-normal border-l border-border/20 ${wk.week === currentWeek ? "bg-primary/5" : ""}`}>Plan</th>
                                 <th className={`py-1.5 px-2 font-normal ${wk.week === currentWeek ? "bg-primary/5" : ""}`}>Actual</th>
-                                <th className={`py-1.5 px-2 font-normal ${wk.week === currentWeek ? "bg-primary/5" : ""}`}>Att%</th>
+                                    <th className={`py-1.5 px-2 font-normal ${wk.week === currentWeek ? "bg-primary/5" : ""}`}>Att% (released)</th>
                               </Fragment>
                             ))}
                           </tr>

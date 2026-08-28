@@ -24,6 +24,12 @@ function fmtNum(n: number | null | undefined): string {
   return Number(n).toLocaleString("en-IN", { maximumFractionDigits: 1 });
 }
 
+function rejectionPctLabel(basis: string | undefined): string {
+  if (basis === "net") return "Rejection % · rejects ÷ good output";
+  if (basis === "gross") return "Rejection % · rejects ÷ total manufactured";
+  return "Rejection %";
+}
+
 function ragBg(rating: string | undefined) {
   if (rating === "green") return "bg-emerald-500/15 text-emerald-700 border-emerald-500/30";
   if (rating === "amber") return "bg-amber-500/15 text-amber-700 border-amber-500/30";
@@ -70,6 +76,7 @@ export default function MachineDashboard({ month, plant = "PTMT" }: { month: str
   const period = d?.period;
   const byMachine: Record<string, PlantLiveMachineMetrics> = d?.by_machine ?? {};
   const figuresGated = d?.figures_gated === true;
+  const rejectionLabel = rejectionPctLabel(overall?.total_count_basis);
 
   const machines: [string, PlantLiveMachineMetrics][] = Object.entries(byMachine).filter(
     ([name]) => !search || name.toLowerCase().includes(search.toLowerCase())
@@ -158,7 +165,7 @@ export default function MachineDashboard({ month, plant = "PTMT" }: { month: str
         <Card className={`border ${figuresGated ? "border-amber-500/20 bg-amber-500/5" : (overall?.rejection_pct ?? 0) > 5 ? "border-red-500/20 bg-red-500/5" : "border-border/50"}`}>
           <CardContent className="p-5">
             <div className="flex items-center gap-2 mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              <TrendingDown className="h-3.5 w-3.5" /> Rejection
+              <TrendingDown className="h-3.5 w-3.5" /> {rejectionLabel}
             </div>
             <div className={`text-3xl font-bold ${figuresGated ? "text-muted-foreground/70" : (overall?.rejection_pct ?? 0) > 5 ? "text-red-500" : (overall?.rejection_pct ?? 0) > 2 ? "text-amber-600" : "text-emerald-600"}`}>
               {figuresGated ? "–" : `${fmt(overall?.rejection_pct)}%`}
@@ -267,7 +274,7 @@ export default function MachineDashboard({ month, plant = "PTMT" }: { month: str
                     <span className="flex items-center gap-1 justify-end">Output (kg) <SortIcon col="output" /></span>
                   </th>
                   <th className="text-right py-2.5 px-3 font-medium text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => toggleSort("rejection")}>
-                    <span className="flex items-center gap-1 justify-end">Rejection % <SortIcon col="rejection" /></span>
+                    <span className="flex items-center gap-1 justify-end">{rejectionLabel} <SortIcon col="rejection" /></span>
                   </th>
                   <th className="text-right py-2.5 px-4 font-medium text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => toggleSort("hours")}>
                     <span className="flex items-center gap-1 justify-end">Run / Ideal hrs <SortIcon col="hours" /></span>

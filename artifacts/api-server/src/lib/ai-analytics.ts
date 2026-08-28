@@ -55,7 +55,12 @@ export interface AnalysisPacket {
   plant: ReturnType<typeof paceMetricsPacket> & { rag_band: string | null };
   categories: Array<ReturnType<typeof paceMetricsPacket> & { name: string; rag_band: string | null }>;
   top_behind_items: Array<{ item_code: string; colour: string; category: string; stock: number; pending_order: number }>;
-  top_rejecting_machines: Array<{ machine: string; rejection_pct: number | null; utilisation_pct: number | null }>;
+  top_rejecting_machines: Array<{
+    machine: string;
+    rejection_pct: number | null;
+    total_count_basis: "net" | "gross";
+    utilisation_pct: number | null;
+  }>;
   warnings: Array<{ code: string; severity: string; scope: string; message: string; value: number | null; threshold: number | null }>;
   recommended_actions: Array<{ priority: number; code: string; scope: string; message: string; suggested_qty: number | null }>;
   caveats: string[];
@@ -70,7 +75,12 @@ export function buildAnalysisPacket(month: string, bundle: MonitoringBundle): An
     .filter((m) => m.rejectionPct !== null)
     .sort((a, b) => (b.rejectionPct ?? 0) - (a.rejectionPct ?? 0))
     .slice(0, 5)
-    .map((m) => ({ machine: m.machineId, rejection_pct: round(m.rejectionPct), utilisation_pct: round(m.utilisationPct) }));
+    .map((m) => ({
+      machine: m.machineId,
+      rejection_pct: round(m.rejectionPct),
+      total_count_basis: m.totalCountBasis,
+      utilisation_pct: round(m.utilisationPct),
+    }));
 
   const caveats: string[] = [];
   if (!bundle.dataAvailable) caveats.push(`No Report-5 daily data available for ${month}.`);
@@ -131,8 +141,9 @@ Rules:
 1. Use ONLY the numbers provided in the packet. NEVER invent, extrapolate, guess, or recompute any figure that is not explicitly present.
 2. If a number is needed but not present in the packet, say so explicitly instead of estimating it.
 3. Respect every item in "caveats" and "needs_review" — factor them into your analysis and mention material ones as watch items.
-4. Be concise, concrete, and shop-floor-actionable. Recommendations must be specific (what to do, where, and the quantified impact using packet numbers) — not generic advice.
-5. Output JSON ONLY, matching exactly this schema. Do NOT wrap the JSON in markdown code fences (no \`\`\`), and do NOT include any commentary, preamble, or explanation outside the JSON object. Your entire response must be a single valid JSON object starting with { and ending with }.
+4. Interpret rejection_pct using total_count_basis: "net" means rejects ÷ good output; "gross" means rejects ÷ total manufactured. Preserve that distinction in findings and recommendations.
+5. Be concise, concrete, and shop-floor-actionable. Recommendations must be specific (what to do, where, and the quantified impact using packet numbers) — not generic advice.
+6. Output JSON ONLY, matching exactly this schema. Do NOT wrap the JSON in markdown code fences (no \`\`\`), and do NOT include any commentary, preamble, or explanation outside the JSON object. Your entire response must be a single valid JSON object starting with { and ending with }.
 {
   "executive_summary": "2-3 sentences on overall status and the single biggest lever to pull",
   "key_findings": [{ "finding": string, "evidence": string, "scope": string }],

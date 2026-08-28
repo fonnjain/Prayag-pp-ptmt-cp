@@ -4,10 +4,16 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { CreatePlanRunRequestPlanType } from './createPlanRunRequestPlanType';
+import type { CreatePlanRunRequestTemporaryRunId } from './createPlanRunRequestTemporaryRunId';
 
 export interface CreatePlanRunRequest {
   month: string;
   segment?: string;
+  /** Temporary is demand-true and never issued to the floor; production is the machine-feasible lineage. */
+  planType?: CreatePlanRunRequestPlanType;
+  /** Temporary Plan that this Production Plan was fitted from. */
+  temporaryRunId?: CreatePlanRunRequestTemporaryRunId;
   note?: string;
   /** Date within the plan month when this issued version begins governing monitoring. */
   effectiveFrom?: string;

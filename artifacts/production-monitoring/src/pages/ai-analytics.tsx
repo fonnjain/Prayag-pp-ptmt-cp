@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sparkles, Download, Send, Loader2, History, Factory, AlertCircle, DatabaseZap, TrendingUp, RefreshCw } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { fmtDate, fmtDateTime } from "@/lib/utils";
 
 type Depth = "standard" | "deep";
 
@@ -556,7 +557,7 @@ function MachineLevelTab({ month }: { month: string }) {
                 className={`w-full text-left text-sm px-3 py-2 rounded-md border transition-colors ${currentId === h.id ? "border-primary bg-primary/5" : "border-border/50 hover:bg-muted/30"}`}
                 data-testid={`history-item-${h.id}`}>
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">{new Date(h.createdAt).toLocaleString()}</span>
+                  <span className="font-medium">{fmtDateTime(h.createdAt)}</span>
                   <Badge variant="outline">{h.depth}</Badge>
                 </div>
                 <div className="text-xs text-muted-foreground">{h.model}</div>
@@ -668,7 +669,7 @@ function PlantTrendTable({
         minRag.toUpperCase(),
         riskCount,
         topRec,
-        new Date(row.createdAt).toLocaleDateString(),
+        fmtDate(row.createdAt),
       ];
     });
     downloadCsv("ptmt-plant-trend", headers, csvRows);
@@ -775,7 +776,7 @@ function PlantTrendTable({
                   {topRec ? topRec.scope : "—"}
                 </td>
                 <td className="px-4 py-3 text-muted-foreground text-xs">
-                  {new Date(row.createdAt).toLocaleDateString()}
+                  {fmtDate(row.createdAt)}
                 </td>
                 <td className="px-4 py-3">
                   <Button
@@ -1168,7 +1169,7 @@ function PlantLevelTab({ month }: { month: string }) {
                 className={`w-full text-left text-sm px-3 py-2 rounded-md border transition-colors ${currentId === h.id ? "border-primary bg-primary/5" : "border-border/50 hover:bg-muted/30"}`}
                 data-testid={`plant-history-item-${h.id}`}>
                 <div className="flex items-center justify-between">
-                  <span className="font-medium">{new Date(h.createdAt).toLocaleString()}</span>
+                  <span className="font-medium">{fmtDateTime(h.createdAt)}</span>
                   <Badge variant="outline">{h.depth}</Badge>
                 </div>
                 <div className="text-xs text-muted-foreground">{h.model}</div>

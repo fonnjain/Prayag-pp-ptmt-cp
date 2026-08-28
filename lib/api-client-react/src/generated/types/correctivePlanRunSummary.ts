@@ -22,6 +22,8 @@ export interface CorrectivePlanRunSummary {
   originalMonthTotal: number;
   revisedMonthTotal: number;
   unfulfillableQty: number;
+  notScheduledTotal: number;
+  unfulfillableTotal: number;
   /** Immutable plan run cited as the baseline (null = live rebuild) */
   planRunId?: CorrectivePlanRunSummaryPlanRunId;
   /** When true, deletion and frozen-baseline changes are blocked. */

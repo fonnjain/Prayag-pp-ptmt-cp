@@ -35,6 +35,10 @@ export interface CorrectiveReplanResult {
   originalMonthTotal: number;
   revisedMonthTotal: number;
   unfulfillableQty: number;
+  /** Residual demand with no assignment yet, but not classified as impossible. */
+  notScheduledQty: number;
+  /** Residual demand classified as impossible within the route/capacity/window. */
+  unfulfillableOnlyQty: number;
   weekStats: CorrectiveWeekStat[];
   warnings: CorrectiveWarning[];
   items: CorrectiveItemResult[];
@@ -50,4 +54,16 @@ export interface CorrectiveReplanResult {
   unplannedTotal: number;
   /** Grand total (pcs) from the cited baseline plan run's results rows; null when no frozen baseline or run predates drift tracking */
   frozenPlanGrandMax?: CorrectiveReplanResultFrozenPlanGrandMax;
+  /** Persisted offset from scheduler-local weeks to original month weeks */
+  schedulerWeekOffset: number | null;
+  /** Original weeks represented by scheduler-local W1 onward */
+  schedulerOriginalWeeks: number[];
+  invariants: {
+    temporaryCorrectiveUnchanged: boolean;
+    noClosedWeekRelease: boolean;
+    weeklyCapacity: boolean;
+    producedFloor: boolean;
+    reconciliation: boolean;
+    allPass: boolean;
+  };
 }

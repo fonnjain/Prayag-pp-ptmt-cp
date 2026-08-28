@@ -1,4 +1,5 @@
 import { diagnoseInputRows, type InputFieldRole, type InputReadDiagnostics } from "./input-diagnostics";
+import { applyPendingOrderAlias } from "./sheets";
 
 export type PendingSnapshotRole = "pending_current" | "pending_last_month";
 
@@ -55,11 +56,12 @@ export function parsePendingRows(
     const itemCode = String(rawCode).trim();
     if (!itemCode) continue;
     const colour = String(rawColour ?? "").trim();
-    const key = `${itemCode}::${colour}`;
+    const canonical = applyPendingOrderAlias(itemCode, colour);
+    const key = `${canonical.code}::${canonical.colour}`;
     const previous = totals.get(key);
     totals.set(key, {
-      itemCode,
-      colour,
+      itemCode: canonical.code,
+      colour: canonical.colour,
       qty: (previous?.qty ?? 0) + transformQuantity(asNumber(rawQuantity)),
     });
   }
@@ -101,6 +103,15 @@ export function buildPlanRunInputSnapshot(input: {
   };
 }
 
-export function pendingSnapshotStatus(snapshotCount: number): "captured" | "not-captured" {
-  return snapshotCount > 0 ? "captured" : "not-captured";
+export function pendingSnapshotStatus(
+  snapshots: number | string[],
+): "captured" | "not-captured" {
+  if (typeof snapshots === "number") {
+    return snapshots > 0 ? "captured" : "not-captured";
+  }
+  const expectedRoles = new Set<PendingSnapshotRole>(["pending_current", "pending_last_month"]);
+  const actualRoles = new Set(snapshots);
+  return [...expectedRoles].every((role) => actualRoles.has(role))
+    ? "captured"
+    : "not-captured";
 }

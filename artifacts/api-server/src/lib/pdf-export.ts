@@ -33,7 +33,7 @@ function buildHtml(month: string, items: CalcPlanItem[], summary: PlanSummaryRes
             <td>${item.avg3MoSale.toLocaleString()}</td>
             <td>${item.pendingOrder.toLocaleString()}</td>
             <td>${item.pendingOrderLastMonth.toLocaleString()}</td>
-            <td>${item.bufferReq.toLocaleString()}</td>
+            <td>${item.bufferReq == null ? "—" : item.bufferReq.toLocaleString()}</td>
             <td>${item.stock.toLocaleString()}</td>
             <td class="${minClass}">${item.minProduction.toLocaleString()}</td>
             <td class="${planClass}">${item.maxProduction.toLocaleString()}</td>

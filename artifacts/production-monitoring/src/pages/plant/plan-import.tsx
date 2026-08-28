@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
+import { fmtDateTime } from "@/lib/utils";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -150,9 +151,7 @@ function UploadCard({ record, onDelete, isLatest }: { record: UploadRecord; onDe
     }
   }
 
-  const date = new Date(record.uploadedAt).toLocaleString("en-IN", {
-    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
-  });
+  const date = fmtDateTime(record.uploadedAt);
 
   return (
     <div className="border border-border rounded-lg overflow-hidden">

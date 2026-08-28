@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, FileSpreadsheet, ArrowRight } from "lucide-react";
+import { RefreshCw, FileSpreadsheet, ArrowRight, CalendarDays, Play } from "lucide-react";
 import { Link } from "wouter";
+import { fmtDate } from "@/lib/utils";
 
 interface MachineRow {
   id: number;
@@ -87,11 +88,72 @@ interface MachineSummaryResponse {
   uploadCount: number;
 }
 
+interface ScheduleResult {
+  kind: "pipe" | "fitting";
+  total_capacity_hrs: number;
+  total_scheduled_hrs: number;
+  total_idle_hrs: number;
+  total_scheduled_pcs: number;
+  total_scheduled_kg: number | null;
+  total_unfinished_pcs: number;
+  total_unfinished_kg: number;
+  total_unfinished_hours: number;
+  total_downtime_hours_lost: number;
+  total_downtime_machine_days: number;
+  blocks: unknown[];
+  weekly_fill: unknown[];
+  unfinished: Array<{
+    item_code: string;
+    material: string;
+    remaining_pcs: number;
+    remaining_kg: number;
+    remaining_hours: number;
+    capable_machines?: string[];
+  }>;
+  unfinished_capability: Array<{
+    item_code: string;
+    material: string;
+    remaining_pcs: number;
+    remaining_kg: number;
+    remaining_hours: number;
+    capable_machines: Array<{
+      machine_id: string;
+      locked_out: boolean | null;
+      capacity_hours: number;
+      scheduled_hours: number;
+      idle_hours: number;
+      peak_utilisation_pct: number;
+      saturated: boolean;
+    }>;
+  }>;
+}
+
+interface PlumbingScheduleReport {
+  batchId: string;
+  sourceRunId: number;
+  week_days: number[];
+  worked_sunday_dates: string[];
+  materials: string[];
+  demand: { pieces: number; item_count: number; kg: number | null };
+  scheduled: { pieces: number; kg: number | null; hours: number };
+  unfinished: { pieces: number; kg: number; hours: number };
+  capacity_hours: number;
+  idle_hours: number;
+  downtime_hours_lost: number;
+  downtime_machine_days: number;
+  unallocated_hours: number;
+  unroutable: Array<{ kind: "pipe" | "fitting"; item_code: string; material: string; qty_pcs: number; reason: string }>;
+  results: ScheduleResult[];
+  solventsExcludedAsUnconstrained: number;
+  solventExclusions: Array<{ item_code: string; category: string; qty_pcs: number }>;
+}
+
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
 function fmtN(n: number) { return Math.round(n).toLocaleString("en-IN"); }
 function fmtKg(n: number) { return n >= 1000 ? `${(n / 1000).toFixed(1)}t` : `${n.toFixed(0)} kg`; }
 function fmtHrs(n: number) { return n === 0 ? "—" : `${n.toFixed(1)} h`; }
+function fmtMaybeKg(n: number | null) { return n == null ? "—" : fmtKg(n); }
 
 function pctColor(pct: number) {
   if (pct >= 95) return "text-red-600 font-semibold";
@@ -153,6 +215,9 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
   const [capData, setCapData] = useState<MachineCapData | null>(null);
   const [planItems, setPlanItems] = useState<PlanItem[] | null>(null);
   const [machineSummary, setMachineSummary] = useState<MachineSummaryResponse | null>(null);
+  const [schedule, setSchedule] = useState<PlumbingScheduleReport | null>(null);
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -183,6 +248,26 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
   };
 
   useEffect(() => { load(); }, [month]);
+
+  const runExternalSchedule = async () => {
+    setScheduleLoading(true);
+    setScheduleError(null);
+    try {
+      const runsRes = await fetch(`/api/plan/runs?segment=Plumbing&month=${encodeURIComponent(month)}`);
+      if (!runsRes.ok) throw new Error(`Runs: HTTP ${runsRes.status}`);
+      const runs = await runsRes.json() as Array<{ id: number; status: string; segment: string }>;
+      const run = runs.find((candidate) => candidate.status === "finalized" && candidate.segment === "Plumbing");
+      if (!run) throw new Error(`No finalized Plumbing run exists for ${month}`);
+      const response = await fetch(`/api/plan/runs/${run.id}/schedule`, { method: "POST" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.message || body.error || `Scheduler: HTTP ${response.status}`);
+      setSchedule(body as PlumbingScheduleReport);
+    } catch (e) {
+      setScheduleError(e instanceof Error ? e.message : "Machine scheduler failed");
+    } finally {
+      setScheduleLoading(false);
+    }
+  };
 
   const catRows = planItems ? buildCategoryRows(planItems) : [];
   const orderedCatRows = CATEGORY_ORDER.map(c => catRows.find(r => r.category === c)).filter(Boolean) as CategoryRow[];
@@ -218,16 +303,173 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
             Machine-capacity-constrained weekly release · Plumbing · {month}
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={load} disabled={loading}>
-          <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
-          {loading ? "Loading…" : (capData ? "Refresh" : "Load")}
-        </Button>
+         <div className="flex items-center gap-2">
+           <Button size="sm" onClick={runExternalSchedule} disabled={scheduleLoading}>
+             <Play className={`h-3.5 w-3.5 mr-1.5 ${scheduleLoading ? "animate-pulse" : ""}`} />
+             {scheduleLoading ? "Scheduling…" : "Run machine app"}
+           </Button>
+           <Button size="sm" variant="outline" onClick={load} disabled={loading}>
+             <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+             {loading ? "Loading…" : (capData ? "Refresh" : "Load")}
+           </Button>
+         </div>
       </header>
 
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
+      )}
+      {scheduleError && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          Machine app: {scheduleError}
+        </div>
+      )}
+
+      {schedule && (
+        <Card className="border-indigo-200">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-indigo-600" />
+              External machine-app schedule
+              <Badge variant="secondary" className="ml-auto text-xs font-normal">Run #{schedule.sourceRunId}</Badge>
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Two separate results were returned and merged for display · materials: {schedule.materials.join(", ")}
+              {schedule.solventsExcludedAsUnconstrained > 0 && ` · ${schedule.solventsExcludedAsUnconstrained} solvent line(s) excluded as unconstrained`}
+              {schedule.unroutable.length > 0 && ` · ${schedule.unroutable.length} row(s) excluded by upstream route validation`}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {schedule.unroutable.length > 0 && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                <strong>Upstream route gaps ({schedule.unroutable.length} rows / {fmtN(schedule.unroutable.reduce((sum, row) => sum + row.qty_pcs, 0))} pcs):</strong>
+                <div className="mt-1 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
+                  {schedule.unroutable.map((row) => (
+                    <div key={`${row.kind}-${row.item_code}`}>
+                      <span className="font-medium">{row.item_code}</span> · {row.kind} · {row.material} · {fmtN(row.qty_pcs)} pcs
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-1 text-amber-700">These demand rows were kept out of the scheduler request because the machine app reported no capable route or BOM weight.</p>
+              </div>
+            )}
+            {schedule.solventExclusions.length > 0 && (
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                <strong>Known limitation — solvents:</strong> {schedule.solventExclusions.length} solvent lines
+                ({fmtN(schedule.solventExclusions.reduce((sum, row) => sum + row.qty_pcs, 0))} pcs) are excluded from the external machine scheduler.
+                They remain pass-through demand because the local capacity model treats solvent production as unconstrained.
+                <div className="mt-1 text-slate-600">
+                  {schedule.solventExclusions.map((row) => `${row.item_code} (${fmtN(row.qty_pcs)} pcs)`).join(" · ")}
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
+              {[
+                ["Demand", `${fmtN(schedule.demand.pieces)} pcs`],
+                ["Items", `${schedule.demand.item_count}`],
+                ["Scheduled", `${fmtN(schedule.scheduled.pieces)} pcs`],
+                ["Scheduled kg", fmtMaybeKg(schedule.scheduled.kg)],
+                ["Unfinished", `${fmtN(schedule.unfinished.pieces)} pcs`],
+                ["Unfinished kg", fmtKg(schedule.unfinished.kg)],
+                ["Capacity", fmtHrs(schedule.capacity_hours)],
+                ["Scheduled / idle", `${fmtHrs(schedule.scheduled.hours)} / ${fmtHrs(schedule.idle_hours)}`],
+                ["Downtime", `${fmtHrs(schedule.downtime_hours_lost)} · ${schedule.downtime_machine_days.toFixed(1)} machine-days`],
+                ["Unallocated", fmtHrs(schedule.unallocated_hours)],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-md bg-gray-50 px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-wide text-gray-500">{label}</div>
+                  <div className="mt-0.5 text-sm font-semibold tabular-nums">{value}</div>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-gray-600">
+              <span><strong>week_days:</strong> [{schedule.week_days.join(", ")}] = {schedule.week_days.reduce((a, b) => a + b, 0)} working days</span>
+              <span><strong>worked Sundays:</strong> {schedule.worked_sunday_dates.length ? schedule.worked_sunday_dates.join(", ") : "none"}</span>
+              <span className="text-emerald-700">Both upstream echoes matched the sent calendar</span>
+            </div>
+            <div className="overflow-x-auto rounded-md border text-sm">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-600">
+                    <th className="px-3 py-2 text-left">Result</th>
+                    <th className="px-3 py-2 text-right">Scheduled pcs</th>
+                    <th className="px-3 py-2 text-right">Scheduled kg</th>
+                    <th className="px-3 py-2 text-right">Unfinished pcs</th>
+                    <th className="px-3 py-2 text-right">Unfinished kg</th>
+                    <th className="px-3 py-2 text-right">Unfinished h</th>
+                    <th className="px-3 py-2 text-right">Capacity / idle h</th>
+                    <th className="px-3 py-2 text-right">Downtime</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {schedule.results.map((result) => (
+                    <tr key={result.kind}>
+                      <td className="px-3 py-2 font-medium capitalize">{result.kind}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtN(result.total_scheduled_pcs)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtMaybeKg(result.total_scheduled_kg)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-amber-700">{fmtN(result.total_unfinished_pcs)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-amber-700">{fmtKg(result.total_unfinished_kg)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-amber-700">{fmtHrs(result.total_unfinished_hours)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtHrs(result.total_capacity_hrs)} / {fmtHrs(result.total_idle_hrs)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtHrs(result.total_downtime_hours_lost)} / {result.total_downtime_machine_days.toFixed(1)} md</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="rounded-md border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-xs text-indigo-900">
+              <strong>Capacity reconciliation:</strong>{" "}
+              {fmtHrs(schedule.scheduled.hours)} scheduled + {fmtHrs(schedule.idle_hours)} idle +{" "}
+              {fmtHrs(schedule.unallocated_hours)} unallocated = {fmtHrs(schedule.capacity_hours)} capacity.
+              {" "}The machine app separately reports {fmtHrs(schedule.downtime_hours_lost)} downtime across {schedule.downtime_machine_days.toFixed(1)} machine-days;
+              unallocated hours are not relabelled as downtime when the upstream field does not classify them.
+            </div>
+            {schedule.results.some((result) => result.unfinished_capability.length > 0) && (
+              <div className="overflow-x-auto rounded-md border text-sm">
+                <div className="border-b bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  <strong>Where unfinished work could run:</strong> each machine below is listed from the scheduler&apos;s
+                  <code className="mx-1">capable_machines</code> field. Saturated means at least one reported week was ≥99.9% utilised;
+                  locked means the local machine-capacity row is locked out.
+                </div>
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-gray-50 text-xs font-semibold uppercase tracking-wide text-gray-600">
+                      <th className="px-3 py-2 text-left">Unfinished item</th>
+                      <th className="px-3 py-2 text-right">Remaining pcs</th>
+                      <th className="px-3 py-2 text-right">Remaining kg</th>
+                      <th className="px-3 py-2 text-right">Remaining h</th>
+                      <th className="px-3 py-2 text-left">Capable machines and observed constraint</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {schedule.results.flatMap((result) => result.unfinished_capability.map((row) => (
+                      <tr key={`${result.kind}-${row.item_code}`}>
+                        <td className="px-3 py-2 font-medium">{row.item_code} <span className="text-xs text-gray-500">({result.kind} · {row.material})</span></td>
+                        <td className="px-3 py-2 text-right tabular-nums text-amber-700">{fmtN(row.remaining_pcs)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-amber-700">{fmtKg(row.remaining_kg)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-amber-700">{fmtHrs(row.remaining_hours)}</td>
+                        <td className="px-3 py-2">
+                          {row.capable_machines.length === 0 ? (
+                            <span className="text-xs text-gray-500">No capable machine returned</span>
+                          ) : (
+                            <div className="flex flex-wrap gap-1">
+                              {row.capable_machines.map((machine) => (
+                                <span key={machine.machine_id} className={`rounded border px-1.5 py-0.5 text-xs ${machine.locked_out ? "border-red-200 bg-red-50 text-red-800" : machine.saturated ? "border-amber-200 bg-amber-50 text-amber-800" : "border-gray-200 bg-gray-50 text-gray-700"}`}>
+                                  {machine.machine_id} · {machine.locked_out ? "locked out" : machine.saturated ? `saturated (${machine.peak_utilisation_pct.toFixed(1)}%)` : `${machine.peak_utilisation_pct.toFixed(1)}% peak`}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       )}
 
       {loading && !capData && (
@@ -254,9 +496,7 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
                   </CardTitle>
                   <p className="text-xs text-muted-foreground mt-1">
                     From <span className="font-medium">{importedUpload.filename}</span>
-                    {" · "}uploaded {new Date(importedUpload.uploadedAt).toLocaleDateString("en-IN", {
-                      day: "numeric", month: "short", year: "numeric",
-                    })}
+                    {" · "}uploaded {fmtDate(importedUpload.uploadedAt)}
                     {" · "}{importedUpload.itemCount} items
                     {importHasHours ? "" : (
                       <span className="ml-1 text-amber-600">· hours not stored for this upload (legacy format)</span>

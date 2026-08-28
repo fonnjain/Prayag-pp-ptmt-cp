@@ -11,4 +11,10 @@ export interface PlanSummary {
   categories: CategorySummary[];
   grandMinTotal: number;
   grandMaxTotal: number;
+  grandDemandTotal: number;
+  grandFittedTotal: number | null;
+  demandBasis: 'demand';
+  fittedBasis: 'executable' | null;
+  demandPcs: number;
+  fittedPcs: number | null;
 }

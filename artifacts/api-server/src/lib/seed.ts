@@ -3,7 +3,7 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, correctivePlanRunsTable } from "@workspace/db";
 import { logger } from "./logger";
-import { SHEET_LABELS } from "./sheets";
+import { SHEET_LABELS, normalizeCode, normalizeColour } from "./sheets";
 import { seedBootstrapAdmins } from "./user-auth";
 
 const DEFAULT_BUFFER_CATEGORIES: { name: string; multiplier: number }[] = [
@@ -37,8 +37,12 @@ function parseItemMasterCsv(csv: string): { category: string; itemCode: string; 
   const [, ...rows] = lines;
   return rows.map((line) => {
     const [category, itemCode, colour] = line.split(",");
-    return { category: category.trim(), itemCode: itemCode.trim(), colour: colour.trim() };
-  });
+    return {
+      category: category.trim(),
+      itemCode: normalizeCode(itemCode),
+      colour: normalizeColour(colour),
+    };
+  }).filter((row) => !(row.category === "Cocks Standard" && row.itemCode === "186"));
 }
 
 async function seedBufferCategories(): Promise<void> {
@@ -77,11 +81,12 @@ async function seedSyncSources(): Promise<void> {
 }
 
 const PLANT_SOURCE_CONFIGS: { month: string; fileId: string; notes: string }[] = [
-  { month: "2025-06", fileId: "1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw", notes: "PTMT ANUJ Production" },
-  { month: "2026-03", fileId: "1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw", notes: "PTMT ANUJ Production" },
-  { month: "2026-05", fileId: "1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw", notes: "PTMT ANUJ Production" },
-  { month: "2026-06", fileId: "1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw", notes: "PTMT ANUJ Production" },
-  { month: "2026-07", fileId: "1AGmksx4gn6w0Wb9EF__yAV5v89IyAfX_f75ouW2c7Yw", notes: "PTMT ANUJ Production" },
+  { month: "2026-01", fileId: "1w5y24k5cBzf-7a_YYWaFnk-1pCW1tyBzUlaMe2NRa00", notes: "Jan 2026 monthly master" },
+  { month: "2026-02", fileId: "11f9XIS5bMMwkn6HlTI8gmNrG2VHmmUhGtCan_fPhmeI", notes: "Feb 2026 monthly master" },
+  { month: "2026-03", fileId: "1wi9FQAHkJG5rksk9WravDJ6Rtuw_Ks3LNcTvQSylERU", notes: "Mar 2026 monthly master" },
+  { month: "2026-05", fileId: "1uDsowSmqu8J6NSAPS2AoJBKamkzATQqdtYPONJ7VQAc", notes: "May 2026 monthly master" },
+  { month: "2026-06", fileId: "170xrcWDdTMvTLSJyCw3yGBWxqOOSfZkesGWunqKr8Rw", notes: "Jun 2026 monthly master" },
+  { month: "2026-07", fileId: "1xxYYRdjrVcob3a_eIU7K4RRCzXkl50KMngJ5I8T7xuk", notes: "Jul 2026 monthly master" },
 ];
 
 const PLANT_CONFIGS: { month: string; workingDays: number; snapshotDate: string | null }[] = [

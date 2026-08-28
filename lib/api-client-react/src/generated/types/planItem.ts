@@ -4,6 +4,7 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { PlanItemBufferReq } from './planItemBufferReq';
 import type { PlanItemAchievementPct } from './planItemAchievementPct';
 import type { PlanItemCover } from './planItemCover';
 import type { PlanItemWeek } from './planItemWeek';
@@ -16,7 +17,7 @@ export interface PlanItem {
   category: string;
   avg3MoSale: number;
   stock: number;
-  bufferReq: number;
+  bufferReq: PlanItemBufferReq;
   minProduction: number;
   maxProduction: number;
   pendingOrderLastMonth: number;

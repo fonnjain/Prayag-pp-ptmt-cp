@@ -53,9 +53,42 @@ test("negative FG stock quantities are parsed as last-month pending without chan
   );
 });
 
+test("pending snapshot canonicalizes legacy aliases while preserving placeholder colours", () => {
+  const rows = [
+    { "Item Code": "123-LSBB", Colour: "BLACK", "Balance Qty": 10 },
+    { "Item Code": "PIPE-1", Colour: "", "Balance Qty": 3 },
+  ];
+  const snapshot = buildPlanRunInputSnapshot({
+    segment: "PTMT",
+    sourceRole: "pending_current",
+    sourceKind: "pending_orders",
+    source: {
+      id: 43,
+      filename: "DATA.xlsx",
+      rowCount: rows.length,
+      uploadedAt: new Date("2026-08-17T10:00:00.000Z"),
+    },
+    rows,
+    aliases: {
+      code: ["Item Code"],
+      colour: ["Colour"],
+      quantity: ["Balance Qty"],
+    },
+  });
+
+  assert.deepEqual(snapshot.rawRows, rows);
+  assert.deepEqual(snapshot.parsedRows, [
+    { itemCode: "123-LSB", colour: "BLUE", qty: 10 },
+    { itemCode: "PIPE-1", colour: "", qty: 3 },
+  ]);
+});
+
 test("legacy plan runs are explicitly distinguishable from captured runs", () => {
   assert.equal(pendingSnapshotStatus(2), "captured");
   assert.equal(pendingSnapshotStatus(0), "not-captured");
+  assert.equal(pendingSnapshotStatus(["pending_current", "pending_last_month"]), "captured");
+  assert.equal(pendingSnapshotStatus(["pending_current"]), "not-captured");
+  assert.equal(pendingSnapshotStatus(["pending_last_month", "pending_last_month"]), "not-captured");
 });
 
 test("live pending snapshot keeps a reproducible source content hash in diagnostics", () => {

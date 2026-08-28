@@ -1,12 +1,25 @@
 import { Router } from "express";
 import { db, categoryCapacityTable, plumbingMachineCapacityTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { computeCategoryCapacity } from "../lib/capacity-engine";
+import { computeCategoryCapacity, normalizeCapacityComparison } from "../lib/capacity-engine";
+import { selectPtmtCapacityWindow } from "../lib/ptmt-pass2-engine";
 import { runMachineCascade, type PlanItemForCascade } from "../lib/machine-capacity-engine";
-import { buildPlanItems } from "./plan";
+import { buildPlanItems, handlePlanError } from "./plan";
 import { logger } from "../lib/logger";
 
 const router = Router();
+
+function capacityResponse(row: typeof categoryCapacityTable.$inferSelect) {
+  const selection = selectPtmtCapacityWindow(row);
+  const comparison = normalizeCapacityComparison(row.comparisonJson);
+  return {
+    ...row,
+    appliedCapacity: row.overrideCapacity != null ? row.overrideCapacity : row.suggestedCapacity,
+    selectedCapacity: selection.capacityPerDay,
+    selectedWindow: selection.selectedWindow,
+    comparison,
+  };
+}
 
 router.get("/capacity/categories", async (req, res) => {
   try {
@@ -14,10 +27,7 @@ router.get("/capacity/categories", async (req, res) => {
     const rows = segment
       ? await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment))
       : await db.select().from(categoryCapacityTable);
-    const result = rows.map(r => ({
-      ...r,
-      appliedCapacity: r.overrideCapacity != null ? r.overrideCapacity : r.suggestedCapacity,
-    }));
+    const result = rows.map(capacityResponse);
     res.json(result);
   } catch (err) {
     req.log.error({ err }, "capacity: list failed");
@@ -52,10 +62,7 @@ router.patch("/capacity/categories/:category", async (req, res) => {
     }
 
     logger.info({ category, update }, "capacity: override updated");
-    return res.json({
-      ...updated,
-      appliedCapacity: updated.overrideCapacity != null ? updated.overrideCapacity : updated.suggestedCapacity,
-    });
+    return res.json(capacityResponse(updated));
   } catch (err) {
     req.log.error({ err }, "capacity: patch failed");
     return res.status(500).json({ error: "Failed to update category capacity" });
@@ -67,13 +74,16 @@ router.post("/capacity/recompute", async (req, res) => {
   const segment = req.query.segment ? String(req.query.segment) : "PTMT";
   try {
     const rows = await computeCategoryCapacity(trailingDays, segment);
-    const result = rows.map(r => ({
-      ...r,
-      appliedCapacity: r.overrideCapacity != null ? r.overrideCapacity : r.suggestedCapacity,
-    }));
+    const result = rows.map(capacityResponse);
     return res.json(result);
   } catch (err) {
     req.log.error({ err }, "capacity: recompute failed");
+    if (segment === "PTMT") {
+      return res.status(422).json({
+        error: "CAPACITY_SOURCE_UNAVAILABLE",
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
     return res.status(500).json({ error: "Recompute failed" });
   }
 });
@@ -104,7 +114,12 @@ router.get("/capacity/machines", async (req, res) => {
     return res.json({ machines, utilisation, unfulfillable });
   } catch (err) {
     req.log.error({ err }, "capacity: machines list failed");
-    return res.status(500).json({ error: "Failed to list machine capacities" });
+    try {
+      handlePlanError(res, err);
+      return;
+    } catch {
+      return res.status(500).json({ error: "Failed to list machine capacities" });
+    }
   }
 });
 

@@ -27,6 +27,31 @@ import {
 } from "./plant-monitoring";
 import { runMigrations } from "./runMigrations";
 
+test("plan-run results preserve NULL buffers for unresolved products", async () => {
+  const [run] = await db.insert(planRunsTable).values({
+    month: "2099-01",
+    segment: "PTMT",
+    status: "draft",
+  }).returning({ id: planRunsTable.id });
+  try {
+    await db.insert(planRunResultsTable).values({
+      runId: run.id,
+      itemCode: "UNRESOLVED-TEST",
+      colour: "N/A",
+      category: "Unclassified",
+      bufferReq: undefined,
+      minProduction: 7,
+      productionPlan: 7,
+    });
+    const [result] = await db.select({ bufferReq: planRunResultsTable.bufferReq })
+      .from(planRunResultsTable)
+      .where(eq(planRunResultsTable.runId, run.id));
+    assert.equal(result?.bufferReq, null);
+  } finally {
+    await db.delete(planRunsTable).where(eq(planRunsTable.id, run.id));
+  }
+});
+
 test("UTC lifecycle boundaries include grace through the 7th and close on the 8th", () => {
   assert.equal(resolvePlantMonthLifecycle("2026-08", new Date("2026-08-19T12:00:00Z")).state, "open");
   assert.equal(resolvePlantMonthLifecycle("2026-09", new Date("2026-08-19T12:00:00Z")).state, "future");

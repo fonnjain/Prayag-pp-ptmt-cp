@@ -1,0 +1,428 @@
+{
+  "export_name": "prayag-planning-export-2026-08-26.zip",
+  "generated_at_utc": "2026-08-26T05:35:48.094Z",
+  "coverage": {
+    "from": "2025-04-01",
+    "to": "2026-08-31",
+    "fiscal_years": [
+      "2025-26",
+      "2026-27"
+    ]
+  },
+  "files": [
+    {
+      "path": "actuals_daily_plumbing_kg.csv",
+      "row_count": 1975,
+      "query": "prayag-plant.com /records filtered to PIPE rows with unit=kg; machine-level Plumbing kg series",
+      "date_range": {
+        "min": "2025-04",
+        "max": "2026-08-23"
+      }
+    },
+    {
+      "path": "actuals_daily_rejections.csv",
+      "row_count": 973,
+      "query": "Google Sheets PTMT ANUJ / Production rejection block",
+      "date_range": {
+        "min": "2025-04-01",
+        "max": "2026-06-09"
+      }
+    },
+    {
+      "path": "actuals_daily.csv",
+      "row_count": 30949,
+      "query": "Google Sheets PTMT ANUJ / Production plus available Plumbing Sheet3 workbooks; item-level daily actuals",
+      "date_range": {
+        "min": "2025-04-01",
+        "max": "2026-08-25"
+      }
+    },
+    {
+      "path": "buffer_categories.csv",
+      "row_count": 19,
+      "query": "SELECT * FROM public.buffer_categories",
+      "date_range": {
+        "min": "2026-07-17",
+        "max": "2026-08-26"
+      }
+    },
+    {
+      "path": "category_capacity.csv",
+      "row_count": 19,
+      "query": "SELECT * FROM public.category_capacity",
+      "date_range": null
+    },
+    {
+      "path": "corrective_run_items.csv",
+      "row_count": 172108,
+      "query": "SELECT * FROM public.corrective_plan_items ORDER BY run_id,id",
+      "date_range": null
+    },
+    {
+      "path": "corrective_runs.csv",
+      "row_count": 102,
+      "query": "SELECT * FROM public.corrective_plan_runs ORDER BY id",
+      "date_range": {
+        "min": "2026-07",
+        "max": "2026-08-11"
+      }
+    },
+    {
+      "path": "database_profile.json",
+      "row_count": 1,
+      "query": "Generated export profile",
+      "date_range": null
+    },
+    {
+      "path": "item_master.csv",
+      "row_count": 4569,
+      "query": "SELECT * FROM public.item_master",
+      "date_range": null
+    },
+    {
+      "path": "item_weights.csv",
+      "row_count": 0,
+      "query": "SELECT * FROM public.item_weights",
+      "date_range": null
+    },
+    {
+      "path": "machine_api_profile.json",
+      "row_count": 1,
+      "query": "prayag-plant.com /plants, /periods, and /records metadata",
+      "date_range": null
+    },
+    {
+      "path": "machine_daily.csv",
+      "row_count": 10145,
+      "query": "prayag-plant.com /records for available plants/months; canonical fields plus raw response fields",
+      "date_range": {
+        "min": "2025-04",
+        "max": "2026-08-31"
+      }
+    },
+    {
+      "path": "manifest.json",
+      "row_count": 1,
+      "query": "Generated export profile",
+      "date_range": null
+    },
+    {
+      "path": "orders_fy2526.csv",
+      "row_count": 14689,
+      "query": "Google Sheets Order Sheet 25-26 / Combined; raw transaction rows",
+      "date_range": null
+    },
+    {
+      "path": "orders_fy2627.csv",
+      "row_count": 6951,
+      "query": "Google Sheets Order Sheet 26-27 / Combined; raw transaction rows",
+      "date_range": null
+    },
+    {
+      "path": "pending_orders_snapshot.csv",
+      "row_count": 1360,
+      "query": "Google Sheets Pending order / report; all segments and raw open-balance rows",
+      "date_range": null
+    },
+    {
+      "path": "pending_snapshots.csv",
+      "row_count": 698366,
+      "query": "SELECT * FROM public.pending_snapshots ORDER BY run_id,id",
+      "date_range": null
+    },
+    {
+      "path": "pending_source_profile.json",
+      "row_count": 1,
+      "query": "Google Sheets report shape profile",
+      "date_range": null
+    },
+    {
+      "path": "plan_run_input_snapshots.csv",
+      "row_count": 62,
+      "query": "SELECT * FROM public.plan_run_input_snapshots ORDER BY run_id,id",
+      "date_range": {
+        "min": "2026-08-05",
+        "max": "2026-08-26"
+      }
+    },
+    {
+      "path": "plan_run_inputs.csv",
+      "row_count": 297374,
+      "query": "SELECT * FROM public.plan_run_inputs ORDER BY run_id,id",
+      "date_range": null
+    },
+    {
+      "path": "plan_run_results.csv",
+      "row_count": 297374,
+      "query": "SELECT * FROM public.plan_run_results ORDER BY run_id,id",
+      "date_range": null
+    },
+    {
+      "path": "plan_runs.csv",
+      "row_count": 86,
+      "query": "SELECT * FROM public.plan_runs ORDER BY id",
+      "date_range": {
+        "min": "2026-07",
+        "max": "2030-01"
+      }
+    },
+    {
+      "path": "plant_configs.csv",
+      "row_count": 1,
+      "query": "SELECT * FROM public.plant_configs",
+      "date_range": {
+        "min": "2026-07",
+        "max": "2026-07-07"
+      }
+    },
+    {
+      "path": "plant_month_snapshots.csv",
+      "row_count": 4,
+      "query": "SELECT * FROM public.plant_month_snapshots",
+      "date_range": {
+        "min": "2026-06",
+        "max": "2026-08-21"
+      }
+    },
+    {
+      "path": "plant_plan_items.csv",
+      "row_count": 863,
+      "query": "SELECT * FROM public.plant_plan_items",
+      "date_range": null
+    },
+    {
+      "path": "plant_plan_uploads.csv",
+      "row_count": 2,
+      "query": "SELECT * FROM public.plant_plan_uploads",
+      "date_range": {
+        "min": "2026-08",
+        "max": "2026-08-08"
+      }
+    },
+    {
+      "path": "plant_plan_versions.csv",
+      "row_count": 393,
+      "query": "SELECT * FROM public.plant_plan_versions",
+      "date_range": {
+        "min": "2026-07",
+        "max": "9849-07-02"
+      }
+    },
+    {
+      "path": "plumbing_actuals_source_profile.json",
+      "row_count": 1,
+      "query": "Google Drive search and Google Sheets Sheet3 reads for plumbing actuals",
+      "date_range": null
+    },
+    {
+      "path": "plumbing_machine_capacity.csv",
+      "row_count": 33,
+      "query": "SELECT * FROM public.plumbing_machine_capacity",
+      "date_range": null
+    },
+    {
+      "path": "README.md",
+      "row_count": null,
+      "query": "Generated provenance, gaps, and interpretation notes",
+      "date_range": null
+    },
+    {
+      "path": "sales_fy2526.csv",
+      "row_count": 140698,
+      "query": "Google Sheets CODE WISE SALE 25-26 / Sheet1; transaction-level rows",
+      "date_range": null
+    },
+    {
+      "path": "sales_fy2627.csv",
+      "row_count": 48501,
+      "query": "Google Sheets SALE SHEET 26-27 monthly tabs; transaction-level rows",
+      "date_range": null
+    },
+    {
+      "path": "schema.sql",
+      "row_count": null,
+      "query": "pg_dump --schema-only --schema=public",
+      "date_range": null
+    },
+    {
+      "path": "source_workbook_inventory.json",
+      "row_count": 7,
+      "query": "Google Sheets/Drive source inventory from the export run",
+      "date_range": null
+    },
+    {
+      "path": "stock_snapshots.csv",
+      "row_count": 9223,
+      "query": "SELECT item-level rows from uploaded_files for current_stock, last_month_pending, and plumbing_fg_stock; raw_json preserves each stored row",
+      "date_range": {
+        "min": "2026-07-06",
+        "max": "2026-08-05"
+      }
+    },
+    {
+      "path": "sync_sources.csv",
+      "row_count": 15,
+      "query": "SELECT * FROM public.sync_sources",
+      "date_range": null
+    },
+    {
+      "path": "uploaded_files.csv",
+      "row_count": 12,
+      "query": "SELECT * FROM public.uploaded_files",
+      "date_range": {
+        "min": "2026-07-06",
+        "max": "2026-08-26"
+      }
+    },
+    {
+      "path": "weekly_release_bands.csv",
+      "row_count": 19,
+      "query": "SELECT * FROM public.weekly_release_bands",
+      "date_range": {
+        "min": "2026-07-11",
+        "max": "2026-07-17"
+      }
+    }
+  ],
+  "gaps": [
+    {
+      "file": "actuals_daily.csv",
+      "source": "Historical item-level actuals",
+      "reason": "PTMT source is available from the Production sheet; Plumbing item-level Sheet3 files were available only for the months listed in plumbing_actuals_source_profile.json."
+    },
+    {
+      "file": "actuals_daily_plumbing_kg.csv",
+      "source": "Item-level Plumbing kg",
+      "reason": "No item_weights rows exist; exported machine-level PIPE kg records only where the plant API provides them."
+    },
+    {
+      "file": "machine_daily.csv",
+      "source": "prayag-plant.com",
+      "reason": "Machine API plant inventory reports daily data from 2026-04 onward; FY2025-26 machine records are not available through the configured API."
+    },
+    {
+      "file": "CP",
+      "source": "CP segment",
+      "reason": "CP is intentionally not implemented and no CP planning tables/runs are included."
+    }
+  ],
+  "source_workbooks": [],
+  "workspace_commit_sha": "c7908ff9f39d21cd4c69513afcbdaa10187b084f",
+  "deployed_commit_sha": "e347c3633dc049f31c9c215de1b273751d510ba5",
+  "database": {
+    "database_name": "heliumdb",
+    "database_host": "helium",
+    "database_role": "development/export database"
+  },
+  "plan_run_statuses": [
+    {
+      "segment": "PTMT",
+      "status": "draft",
+      "n": 80,
+      "first_month": "2026-07",
+      "last_month": "2030-01"
+    },
+    {
+      "segment": "PTMT",
+      "status": "finalized",
+      "n": 1,
+      "first_month": "2026-08",
+      "last_month": "2026-08"
+    },
+    {
+      "segment": "Plumbing",
+      "status": "draft",
+      "n": 3,
+      "first_month": "2026-07",
+      "last_month": "2026-07"
+    },
+    {
+      "segment": "Plumbing",
+      "status": "finalized",
+      "n": 2,
+      "first_month": "2026-07",
+      "last_month": "2026-08"
+    }
+  ],
+  "frozen_month_snapshots": [
+    {
+      "segment": "PTMT",
+      "month": "2026-06",
+      "plan_status": "actuals_only",
+      "n": 1
+    },
+    {
+      "segment": "PTMT",
+      "month": "2026-07",
+      "plan_status": "finalized",
+      "n": 1
+    },
+    {
+      "segment": "Plumbing",
+      "month": "2026-06",
+      "plan_status": "actuals_only",
+      "n": 1
+    },
+    {
+      "segment": "Plumbing",
+      "month": "2026-07",
+      "plan_status": "monitoring",
+      "n": 1
+    }
+  ],
+  "upload_kinds": [
+    {
+      "kind": "current_stock",
+      "n": 3,
+      "first_uploaded": "2026-07-06T12:36:44.363Z",
+      "last_uploaded": "2026-08-05T09:52:26.540Z"
+    },
+    {
+      "kind": "last_month_pending",
+      "n": 3,
+      "first_uploaded": "2026-07-06T12:12:51.143Z",
+      "last_uploaded": "2026-08-05T09:52:27.077Z"
+    },
+    {
+      "kind": "pending_orders",
+      "n": 5,
+      "first_uploaded": "2026-07-06T12:12:50.860Z",
+      "last_uploaded": "2026-08-26T01:48:48.173Z"
+    },
+    {
+      "kind": "plumbing_fg_stock",
+      "n": 1,
+      "first_uploaded": "2026-07-17T14:06:31.296Z",
+      "last_uploaded": "2026-07-17T14:06:31.296Z"
+    }
+  ],
+  "origin_main_sha_at_refresh": "5956d390bb9eda6e21d60a7f7adda32a49cfcb77",
+  "deployed_health_endpoint": "https://prayag-pp.com/api/healthz",
+  "deployed_database": {
+    "database_host": "ep-orange-tree-aj9n6w8a.c-3.us-east-2.aws.neon.tech",
+    "source": "production /api/healthz"
+  },
+  "metadata_refreshed_at_utc": "2026-08-26T05:54:57.906Z",
+  "known_data_quality_issues": [
+    {
+      "period": "2026-06",
+      "issue": "Both PTMT and Plumbing frozen snapshots are actuals_only; no finalized plan exists because reconstruction was attempted and rejected."
+    },
+    {
+      "period": "2026-08 onward",
+      "issue": "Pending current reads as zero after the pending worksheet rename PendingOrder → PO; August plan inputs show pending_current=0 while pending_last_month remains populated."
+    },
+    {
+      "period": "pre-d0a7c9a",
+      "issue": "Sunday production was discarded from monitoring; the known impact is 80,522 pcs across four fixtures."
+    },
+    {
+      "period": "2026-07 PTMT",
+      "issue": "The snapshot captured workingDays=25 although 28 working days were observed."
+    },
+    {
+      "period": "plan history",
+      "issue": "Runs without matching plan_run_input_snapshots rows are reproducible-but-not-source-auditable. Flattened inputs/results are retained; missing raw source snapshots were not reconstructed."
+    }
+  ]
+}

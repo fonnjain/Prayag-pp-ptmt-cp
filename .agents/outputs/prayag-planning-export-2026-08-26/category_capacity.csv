@@ -1,0 +1,20 @@
+id,category,mean_per_day,p90_per_day,best_day,days_observed,trailing_days,is_thin_data,suggested_capacity,override_capacity,working_days_per_week,plan_needs_per_day,last_computed_at,segment
+1,Cocks Standard,14034,17449,19880,30,90,0,17449,,6,14527,2026-07-12T07:57:12.835Z,PTMT
+2,Cocks Premium,871,1242,2419,30,90,0,1242,,6,518,2026-07-12T07:57:13.038Z,PTMT
+3,Faucets & Jetsprays & Shower,1565,2431,3561,30,90,0,2431,,6,2343,2026-07-12T07:57:13.050Z,PTMT
+4,Accessorise,1318,2940,4808,30,90,0,2940,,6,1132,2026-07-12T07:57:13.052Z,PTMT
+5,Cistern & Seat Cover,831,1050,1320,30,90,0,1050,,6,970,2026-07-12T07:57:13.056Z,PTMT
+6,Cabinet,77,147,219,5,90,1,147,,6,37,2026-07-12T07:57:13.060Z,PTMT
+7,Ball Cock,3900,6567,17592,30,90,0,6567,,6,1808,2026-07-12T07:57:13.063Z,PTMT
+8,CPVC Pipe,0,0,0,0,90,1,0,,6,0,2026-07-17T12:02:51.894Z,Plumbing
+9,CPVC Fitting,0,0,0,0,90,1,0,,6,0,2026-07-17T12:02:52.055Z,Plumbing
+10,CPVC Solvent,0,0,0,0,90,1,0,,6,0,2026-07-17T12:02:52.060Z,Plumbing
+11,UPVC Pipe,0,0,0,0,90,1,0,,6,0,2026-07-17T12:02:52.065Z,Plumbing
+12,UPVC Fitting,0,0,0,0,90,1,0,,6,0,2026-07-17T12:02:52.071Z,Plumbing
+13,UPVC Solvent,0,0,0,0,90,1,0,,6,0,2026-07-17T12:02:52.075Z,Plumbing
+14,SWR Pipe,0,0,0,0,90,1,0,,6,0,2026-07-17T12:02:52.079Z,Plumbing
+15,SWR Fitting,0,0,0,0,90,1,0,,6,0,2026-07-17T12:02:52.084Z,Plumbing
+16,SWR Solvent,0,0,0,0,90,1,0,,6,0,2026-07-17T12:02:52.088Z,Plumbing
+17,AGRI Pipe,0,0,0,0,90,1,0,,6,0,2026-07-17T12:02:52.090Z,Plumbing
+18,AGRI Fitting,0,0,0,0,90,1,0,,6,0,2026-07-17T12:02:52.102Z,Plumbing
+19,AGRI Solvent,0,0,0,0,90,1,0,,6,0,2026-07-17T12:02:52.105Z,Plumbing

@@ -207,7 +207,9 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
                     </div>
                   )}
                   <div className="flex justify-between text-xs pt-1 border-t border-border/30 mt-1">
-                    <span className="text-muted-foreground">Attainment</span>
+                      <span className="text-muted-foreground">
+                        {wk.carryover > 0 ? "Attainment vs released" : "Attainment"}
+                      </span>
                     <span className={`font-mono font-bold ${textCls}`}>{pct(wk.attainmentPct)}</span>
                   </div>
                   {wk.gap > 0 && wk.attainmentPct !== null && (
@@ -255,7 +257,7 @@ export default function PlantVelocity({ month, selectedCategory }: { month: stri
               <span className="font-medium text-amber-700">Worked non-calendar days:</span>
               {workedNonCalendarDays.map((day) => (
                 <Badge key={day.date} variant="outline" className="border-amber-300 bg-amber-50 text-amber-700">
-                  {new Date(`${day.date}T00:00:00Z`).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" })} — worked
+                  {fmtDate(day.date)} — worked
                 </Badge>
               ))}
             </div>

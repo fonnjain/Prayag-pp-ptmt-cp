@@ -1,9 +1,10 @@
 import { db, itemMasterTable, categoryCapacityTable } from "@workspace/db";
-import type { CategoryCapacity } from "@workspace/db";
+import type { CapacityComparison, CapacityMonthlyStats, CapacityWindowStats, CategoryCapacity } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { fetchDailyActuals } from "./plant-ingestion";
 import { buildPlanItems } from "../routes/plan";
 import { logger } from "./logger";
+import { countWorkingDaysInMonth } from "./working-days";
 
 const THIN_DATA_THRESHOLD = 10;
 
@@ -70,6 +71,99 @@ function trailingMonths(trailingDays: number): string[] {
   return [...months];
 }
 
+function monthRange(startMonth: string, endMonth: string): string[] {
+  const [startYear, startNumber] = startMonth.split("-").map(Number);
+  const [endYear, endNumber] = endMonth.split("-").map(Number);
+  const months: string[] = [];
+  let cursor = new Date(Date.UTC(startYear, startNumber - 1, 1));
+  const end = new Date(Date.UTC(endYear, endNumber - 1, 1));
+  while (cursor <= end) {
+    months.push(`${cursor.getUTCFullYear()}-${String(cursor.getUTCMonth() + 1).padStart(2, "0")}`);
+    cursor = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
+  }
+  return months;
+}
+
+function statsForDates(
+  dateMap: Map<string, number> | undefined,
+  startDate: string,
+  endDate: string,
+): CapacityWindowStats {
+  const values = [...(dateMap?.entries() ?? [])]
+    .filter(([date, qty]) => date >= startDate && date <= endDate && qty > 0)
+    .map(([, qty]) => qty);
+  return {
+    startDate,
+    endDate,
+    daysObserved: values.length,
+    meanPerDay: values.length ? Math.round(mean(values)) : 0,
+    p90PerDay: values.length ? Math.round(p90(values)) : 0,
+    bestDay: values.length ? Math.max(...values) : 0,
+  };
+}
+
+function monthEnd(month: string): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const day = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  return `${month}-${String(day).padStart(2, "0")}`;
+}
+
+export function deriveMonthlyCapacitySignals(monthly: CapacityMonthlyStats[]): Pick<
+  CapacityComparison,
+  "driftPct" | "recoveryDriftPct" | "monthlyP90CvPct" | "latestMonthlyP90" | "minPositiveMonthlyP90" | "zeroProductionMonths"
+> {
+  const positiveMonths = monthly.filter((row) => row.daysObserved > 0 && row.p90PerDay > 0);
+  const first = positiveMonths[0];
+  const latest = positiveMonths.at(-1);
+  const monthlyP90Values = positiveMonths.map((row) => row.p90PerDay);
+  const monthlyP90Mean = mean(monthlyP90Values);
+  const monthlyP90CvPct = monthlyP90Values.length >= 2 && monthlyP90Mean > 0
+    ? Math.round((Math.sqrt(mean(monthlyP90Values.map((value) => (value - monthlyP90Mean) ** 2))) / monthlyP90Mean) * 1000) / 10
+    : null;
+  const minPositive = positiveMonths.length
+    ? Math.min(...positiveMonths.map((row) => row.p90PerDay))
+    : null;
+  const percentage = (numerator: number, denominator: number): number =>
+    Math.round(((numerator - denominator) / denominator) * 1000) / 10;
+
+  return {
+    driftPct: first && latest && first.p90PerDay > 0
+      ? percentage(latest.p90PerDay, first.p90PerDay)
+      : null,
+    recoveryDriftPct: latest && minPositive !== null && minPositive > 0
+      ? percentage(latest.p90PerDay, minPositive)
+      : null,
+    monthlyP90CvPct,
+    latestMonthlyP90: latest?.p90PerDay ?? null,
+    minPositiveMonthlyP90: minPositive,
+    zeroProductionMonths: monthly
+      .filter((row) => row.daysObserved === 0)
+      .map((row) => row.month),
+  };
+}
+
+/**
+ * Add the current comparison fields when an older persisted JSON payload is
+ * returned before its category is recomputed. This keeps the public response
+ * contract stable without rewriting historical capacity evidence.
+ */
+export function normalizeCapacityComparison(comparison: CapacityComparison | null): CapacityComparison | null {
+  if (!comparison) return null;
+  const monthly = Array.isArray(comparison.monthly) ? comparison.monthly : [];
+  const signals = deriveMonthlyCapacitySignals(monthly);
+  return {
+    fullWindow: comparison.fullWindow,
+    recent90d: comparison.recent90d,
+    monthly,
+    driftPct: comparison.driftPct ?? signals.driftPct,
+    recoveryDriftPct: comparison.recoveryDriftPct ?? signals.recoveryDriftPct,
+    monthlyP90CvPct: comparison.monthlyP90CvPct ?? signals.monthlyP90CvPct,
+    latestMonthlyP90: comparison.latestMonthlyP90 ?? signals.latestMonthlyP90,
+    minPositiveMonthlyP90: comparison.minPositiveMonthlyP90 ?? signals.minPositiveMonthlyP90,
+    zeroProductionMonths: comparison.zeroProductionMonths ?? signals.zeroProductionMonths,
+  };
+}
+
 /**
  * Seed initial capacity rows for both PTMT and Plumbing segments.
  * Idempotent per category — skips rows that already exist.
@@ -115,19 +209,36 @@ export async function computeCategoryCapacity(trailingDays = 90, segment = "PTMT
   logger.info({ trailingDays, segment }, "capacity-engine: computing per-category capacity");
 
   const seedValues = segment === "Plumbing" ? PLUMBING_SEED_VALUES : PTMT_SEED_VALUES;
-
   const today = new Date();
-  const cutoffDate = new Date(today.getTime() - trailingDays * 24 * 60 * 60 * 1000);
-  const cutoffStr = cutoffDate.toISOString().slice(0, 10);
-
-  const months = trailingMonths(trailingDays);
+  const todayStr = today.toISOString().slice(0, 10);
+  const currentMonth = todayStr.slice(0, 7);
+  const recentStart = new Date(today.getTime() - trailingDays * 24 * 60 * 60 * 1000)
+    .toISOString().slice(0, 10);
+  const fullStart = segment === "PTMT" ? "2026-01-01" : recentStart;
+  const fullMonths = monthRange(fullStart.slice(0, 7), currentMonth);
+  const recentMonths = trailingMonths(trailingDays);
+  const months = [...new Set([...fullMonths, ...recentMonths])];
 
   const [itemRows, ...actualsArrays] = await Promise.all([
     db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, segment)),
-    ...months.map(m => fetchDailyActuals(m).catch(err => {
-      logger.warn({ err, m }, "capacity-engine: failed to fetch actuals for month");
-      return [];
-    })),
+    ...months.map(async (m) => {
+      try {
+        return await fetchDailyActuals(m, {
+          requireFresh: segment === "PTMT",
+          // Historical workbooks are immutable for this comparison. Reuse their
+          // ingestion snapshots so a full-window recompute does not fan out into
+          // fourteen Sheets reads and hit the per-user quota. The current-month
+          // cache still follows its normal TTL and refreshes when it expires.
+          forceRefresh: false,
+        }, segment);
+      } catch (err) {
+        logger.error({ err, month: m, segment }, "capacity-engine: source unavailable");
+        throw new Error(
+          `${segment} capacity source unavailable for ${m}: ${err instanceof Error ? err.message : String(err)}`,
+          { cause: err },
+        );
+      }
+    }),
   ]);
 
   const catByKey = new Map<string, string>();
@@ -141,7 +252,6 @@ export async function computeCategoryCapacity(trailingDays = 90, segment = "PTMT
 
   for (const actuals of actualsArrays) {
     for (const row of actuals) {
-      if (row.date < cutoffStr) continue;
       const category =
         catByKey.get(`${row.itemCode}::${row.colour}`) ??
         catByCode.get(row.itemCode) ??
@@ -155,7 +265,6 @@ export async function computeCategoryCapacity(trailingDays = 90, segment = "PTMT
     }
   }
 
-  const currentMonth = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
   let planItems: Awaited<ReturnType<typeof buildPlanItems>> = [];
   try {
     planItems = await buildPlanItems(currentMonth, segment);
@@ -169,11 +278,11 @@ export async function computeCategoryCapacity(trailingDays = 90, segment = "PTMT
     .where(eq(categoryCapacityTable.segment, segment));
   const existingByCategory = new Map(existingRows.map(r => [r.category, r]));
 
-  const WORKING_DAYS_PER_MONTH = 27;
   const catPlanNeeds = new Map<string, number>();
   for (const cat of seedValues.map(s => s.category)) {
     const catPlan = planItems.filter(i => i.category === cat).reduce((s, i) => s + i.maxProduction, 0);
-    if (catPlan > 0) catPlanNeeds.set(cat, Math.round(catPlan / WORKING_DAYS_PER_MONTH));
+    const workingDays = countWorkingDaysInMonth(currentMonth);
+    if (catPlan > 0) catPlanNeeds.set(cat, Math.round(catPlan / Math.max(workingDays, 1)));
   }
 
   const allCategories = new Set([
@@ -185,14 +294,27 @@ export async function computeCategoryCapacity(trailingDays = 90, segment = "PTMT
 
   for (const category of allCategories) {
     const dateMap = catDateQty.get(category);
-    const dailyValues = dateMap ? [...dateMap.values()].filter(v => v > 0) : [];
-    const daysObserved = dailyValues.length;
+    const fullStats = statsForDates(dateMap, fullStart, todayStr);
+    const recentStats = statsForDates(dateMap, recentStart, todayStr);
+    const monthly: CapacityMonthlyStats[] = fullMonths.map((month) => ({
+      month,
+      ...statsForDates(dateMap, `${month}-01`, monthEnd(month)),
+    }));
+    // Endpoint drift remains useful for direction, while recovery drift and
+    // the full monthly series reveal V-shaped or intermittent production.
+    const monthlySignals = deriveMonthlyCapacitySignals(monthly);
+    const comparison: CapacityComparison = {
+      fullWindow: fullStats,
+      recent90d: recentStats,
+      monthly,
+      ...monthlySignals,
+    };
     const existing = existingByCategory.get(category);
 
-    const computedMean = daysObserved > 0 ? Math.round(mean(dailyValues)) : (existing?.meanPerDay ?? 0);
-    const computedP90 = daysObserved > 0 ? Math.round(p90(dailyValues)) : (existing?.p90PerDay ?? 0);
-    const computedBest = daysObserved > 0 ? Math.max(...dailyValues) : (existing?.bestDay ?? 0);
-    const isThinData = daysObserved < THIN_DATA_THRESHOLD ? 1 : 0;
+    const computedMean = fullStats.daysObserved > 0 ? fullStats.meanPerDay : (existing?.meanPerDay ?? 0);
+    const computedP90 = fullStats.daysObserved > 0 ? fullStats.p90PerDay : (existing?.p90PerDay ?? 0);
+    const computedBest = fullStats.daysObserved > 0 ? fullStats.bestDay : (existing?.bestDay ?? 0);
+    const isThinData = fullStats.daysObserved < THIN_DATA_THRESHOLD ? 1 : 0;
     const planNeedsPerDay = catPlanNeeds.get(category) ?? existing?.planNeedsPerDay ?? 0;
     const workingDaysPerWeek = existing?.workingDaysPerWeek ?? 6;
     const overrideCapacity = existing?.overrideCapacity ?? null;
@@ -204,13 +326,18 @@ export async function computeCategoryCapacity(trailingDays = 90, segment = "PTMT
       meanPerDay: computedMean,
       p90PerDay: computedP90,
       bestDay: computedBest,
-      daysObserved: daysObserved > 0 ? daysObserved : (existing?.daysObserved ?? 0),
-      trailingDays,
+      daysObserved: fullStats.daysObserved > 0 ? fullStats.daysObserved : (existing?.daysObserved ?? 0),
+      trailingDays: segment === "PTMT"
+        ? Math.max(1, Math.round((new Date(todayStr).getTime() - new Date(fullStart).getTime()) / 86400000) + 1)
+        : trailingDays,
       isThinData,
       suggestedCapacity,
       overrideCapacity: overrideCapacity ?? undefined,
       workingDaysPerWeek,
       planNeedsPerDay,
+      windowStartDate: fullStart,
+      windowEndDate: todayStr,
+      comparisonJson: comparison,
       lastComputedAt: new Date(),
     };
 

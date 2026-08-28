@@ -1,0 +1,476 @@
+{
+  "base_url": "https://prayag-plant.com/data-api/v1",
+  "plants": {
+    "plants": [
+      {
+        "code": "PIPE",
+        "daily_months": [
+          "2025-04",
+          "2025-05",
+          "2025-06",
+          "2025-07",
+          "2025-08",
+          "2025-09",
+          "2025-10",
+          "2025-11",
+          "2025-12",
+          "2026-01",
+          "2026-02",
+          "2026-03",
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08"
+        ],
+        "daily_wired": true,
+        "location": "KH",
+        "name": "Pipe & Fitting"
+      },
+      {
+        "code": "GARDEN",
+        "daily_months": [
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08"
+        ],
+        "daily_wired": true,
+        "location": "KH",
+        "name": "Garden Pipe"
+      },
+      {
+        "code": "GARDEN_WB",
+        "daily_months": [
+          "2026-06",
+          "2026-07",
+          "2026-08"
+        ],
+        "daily_wired": true,
+        "location": "WB",
+        "name": "Garden Pipe (WB)"
+      },
+      {
+        "code": "HDPE",
+        "daily_months": [
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08"
+        ],
+        "daily_wired": true,
+        "location": "KH",
+        "name": "HDPE"
+      },
+      {
+        "code": "MOULDING",
+        "daily_months": [],
+        "daily_wired": false,
+        "location": "KH",
+        "name": "Injection Moulding"
+      },
+      {
+        "code": "PTMT",
+        "daily_months": [
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08"
+        ],
+        "daily_wired": true,
+        "location": "Bhiwari",
+        "name": "PTMT"
+      },
+      {
+        "code": "CP",
+        "daily_months": [],
+        "daily_wired": false,
+        "location": "Bhiwari",
+        "name": "CP Fittings"
+      },
+      {
+        "code": "TANK",
+        "daily_months": [
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08"
+        ],
+        "daily_wired": true,
+        "location": "KH",
+        "name": "Tanks (KH)"
+      },
+      {
+        "code": "TANK_VN",
+        "daily_months": [
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08"
+        ],
+        "daily_wired": true,
+        "location": "VN",
+        "name": "Tanks (VN)"
+      },
+      {
+        "code": "TANK_WB",
+        "daily_months": [
+          "2026-04",
+          "2026-05",
+          "2026-06",
+          "2026-07",
+          "2026-08"
+        ],
+        "daily_wired": true,
+        "location": "WB",
+        "name": "Tanks (WB)"
+      },
+      {
+        "code": "GOM",
+        "daily_months": [],
+        "daily_wired": false,
+        "location": "KH",
+        "name": "Group-of-Moulding"
+      },
+      {
+        "code": "ALL",
+        "daily_months": [],
+        "daily_wired": false,
+        "location": "",
+        "name": "All Plants"
+      }
+    ]
+  },
+  "periods": {
+    "months_with_data": [
+      "2026-04",
+      "2026-05",
+      "2026-06",
+      "2026-07"
+    ],
+    "period_tokens": [
+      "last_updated",
+      "yesterday",
+      "last_week",
+      "last_month",
+      "current_fy",
+      "prior_fy",
+      "q1",
+      "q2",
+      "q3",
+      "q4",
+      "custom",
+      "YYYY-MM (exact calendar month)",
+      "YYYY-MM-DD (single day)",
+      "1..12 (fiscal-year month number, Apr=4 anchored to the current FY)"
+    ]
+  },
+  "requests": [
+    {
+      "plant": "PIPE",
+      "period": "2025-04",
+      "status": "ok",
+      "rows": 144
+    },
+    {
+      "plant": "PIPE",
+      "period": "2025-05",
+      "status": "ok",
+      "rows": 154
+    },
+    {
+      "plant": "PIPE",
+      "period": "2025-06",
+      "status": "ok",
+      "rows": 137
+    },
+    {
+      "plant": "PIPE",
+      "period": "2025-07",
+      "status": "ok",
+      "rows": 133
+    },
+    {
+      "plant": "PIPE",
+      "period": "2025-08",
+      "status": "ok",
+      "rows": 0
+    },
+    {
+      "plant": "PIPE",
+      "period": "2025-09",
+      "status": "ok",
+      "rows": 123
+    },
+    {
+      "plant": "PIPE",
+      "period": "2025-10",
+      "status": "ok",
+      "rows": 98
+    },
+    {
+      "plant": "PIPE",
+      "period": "2025-11",
+      "status": "ok",
+      "rows": 101
+    },
+    {
+      "plant": "PIPE",
+      "period": "2025-12",
+      "status": "ok",
+      "rows": 134
+    },
+    {
+      "plant": "PIPE",
+      "period": "2026-01",
+      "status": "ok",
+      "rows": 137
+    },
+    {
+      "plant": "PIPE",
+      "period": "2026-02",
+      "status": "ok",
+      "rows": 136
+    },
+    {
+      "plant": "PIPE",
+      "period": "2026-03",
+      "status": "ok",
+      "rows": 109
+    },
+    {
+      "plant": "PIPE",
+      "period": "2026-04",
+      "status": "ok",
+      "rows": 63
+    },
+    {
+      "plant": "PIPE",
+      "period": "2026-05",
+      "status": "ok",
+      "rows": 125
+    },
+    {
+      "plant": "PIPE",
+      "period": "2026-06",
+      "status": "ok",
+      "rows": 71
+    },
+    {
+      "plant": "PIPE",
+      "period": "2026-07",
+      "status": "ok",
+      "rows": 177
+    },
+    {
+      "plant": "PIPE",
+      "period": "2026-08",
+      "status": "ok",
+      "rows": 133
+    },
+    {
+      "plant": "GARDEN",
+      "period": "2026-04",
+      "status": "ok",
+      "rows": 36
+    },
+    {
+      "plant": "GARDEN",
+      "period": "2026-05",
+      "status": "ok",
+      "rows": 44
+    },
+    {
+      "plant": "GARDEN",
+      "period": "2026-06",
+      "status": "ok",
+      "rows": 62
+    },
+    {
+      "plant": "GARDEN",
+      "period": "2026-07",
+      "status": "ok",
+      "rows": 56
+    },
+    {
+      "plant": "GARDEN",
+      "period": "2026-08",
+      "status": "ok",
+      "rows": 27
+    },
+    {
+      "plant": "GARDEN_WB",
+      "period": "2026-06",
+      "status": "ok",
+      "rows": 27
+    },
+    {
+      "plant": "GARDEN_WB",
+      "period": "2026-07",
+      "status": "ok",
+      "rows": 8
+    },
+    {
+      "plant": "GARDEN_WB",
+      "period": "2026-08",
+      "status": "ok",
+      "rows": 0
+    },
+    {
+      "plant": "HDPE",
+      "period": "2026-04",
+      "status": "ok",
+      "rows": 0
+    },
+    {
+      "plant": "HDPE",
+      "period": "2026-05",
+      "status": "ok",
+      "rows": 1
+    },
+    {
+      "plant": "HDPE",
+      "period": "2026-06",
+      "status": "ok",
+      "rows": 0
+    },
+    {
+      "plant": "HDPE",
+      "period": "2026-07",
+      "status": "ok",
+      "rows": 22
+    },
+    {
+      "plant": "HDPE",
+      "period": "2026-08",
+      "status": "ok",
+      "rows": 0
+    },
+    {
+      "plant": "PTMT",
+      "period": "2026-04",
+      "status": "ok",
+      "rows": 1280
+    },
+    {
+      "plant": "PTMT",
+      "period": "2026-05",
+      "status": "ok",
+      "rows": 1286
+    },
+    {
+      "plant": "PTMT",
+      "period": "2026-06",
+      "status": "ok",
+      "rows": 1383
+    },
+    {
+      "plant": "PTMT",
+      "period": "2026-07",
+      "status": "ok",
+      "rows": 1402
+    },
+    {
+      "plant": "PTMT",
+      "period": "2026-08",
+      "status": "ok",
+      "rows": 1109
+    },
+    {
+      "plant": "TANK",
+      "period": "2026-04",
+      "status": "ok",
+      "rows": 0
+    },
+    {
+      "plant": "TANK",
+      "period": "2026-05",
+      "status": "ok",
+      "rows": 76
+    },
+    {
+      "plant": "TANK",
+      "period": "2026-06",
+      "status": "ok",
+      "rows": 85
+    },
+    {
+      "plant": "TANK",
+      "period": "2026-07",
+      "status": "ok",
+      "rows": 111
+    },
+    {
+      "plant": "TANK",
+      "period": "2026-08",
+      "status": "ok",
+      "rows": 63
+    },
+    {
+      "plant": "TANK_VN",
+      "period": "2026-04",
+      "status": "ok",
+      "rows": 25
+    },
+    {
+      "plant": "TANK_VN",
+      "period": "2026-05",
+      "status": "ok",
+      "rows": 94
+    },
+    {
+      "plant": "TANK_VN",
+      "period": "2026-06",
+      "status": "ok",
+      "rows": 82
+    },
+    {
+      "plant": "TANK_VN",
+      "period": "2026-07",
+      "status": "ok",
+      "rows": 96
+    },
+    {
+      "plant": "TANK_VN",
+      "period": "2026-08",
+      "status": "ok",
+      "rows": 65
+    },
+    {
+      "plant": "TANK_WB",
+      "period": "2026-04",
+      "status": "ok",
+      "rows": 65
+    },
+    {
+      "plant": "TANK_WB",
+      "period": "2026-05",
+      "status": "ok",
+      "rows": 166
+    },
+    {
+      "plant": "TANK_WB",
+      "period": "2026-06",
+      "status": "ok",
+      "rows": 198
+    },
+    {
+      "plant": "TANK_WB",
+      "period": "2026-07",
+      "status": "ok",
+      "rows": 185
+    },
+    {
+      "plant": "TANK_WB",
+      "period": "2026-08",
+      "status": "ok",
+      "rows": 116
+    }
+  ],
+  "gaps": []
+}

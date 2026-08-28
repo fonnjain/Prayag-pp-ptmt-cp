@@ -483,6 +483,13 @@ router.put("/plant/source-config", async (req, res) => {
     target: [plantSourceConfigsTable.month, plantSourceConfigsTable.segment],
     set: { fileId, notes: notes ?? null },
   });
+  // A newly registered historical source must replace any earlier empty/error
+  // ingestion snapshot; otherwise fetchDailyActuals intentionally reuses the
+  // immutable-month cache and the registration remains invisible to capacity.
+  await db.delete(plantIngestionCacheTable).where(and(
+    eq(plantIngestionCacheTable.month, month),
+    eq(plantIngestionCacheTable.segment, segment),
+  ));
   invalidatePlantBundleCache(month);
   res.json({ ok: true });
 });

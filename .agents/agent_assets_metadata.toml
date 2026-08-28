@@ -65,3 +65,38 @@ uri = "file://.agents/outputs/suggested-tasks.txt"
 type = "text"
 title = "Suggested task list"
 description = "Plain-text copy of the suggested snapshot-provenance task."
+
+[[outputs]]
+id = "nU0_OrzxZiuEyPDsRA9vU"
+uri = "file://.agents/outputs/prayag-planning-export-2026-08-26.zip"
+type = "unspecified"
+title = "Prayag planning data export ZIP"
+description = "Read-only planning export covering FY 2025-26 and FY 2026-27, with CSV data, manifest, README, schema, and source/provenance profiles. ZIP integrity verified successfully."
+
+[[outputs]]
+id = "KP8EowL0IQsdCwrkm63Vk"
+uri = "file://reports/ptmt-roster-reconciliation-2026-08-26.md"
+type = "text"
+title = "Updated PTMT roster reconciliation report"
+description = "Updated read-only production report with trailing .0 test results, exact combined-division audit, 36 residual codes, placeholder counts, July comparisons, and June loss evidence."
+
+[[outputs]]
+id = "q5q94mdn_rylrGL2RK1PO"
+uri = "file://reports/ptmt-item-master-only-2026-08-26.csv"
+type = "table"
+title = "Updated PTMT gap audit CSV"
+description = "All 133 PTMT gap codes with post-audit status: canonicalize trailing .0, map exact combined division, manual review, or other-segment review."
+
+[[outputs]]
+id = "mjuaT0mgGdpQl7-l74JDa"
+uri = "file://reports/ptmt-roster-reconciliation-2026-08-26.json"
+type = "unspecified"
+title = "Updated PTMT reconciliation JSON"
+description = "Machine-readable production reconciliation with the complete normalization audit and residual review set."
+
+[[outputs]]
+id = "_272H1vlFIMlp1XuS0AHo"
+uri = "file://reports/production-post-publish-verification-2026-08-26.md"
+type = "text"
+title = "Post-publish production verification"
+description = "Production SHA/data alignment, July reconciliation results, verifier classification, and the unresolved catalogue classification question."

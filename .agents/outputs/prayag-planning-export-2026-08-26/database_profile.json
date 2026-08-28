@@ -1,0 +1,102 @@
+{
+  "database": {
+    "database_name": "heliumdb",
+    "database_host": "helium",
+    "database_role": "development/export database"
+  },
+  "workspace_sha": "c7908ff9f39d21cd4c69513afcbdaa10187b084f",
+  "excluded_sensitive_tables": [
+    "users",
+    "app_users",
+    "user_sessions",
+    "auth_sessions",
+    "api_keys"
+  ],
+  "table_counts": [
+    {
+      "table": "plan_runs",
+      "row_count": 86
+    },
+    {
+      "table": "plan_run_results",
+      "row_count": 297374
+    },
+    {
+      "table": "plan_run_inputs",
+      "row_count": 297374
+    },
+    {
+      "table": "plan_run_input_snapshots",
+      "row_count": 62
+    },
+    {
+      "table": "corrective_plan_runs",
+      "row_count": 102
+    },
+    {
+      "table": "corrective_plan_items",
+      "row_count": 172108
+    },
+    {
+      "table": "buffer_categories",
+      "row_count": 19
+    },
+    {
+      "table": "category_capacity",
+      "row_count": 19
+    },
+    {
+      "table": "plant_configs",
+      "row_count": 1
+    },
+    {
+      "table": "item_master",
+      "row_count": 4569
+    },
+    {
+      "table": "item_weights",
+      "row_count": 0
+    },
+    {
+      "table": "weekly_release_bands",
+      "row_count": 19
+    },
+    {
+      "table": "plumbing_machine_capacity",
+      "row_count": 33
+    },
+    {
+      "table": "plant_month_snapshots",
+      "row_count": 4
+    },
+    {
+      "table": "pending_snapshots",
+      "row_count": 698366
+    },
+    {
+      "table": "uploaded_files",
+      "row_count": 12
+    },
+    {
+      "table": "plant_plan_uploads",
+      "row_count": 2
+    },
+    {
+      "table": "plant_plan_items",
+      "row_count": 863
+    },
+    {
+      "table": "plant_plan_versions",
+      "row_count": 393
+    },
+    {
+      "table": "sync_sources",
+      "row_count": 15
+    }
+  ],
+  "deployed_database": {
+    "database_host": "ep-orange-tree-aj9n6w8a.c-3.us-east-2.aws.neon.tech",
+    "source": "production /api/healthz"
+  },
+  "deployed_commit_sha": "e347c3633dc049f31c9c215de1b273751d510ba5"
+}

@@ -120,6 +120,9 @@ export default function SummaryPage() {
   const categories = summary?.categories ?? [];
   const grandMin = summary?.grandMinTotal ?? 0;
   const grandMax = summary?.grandMaxTotal ?? 0;
+  const grandDemand = (summary as any)?.grandDemandTotal ?? grandMax;
+  const grandFitted = (summary as any)?.grandFittedTotal ?? null;
+  const fittedBasis = grandFitted == null ? "not scheduled" : "executable";
 
   const allItems = (itemsData as unknown as PlanItem[] | undefined) ?? [];
   const weeklyTotals = computeWeeklyTotals(allItems);
@@ -174,7 +177,9 @@ export default function SummaryPage() {
                   return {
                     Category: cat.category,
                     MinRequired: cat.minTotal,
-                    MaxPlan: cat.maxTotal,
+                     IssuedDemand: (cat as any).demandPcs ?? cat.maxTotal,
+                     Executable: (cat as any).fittedPcs ?? "",
+                     TargetBasis: fittedBasis,
                     W1_Plan: wt?.w1 ?? 0,
                     W1_Ach_Pct: pcts?.w1Pct ?? "",
                     W2_Plan: wt?.w2 ?? 0,
@@ -208,7 +213,7 @@ export default function SummaryPage() {
                   <TableRow>
                     <TableHead>Category</TableHead>
                     <TableHead className="text-right">Min Reqd</TableHead>
-                    <TableHead className="text-right">Max / Plan</TableHead>
+                     <TableHead className="text-right">Issued Demand</TableHead>
                     <TableHead className={cn("text-right", WEEK_COLORS[1].header)}>
                       W1
                       <div className="text-[9px] font-normal opacity-70">days 1–7</div>
@@ -246,7 +251,7 @@ export default function SummaryPage() {
                           {cat.minTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </TableCell>
                         <TableCell className="text-right">
-                          {cat.maxTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                           {((cat as any).demandPcs ?? cat.maxTotal).toLocaleString(undefined, { maximumFractionDigits: 0 })}
                         </TableCell>
                         <WeekCell plan={wt?.w1 ?? 0} attainmentPct={pcts?.w1Pct} isLoading={itemsLoading} colorClass={WEEK_COLORS[1].cell} />
                         <WeekCell plan={wt?.w2 ?? 0} attainmentPct={pcts?.w2Pct} isLoading={itemsLoading} colorClass={WEEK_COLORS[2].cell} />
@@ -264,7 +269,7 @@ export default function SummaryPage() {
                       {grandMin.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </TableCell>
                     <TableCell className="text-right">
-                      {grandMax.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                       {grandDemand.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </TableCell>
                     {([1, 2, 3, 4] as const).map((w) => {
                       const plan = [grandW1, grandW2, grandW3, grandW4][w - 1];

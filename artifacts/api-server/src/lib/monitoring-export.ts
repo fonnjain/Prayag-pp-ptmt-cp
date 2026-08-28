@@ -111,6 +111,9 @@ function addActionsSheet(workbook: ExcelJS.Workbook, actions: RecommendedAction[
 
 function addQualitySheet(workbook: ExcelJS.Workbook, machines: MachineQuality[]): void {
   const sheet = workbook.addWorksheet("Machine Quality");
+  const rejectionPctLabel = machines[0]?.totalCountBasis === "net"
+    ? "Rejection % (rejects / good output)"
+    : "Rejection % (rejects / total manufactured)";
   sheet.columns = [
     { header: "Machine", key: "machineId", width: 14 },
     { header: "Grinder", key: "isGrinder", width: 10 },
@@ -119,7 +122,7 @@ function addQualitySheet(workbook: ExcelJS.Workbook, machines: MachineQuality[])
     { header: "Utilisation %", key: "utilisationPct", width: 14 },
     { header: "Output (kg)", key: "outputKg", width: 12 },
     { header: "Rejection (kg)", key: "rejectionKg", width: 14 },
-    { header: "Rejection %", key: "rejectionPct", width: 12 },
+    { header: rejectionPctLabel, key: "rejectionPct", width: 34 },
     { header: "Good Output (kg)", key: "goodOutputKg", width: 16 },
   ];
   sheet.getRow(1).font = { bold: true };
@@ -183,6 +186,11 @@ function fmtHtml(value: number | null | undefined): string {
 }
 
 function buildHtml(data: MonitoringExportData): string {
+  const rejectionPctLabel = data.machines[0]?.totalCountBasis === "net"
+    ? "Rejection % (rejects / good output)"
+    : data.machines[0]?.totalCountBasis === "gross"
+      ? "Rejection % (rejects / total manufactured)"
+      : "Rejection %";
   const catRows = data.categories
     .map(
       (c) =>
@@ -271,7 +279,7 @@ function buildHtml(data: MonitoringExportData): string {
 
     <h2>Machine Quality</h2>
     <table>
-      <thead><tr><th>Machine</th><th>Grinder</th><th>Run Hours</th><th>Ideal Hours</th><th>Utilisation %</th><th>Output (kg)</th><th>Rejection (kg)</th><th>Rejection %</th></tr></thead>
+      <thead><tr><th>Machine</th><th>Grinder</th><th>Run Hours</th><th>Ideal Hours</th><th>Utilisation %</th><th>Output (kg)</th><th>Rejection (kg)</th><th>${rejectionPctLabel}</th></tr></thead>
       <tbody>${machineRows || `<tr><td colspan="8">No data</td></tr>`}</tbody>
     </table>
 

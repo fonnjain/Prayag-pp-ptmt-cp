@@ -9,4 +9,6 @@ export interface CategorySummary {
   category: string;
   minTotal: number;
   maxTotal: number;
+  demandPcs?: number;
+  fittedPcs?: number | null;
 }

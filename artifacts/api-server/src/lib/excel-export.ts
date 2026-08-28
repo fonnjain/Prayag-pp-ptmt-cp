@@ -94,6 +94,129 @@ export function addLegendSheet(workbook: ExcelJS.Workbook): void {
   });
 }
 
+export type FrozenPlanRow = {
+  itemCode: string;
+  colour: string;
+  category: string;
+  avg3MoSale: number;
+  stock: number;
+  pendingCurrent: number;
+  pendingLastMonth: number;
+  bufferReq: number | null;
+  minProduction: number;
+  productionPlan: number;
+  temporaryPlan: number;
+  cannotBeMade: number;
+  dummy: number;
+  orders: number;
+  buffer: number;
+  material: string | null;
+  weightKg: number | null;
+  urgencyRank: number | null;
+  releaseWeek: number | null;
+  w1: number;
+  w2: number;
+  w3: number;
+  w4: number;
+};
+
+export function addTemporaryPlanSheet(
+  workbook: ExcelJS.Workbook,
+  month: string,
+  rows: FrozenPlanRow[],
+): void {
+  const sheet = workbook.addWorksheet("Temporary Plan");
+  sheet.columns = [
+    { header: "Item Code", key: "itemCode", width: 14 },
+    { header: "Colour", key: "colour", width: 14 },
+    { header: "Category", key: "category", width: 28 },
+    { header: "Demand Quantity", key: "demand", width: 18 },
+    { header: "Of Which Dummy", key: "dummy", width: 16 },
+    { header: "Of Which Orders", key: "orders", width: 16 },
+    { header: "Of Which Buffer", key: "buffer", width: 16 },
+  ];
+  sheet.getRow(1).font = { bold: true };
+  const note = sheet.addRow([`Temporary Plan — ${month}. Demand-true snapshot; not issued to the floor and not capacity-fitted.`]);
+  note.font = { italic: true, color: { argb: "FF7F7F7F" } };
+  note.getCell(1).alignment = { wrapText: true };
+  for (const row of rows) {
+    sheet.addRow({
+      itemCode: row.itemCode,
+      colour: row.colour,
+      category: row.category,
+      demand: Math.round(row.temporaryPlan),
+      dummy: Math.round(row.dummy),
+      orders: Math.round(row.orders),
+      buffer: Math.round(row.buffer),
+    });
+  }
+}
+
+function addFrozenProductionSheets(
+  workbook: ExcelJS.Workbook,
+  rows: FrozenPlanRow[],
+): void {
+  const byCategory = new Map<string, FrozenPlanRow[]>();
+  for (const row of rows) {
+    const list = byCategory.get(row.category) ?? [];
+    list.push(row);
+    byCategory.set(row.category, list);
+  }
+  for (const [category, categoryRows] of byCategory) {
+    const sheet = workbook.addWorksheet(category.slice(0, 31));
+    sheet.columns = [
+      { header: "Item Code", key: "itemCode", width: 14 },
+      { header: "Colour", key: "colour", width: 14 },
+      { header: "Temporary Demand", key: "temporaryPlan", width: 18 },
+      { header: "Production Plan", key: "productionPlan", width: 18 },
+      { header: "Cannot Be Made", key: "cannotBeMade", width: 16 },
+      { header: "W1", key: "w1", width: 10 },
+      { header: "W2", key: "w2", width: 10 },
+      { header: "W3", key: "w3", width: 10 },
+      { header: "W4", key: "w4", width: 10 },
+      { header: "Material", key: "material", width: 12 },
+      { header: "Weight kg", key: "weightKg", width: 12 },
+      { header: "Urgency rank", key: "urgencyRank", width: 14 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    for (const row of categoryRows) {
+      sheet.addRow(row);
+    }
+  }
+}
+
+export async function exportFrozenPlanExcel(
+  month: string,
+  planType: "temporary" | "production",
+  rows: FrozenPlanRow[],
+  temporaryRows: FrozenPlanRow[] = [],
+): Promise<Buffer> {
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  const summary = workbook.addWorksheet("Summary");
+  summary.columns = [
+    { header: "Plan Type", key: "planType", width: 18 },
+    { header: "Month", key: "month", width: 12 },
+    { header: "Items", key: "items", width: 12 },
+    { header: "Demand / Production Plan", key: "total", width: 28 },
+  ];
+  summary.getRow(1).font = { bold: true };
+  summary.addRow({
+    planType: planType === "temporary" ? "Temporary Plan" : "Production Plan",
+    month,
+    items: rows.length,
+    total: Math.round(rows.reduce(
+      (sum, row) => sum + (planType === "temporary" ? row.temporaryPlan : row.productionPlan),
+      0,
+    )),
+  });
+  if (temporaryRows.length > 0) addTemporaryPlanSheet(workbook, month, temporaryRows);
+  if (planType === "temporary") addTemporaryPlanSheet(workbook, month, rows);
+  else addFrozenProductionSheets(workbook, rows);
+  addLegendSheet(workbook);
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 export async function exportPlanExcel(
   month: string,
   items: CalcPlanItem[],

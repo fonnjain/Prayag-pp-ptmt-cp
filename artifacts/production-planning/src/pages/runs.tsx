@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,19 +25,23 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { currentMonth, formatMonthLabel } from "@/lib/month";
 import { cn, fmtDateTime } from "@/lib/utils";
+import { DateInput } from "@/components/date-input";
 import {
   useListPlanRuns,
   useCreatePlanRun,
   useFinalizePlanRun,
   useDeletePlanRun,
   getPlanRun,
+  useGetPlanRun,
   getGetPlanRunQueryKey,
   useGetPlanRunDrift,
   type PlanRunSummary,
   type PlanRunDrift,
 } from "@workspace/api-client-react";
 import { useSegment } from "@/contexts/segment-context";
-import { Trash2, GitCompare, Activity } from "lucide-react";
+import { Trash2, GitCompare, Activity, Download } from "lucide-react";
+
+const HIGH_MONTHLY_P90_CV_PCT = 25;
 
 function statusColor(status: string) {
   return status === "finalized"
@@ -58,9 +62,27 @@ function fmtDelta(n: number) {
   );
 }
 
+function categoryMonthlyP90CvPct(category: {
+  monthlyP90CvPct?: number | null;
+  monthly?: Array<{ daysObserved: number; p90PerDay: number }>;
+}): number | null {
+  if (typeof category.monthlyP90CvPct === "number" && Number.isFinite(category.monthlyP90CvPct)) {
+    return category.monthlyP90CvPct;
+  }
+  const values = (category.monthly ?? [])
+    .filter((month) => month.daysObserved > 0 && month.p90PerDay > 0)
+    .map((month) => month.p90PerDay);
+  if (values.length < 2) return null;
+  const average = values.reduce((sum, value) => sum + value, 0) / values.length;
+  const standardDeviation = Math.sqrt(
+    values.reduce((sum, value) => sum + (value - average) ** 2, 0) / values.length,
+  );
+  return average > 0 ? Math.round((standardDeviation / average) * 1000) / 10 : null;
+}
+
 type RunDetail = {
   run: PlanRunSummary;
-  items: { itemCode: string; colour: string; category: string; minProduction: number; productionPlan: number }[];
+  items: { itemCode: string; colour: string; category: string; minProduction: number; demandPlan?: number; productionPlan: number; feasibilityStatus?: string }[];
 };
 
 function MultiRunCompare({ ids, onClose }: { ids: number[]; onClose: () => void }) {
@@ -93,7 +115,7 @@ function MultiRunCompare({ ids, onClose }: { ids: number[]; onClose: () => void 
   const catMin = (d: RunDetail, cat: string) =>
     d.items.filter((i) => i.category === cat).reduce((s, i) => s + Math.max(i.minProduction, 0), 0);
   const catMax = (d: RunDetail, cat: string) =>
-    d.items.filter((i) => i.category === cat).reduce((s, i) => s + Math.max(i.productionPlan, 0), 0);
+    d.items.filter((i) => i.category === cat).reduce((s, i) => s + Math.max(i.demandPlan ?? i.productionPlan, 0), 0);
 
   const showDelta = sorted.length === 2;
   const [d1, d2] = allData;
@@ -125,7 +147,7 @@ function MultiRunCompare({ ids, onClose }: { ids: number[]; onClose: () => void 
                 ))}
                 {showDelta && (
                   <th className="text-center py-2.5 px-3 border-l border-border/30 text-muted-foreground text-xs">
-                    <div className="font-medium">Δ Plan</div>
+                    <div className="font-medium">Δ Issued Demand</div>
                     <div className="font-normal">#{sorted[0]}→#{sorted[1]}</div>
                   </th>
                 )}
@@ -133,12 +155,12 @@ function MultiRunCompare({ ids, onClose }: { ids: number[]; onClose: () => void 
               <tr className="border-b border-border/30 text-xs text-muted-foreground">
                 <th className="py-1.5 px-4"></th>
                 {allData.map((d) => (
-                  <>
+                  <Fragment key={`headers-${d.run.id}`}>
                     <th key={`${d.run.id}-min-h`} className="py-1.5 px-3 text-right border-l border-border/30 font-normal">Min</th>
-                    <th key={`${d.run.id}-max-h`} className="py-1.5 px-3 text-right font-normal">Plan</th>
-                  </>
+                    <th key={`${d.run.id}-max-h`} className="py-1.5 px-3 text-right font-normal">Issued Demand</th>
+                  </Fragment>
                 ))}
-                {showDelta && <th className="py-1.5 px-3 text-right border-l border-border/30 font-normal">Plan Δ</th>}
+                {showDelta && <th className="py-1.5 px-3 text-right border-l border-border/30 font-normal">Demand Δ</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-border/30">
@@ -146,10 +168,10 @@ function MultiRunCompare({ ids, onClose }: { ids: number[]; onClose: () => void 
                 <tr key={cat} className="hover:bg-muted/20">
                   <td className="py-2 px-4 font-medium text-xs">{cat}</td>
                   {allData.map((d) => (
-                    <>
+                    <Fragment key={`${d.run.id}-${cat}`}>
                       <td key={`${d.run.id}-${cat}-min`} className="py-2 px-3 text-right font-mono text-xs border-l border-border/30">{fmt(catMin(d, cat))}</td>
                       <td key={`${d.run.id}-${cat}-max`} className="py-2 px-3 text-right font-mono text-xs">{fmt(catMax(d, cat))}</td>
-                    </>
+                    </Fragment>
                   ))}
                   {showDelta && d1 && d2 && (
                     <td className="py-2 px-3 text-right font-mono text-xs border-l border-border/30">
@@ -163,14 +185,14 @@ function MultiRunCompare({ ids, onClose }: { ids: number[]; onClose: () => void 
               <tr>
                 <td className="py-2.5 px-4 text-xs uppercase text-muted-foreground">Grand Total</td>
                 {allData.map((d) => (
-                  <>
+                  <Fragment key={`totals-${d.run.id}`}>
                     <td key={`${d.run.id}-tot-min`} className="py-2.5 px-3 text-right font-mono border-l border-border/30">{fmt(d.run.grandMinTotal)}</td>
-                    <td key={`${d.run.id}-tot-max`} className="py-2.5 px-3 text-right font-mono">{fmt(d.run.grandMaxTotal)}</td>
-                  </>
+                    <td key={`${d.run.id}-tot-max`} className="py-2.5 px-3 text-right font-mono">{fmt((d.run as any).grandDemandTotal ?? d.run.grandMaxTotal)}</td>
+                  </Fragment>
                 ))}
                 {showDelta && d1 && d2 && (
                   <td className="py-2.5 px-3 text-right font-mono border-l border-border/30">
-                    {fmtDelta(d2.run.grandMaxTotal - d1.run.grandMaxTotal)}
+                    {fmtDelta(((d2.run as any).grandDemandTotal ?? d2.run.grandMaxTotal) - ((d1.run as any).grandDemandTotal ?? d1.run.grandMaxTotal))}
                   </td>
                 )}
               </tr>
@@ -338,6 +360,215 @@ function DriftView({ runId, onClose }: { runId: number; onClose: () => void }) {
   );
 }
 
+function Pass2AuditView({ runId, onClose }: { runId: number; onClose: () => void }) {
+  const { data, isLoading, error } = useGetPlanRun(runId, {
+    query: { enabled: runId > 0 } as any,
+  });
+  const detail = data as unknown as {
+    run?: {
+      pass2?: {
+        workingDays: number;
+        workedSundayDates: string[];
+        categories: Array<{
+          category: string;
+          selectedWindow: string;
+          driftPct: number | null;
+          recoveryDriftPct?: number | null;
+          monthlyP90CvPct?: number | null;
+          zeroProductionMonths?: string[];
+          monthly?: Array<{
+            month: string;
+            daysObserved: number;
+            p90PerDay: number;
+          }>;
+          capacityPerDay: number;
+          weeklyCapacity: number[];
+          weeklyRelease: number[];
+          temporaryPlan: number;
+          productionPlan: number;
+          cannotBeMade: number;
+        }>;
+        invariants: Record<string, boolean | number>;
+      } | null;
+    };
+  };
+  const audit = detail?.run?.pass2;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            PTMT Pass 2 Audit — Run #{runId}
+          </CardTitle>
+          <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading && <p className="text-sm text-muted-foreground py-4">Loading capacity audit…</p>}
+        {Boolean(error) && <p className="text-sm text-red-600 py-4">Could not load the persisted Pass 2 audit.</p>}
+        {!isLoading && !error && !audit && (
+          <p className="text-sm text-muted-foreground py-4">
+            This run predates local PTMT fitting and has no Pass 2 audit.
+          </p>
+        )}
+        {audit && (
+          <div className="space-y-4">
+            {(() => {
+              const totalResidual = audit.categories.reduce((sum, category) => sum + Math.max(category.cannotBeMade, 0), 0);
+              const lowConfidenceResidual = audit.categories.reduce((sum, category) => {
+                const cv = categoryMonthlyP90CvPct(category);
+                return sum + (cv != null && cv > HIGH_MONTHLY_P90_CV_PCT ? Math.max(category.cannotBeMade, 0) : 0);
+              }, 0);
+              const stableResidual = Math.max(totalResidual - lowConfidenceResidual, 0);
+              const lowConfidenceShare = totalResidual > 0 ? (lowConfidenceResidual / totalResidual) * 100 : 0;
+              return (
+                <div className={cn(
+                  "rounded-md border px-3 py-3",
+                  lowConfidenceResidual > 0 ? "border-amber-300 bg-amber-50" : "border-green-300 bg-green-50",
+                )}>
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <p className="text-sm font-semibold">Cannot-be-made confidence</p>
+                    <p className="text-[11px] text-muted-foreground">High CV threshold: &gt;{HIGH_MONTHLY_P90_CV_PCT}%</p>
+                  </div>
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <div>
+                      <p className="text-[11px] text-muted-foreground">Total residual</p>
+                      <p className="font-semibold tabular-nums">{fmt(totalResidual)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-muted-foreground">High-CV / low-confidence</p>
+                      <p className={cn("font-semibold tabular-nums", lowConfidenceResidual > 0 && "text-amber-800")}>
+                        {fmt(lowConfidenceResidual)} <span className="text-xs font-normal">({lowConfidenceShare.toFixed(1)}%)</span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[11px] text-muted-foreground">Stable or unflagged</p>
+                      <p className="font-semibold tabular-nums">{fmt(stableResidual)} <span className="text-xs font-normal">({(100 - lowConfidenceShare).toFixed(1)}%)</span></p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    {lowConfidenceResidual > 0
+                      ? "Part of this residual comes from a volatile capacity series; do not weigh it like a stable-category constraint."
+                      : "No residual is currently attributed to a high-CV category; the remaining shortfall is supported by stable or unflagged capacity evidence."}
+                  </p>
+                </div>
+              );
+            })()}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="rounded-md border px-3 py-2">
+                <p className="text-[11px] text-muted-foreground">Temporary demand</p>
+                <p className="font-semibold tabular-nums">{fmt(Number(audit.invariants.temporaryPlanTotal))}</p>
+              </div>
+              <div className="rounded-md border px-3 py-2">
+                <p className="text-[11px] text-muted-foreground">Production plan</p>
+                <p className="font-semibold tabular-nums">{fmt(Number(audit.invariants.productionPlanTotal))}</p>
+              </div>
+              <div className={cn(
+                "rounded-md border px-3 py-2",
+                Number(audit.invariants.cannotBeMadeTotal) > 0 ? "border-amber-300 bg-amber-50" : "border-green-300 bg-green-50",
+              )}>
+                <p className="text-[11px] text-muted-foreground">Cannot be made</p>
+                <p className="font-semibold tabular-nums">{fmt(Number(audit.invariants.cannotBeMadeTotal))}</p>
+              </div>
+              <div className="rounded-md border px-3 py-2">
+                <p className="text-[11px] text-muted-foreground">Calendar</p>
+                <p className="font-semibold tabular-nums">{audit.workingDays} days</p>
+                <p className="text-[10px] text-muted-foreground">{audit.workedSundayDates.length} worked Sundays</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {["conservation", "weeklyCapacity", "weeklySum", "dummyPriority", "temporaryPlanUnchanged"].map((name) => (
+                <Badge key={name} className={audit.invariants[name] === true ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}>
+                  {name}: {audit.invariants[name] === true ? "pass" : "fail"}
+                </Badge>
+              ))}
+            </div>
+            <div className="overflow-x-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Window</TableHead>
+                    <TableHead className="text-right">P90 / day</TableHead>
+                    <TableHead className="text-right">W1 cap / release</TableHead>
+                    <TableHead className="text-right">W2 cap / release</TableHead>
+                    <TableHead className="text-right">W3 cap / release</TableHead>
+                    <TableHead className="text-right">W4 cap / release</TableHead>
+                    <TableHead className="text-right">Residual</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {audit.categories.map((category) => {
+                    const monthlyP90CvPct = categoryMonthlyP90CvPct(category);
+                    const lowConfidenceResidual = category.cannotBeMade > 0
+                      && monthlyP90CvPct != null
+                      && monthlyP90CvPct > HIGH_MONTHLY_P90_CV_PCT;
+                    return (
+                    <TableRow key={category.category}>
+                      <TableCell className="font-medium text-xs">{category.category}</TableCell>
+                      <TableCell className="text-xs">
+                        <div>{category.selectedWindow === "recent90d" ? "Recent 90d" : "Full window"}</div>
+                        {category.driftPct !== null && <div className="text-[10px] text-muted-foreground">endpoint {category.driftPct.toFixed(1)}%</div>}
+                        {category.recoveryDriftPct != null && <div className="text-[10px] text-muted-foreground">recovery {category.recoveryDriftPct.toFixed(1)}%</div>}
+                        {category.monthlyP90CvPct != null && (
+                          <div className={cn(
+                            "text-[10px]",
+                            category.monthlyP90CvPct > HIGH_MONTHLY_P90_CV_PCT ? "font-semibold text-amber-700" : "text-muted-foreground",
+                          )}>
+                            monthly p90 CV {category.monthlyP90CvPct.toFixed(1)}%
+                            {category.monthlyP90CvPct > HIGH_MONTHLY_P90_CV_PCT ? " — volatile; window not reliable alone" : ""}
+                          </div>
+                        )}
+                        {(category.zeroProductionMonths?.length ?? 0) > 0 && (
+                          <div className="text-[10px] text-amber-700">0 production: {category.zeroProductionMonths?.join(", ")}</div>
+                        )}
+                        {category.monthly && category.monthly.length > 0 && (
+                          <div className="mt-1 flex max-w-[360px] flex-wrap gap-1">
+                            {category.monthly.map((month) => (
+                              <span
+                                key={month.month}
+                                className={cn(
+                                  "rounded border px-1 py-0.5 text-[9px] tabular-nums",
+                                  month.daysObserved === 0 ? "border-amber-200 bg-amber-50 text-amber-700" : "border-gray-200 text-muted-foreground",
+                                )}
+                                title={month.daysObserved === 0 ? "No positive-production days observed" : `${month.daysObserved} producing days`}
+                              >
+                                {month.month}: {fmt(month.p90PerDay)}{month.daysObserved === 0 ? "*" : ""}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs">{fmt(category.capacityPerDay)}</TableCell>
+                      {[0, 1, 2, 3].map((index) => (
+                        <TableCell key={index} className="text-right font-mono text-xs">
+                          {fmt(category.weeklyCapacity[index] ?? 0)} / {fmt(category.weeklyRelease[index] ?? 0)}
+                        </TableCell>
+                      ))}
+                      <TableCell className={cn("text-right font-mono text-xs", category.cannotBeMade > 0 && "text-amber-700 font-semibold")}>
+                        <div>{fmt(category.cannotBeMade)}</div>
+                        {lowConfidenceResidual && (
+                          <div className="text-[10px] font-sans font-semibold text-amber-700">low-confidence residual</div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Each weekly cell is <strong>capacity / release</strong>. The audit records the p90 window selected for every category.
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function RunsPage() {
   const month = currentMonth();
   const { segment } = useSegment();
@@ -348,14 +579,25 @@ export default function RunsPage() {
   const deleteRun = useDeletePlanRun();
   const [compareIds, setCompareIds] = useState<number[] | null>(null);
   const [driftRunId, setDriftRunId] = useState<number | null>(null);
+  const [auditRunId, setAuditRunId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [planType, setPlanType] = useState<"temporary" | "production">("temporary");
+  const [temporaryRunId, setTemporaryRunId] = useState("");
+  const [creatingPlan, setCreatingPlan] = useState(false);
   const [effectiveFrom, setEffectiveFrom] = useState(() => {
     const today = new Date().toISOString().slice(0, 10);
     return today.slice(0, 7) === month ? today : `${month}-01`;
   });
 
   const runs = (data as unknown as PlanRunSummary[] | undefined) ?? [];
+  const temporaryRuns = runs.filter((run) => run.planType === "temporary" && run.status === "finalized");
+
+  useEffect(() => {
+    if (planType === "production" && segment === "PTMT" && !temporaryRunId && temporaryRuns[0]) {
+      setTemporaryRunId(String(temporaryRuns[0].id));
+    }
+  }, [planType, segment, temporaryRunId, temporaryRuns]);
 
   const toggleSelect = (id: number) => {
     setSelectedIds((prev) => {
@@ -367,17 +609,56 @@ export default function RunsPage() {
   };
 
   const handleCreate = () => {
+    if (planType === "production" && segment === "PTMT" && !temporaryRunId) {
+      toast({
+        title: "Select a finalized Temporary Plan",
+        description: "PTMT Production Plans are fitted only from a frozen Temporary Plan.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setCreatingPlan(true);
     createRun.mutate(
-      { data: { month, segment, effectiveFrom } },
+      {
+        data: {
+          month,
+          segment,
+          effectiveFrom,
+          planType,
+          temporaryRunId: planType === "production" && temporaryRunId ? Number(temporaryRunId) : null,
+        },
+      },
       {
         onSuccess: () => {
-          toast({ title: "Plan run created", description: `Draft snapshot for ${formatMonthLabel(month)} saved.` });
+          toast({
+            title: planType === "temporary" ? "Temporary Plan frozen" : "Production Plan frozen",
+            description: planType === "temporary"
+              ? `Demand-true snapshot for ${formatMonthLabel(month)} saved.`
+              : `Machine-feasible snapshot for ${formatMonthLabel(month)} saved.`,
+          });
           refetch();
         },
         onError: () =>
-          toast({ title: "Failed to create run", description: "Check that all data sources are available.", variant: "destructive" }),
+          toast({ title: "Failed to freeze plan", description: "Check that all data sources are available.", variant: "destructive" }),
+        onSettled: () => setCreatingPlan(false),
       },
     );
+  };
+
+  const handleDownload = async (id: number, planType: string) => {
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}api/plan/runs/${id}/export/excel`);
+      if (!response.ok) throw new Error(`Export failed (${response.status})`);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `PTMT_${planType === "temporary" ? "Temporary" : "Production"}_Plan_${month}_Run_${id}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast({ title: "Export failed", description: "The frozen run could not be exported.", variant: "destructive" });
+    }
   };
 
   const handleFinalize = (id: number) => {
@@ -442,15 +723,42 @@ export default function RunsPage() {
           </div>
           <div className="flex gap-2">
             <label className="flex items-center gap-2 text-xs text-muted-foreground">
-              Effective from
-              <input
-                type="date"
-                min={`${month}-01`}
-                max={`${month}-${new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate()}`}
-                value={effectiveFrom}
-                onChange={(event) => setEffectiveFrom(event.target.value)}
+              Plan type
+              <select
+                value={planType}
+                onChange={(event) => setPlanType(event.target.value as "temporary" | "production")}
                 className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
-              />
+              >
+                <option value="temporary">Temporary Plan</option>
+                <option value="production">Production Plan</option>
+              </select>
+            </label>
+            {planType === "production" && (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                From Temporary
+                <select
+                  value={temporaryRunId}
+                  onChange={(event) => setTemporaryRunId(event.target.value)}
+                  className="h-9 max-w-40 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+                >
+                  <option value="">
+                    {segment === "PTMT" ? "Select finalized Temporary Plan" : "Live inputs (no lineage)"}
+                  </option>
+                  {temporaryRuns.map((run) => (
+                    <option key={run.id} value={run.id}>Run #{run.id}</option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              Effective from
+                <DateInput
+                  min={`${month}-01`}
+                  max={`${month}-${new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate()}`}
+                  value={effectiveFrom}
+                  onChange={setEffectiveFrom}
+                  className="h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+                />
             </label>
             {selectedIds.size >= 1 && (
               <Button
@@ -469,8 +777,11 @@ export default function RunsPage() {
                 Compare {selectedIds.size}
               </Button>
             )}
-            <Button onClick={handleCreate} disabled={createRun.isPending}>
-              {createRun.isPending ? "Running plan…" : "Run Plan now"}
+            <Button
+              onClick={handleCreate}
+              disabled={createRun.isPending || (planType === "production" && segment === "PTMT" && !temporaryRunId)}
+            >
+              {creatingPlan ? "Freezing…" : `Freeze ${planType === "temporary" ? "Temporary" : "Production"} Plan`}
             </Button>
           </div>
         </div>
@@ -484,6 +795,10 @@ export default function RunsPage() {
 
         {driftRunId !== null && (
           <DriftView runId={driftRunId} onClose={() => setDriftRunId(null)} />
+        )}
+
+        {auditRunId !== null && (
+          <Pass2AuditView runId={auditRunId} onClose={() => setAuditRunId(null)} />
         )}
 
         <Card>
@@ -503,7 +818,7 @@ export default function RunsPage() {
           <CardContent>
             {isLoading && <p className="text-sm text-gray-500">Loading runs...</p>}
             {!isLoading && runs.length === 0 && (
-              <p className="text-sm text-gray-500">No runs yet. Click "Run Plan now" to create the first snapshot.</p>
+              <p className="text-sm text-gray-500">No runs yet. Click "Freeze Temporary Plan" to create the first demand-true snapshot.</p>
             )}
             {runs.length > 0 && (
               <Table>
@@ -515,7 +830,8 @@ export default function RunsPage() {
                     <TableHead>Effective from</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Min Required</TableHead>
-                    <TableHead className="text-right">Plan (Max)</TableHead>
+                    <TableHead className="text-right">Issued Demand</TableHead>
+                    <TableHead className="text-right">Executable</TableHead>
                     <TableHead>Note</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
@@ -538,15 +854,52 @@ export default function RunsPage() {
                       <TableCell className="text-sm">{fmtDateTime(run.asOfAt)}</TableCell>
                       <TableCell className="text-sm">{run.effectiveFrom ?? "Legacy"}</TableCell>
                       <TableCell>
-                        <Badge className={cn("capitalize text-xs", statusColor(run.status))}>
-                          {run.status}
-                        </Badge>
+                        <div className="space-y-1">
+                          <Badge className={cn(
+                            "text-xs",
+                            run.planType === "temporary" ? "bg-purple-100 text-purple-800" : "bg-sky-100 text-sky-800",
+                          )}>
+                            {run.planType === "temporary" ? "Temporary" : "Production"}
+                          </Badge>
+                          <Badge className={cn("capitalize text-xs", statusColor(run.status))}>
+                            {run.status}
+                          </Badge>
+                          {run.planStatusReason && (
+                            <div
+                              className="max-w-64 rounded border border-red-200 bg-red-50 px-2 py-1 text-xs text-red-800"
+                              title={run.planStatusReason}
+                            >
+                              <strong>Source warning:</strong> {run.planStatusReason}
+                            </div>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">{fmt(run.grandMinTotal)}</TableCell>
-                      <TableCell className="text-right">{fmt(run.grandMaxTotal)}</TableCell>
+                      <TableCell className="text-right">{fmt((run as any).grandDemandTotal ?? run.grandMaxTotal)}</TableCell>
+                      <TableCell className="text-right">{(run as any).grandFittedTotal == null ? "—" : fmt((run as any).grandFittedTotal)}</TableCell>
                       <TableCell className="text-sm text-gray-500">{run.note ?? "—"}</TableCell>
                       <TableCell>
                         <div className="flex gap-1.5 justify-end">
+                              {run.planType === "production" && run.temporaryRunId != null && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1"
+                                  onClick={() => setAuditRunId(run.id)}
+                                >
+                                  <Activity className="h-3.5 w-3.5" />
+                                  Audit
+                                </Button>
+                              )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1"
+                            onClick={() => handleDownload(run.id, run.planType)}
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                            Export
+                          </Button>
                           {run.status === "draft" && (
                             <Button
                               variant="outline"

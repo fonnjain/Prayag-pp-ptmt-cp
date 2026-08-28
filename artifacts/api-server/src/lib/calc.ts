@@ -23,7 +23,7 @@ export interface CalcPlanItem {
   avg3MoSale: number;
   stock: number;
   stockNeedsReview: boolean;
-  bufferReq: number;
+  bufferReq: number | null;
   minProduction: number;
   maxProduction: number;
   pendingOrderLastMonth: number;
@@ -102,9 +102,9 @@ export function reconcilePendingPlan(
   unmatchedPendingTotal: number,
 ): PendingPlanReconciliation {
   const reconciliationItems = items.map((item): PendingPlanReconciliationItem => {
-    const baseDemandBeforeCurrentPending = round(
-      item.bufferReq - item.stock + item.pendingOrderLastMonth,
-    );
+    const baseDemandBeforeCurrentPending = item.bufferReq == null
+      ? round(item.pendingOrderLastMonth)
+      : round(item.bufferReq - item.stock + item.pendingOrderLastMonth);
     const planWithoutCurrentPending = round(Math.max(baseDemandBeforeCurrentPending, 0));
     const unclampedBaseline = round(baseDemandBeforeCurrentPending + item.pendingOrder);
     const planWithCurrentPending = round(item.maxProduction);
@@ -188,14 +188,20 @@ export function reconcilePendingPlan(
 export function computeItemPlan(
   source: ItemSourceRow,
   category: string,
-  bufferMultiplier: number,
+  bufferMultiplier: number | null,
 ): CalcPlanItem {
   const avg3MoSale = round(source.avg3MoSaleTotal3Mo / 3);
-  const bufferReq = round(avg3MoSale * bufferMultiplier);
-  const minProduction = round(Math.max(avg3MoSale - source.stock, 0));
-  const maxProduction = round(
-    Math.max(bufferReq - source.stock + source.pendingOrderLastMonth + source.pendingOrder, 0),
-  );
+  // Unclassified products are demand-only until a reviewed category and
+  // multiplier exist. Pending demand remains visible and actionable, but no
+  // guessed buffer is allowed to enter the plan.
+  const bufferReq = bufferMultiplier == null ? null : round(avg3MoSale * bufferMultiplier);
+  const confirmedDemand = round(Math.max(source.pendingOrderLastMonth + source.pendingOrder, 0));
+  const minProduction = bufferMultiplier == null
+    ? confirmedDemand
+    : round(Math.max(avg3MoSale - source.stock, 0));
+  const maxProduction = bufferMultiplier == null
+    ? confirmedDemand
+    : round(Math.max(bufferReq! - source.stock + source.pendingOrderLastMonth + source.pendingOrder, 0));
   const cover: number | "OS" = avg3MoSale > 0 ? round(source.stock / avg3MoSale) : "OS";
 
   return {

@@ -6,14 +6,28 @@ import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import { useState, useMemo, Fragment, useRef, useCallback, useEffect, createContext, useContext } from "react";
+import { useState, useMemo, Fragment, useRef, useCallback, useEffect, createContext, useContext, type FormEvent } from "react";
 import {
   LayoutDashboard, ShoppingCart, Factory, TrendingUp, Database,
   RefreshCw, ChevronRight, AlertCircle, Loader2, Layers, ChevronDown, ChevronUp,
   ClipboardList, Download, KeyRound, Plus, Trash2, Copy, Check, LogOut, Users,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, fmtDate } from "@/lib/utils";
 import SEED from "./data/seed.json";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge as UiBadge } from "@/components/ui/badge";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ActivityTracker, trackActivityAction } from "@/lib/activity-tracker";
+import { ActivityAuditPanel } from "@/components/activity-audit-panel";
 
 // ─── Query Client ─────────────────────────────────────────────────────────────
 const queryClient = new QueryClient({
@@ -172,7 +186,7 @@ function AccountControls() {
 
   return (
     <div className="fixed top-9 right-4 z-40 flex items-start gap-2">
-      {user.role === "admin" && <a href="/admin/users" className="mt-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"><Users size={13} /> Users</a>}
+      {user.role === "admin" && <Link href="/admin/users"><span className="mt-1 rounded-md border border-border bg-card px-2 py-1.5 text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"><Users size={13} /> Users</span></Link>}
       <div className="rounded-md border border-border bg-card shadow-sm">
         <div className="flex items-center gap-2 px-2 py-1">
           <span className="max-w-[180px] truncate text-xs text-muted-foreground" title={user.email}>{user.email}</span>
@@ -197,7 +211,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   if (isLoading) return <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">Loading…</div>;
   if (!user) return <LoginScreen />;
-  return <>{children}</>;
+  return <><ActivityTracker />{children}</>;
 }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -341,10 +355,15 @@ function CrossAppNav() {
   const path = window.location.pathname;
   const isOps = path.startsWith("/ops-dashboard");
   const isMon = path.startsWith("/monitoring");
+  const isProducts = path === "/products" || path.startsWith("/products/");
+  const isAlerts = path === "/alerts" || path.startsWith("/alerts/");
+  const isPlanning = !isOps && !isMon && !isProducts && !isAlerts;
   const tabs = [
     { label: "Ops Dashboard",         href: "/ops-dashboard/", active: isOps },
     { label: "Production Monitoring", href: "/monitoring/",   active: isMon },
-    { label: "Production Planning",   href: "/",              active: !isOps && !isMon },
+    { label: "Production Planning",   href: "/",              active: isPlanning },
+    { label: "Products",              href: "/products",       active: isProducts },
+    { label: "Alerts",                href: "/alerts",         active: isAlerts },
   ];
   return (
     <nav className="fixed top-0 left-0 right-0 z-30 h-9 flex items-center px-4 gap-1 border-b border-sidebar-border bg-sidebar">
@@ -369,6 +388,8 @@ function Sidebar({ fy, setFy, seg, setSeg }: {
   fy: string; setFy: (v: string) => void;
   seg: "PTMT" | "Plumbing" | "Combined"; setSeg: (v: "PTMT" | "Plumbing" | "Combined") => void;
 }) {
+  const { user } = useAuth();
+
   return (
     <aside className="fixed top-9 left-0 bottom-0 z-20 flex w-56 flex-col border-r border-sidebar-border bg-sidebar">
       <div className="px-5 pt-5 pb-4 border-b border-sidebar-border">
@@ -412,6 +433,9 @@ function Sidebar({ fy, setFy, seg, setSeg }: {
       </div>
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
         {NAV_ITEMS.map((item) => <SidebarLink key={item.href} {...item} />)}
+        {user?.role === "admin" && (
+          <SidebarLink href="/admin/users" label="User Management" icon={<Users size={15} />} />
+        )}
       </nav>
       <div className="px-4 py-3 border-t border-sidebar-border">
         <p className="text-[10px] text-muted-foreground/60 select-none">Live · Google Sheets</p>
@@ -567,7 +591,8 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
           </h2>
           {seg === "PTMT" && planPtmt && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <KpiCard label="Max Plan" value={fmtQty(planPtmt.totalPcs)} sub="pieces" color={BLUE} />
+              <KpiCard label="Issued Demand" value={fmtQty(planPtmt.demandPcs ?? planPtmt.totalPcs)} sub="pieces owed" color={BLUE} />
+              <KpiCard label="Executable" value={planPtmt.fittedPcs == null ? "—" : fmtQty(planPtmt.fittedPcs)} sub={planPtmt.fittedPcs == null ? "not scheduled" : "fitted pieces"} />
               <KpiCard label="Min Required" value={fmtQty(planPtmt.totalMin)} sub="buffer floor" />
               <KpiCard label="Categories" value={String(planPtmt.categories.length)} />
               <KpiCard label="Min/Max Ratio" value={planPtmt.totalPcs > 0 ? `${Math.round(planPtmt.totalMin / planPtmt.totalPcs * 100)}%` : "—"} />
@@ -575,7 +600,8 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
           )}
           {seg === "Plumbing" && planPlumbing && (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <KpiCard label="Production Required" value={fmtQty(planPlumbing.totalPcs)} sub="pieces" color={BLUE} />
+              <KpiCard label="Issued Demand" value={fmtQty(planPlumbing.demandPcs ?? planPlumbing.totalPcs)} sub="pieces owed" color={BLUE} />
+              <KpiCard label="Executable" value={planPlumbing.fittedPcs == null ? "—" : fmtQty(planPlumbing.fittedPcs)} sub={planPlumbing.fittedPcs == null ? "not scheduled" : "fitted pieces"} />
               <KpiCard label="Weight Required" value={fmtQty(planPlumbing.totalKg)} sub="kg" />
               <KpiCard label="Categories" value={String(planPlumbing.categories.length)} />
               <KpiCard label="Top Category" value={planPlumbing.categories[0]?.name ?? "—"} sub={fmtQty(planPlumbing.categories[0]?.pcs ?? 0) + " pcs"} />
@@ -593,7 +619,8 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
               <div className="bg-card border border-card-border rounded-lg p-4">
                 <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">PTMT</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <KpiCard label="Max Plan" value={fmtQty(planPtmt.totalPcs)} sub="pcs" color={BLUE} />
+                  <KpiCard label="Issued Demand" value={fmtQty(planPtmt.demandPcs ?? planPtmt.totalPcs)} sub="pcs owed" color={BLUE} />
+                  <KpiCard label="Executable" value={planPtmt.fittedPcs == null ? "—" : fmtQty(planPtmt.fittedPcs)} sub="fitted pcs" />
                   <KpiCard label="Min Required" value={fmtQty(planPtmt.totalMin)} sub="pcs" />
                 </div>
               </div>
@@ -602,7 +629,8 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
               <div className="bg-card border border-card-border rounded-lg p-4">
                 <p className="text-xs font-semibold text-muted-foreground mb-3 uppercase tracking-wide">Plumbing</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <KpiCard label="Production Req." value={fmtQty(planPlumbing.totalPcs)} sub="pcs" color={GREEN} />
+                  <KpiCard label="Issued Demand" value={fmtQty(planPlumbing.demandPcs ?? planPlumbing.totalPcs)} sub="pcs owed" color={GREEN} />
+                  <KpiCard label="Executable" value={planPlumbing.fittedPcs == null ? "—" : fmtQty(planPlumbing.fittedPcs)} sub="fitted pcs" />
                   <KpiCard label="Weight Req." value={fmtQty(planPlumbing.totalKg)} sub="kg" />
                 </div>
               </div>
@@ -873,6 +901,14 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
                   </AreaChart>
                 </ResponsiveContainer>
               )}
+              {orders?.orderData && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {orders.orderData.note}
+                  {orders.orderData.emptyTabs?.length > 0
+                    ? ` Empty tabs shown as zero: ${orders.orderData.emptyTabs.join(", ")}.`
+                    : ""}
+                </p>
+              )}
             </div>
           </div>
 
@@ -887,14 +923,14 @@ function OverviewPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Com
                     <div key={f.date} className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full" style={{ background: AMBER }} />
                       <span className="text-muted-foreground">{f.label}</span>
-                      <span className="text-foreground ml-auto">{f.date}</span>
+                      <span className="text-foreground ml-auto">{fmtDate(f.date)}</span>
                     </div>
                   ))}
                   {data.festivals?.holi?.slice(0, 3).map((f: any) => (
                     <div key={f.date} className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full" style={{ background: PURPLE }} />
                       <span className="text-muted-foreground">{f.label}</span>
-                      <span className="text-foreground ml-auto">{f.date}</span>
+                      <span className="text-foreground ml-auto">{fmtDate(f.date)}</span>
                     </div>
                   ))}
                 </div>
@@ -1138,7 +1174,7 @@ function PlanVsActualDetail({ data }: { data: any }) {
           <h4 className="font-semibold text-foreground mb-3 flex items-center gap-2"><Database size={14} className="text-blue-500" /> Plan Provenance</h4>
           <div className="space-y-1.5">
             <p className="text-muted-foreground"><span className="font-medium text-foreground">Working Days:</span> {data.workingDays} <span className="opacity-70">({data.workingDaysSource})</span></p>
-            <p className="text-muted-foreground"><span className="font-medium text-foreground">Production Data Through:</span> {data.lastDataDate ?? "N/A"}</p>
+            <p className="text-muted-foreground"><span className="font-medium text-foreground">Production Data Through:</span> {fmtDate(data.lastDataDate) || "N/A"}</p>
             <p className="text-muted-foreground"><span className="font-medium text-foreground">Plan Source:</span> {data.sources?.plan ?? "Unavailable"}</p>
             <p className="text-muted-foreground"><span className="font-medium text-foreground">Production Source:</span> {data.sources?.production ?? "Unavailable"}</p>
             {actualsOnly && (
@@ -1618,6 +1654,14 @@ function OrdersPage({ fy, seg }: { fy: string; seg: "PTMT" | "Plumbing" | "Combi
             <div className="mb-6 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">
               <p className="font-semibold">Order coverage is incomplete</p>
               <p className="mt-1">{data.orderData.note}</p>
+            </div>
+          )}
+          {data.orderData?.emptyTabs?.length > 0 && (
+            <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+              <p className="font-semibold">Empty source tabs are included as zero</p>
+              <p className="mt-1">
+                {data.orderData.emptyTabs.join(", ")} returned headers but no order rows. These months remain visible in the chart at ₹0 / 0 pcs.
+              </p>
             </div>
           )}
 
@@ -2365,7 +2409,7 @@ function StockBufferPage({ seg: globalSeg }: { seg?: "PTMT" | "Plumbing" | "Comb
         <div className="ml-auto flex items-center gap-3">
           {lastComputed && (
             <span className="text-[11px] text-muted-foreground">
-              Computed {new Date(lastComputed).toLocaleDateString("en-IN")}{storedZ != null ? ` · z=${storedZ}` : ""}
+               Computed {fmtDate(lastComputed)}{storedZ != null ? ` · z=${storedZ}` : ""}
             </span>
           )}
           <button
@@ -2669,6 +2713,7 @@ function ApiKeysPage() {
   const [newKey, setNewKey] = useState<{ key: string; label: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
 
   const load = useCallback(async () => {
@@ -2686,18 +2731,24 @@ function ApiKeysPage() {
   async function create() {
     if (!label.trim()) return;
     setCreating(true);
+    setError(null);
     try {
       const res = await fetch("/api/api-keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: label.trim(), description: description.trim() || undefined }),
+        body: JSON.stringify({ name: label.trim(), description: description.trim() || undefined }),
       });
       if (res.ok) {
         const created = await res.json();
-        setNewKey({ key: created.rawKey ?? created.key, label: created.label });
+        setNewKey({ key: created.rawKey ?? created.key, label: created.name });
         setLabel(""); setDescription("");
         load();
+      } else {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error || `Could not generate key (HTTP ${res.status})`);
       }
+    } catch {
+      setError("Could not reach the API server. Please try again.");
     } finally {
       setCreating(false);
     }
@@ -2732,10 +2783,6 @@ function ApiKeysPage() {
     navigator.clipboard.writeText(newKey.key);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }
-
-  function fmtDate(s: string) {
-    return s ? new Date(s).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
   }
 
   return (
@@ -2816,6 +2863,7 @@ function ApiKeysPage() {
             Generate Key
           </button>
         </div>
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </div>
 
       {/* Keys table */}
@@ -2888,6 +2936,410 @@ function ApiKeysPage() {
   );
 }
 
+// ─── Admin user management ────────────────────────────────────────────────────
+interface ManagedUser {
+  id: number;
+  email: string;
+  role: "admin" | "user" | string;
+  isActive: boolean;
+  mustChangePassword: boolean;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+type UserNotice = { kind: "success" | "error"; message: string };
+
+async function adminUsersFetch(path: string, options?: RequestInit): Promise<unknown> {
+  const response = await fetch(`/api${path}`, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(options?.headers ?? {}) },
+    ...options,
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error ?? `Request failed (HTTP ${response.status})`);
+  }
+  return response.status === 204 ? null : response.json();
+}
+
+function AdminUsersPage() {
+  const { user: me } = useAuth();
+  const [users, setUsers] = useState<ManagedUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<UserNotice | null>(null);
+  const [actionKey, setActionKey] = useState<string | null>(null);
+
+  const [showAdd, setShowAdd] = useState(false);
+  const [addEmail, setAddEmail] = useState("");
+  const [addPassword, setAddPassword] = useState("");
+  const [addRole, setAddRole] = useState<"admin" | "user">("user");
+
+  const [resetTarget, setResetTarget] = useState<ManagedUser | null>(null);
+  const [resetPassword, setResetPassword] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<ManagedUser | null>(null);
+
+  const load = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    setError(null);
+    try {
+      const data = await adminUsersFetch("/auth/users") as ManagedUser[];
+      setUsers(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load users");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (me?.role === "admin") void load();
+  }, [load, me?.role]);
+
+  if (me?.role !== "admin") {
+    return (
+      <div className="rounded-lg border border-border bg-card p-10 text-center">
+        <Users size={30} className="mx-auto mb-3 text-muted-foreground/50" />
+        <h1 className="text-lg font-semibold">Access denied</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Only administrators can manage user accounts.</p>
+      </div>
+    );
+  }
+
+  const showNotice = (kind: UserNotice["kind"], message: string) => {
+    setNotice({ kind, message });
+  };
+
+  const handleAdd = async (event: FormEvent) => {
+    event.preventDefault();
+    setActionKey("add");
+    setNotice(null);
+    try {
+      const created = await adminUsersFetch("/auth/users", {
+        method: "POST",
+        body: JSON.stringify({ email: addEmail, password: addPassword, role: addRole }),
+      }) as ManagedUser;
+      setUsers((current) => [...current, created]);
+      setShowAdd(false);
+      setAddEmail("");
+      setAddPassword("");
+      setAddRole("user");
+      void trackActivityAction("user_created");
+      showNotice("success", `${created.email} was added. They must change the initial password after signing in.`);
+    } catch (err) {
+      showNotice("error", err instanceof Error ? err.message : "Failed to add user");
+    } finally {
+      setActionKey(null);
+    }
+  };
+
+  const handleRoleToggle = async (managedUser: ManagedUser) => {
+    const nextRole = managedUser.role === "admin" ? "user" : "admin";
+    setActionKey(`role-${managedUser.id}`);
+    setNotice(null);
+    try {
+      const updated = await adminUsersFetch(`/auth/users/${managedUser.id}/role`, {
+        method: "PATCH",
+        body: JSON.stringify({ role: nextRole }),
+      }) as ManagedUser;
+      setUsers((current) => current.map((item) => item.id === managedUser.id ? updated : item));
+      void trackActivityAction("user_role_changed");
+      showNotice("success", `${managedUser.email} is now ${nextRole === "admin" ? "an administrator" : "a normal user"}.`);
+    } catch (err) {
+      showNotice("error", err instanceof Error ? err.message : "Failed to update role");
+    } finally {
+      setActionKey(null);
+    }
+  };
+
+  const handleResetPassword = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!resetTarget) return;
+    setActionKey(`reset-${resetTarget.id}`);
+    setNotice(null);
+    try {
+      await adminUsersFetch(`/auth/users/${resetTarget.id}/reset-password`, {
+        method: "POST",
+        body: JSON.stringify({ newPassword: resetPassword }),
+      });
+      const email = resetTarget.email;
+      setResetTarget(null);
+      setResetPassword("");
+      void trackActivityAction("password_reset");
+      showNotice("success", `${email}’s password was reset. Their active sessions were signed out.`);
+    } catch (err) {
+      showNotice("error", err instanceof Error ? err.message : "Failed to reset password");
+    } finally {
+      setActionKey(null);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setActionKey(`delete-${deleteTarget.id}`);
+    setNotice(null);
+    try {
+      await adminUsersFetch(`/auth/users/${deleteTarget.id}`, { method: "DELETE" });
+      const email = deleteTarget.email;
+      setUsers((current) => current.filter((item) => item.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      void trackActivityAction("user_deleted");
+      showNotice("success", `${email} was removed.`);
+    } catch (err) {
+      showNotice("error", err instanceof Error ? err.message : "Failed to remove user");
+    } finally {
+      setActionKey(null);
+    }
+  };
+
+  const activeCount = users.filter((item) => item.isActive).length;
+  const adminCount = users.filter((item) => item.role === "admin" && item.isActive).length;
+  const pendingPasswordCount = users.filter((item) => item.mustChangePassword).length;
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <Users size={21} className="text-primary" />
+            <h1 className="text-2xl font-bold text-foreground">User Management</h1>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Manage access to the Prayag operations dashboards.
+          </p>
+        </div>
+        <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1.5 self-start">
+          <Plus size={15} /> Add user
+        </Button>
+      </div>
+
+      {notice && (
+        <div
+          role="status"
+          className={cn(
+            "flex items-start justify-between gap-3 rounded-md border px-4 py-3 text-sm",
+            notice.kind === "success"
+              ? "border-green-200 bg-green-50 text-green-800"
+              : "border-red-200 bg-red-50 text-red-800",
+          )}
+        >
+          <span>{notice.message}</span>
+          <button
+            type="button"
+            onClick={() => setNotice(null)}
+            className="shrink-0 text-xs font-medium opacity-70 hover:opacity-100"
+            aria-label="Dismiss notification"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <KpiCard label="Active accounts" value={String(activeCount)} sub={`${users.length} total accounts`} color={GREEN} />
+        <KpiCard label="Active admins" value={String(adminCount)} sub="administrator access" color={PURPLE} />
+        <KpiCard label="Password setup pending" value={String(pendingPasswordCount)} sub="must change on sign-in" color={AMBER} />
+      </div>
+
+      <div className="overflow-hidden rounded-lg border border-card-border bg-card">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold">Accounts</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">Passwords are never displayed.</p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void load(true)}
+            disabled={refreshing}
+            className="gap-1.5"
+          >
+            <RefreshCw size={13} className={refreshing ? "animate-spin" : ""} /> Refresh
+          </Button>
+        </div>
+
+        {error && (
+          <div className="m-4 flex items-start justify-between gap-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            <span>{error}</span>
+            <Button variant="outline" size="sm" onClick={() => void load(true)}>Retry</Button>
+          </div>
+        )}
+
+        {loading ? (
+          <LoadingState label="Loading user accounts…" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="border-b border-border bg-muted/30 text-left">
+                <tr>
+                  <th className="px-4 py-3 font-medium text-muted-foreground">Account</th>
+                  <th className="px-4 py-3 font-medium text-muted-foreground">Role</th>
+                  <th className="px-4 py-3 font-medium text-muted-foreground">Status</th>
+                  <th className="px-4 py-3 font-medium text-muted-foreground">Created</th>
+                  <th className="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {users.map((managedUser) => {
+                  const isSelf = managedUser.id === me.id;
+                  const roleBusy = actionKey === `role-${managedUser.id}`;
+                  const resetBusy = actionKey === `reset-${managedUser.id}`;
+                  const deleteBusy = actionKey === `delete-${managedUser.id}`;
+                  return (
+                    <tr key={managedUser.id} className="hover:bg-muted/20">
+                      <td className="px-4 py-3">
+                        <p className="font-medium text-foreground">{managedUser.email}</p>
+                        {managedUser.mustChangePassword && (
+                          <p className="mt-0.5 text-[11px] text-amber-700">Initial password change required</p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <UiBadge variant={managedUser.role === "admin" ? "default" : "secondary"}>
+                          {managedUser.role === "admin" ? "Admin" : "User"}
+                        </UiBadge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <UiBadge variant={managedUser.isActive ? "secondary" : "destructive"}>
+                          {managedUser.isActive ? "Active" : "Inactive"}
+                        </UiBadge>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-xs text-muted-foreground">
+                        {fmtDate(managedUser.createdAt)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => void handleRoleToggle(managedUser)}
+                            disabled={isSelf || roleBusy || actionKey !== null}
+                            className="h-7 gap-1 px-2 text-xs"
+                            title={isSelf ? "You cannot change your own role" : undefined}
+                          >
+                            {roleBusy ? <Loader2 size={12} className="animate-spin" /> : managedUser.role === "admin" ? "Make user" : "Make admin"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => { setResetTarget(managedUser); setResetPassword(""); }}
+                            disabled={actionKey !== null}
+                            className="h-7 gap-1 px-2 text-xs"
+                          >
+                            {resetBusy ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />} Reset
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setDeleteTarget(managedUser)}
+                            disabled={isSelf || deleteBusy || actionKey !== null}
+                            className="h-7 px-2 text-destructive hover:text-destructive"
+                            title={isSelf ? "You cannot remove your own account" : "Remove user"}
+                          >
+                            {deleteBusy ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {users.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-10 text-center text-sm text-muted-foreground">No user accounts found.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      <ActivityAuditPanel users={users} />
+
+      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add user</DialogTitle></DialogHeader>
+          <DialogDescription className="sr-only">Create an account with an initial password and access role.</DialogDescription>
+          <form id="ops-add-user-form" onSubmit={(event) => { void handleAdd(event); }} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="ops-add-email">Email address</Label>
+              <Input id="ops-add-email" type="email" value={addEmail} onChange={(event) => setAddEmail(event.target.value)} required disabled={actionKey === "add"} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ops-add-password">Initial password</Label>
+              <Input id="ops-add-password" type="password" value={addPassword} onChange={(event) => setAddPassword(event.target.value)} required minLength={8} disabled={actionKey === "add"} placeholder="Minimum 8 characters" />
+              <p className="text-xs text-muted-foreground">The user will be prompted to change it after first sign-in.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Role</Label>
+              <div className="flex gap-4">
+                {(["user", "admin"] as const).map((role) => (
+                  <label key={role} className="flex cursor-pointer items-center gap-1.5 text-sm">
+                    <input type="radio" name="ops-add-role" value={role} checked={addRole === role} onChange={() => setAddRole(role)} disabled={actionKey === "add"} />
+                    {role === "admin" ? "Administrator" : "Normal user"}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </form>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAdd(false)} disabled={actionKey === "add"}>Cancel</Button>
+            <Button type="submit" form="ops-add-user-form" disabled={actionKey === "add"}>
+              {actionKey === "add" ? "Adding…" : "Add user"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!resetTarget} onOpenChange={(open) => { if (!open) setResetTarget(null); }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Reset password</DialogTitle></DialogHeader>
+          <DialogDescription>Set a new initial password for {resetTarget?.email}. They will need to sign in again and change it.</DialogDescription>
+          <form id="ops-reset-password-form" onSubmit={(event) => { void handleResetPassword(event); }} className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="ops-reset-password">New password</Label>
+              <Input id="ops-reset-password" type="password" value={resetPassword} onChange={(event) => setResetPassword(event.target.value)} required minLength={8} disabled={!!resetTarget && actionKey === `reset-${resetTarget.id}`} placeholder="Minimum 8 characters" />
+            </div>
+          </form>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setResetTarget(null)} disabled={actionKey?.startsWith("reset-") ?? false}>Cancel</Button>
+            <Button type="submit" form="ops-reset-password-form" disabled={actionKey?.startsWith("reset-") ?? false}>
+              {actionKey?.startsWith("reset-") ? "Resetting…" : "Reset password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove {deleteTarget?.email}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This permanently deletes the account and signs out its active sessions.
+              {deleteTarget?.role === "admin" && " The API will prevent removing the last active administrator."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={actionKey?.startsWith("delete-") ?? false}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDelete();
+              }}
+              disabled={actionKey?.startsWith("delete-") ?? false}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {actionKey?.startsWith("delete-") ? "Removing…" : "Remove account"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
 // ─── Layout ───────────────────────────────────────────────────────────────────
 function AppLayout({ children, fy, setFy, seg, setSeg }: {
   children: React.ReactNode;
@@ -2922,6 +3374,7 @@ function AppRouter() {
         <Route path="/sales"        component={() => <SalesPage fy={fy} seg={seg} />} />
         <Route path="/sources"      component={() => <SourcesPage />} />
         <Route path="/api-keys"     component={() => <ApiKeysPage />} />
+        <Route path="/admin/users"  component={() => <AdminUsersPage />} />
         <Route component={() => (
           <div className="text-center py-20">
             <h2 className="text-lg font-semibold text-foreground">Page not found</h2>

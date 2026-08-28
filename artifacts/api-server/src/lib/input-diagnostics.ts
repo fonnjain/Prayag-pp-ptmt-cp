@@ -19,6 +19,40 @@ export interface PendingCoverageDiagnostics {
   unmatchedRows: PendingCoverageRow[];
 }
 
+export interface PendingPlanResolutionRow {
+  segment: string;
+  sourceRole: string;
+  code: string;
+  colour: string;
+  description: string;
+  quantity: number;
+  disposition: "unmatched" | "resolution-loss";
+  reason: "NO_ROSTER_MATCH" | "COLOUR_MISMATCH" | "AMBIGUOUS_ROSTER_MATCH";
+}
+
+export interface PendingPlanDiagnostics {
+  sourceRole: string;
+  sourceRowCount: number;
+  sourceQuantity: number;
+  rosterMatchedQuantity: number;
+  planResolvedQuantity: number;
+  unmatchedQuantity: number;
+  resolutionLossQuantity: number;
+  rosterMatchedRowCount: number;
+  planResolvedRowCount: number;
+  unmatchedRowCount: number;
+  resolutionLossRowCount: number;
+  unmatchedRows: PendingPlanResolutionRow[];
+  resolutionLossRows: PendingPlanResolutionRow[];
+  reconciliation: {
+    sourceQuantity: number;
+    joinedQuantity: number;
+    explainedExclusionQuantity: number;
+    unexplainedResidual: number;
+    reconciled: boolean;
+  };
+}
+
 export interface InputReadDiagnostics {
   source: string;
   uploadId: number | null;
@@ -34,6 +68,7 @@ export interface InputReadDiagnostics {
   missingRequiredFields: InputFieldRole[];
   reasons: string[];
   pendingCoverage?: PendingCoverageDiagnostics;
+  pendingPlan?: PendingPlanDiagnostics;
   error?: string;
 }
 

@@ -20,6 +20,9 @@ import plantPlanUploadRouter from "./plant-plan-upload";
 import authRouter from "./auth";
 import { requireSession } from "./session-middleware";
 import apiV1Router from "./api-v1";
+import masterProductsRouter from "./master-products";
+import alertsRouter from "./alerts";
+import activityAuditRouter from "./activity-audit";
 
 const router: IRouter = Router();
 
@@ -43,6 +46,7 @@ router.get("/healthz", (_req, res) => {
 });
 
 router.use(authRouter);
+router.use(activityAuditRouter);
 // The records feed is machine-to-machine and has its own managed Bearer API
 // key. Browser-facing plant-live reads are mounted below requireSession.
 router.use(plantLiveMachineRouter);
@@ -64,6 +68,8 @@ router.use(opsRouter);
 router.use(correctiveRouter);
 router.use(capacityRouter);
 router.use(apiKeysRouter);
+router.use(masterProductsRouter);
+router.use(alertsRouter);
 router.use(sheetConfigRouter);
 router.use("/monitoring", plantPlanUploadRouter);
 

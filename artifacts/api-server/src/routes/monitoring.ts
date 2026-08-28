@@ -430,7 +430,16 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
   }
 
   // ── PTMT: piece-based plan targets + piece-based actuals from ANUJ Production ─
-  const bundle = await buildMonitoringBundle(month);
+  // Keep input failures consistent with the Plumbing monitoring branch. In
+  // particular, pending-join reconciliation must remain a named 422 rather
+  // than becoming an opaque 500 from this route.
+  let bundle: MonitoringBundle;
+  try {
+    bundle = await buildMonitoringBundle(month);
+  } catch (err) {
+    handlePlanError(res, err);
+    return;
+  }
   res.json({
     month,
     segment: "PTMT",

@@ -1,9 +1,19 @@
 import { Router, type IRouter } from "express";
-import { createHash } from "node:crypto";
-import { db, bufferCategoriesTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, planRunInputSnapshotsTable, correctivePlanRunsTable, plantMonthSnapshotsTable } from "@workspace/db";
-import { and, eq, desc, ne, sql } from "drizzle-orm";
+import { db, bufferCategoriesTable, categoryCapacityTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, planRunInputSnapshotsTable, pendingReadSnapshotsTable, correctivePlanRunsTable, plantMonthSnapshotsTable, planScheduleResultsTable, plumbingMachineCapacityTable } from "@workspace/db";
+import { and, asc, eq, desc, ne, sql } from "drizzle-orm";
 import { buildPlanItems, loadLatestUploadSnapshotByKind, type UploadRowsSnapshot, handlePlanError } from "./plan";
-import { snapshotPendingOrderRows } from "../lib/sheets";
+import {
+  fetchPlumbingBomWeights,
+  fetchLivePendingOrderTotals,
+  normalizeCodeStrict,
+  pendingOrderRecordsFromRows,
+  pendingPlanDiagnosticsFromParsedRows,
+  type PendingOrderRow,
+} from "../lib/sheets";
+import {
+  livePendingFailureDiagnostics,
+  pendingReadSnapshotValues,
+} from "../lib/pending-read-snapshot";
 import { summarizePlan } from "../lib/calc";
 import {
   buildPlanRunInputSnapshot,
@@ -18,6 +28,14 @@ import {
   setPlanVersionSnapshotEffectiveDate,
   validateNewVersionDate,
 } from "../lib/plant-plan-timeline";
+import { loadSession, requireAdmin } from "./session-middleware";
+import { type FrozenPlanRow } from "../lib/excel-export";
+import { exportFrozenRunExcel } from "../lib/frozen-plan-export";
+import { exportTimestamp } from "../lib/export-filename";
+import { loadStoredDailyActualsForSegment } from "../lib/plant-ingestion";
+import { isSunday } from "../lib/working-days";
+import { runPtmtPass2, type PtmtPass2Result, PtmtPass2InputError } from "../lib/ptmt-pass2-engine";
+import { runPlumbingSchedule, PLUMBING_SCHEDULE_KINDS, type PlumbingScheduleDemand } from "../lib/plumbing-scheduler";
 
 const router: IRouter = Router();
 
@@ -26,8 +44,8 @@ function pendingSourceKinds(segment: string): {
   lastMonth: string;
 } {
   return segment === "Plumbing"
-    ? { current: "pending_order_live_sheet", lastMonth: "plumbing_fg_stock" }
-    : { current: "pending_order_live_sheet", lastMonth: "last_month_pending" };
+    ? { current: "pending_orders", lastMonth: "plumbing_fg_stock" }
+    : { current: "pending_orders", lastMonth: "last_month_pending" };
 }
 
 type PendingSourceSnapshot = UploadRowsSnapshot & { sourceContentHash?: string };
@@ -37,27 +55,71 @@ async function loadPendingSources(segment: string): Promise<{
   lastMonth: PendingSourceSnapshot;
 }> {
   const kinds = pendingSourceKinds(segment);
-  const [liveRows, lastMonth] = await Promise.all([
-    snapshotPendingOrderRows(segment),
+  const [current, lastMonth] = await Promise.all([
+    loadLatestUploadSnapshotByKind(kinds.current),
     loadLatestUploadSnapshotByKind(kinds.lastMonth),
   ]);
-  const currentRows = liveRows.map((row) => ({
-    "Item Code": row.catNo,
-    "Colour": row.colour,
-    "Bal. Qty": row.qty,
-    "Segment": segment,
-  }));
   return {
-    current: {
-      id: null,
-      filename: "Pending order / report",
-      rowCount: currentRows.length,
-      uploadedAt: null,
-      rows: currentRows,
-      sourceContentHash: createHash("sha256").update(JSON.stringify(liveRows)).digest("hex"),
-    },
+    current,
     lastMonth,
   };
+}
+
+function firstValue(row: Record<string, unknown>, aliases: string[]): unknown {
+  return aliases
+    .map((alias) => row[alias])
+    .find((value) => value !== undefined && value !== null && value !== "");
+}
+
+function asNumber(value: unknown): number {
+  return typeof value === "number"
+    ? value
+    : Number(String(value ?? "0").replace(/,/g, "")) || 0;
+}
+
+function pendingSourceRowsForSegment(
+  rows: Record<string, unknown>[],
+  segment: string,
+): Record<string, unknown>[] {
+  const acceptedSegments = segment === "Plumbing"
+    ? new Set(["PLUMBING", "P", "PL", "AGRI", "CPVC", "UPVC", "SWR"])
+    : new Set(["PTMT", "PT"]);
+  return rows.filter((row) => acceptedSegments.has(
+    String(firstValue(row, ["Segment", "SEGMENT", "Group", "GROUP"]) ?? "").trim().toUpperCase(),
+  ));
+}
+
+function pendingRowsForSnapshot(
+  segment: string,
+  sourceRole: "pending_current" | "pending_last_month",
+  rows: Record<string, unknown>[],
+): PendingOrderRow[] {
+  if (sourceRole === "pending_current") {
+    return pendingOrderRecordsFromRows(rows, segment);
+  }
+
+  const isPlumbing = segment === "Plumbing";
+  const codeAliases = isPlumbing
+    ? ["Item Code"]
+    : ["Item Code", "Cat No", "Cat-No", "Old Item Code"];
+  const colourAliases = isPlumbing ? [] : ["Colour", "Color"];
+  const quantityAliases = isPlumbing
+    ? ["Net Stock"]
+    : ["Qty", "Qty.", "Balance_Qty", "Balance Qty"];
+
+  return rows.flatMap((row): PendingOrderRow[] => {
+    const rawCode = firstValue(row, codeAliases);
+    if (rawCode === undefined || String(rawCode).trim() === "") return [];
+    const rawQuantity = asNumber(firstValue(row, quantityAliases));
+    const quantity = isPlumbing ? Math.max(-rawQuantity, 0) : rawQuantity;
+    return [{
+      segment,
+      catNo: String(rawCode).trim(),
+      colour: String(firstValue(row, colourAliases) ?? "").trim(),
+      description: String(firstValue(row, ["Description", "Item Description", "Product Name", "Item Name"]) ?? "").trim(),
+      qty: quantity,
+    }];
+  });
 }
 
 function sameUploadSnapshot(a: PendingSourceSnapshot, b: PendingSourceSnapshot): boolean {
@@ -78,7 +140,7 @@ function makePendingSnapshotPayloads(
     code: ["Old Item Code", "Item Code", "Item No."],
     colour: ["Colour", "Color", "COLOR", "COLUOR"],
     quantity: segment === "PTMT"
-      ? ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty", "Qty"]
+      ? ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty"]
       : ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty"],
   };
   const lastMonthAliases = segment === "PTMT"
@@ -93,9 +155,12 @@ function makePendingSnapshotPayloads(
       quantity: ["Net Stock"],
     };
 
-  const currentRows = sources.current.rows;
+  // DATA.xlsx is a global upload. Keep the run snapshot scoped to the same
+  // segment rows that pendingOrderTotalsFromRows() gives to the plan builder;
+  // otherwise pendingSnapshotsTable would mix PTMT and Plumbing demand.
+  const currentRows = pendingSourceRowsForSegment(sources.current.rows, segment);
   const currentDiagnosticNotes = currentRows.length === 0
-    ? [`live Pending order report returned no ${segment} rows; pending contributes 0 for this segment`]
+    ? [`uploaded pending order source returned no ${segment} rows; pending contributes 0 for this segment`]
     : [];
   return [
     buildPlanRunInputSnapshot({
@@ -121,25 +186,119 @@ function makePendingSnapshotPayloads(
 
 function makeSummary(run: typeof planRunsTable.$inferSelect, items: typeof planRunResultsTable.$inferSelect[]) {
   const grandMinTotal = items.reduce((s, r) => s + Math.max(r.minProduction, 0), 0);
-  const grandMaxTotal = items.reduce((s, r) => s + Math.max(r.productionPlan, 0), 0);
+  const grandDemandTotal = items.reduce((s, r) => s + Math.max(r.demandPlan ?? r.productionPlan, 0), 0);
+  const grandFittedTotal = run.planType === "production"
+    ? items.reduce((s, r) => s + Math.max(r.productionPlan, 0), 0)
+    : null;
   return {
     id: run.id,
     month: run.month,
     segment: run.segment,
+    planType: run.planType,
+    temporaryRunId: run.temporaryRunId ?? null,
     asOfAt: run.asOfAt,
     status: run.status,
     effectiveFrom: run.effectiveFrom ?? null,
     note: run.note ?? null,
+    planStatusReason: run.planStatusReason ?? null,
+    pass2: run.pass2Json ?? null,
     itemCount: items.length,
     grandMinTotal: Math.round(grandMinTotal),
-    grandMaxTotal: Math.round(grandMaxTotal),
+    // Compatibility alias: the old Max total is the issued demand total.
+    grandMaxTotal: Math.round(grandDemandTotal),
+    grandDemandTotal: Math.round(grandDemandTotal),
+    grandFittedTotal: grandFittedTotal === null ? null : Math.round(grandFittedTotal),
+    demandBasis: "demand",
+    fittedBasis: grandFittedTotal === null ? null : "executable",
     createdAt: run.createdAt,
   };
 }
 
+function pairRunInputsWithResults(
+  results: typeof planRunResultsTable.$inferSelect[],
+  inputs: typeof planRunInputsTable.$inferSelect[],
+): Array<{
+  result: typeof planRunResultsTable.$inferSelect;
+  input: typeof planRunInputsTable.$inferSelect | undefined;
+}> {
+  // plan_run_inputs intentionally has no category column. Inputs and results
+  // are inserted from the same planItems array, so their per-run id order is
+  // the only lossless way to pair duplicate code/colour rows.
+  const orderedResults = [...results].sort((a, b) => a.id - b.id);
+  const orderedInputs = [...inputs].sort((a, b) => a.id - b.id);
+  return orderedResults.map((result, index) => ({
+    result,
+    input: orderedInputs[index],
+  }));
+}
+
+function frozenRows(
+  results: typeof planRunResultsTable.$inferSelect[],
+  inputs: typeof planRunInputsTable.$inferSelect[],
+  planType: "temporary" | "production",
+): FrozenPlanRow[] {
+  return pairRunInputsWithResults(results, inputs).map(({ result, input }) => {
+    const dummy = Math.max(input?.pendingLastMonth ?? 0, 0);
+    const orders = Math.max(input?.pendingCurrent ?? 0, 0);
+    const buffer = result.bufferReq == null ? 0 : Math.max(result.bufferReq - (input?.stock ?? 0), 0);
+    return {
+      itemCode: result.itemCode,
+      colour: result.colour,
+      category: result.category,
+      avg3MoSale: input?.avg3MoSale ?? 0,
+      stock: input?.stock ?? 0,
+      pendingCurrent: input?.pendingCurrent ?? 0,
+      pendingLastMonth: input?.pendingLastMonth ?? 0,
+      bufferReq: result.bufferReq,
+      minProduction: result.minProduction,
+      productionPlan: result.productionPlan,
+      temporaryPlan: result.temporaryPlan || (planType === "temporary" ? result.productionPlan : 0),
+      cannotBeMade: result.cannotBeMade,
+      dummy,
+      orders,
+      buffer,
+      material: result.material,
+      weightKg: result.weightKg,
+      urgencyRank: result.urgencyRank,
+      releaseWeek: result.releaseWeek,
+      w1: result.w1,
+      w2: result.w2,
+      w3: result.w3,
+      w4: result.w4,
+    };
+  });
+}
+
+export function parseStatusReasonInput(
+  body: unknown,
+): { ok: true; reason: string } | { ok: false; error: string } {
+  if (!body || typeof body !== "object" || !("planStatusReason" in body)) {
+    return { ok: false, error: "planStatusReason is required" };
+  }
+  const value = (body as { planStatusReason?: unknown }).planStatusReason;
+  if (typeof value !== "string") {
+    return { ok: false, error: "planStatusReason must be a string" };
+  }
+  const reason = value.trim();
+  if (!reason) {
+    return { ok: false, error: "planStatusReason must not be empty" };
+  }
+  if (reason.length > 4_000) {
+    return { ok: false, error: "planStatusReason must be at most 4000 characters" };
+  }
+  return { ok: true, reason };
+}
+
 /** POST /api/plan/runs — create a draft run, snapshot all inputs & computed results */
 router.post("/plan/runs", async (req, res): Promise<void> => {
-  const { month, note, segment: segmentRaw, effectiveFrom: effectiveFromRaw } = req.body ?? {};
+  const {
+    month,
+    note,
+    segment: segmentRaw,
+    effectiveFrom: effectiveFromRaw,
+    planType: planTypeRaw,
+    temporaryRunId: temporaryRunIdRaw,
+  } = req.body ?? {};
 
   // Normalise segment casing the same way GET /plan does, then validate.
   // A casing mismatch previously produced a silent zero-item run that was
@@ -161,35 +320,230 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
     return;
   }
 
+  const planType = planTypeRaw === "temporary" ? "temporary" : "production";
+  const temporaryRunId = temporaryRunIdRaw == null ? null : Number(temporaryRunIdRaw);
+  if (temporaryRunIdRaw != null && (temporaryRunId === null || !Number.isInteger(temporaryRunId) || temporaryRunId <= 0)) {
+    res.status(400).json({ error: "temporaryRunId must be a positive integer" });
+    return;
+  }
+  if (planType === "temporary" && temporaryRunId != null) {
+    res.status(400).json({ error: "A Temporary Plan cannot have a temporaryRunId lineage" });
+    return;
+  }
+  if (planType === "production" && segment === "PTMT" && temporaryRunId == null) {
+    res.status(400).json({
+      error: "TEMPORARY_PLAN_REQUIRED",
+      message: "PTMT Production Plans must be fitted from a finalized Temporary Plan.",
+    });
+    return;
+  }
+  if (planType === "production" && temporaryRunId != null) {
+    const [temporaryRun] = await db.select({
+      id: planRunsTable.id,
+      month: planRunsTable.month,
+      segment: planRunsTable.segment,
+      planType: planRunsTable.planType,
+      status: planRunsTable.status,
+    }).from(planRunsTable).where(eq(planRunsTable.id, temporaryRunId));
+    if (!temporaryRun || temporaryRun.planType !== "temporary") {
+      res.status(400).json({ error: `Temporary Plan #${temporaryRunId} was not found` });
+      return;
+    }
+    if (temporaryRun.month !== month || temporaryRun.segment !== segment) {
+      res.status(400).json({ error: "The Temporary Plan lineage must use the same month and segment" });
+      return;
+    }
+    if (temporaryRun.status !== "finalized") {
+      res.status(422).json({
+        error: "TEMPORARY_PLAN_NOT_FINALIZED",
+        message: `Temporary Plan #${temporaryRunId} must be finalized before a Production Plan can be fitted.`,
+        temporaryRunId,
+      });
+      return;
+    }
+  }
+
   // Read current buffer factors for the snapshot (scoped to segment)
   const bufferRows = await db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment));
   const factorsJson: Record<string, number> = {};
   for (const b of bufferRows) factorsJson[b.name] = b.multiplier;
 
-  // Read the pending sources before and after the build. The plan builder reads
-  // these same uploads internally; checking the source identity around the
-  // build prevents a replacement upload from being paired with the wrong
-  // frozen plan run.
-  const pendingSourcesBefore = await loadPendingSources(segment);
+  // A PTMT Production Plan is fitted from the finalized Temporary Plan. It
+  // deliberately does not rebuild the live plan inputs, so a later upload
+  // cannot silently change the demand being fitted.
   let planItems: Awaited<ReturnType<typeof buildPlanItems>>;
+  let pendingSnapshotPayloads: PlanRunInputSnapshotPayload[];
+  let pass2Summary: PtmtPass2Result | null = null;
+  let livePendingRead: Awaited<ReturnType<typeof fetchLivePendingOrderTotals>> | null = null;
+  let livePendingReadError: unknown = null;
   try {
-    planItems = await buildPlanItems(month, segment);
-  } catch (err) {
-    handlePlanError(res, err); // 422 naming the missing/broken upload
-    return;
+    // Keep this audit read independent from the source used by planning. The
+    // plan still consumes its configured upload/live source; this captures the
+    // contemporaneous live report without changing that decision.
+    livePendingRead = await fetchLivePendingOrderTotals(segment);
+  } catch (error) {
+    livePendingReadError = error;
   }
-  const pendingSourcesAfter = await loadPendingSources(segment);
-  if (
-    !sameUploadSnapshot(pendingSourcesBefore.current, pendingSourcesAfter.current)
-    || !sameUploadSnapshot(pendingSourcesBefore.lastMonth, pendingSourcesAfter.lastMonth)
-  ) {
-    res.status(409).json({
-      error: "PENDING_SOURCE_CHANGED",
-      message: "A pending-order source changed while the plan was being built. Retry to create a run with one consistent input snapshot.",
-      segment,
-      month,
-    });
-    return;
+
+  if (planType === "production" && segment === "PTMT" && temporaryRunId != null) {
+    try {
+      const [temporaryResults, temporaryInputs, temporarySnapshots] = await Promise.all([
+        db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, temporaryRunId)).orderBy(asc(planRunResultsTable.id)),
+        db.select().from(planRunInputsTable).where(eq(planRunInputsTable.runId, temporaryRunId)).orderBy(asc(planRunInputsTable.id)),
+        db.select().from(planRunInputSnapshotsTable).where(eq(planRunInputSnapshotsTable.runId, temporaryRunId)),
+      ]);
+      if (temporaryResults.length === 0) {
+        throw new PtmtPass2InputError(`Temporary Plan #${temporaryRunId} has no item results to fit.`);
+      }
+
+      const capacityRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, "PTMT"));
+      const storedActuals = await loadStoredDailyActualsForSegment(month, "PTMT");
+      const workedSundayDates = [...new Set(
+        storedActuals.actuals.filter((actual) => actual.qty > 0 && isSunday(actual.date)).map((actual) => actual.date),
+      )];
+      pass2Summary = runPtmtPass2(
+        month,
+        pairRunInputsWithResults(temporaryResults, temporaryInputs).map(({ result, input }) => {
+          return {
+            itemCode: result.itemCode,
+            colour: result.colour,
+            category: result.category,
+            avg3MoSale: input?.avg3MoSale ?? 0,
+            stock: input?.stock ?? 0,
+            pendingCurrent: input?.pendingCurrent ?? 0,
+            pendingLastMonth: input?.pendingLastMonth ?? 0,
+            bufferReq: result.bufferReq,
+            minProduction: result.minProduction,
+            temporaryPlan: Math.max(
+              Number((result as typeof result & { temporaryPlan?: number }).temporaryPlan || result.productionPlan),
+              0,
+            ),
+          };
+        }),
+        capacityRows,
+        workedSundayDates,
+      );
+
+      const temporaryPairs = pairRunInputsWithResults(temporaryResults, temporaryInputs);
+      planItems = temporaryPairs.map(({ result, input }, index) => {
+        const fitted = pass2Summary!.items[index];
+        if (!fitted || fitted.itemCode !== result.itemCode || fitted.colour !== result.colour || fitted.category !== result.category) {
+          throw new PtmtPass2InputError(`Temporary Plan item ${result.itemCode} could not be fitted at ordinal ${index}.`);
+        }
+        return {
+          itemCode: result.itemCode,
+          colour: result.colour,
+          category: result.category,
+          avg3MoSale: input?.avg3MoSale ?? 0,
+          stock: input?.stock ?? 0,
+          pendingOrder: input?.pendingCurrent ?? 0,
+          pendingOrderLastMonth: input?.pendingLastMonth ?? 0,
+          bufferReq: result.bufferReq,
+          minProduction: result.minProduction,
+          maxProduction: fitted.productionPlan,
+          week: fitted.releaseWeek,
+          w1: fitted.w1,
+          w2: fitted.w2,
+          w3: fitted.w3,
+          w4: fitted.w4,
+        };
+      }) as Awaited<ReturnType<typeof buildPlanItems>>;
+
+      // Keep the Temporary Plan's original upload provenance attached to the
+      // Production Plan; the production run is still reproducible if uploads
+      // are later replaced or deleted.
+      pendingSnapshotPayloads = temporarySnapshots.map((snapshot) => ({
+        segment: snapshot.segment,
+        sourceRole: snapshot.sourceRole as "pending_current" | "pending_last_month",
+        sourceKind: snapshot.sourceKind,
+        sourceUploadId: snapshot.sourceUploadId,
+        sourceFilename: snapshot.sourceFilename,
+        sourceUploadedAt: snapshot.sourceUploadedAt,
+        rawRows: snapshot.rawRowsJson,
+        parsedRows: snapshot.parsedRowsJson,
+        diagnostics: snapshot.diagnosticsJson as unknown as PlanRunInputSnapshotPayload["diagnostics"],
+      }));
+      if (pendingSnapshotPayloads.length === 0) {
+        // Runs created before input-snapshot capture are still valid frozen
+        // baselines. Preserve their frozen input rows with an explicit
+        // "legacy source unavailable" diagnostic instead of reading live data.
+        const parsedRows = temporaryInputs.map((input) => ({
+          itemCode: input.itemCode,
+          colour: input.colour,
+          qty: input.pendingCurrent,
+        }));
+        const legacyDiagnostics = {
+          source: "legacy Temporary Plan inputs",
+          uploadId: null,
+          filename: null,
+          rowCount: temporaryInputs.length,
+          codeRows: temporaryInputs.length,
+          quantityRows: temporaryInputs.length,
+          recognizedRows: temporaryInputs.length,
+          skippedRows: 0,
+          resolvedFields: { code: null, colour: null, quantity: null },
+          acceptedAliases: { code: [], colour: [], quantity: [] },
+          presentHeaders: [],
+          missingRequiredFields: [],
+          reasons: ["Original Temporary Plan source snapshot was not captured."],
+        };
+        pendingSnapshotPayloads = (["pending_current", "pending_last_month"] as const).map((sourceRole) => ({
+          segment,
+          sourceRole,
+          sourceKind: "legacy-plan-run-inputs",
+          sourceUploadId: null,
+          sourceFilename: null,
+          sourceUploadedAt: null,
+          rawRows: [],
+          parsedRows,
+          diagnostics: legacyDiagnostics,
+        }));
+      }
+    } catch (err) {
+      if (err instanceof PtmtPass2InputError) {
+        res.status(422).json({ error: "PTMT_PASS2_INPUT", message: err.message, month, segment });
+      } else {
+        handlePlanError(res, err);
+      }
+      return;
+    }
+  } else {
+    // Legacy live-input path for Temporary Plans and Plumbing Production Plans.
+    // The plan builder reads these same uploads internally; checking source
+    // identity around the build prevents a replacement upload from being
+    // paired with the wrong frozen plan run.
+    let pendingSourcesBefore: Awaited<ReturnType<typeof loadPendingSources>>;
+    try {
+      pendingSourcesBefore = await loadPendingSources(segment);
+      planItems = await buildPlanItems(month, segment);
+      const pendingSourcesAfter = await loadPendingSources(segment);
+      if (
+        !sameUploadSnapshot(pendingSourcesBefore.current, pendingSourcesAfter.current)
+        || !sameUploadSnapshot(pendingSourcesBefore.lastMonth, pendingSourcesAfter.lastMonth)
+      ) {
+        res.status(409).json({
+          error: "PENDING_SOURCE_CHANGED",
+          message: "A pending-order source changed while the plan was being built. Retry to create a run with one consistent input snapshot.",
+          segment,
+          month,
+        });
+        return;
+      }
+      pendingSnapshotPayloads = makePendingSnapshotPayloads(segment, pendingSourcesBefore).map((snapshot) => ({
+        ...snapshot,
+        diagnostics: {
+          ...snapshot.diagnostics,
+          pendingPlan: pendingPlanDiagnosticsFromParsedRows(
+            pendingRowsForSnapshot(segment, snapshot.sourceRole, snapshot.rawRows),
+            planItems,
+            { sourceRole: snapshot.sourceRole },
+          ),
+        },
+      }));
+    } catch (err) {
+      handlePlanError(res, err); // 422 naming the missing/broken upload
+      return;
+    }
   }
 
   // Guard against silent zero-item runs. A zero result is indistinguishable
@@ -229,24 +583,52 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
   }));
 
   // Insert results (one row per item)
-  const resultValues = planItems.map((item) => ({
+  const resultValues = planItems.map((item, index) => {
+    const fitted = planType === "production" ? pass2Summary?.items[index] : undefined;
+    const demandPlan = planType === "temporary"
+      ? item.maxProduction
+      : fitted?.temporaryPlan ?? item.maxProduction;
+    return {
     runId: 0,
     itemCode: item.itemCode,
     colour: item.colour,
     category: item.category,
-    bufferReq: item.bufferReq,
+    // Omit nullable buffer requirements so Postgres stores NULL for unresolved
+    // classifications rather than forcing a fake zero buffer.
+    bufferReq: item.bufferReq ?? undefined,
     minProduction: item.minProduction,
-    productionPlan: item.maxProduction,
-    releaseWeek: item.week,
-    w1: item.w1,
-    w2: item.w2,
-    w3: item.w3,
-    w4: item.w4,
-  }));
+    // A production run stores executable output in productionPlan, while a
+    // temporary run remains demand-true. demandPlan makes both meanings
+    // explicit without breaking older consumers.
+    demandPlan,
+    productionPlan: planType === "production" && segment === "Plumbing"
+      ? 0
+      : item.maxProduction,
+    temporaryPlan: planType === "temporary"
+      ? item.maxProduction
+      : fitted?.temporaryPlan ?? item.maxProduction,
+    cannotBeMade: planType === "production"
+      ? fitted?.cannotBeMade ?? 0
+      : 0,
+    feasibilityStatus: planType === "temporary"
+      ? "not-scheduled"
+      : segment === "Plumbing"
+        ? "not-scheduled"
+        : item.maxProduction > 0 ? "fitted" : "not-scheduled",
+    material: segment === "Plumbing" ? item.category.split(" ")[0] ?? null : null,
+    weightKg: (item as { weightKg?: number }).weightKg ?? null,
+    urgencyRank: item.pendingOrderLastMonth > 0 ? 1 : item.pendingOrder > 0 ? 2 : 3,
+    // Temporary Plans are demand-true snapshots, not a floor release plan.
+    releaseWeek: planType === "temporary" ? null : item.week,
+    w1: planType === "temporary" ? 0 : item.w1,
+    w2: planType === "temporary" ? 0 : item.w2,
+    w3: planType === "temporary" ? 0 : item.w3,
+    w4: planType === "temporary" ? 0 : item.w4,
+    };
+  });
 
-  const pendingSnapshotPayloads = makePendingSnapshotPayloads(segment, pendingSourcesBefore);
-  const currentSnapshot = pendingSnapshotPayloads.find((snapshot) => snapshot.sourceRole === "pending_current")!;
-  const snapshotValues = currentSnapshot.parsedRows.map((row) => ({
+  const currentSnapshot = pendingSnapshotPayloads.find((snapshot) => snapshot.sourceRole === "pending_current");
+  const snapshotValues = (currentSnapshot?.parsedRows ?? []).map((row) => ({
     runId: 0,
     catNo: row.itemCode,
     colour: row.colour,
@@ -260,7 +642,18 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
   const run = await db.transaction(async (tx) => {
     const [createdRun] = await tx
       .insert(planRunsTable)
-      .values({ month, segment, effectiveFrom, status: "draft", weeklyReleaseVersion: 1, factorsJson, note: note ?? null })
+      .values({
+        month,
+        segment,
+        planType,
+        temporaryRunId,
+        effectiveFrom,
+        status: "draft",
+        weeklyReleaseVersion: planType === "temporary" ? 0 : 1,
+        factorsJson,
+        note: note ?? null,
+        pass2Json: pass2Summary ? pass2Summary as unknown as Record<string, unknown> : null,
+      })
       .returning();
     const runId = createdRun.id;
 
@@ -295,29 +688,31 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
         diagnosticsJson: { ...snapshot.diagnostics } as Record<string, unknown>,
       });
     }
+    const livePendingDiagnostics = livePendingRead
+      ? {
+        ...(livePendingRead.diagnostics ?? {}),
+        pendingPlan: pendingPlanDiagnosticsFromParsedRows(
+          livePendingRead.pendingRows ?? [],
+          planItems,
+          { sourceRole: "pending_current_live" },
+        ),
+      }
+      : livePendingFailureDiagnostics(segment, livePendingReadError);
+    await tx.insert(pendingReadSnapshotsTable).values({
+      ...pendingReadSnapshotValues({
+        runId,
+        captureContext: "plan_run",
+        segment,
+        totals: livePendingRead ?? undefined,
+        diagnostics: livePendingDiagnostics,
+        status: livePendingRead ? "captured" : "failed",
+        errorText: livePendingReadError instanceof Error
+          ? livePendingReadError.message
+          : livePendingReadError == null ? null : String(livePendingReadError),
+      }),
+      runId,
+    });
     return createdRun;
-  });
-
-  const runId = run.id;
-
-  await savePlanVersionSnapshot({
-    month,
-    segment,
-    kind: "run",
-    sourceId: runId,
-    effectiveFrom,
-    sourceLabel: note ?? `Plan run #${runId}`,
-    targets: planItems.map((item) => ({
-      itemCode: item.itemCode,
-      colour: item.colour,
-      category: item.category,
-      maxPcs: item.maxProduction,
-      minPcs: item.minProduction,
-      w1: item.w1 ?? 0,
-      w2: item.w2 ?? 0,
-      w3: item.w3 ?? 0,
-      w4: item.w4 ?? 0,
-    })),
   });
 
   const summary = makeSummary(run, resultValues as any);
@@ -347,7 +742,11 @@ router.get("/plan/runs", async (req, res): Promise<void> => {
   const summaries = await Promise.all(
     runs.map(async (run) => {
       const results = await db
-        .select({ minProduction: planRunResultsTable.minProduction, productionPlan: planRunResultsTable.productionPlan })
+        .select({
+          minProduction: planRunResultsTable.minProduction,
+          demandPlan: planRunResultsTable.demandPlan,
+          productionPlan: planRunResultsTable.productionPlan,
+        })
         .from(planRunResultsTable)
         .where(eq(planRunResultsTable.runId, run.id));
       return makeSummary(run, results as any);
@@ -419,16 +818,23 @@ router.get("/plan/runs/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const [results, inputs, pendingInputSnapshots] = await Promise.all([
+  const [results, inputs, pendingInputSnapshots, pendingReadSnapshots] = await Promise.all([
     db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, id)),
     db.select().from(planRunInputsTable).where(eq(planRunInputsTable.runId, id)),
     db.select().from(planRunInputSnapshotsTable).where(eq(planRunInputSnapshotsTable.runId, id)),
+    db.select().from(pendingReadSnapshotsTable).where(eq(pendingReadSnapshotsTable.runId, id)),
   ]);
 
   const inputByKey = new Map(inputs.map((inp) => [`${inp.itemCode}::${inp.colour}`, inp]));
+  const pendingSnapshotStatus = getPendingSnapshotStatus(
+    pendingInputSnapshots.map((snapshot) => snapshot.sourceRole),
+  );
 
   const items = results.map((r) => {
     const inp = inputByKey.get(`${r.itemCode}::${r.colour}`);
+    const dummy = Math.max(inp?.pendingLastMonth ?? 0, 0);
+    const orders = Math.max(inp?.pendingCurrent ?? 0, 0);
+    const buffer = r.bufferReq == null ? 0 : Math.max(r.bufferReq - (inp?.stock ?? 0), 0);
     return {
       itemCode: r.itemCode,
       colour: r.colour,
@@ -439,14 +845,32 @@ router.get("/plan/runs/:id", async (req, res): Promise<void> => {
       pendingLastMonth: inp?.pendingLastMonth ?? 0,
       bufferReq: r.bufferReq,
       minProduction: r.minProduction,
+      demandPlan: r.demandPlan ?? r.productionPlan,
       productionPlan: r.productionPlan,
+      temporaryPlan: r.temporaryPlan || (run.planType === "temporary" ? r.productionPlan : 0),
+      cannotBeMade: r.cannotBeMade,
+      feasibilityStatus: r.feasibilityStatus,
+      dummy,
+      orders,
+      buffer,
+      material: r.material,
+      weightKg: r.weightKg,
+      urgencyRank: r.urgencyRank,
+      releaseWeek: r.releaseWeek,
+      w1: r.w1,
+      w2: r.w2,
+      w3: r.w3,
+      w4: r.w4,
     };
   });
 
   res.json({
     run: {
       ...makeSummary(run, results),
-      pendingSnapshotStatus: getPendingSnapshotStatus(pendingInputSnapshots.length),
+      pendingSnapshotStatus,
+      pendingAuditability: pendingSnapshotStatus === "captured"
+        ? "source-auditable"
+        : "reproducible-but-not-source-auditable",
     },
     items,
     pendingInputSnapshots: pendingInputSnapshots.map((snapshot) => ({
@@ -462,7 +886,271 @@ router.get("/plan/runs/:id", async (req, res): Promise<void> => {
       parsedRows: snapshot.parsedRowsJson,
       diagnostics: snapshot.diagnosticsJson,
     })),
+    pendingReadSnapshots: pendingReadSnapshots.map((snapshot) => ({
+      id: snapshot.id,
+      captureContext: snapshot.captureContext,
+      segment: snapshot.segment,
+      sourceRole: snapshot.sourceRole,
+      sourceKind: snapshot.sourceKind,
+      sourceName: snapshot.sourceName,
+      sourceSpreadsheetId: snapshot.sourceSpreadsheetId,
+      sourceTabName: snapshot.sourceTabName,
+      capturedAt: snapshot.capturedAt,
+      status: snapshot.status,
+      rawRows: snapshot.rawRowsJson,
+      parsedRows: snapshot.parsedRowsJson,
+      diagnostics: snapshot.diagnosticsJson,
+      error: snapshot.errorText,
+    })),
   });
+});
+
+/** GET /api/plan/pending-read-snapshots/:id — standalone validation evidence */
+router.get("/plan/pending-read-snapshots/:id", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const [snapshot] = await db
+    .select()
+    .from(pendingReadSnapshotsTable)
+    .where(eq(pendingReadSnapshotsTable.id, id));
+  if (!snapshot) {
+    res.status(404).json({ error: "Pending read snapshot not found" });
+    return;
+  }
+
+  res.json({
+    id: snapshot.id,
+    runId: snapshot.runId,
+    captureContext: snapshot.captureContext,
+    segment: snapshot.segment,
+    sourceRole: snapshot.sourceRole,
+    sourceKind: snapshot.sourceKind,
+    sourceName: snapshot.sourceName,
+    sourceSpreadsheetId: snapshot.sourceSpreadsheetId,
+    sourceTabName: snapshot.sourceTabName,
+    capturedAt: snapshot.capturedAt,
+    status: snapshot.status,
+    rawRows: snapshot.rawRowsJson,
+    parsedRows: snapshot.parsedRowsJson,
+    diagnostics: snapshot.diagnosticsJson,
+    error: snapshot.errorText,
+  });
+});
+
+/** GET /api/plan/runs/:id/schedule-request — demand lines for the external fitter */
+router.get("/plan/runs/:id/schedule-request", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const [run] = await db.select().from(planRunsTable).where(eq(planRunsTable.id, id));
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+  const results = await db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, id));
+  res.json({
+    contract: {
+      name: "external-capacity-schedule-request",
+      version: 1,
+      segment: run.segment,
+      month: run.month,
+      period: "month",
+      sourceRunId: run.id,
+      sourcePlanType: run.planType,
+      lineageTemporaryRunId: run.temporaryRunId ?? null,
+      fields: ["itemCode", "colour", "quantity", "material", "weightKg", "category", "urgencyRank"],
+    },
+    items: results
+      .filter((item) => item.productionPlan > 0)
+      .map((item) => ({
+        itemCode: item.itemCode,
+        colour: item.colour,
+        quantity: Math.round(item.productionPlan),
+        material: item.material ?? item.category.split(" ")[0] ?? null,
+        weightKg: item.weightKg,
+        category: item.category,
+        urgencyRank: item.urgencyRank ?? 3,
+      })),
+  });
+});
+
+/**
+ * POST /api/plan/runs/:id/schedule — run the Plumbing demand through the
+ * external machine scheduler. The two upstream results are persisted as
+ * separate rows under one batch id and merged only in the response.
+ */
+router.post("/plan/runs/:id/schedule", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Run id must be a positive integer" });
+    return;
+  }
+  const [run] = await db.select().from(planRunsTable).where(eq(planRunsTable.id, id));
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+  if (run.segment !== "Plumbing") {
+    res.status(422).json({ error: "EXTERNAL_PLUMBING_SCHEDULER_ONLY", message: "The machine scheduler adapter accepts Plumbing runs only." });
+    return;
+  }
+  if (run.status !== "finalized") {
+    res.status(422).json({ error: "RUN_NOT_FINALIZED", message: "Finalize the Plumbing run before scheduling it." });
+    return;
+  }
+
+  try {
+    const [runResults, storedActuals, bomWeights, machineRows] = await Promise.all([
+      db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, id)).orderBy(asc(planRunResultsTable.id)),
+      loadStoredDailyActualsForSegment(run.month, "Plumbing"),
+      fetchPlumbingBomWeights(),
+      db.select().from(plumbingMachineCapacityTable).where(eq(plumbingMachineCapacityTable.segment, "Plumbing")),
+    ]);
+    const workedSundayDates: string[] = [...new Set(
+      storedActuals.actuals
+        .filter((actual: { qty: number; date: string }) => actual.qty > 0 && isSunday(actual.date))
+        .map((actual: { qty: number; date: string }) => actual.date),
+    )];
+    const demandByKind: Record<"pipe" | "fitting", PlumbingScheduleDemand[]> = { pipe: [], fitting: [] };
+    const weightByCode = new Map<string, number>();
+    const normalizedBomWeights = new Map<string, number>(
+      [...bomWeights.entries()].map(([code, weight]) => [normalizeCodeStrict(code), weight]),
+    );
+    for (const item of runResults) {
+      const quantity = Math.round(item.demandPlan ?? item.productionPlan);
+      if (quantity <= 0) continue;
+      const isPipe = item.category.endsWith("Pipe");
+      const isFitting = item.category.endsWith("Fitting");
+      // Solvents intentionally stay out of the machine app: the local
+      // capacity model treats them as unconstrained/pass-through demand.
+      if (!isPipe && !isFitting) continue;
+      const material = String(item.material ?? item.category.split(" ")[0] ?? "").trim().toUpperCase();
+      const demandItem: PlumbingScheduleDemand = {
+        item_code: item.itemCode,
+        material,
+        qty_pcs: quantity,
+      };
+      demandByKind[isPipe ? "pipe" : "fitting"].push(demandItem);
+      const weight = normalizedBomWeights.get(normalizeCodeStrict(item.itemCode))
+        ?? bomWeights.get(item.itemCode.trim().toUpperCase());
+      if (weight !== undefined) weightByCode.set(item.itemCode, weight);
+    }
+    const schedule = await runPlumbingSchedule({
+      month: run.month,
+      workedSundayDates,
+      demandByKind,
+      weightByCode,
+      machineLockedOut: new Map(machineRows.map((machine) => [machine.machineId, machine.lockedOut])),
+    });
+    const solventExclusions = runResults
+      .filter((item) => item.category.endsWith("Solvent") && (item.demandPlan ?? item.productionPlan) > 0)
+      .map((item) => ({
+        item_code: item.itemCode,
+        category: item.category,
+        qty_pcs: Math.round(item.demandPlan ?? item.productionPlan),
+      }));
+    const requestsByKind = new Map(schedule.results.map((result) => [
+      result.kind,
+      {
+        segment: "PLUMBING",
+        month: run.month,
+        kind: result.kind,
+        week_days: schedule.week_days,
+        demand: demandByKind[result.kind].filter((item) => !schedule.unroutable.some((row) => row.kind === result.kind && row.item_code === item.item_code)),
+      },
+    ]));
+    await db.insert(planScheduleResultsTable).values(
+      schedule.results.map((result) => {
+        const sentDemand = demandByKind[result.kind].filter(
+          (item) => !schedule.unroutable.some((row) => row.kind === result.kind && row.item_code === item.item_code),
+        );
+        return {
+          batchId: schedule.batchId,
+          runId: id,
+          month: run.month,
+          segment: "Plumbing",
+          kind: result.kind,
+          weekDays: schedule.week_days,
+          requestJson: requestsByKind.get(result.kind)!,
+          resultJson: result.raw,
+          demandPieces: sentDemand.reduce((sum, item) => sum + item.qty_pcs, 0),
+          demandKg: schedule.demand.kg === null ? null : sentDemand.reduce((sum, item) => sum + item.qty_pcs * (weightByCode.get(item.item_code) ?? 0), 0),
+          scheduledPieces: result.total_scheduled_pcs,
+          scheduledKg: result.total_scheduled_kg,
+          unfinishedPieces: result.total_unfinished_pcs,
+          unfinishedKg: result.total_unfinished_kg,
+          unfinishedHours: result.total_unfinished_hours,
+          capacityHours: result.total_capacity_hrs,
+          scheduledHours: result.total_scheduled_hrs,
+          idleHours: result.total_idle_hrs,
+          downtimeHoursLost: result.total_downtime_hours_lost,
+          downtimeMachineDays: result.total_downtime_machine_days,
+        };
+      }),
+    );
+
+    // Promote the scheduler's executable quantity into the frozen production
+    // run. Demand remains in demandPlan, so downstream consumers can choose
+    // an explicit basis instead of guessing what productionPlan means.
+    const unfinishedByCode = new Map<string, number>();
+    for (const unfinished of schedule.merged.unfinished) {
+      const code = normalizeCodeStrict(String(unfinished.item_code ?? ""));
+      if (code) unfinishedByCode.set(code, (unfinishedByCode.get(code) ?? 0) + Math.max(0, Number(unfinished.remaining_pcs ?? 0)));
+    }
+    const unroutableCodes = new Set(schedule.unroutable.map((row) => normalizeCodeStrict(row.item_code)));
+    for (const item of runResults) {
+      const demand = Math.max(0, Math.round(item.demandPlan ?? item.productionPlan));
+      if (demand <= 0) continue;
+      if (item.category.endsWith("Solvent")) {
+        await db.update(planRunResultsTable)
+          .set({
+            productionPlan: demand,
+            cannotBeMade: 0,
+            feasibilityStatus: "fitted",
+          })
+          .where(eq(planRunResultsTable.id, item.id));
+        continue;
+      }
+      const unfinished = Math.min(demand, Math.round(unfinishedByCode.get(normalizeCodeStrict(item.itemCode)) ?? 0));
+      const scheduled = Math.max(0, demand - unfinished);
+      const residual = Math.max(0, demand - scheduled);
+      await db.update(planRunResultsTable)
+        .set({
+          productionPlan: scheduled,
+          cannotBeMade: residual,
+          feasibilityStatus: residual > 0 || unroutableCodes.has(normalizeCodeStrict(item.itemCode))
+            ? "unfulfillable"
+            : "fitted",
+        })
+        .where(eq(planRunResultsTable.id, item.id));
+    }
+
+    res.json({
+      ...schedule,
+      sourceRunId: id,
+      storedKinds: PLUMBING_SCHEDULE_KINDS,
+      solventsExcludedAsUnconstrained: solventExclusions.length,
+      solventExclusions,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Machine scheduler failed";
+    res.status(502).json({
+      error: "PLUMBING_SCHEDULER_FAILED",
+      message,
+    });
+  }
+});
+
+/** GET /api/plan/runs/:id/export/excel — export only persisted frozen rows */
+router.get("/plan/runs/:id/export/excel", async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const [run] = await db.select().from(planRunsTable).where(eq(planRunsTable.id, id));
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+  const buffer = await exportFrozenRunExcel(run, run.planType as "temporary" | "production");
+  const prefix = run.segment === "Plumbing" ? "Plumbing" : "PTMT";
+  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition", `attachment; filename="${prefix}_${run.planType === "temporary" ? "Temporary" : "Production"}_Plan_${run.month}_${exportTimestamp()}.xlsx"`);
+  res.send(buffer);
 });
 
 /** GET /api/plan/runs/:id/drift — frozen "as issued" vs live rebuild "if re-run today" */
@@ -536,6 +1224,39 @@ router.get("/plan/runs/:id/drift", async (req, res): Promise<void> => {
   });
 });
 
+/** PATCH /api/plan/runs/:id/status-reason — admin-only provenance annotation */
+router.patch("/plan/runs/:id/status-reason", loadSession, requireAdmin, async (req, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = Number(rawId);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid plan run id" });
+    return;
+  }
+
+  const parsed = parseStatusReasonInput(req.body);
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+
+  const [updated] = await db
+    .update(planRunsTable)
+    .set({ planStatusReason: parsed.reason })
+    .where(eq(planRunsTable.id, id))
+    .returning();
+  if (!updated) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+
+  const results = await db
+    .select()
+    .from(planRunResultsTable)
+    .where(eq(planRunResultsTable.runId, id));
+  req.log.info({ runId: id }, "Plan run status reason updated by admin");
+  res.json(makeSummary(updated, results));
+});
+
 /** DELETE /api/plan/runs/:id — permanently delete a run and all its data */
 router.delete("/plan/runs/:id", async (req, res): Promise<void> => {
   const id = Number(req.params.id);
@@ -593,6 +1314,7 @@ router.post("/plan/runs/:id/finalize", async (req, res): Promise<void> => {
       eq(planRunsTable.month, run.month),
       eq(planRunsTable.segment, run.segment),
       eq(planRunsTable.status, "finalized"),
+      ne(planRunsTable.planType, "temporary"),
       ne(planRunsTable.id, id),
     ))
     .limit(1);
@@ -609,9 +1331,32 @@ router.post("/plan/runs/:id/finalize", async (req, res): Promise<void> => {
     res.status(400).json({ error: String(err instanceof Error ? err.message : err) });
     return;
   }
+  const results = await db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, id));
+  // A draft is not yet a governing production version. Persist the immutable
+  // timeline snapshot only after the run passes the finalization guard.
+  if (run.planType === "production") {
+    await savePlanVersionSnapshot({
+      month: run.month,
+      segment: run.segment,
+      kind: "run",
+      sourceId: id,
+      effectiveFrom,
+      sourceLabel: run.note ?? `Plan run #${id}`,
+      targets: results.map((item) => ({
+        itemCode: item.itemCode,
+        colour: item.colour,
+        category: item.category,
+        maxPcs: item.productionPlan,
+        minPcs: item.minProduction,
+        w1: item.w1 ?? 0,
+        w2: item.w2 ?? 0,
+        w3: item.w3 ?? 0,
+        w4: item.w4 ?? 0,
+      })),
+    });
+  }
   await db.update(planRunsTable).set({ status: "finalized", effectiveFrom }).where(eq(planRunsTable.id, id));
   await setPlanVersionSnapshotEffectiveDate({ kind: "run", sourceId: id, effectiveFrom });
-  const results = await db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, id));
   const updated = { ...run, status: "finalized", effectiveFrom };
   res.json(makeSummary(updated, results));
 });

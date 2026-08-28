@@ -13,6 +13,11 @@ function fmtNum(n: number | null | undefined): string {
   if (n == null) return "–";
   return Number(n).toLocaleString("en-IN", { maximumFractionDigits: 0 });
 }
+function rejectionPctLabel(basis: string | undefined): string {
+  if (basis === "net") return "Rejection % · rejects ÷ good output";
+  if (basis === "gross") return "Rejection % · rejects ÷ total manufactured";
+  return "Rejection %";
+}
 function rejColor(pct: number | null | undefined) {
   if (pct == null) return "text-muted-foreground";
   if (pct > 10) return "text-red-500 font-semibold";
@@ -34,6 +39,7 @@ export default function PlumbingQuality({ month }: { month: string }) {
   const d = raw as any;
   const overall: PlantLiveMachineMetrics | undefined = d?.overall;
   const byMachine: Record<string, PlantLiveMachineMetrics> = d?.by_machine ?? {};
+  const rejectionLabel = rejectionPctLabel(overall?.total_count_basis);
 
   const machines = Object.entries(byMachine)
     .filter(([, m]) => (m.rejection_pct ?? 0) > 0 || (m.reject_count ?? 0) > 0)
@@ -70,7 +76,7 @@ export default function PlumbingQuality({ month }: { month: string }) {
         <Card className={`border ${(overall?.rejection_pct ?? 0) > 5 ? "border-red-500/20 bg-red-500/5" : "border-border/50"}`}>
           <CardContent className="p-5">
             <div className="flex items-center gap-2 mb-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              <TrendingDown className="h-3.5 w-3.5" /> Plant Rejection %
+              <TrendingDown className="h-3.5 w-3.5" /> Plant {rejectionLabel}
             </div>
             <div className={`text-3xl font-bold ${rejColor(overall?.rejection_pct)}`}>
               {fmt(overall?.rejection_pct)}%
@@ -107,7 +113,7 @@ export default function PlumbingQuality({ month }: { month: string }) {
               <thead className="bg-muted/30 border-y border-border/50">
                 <tr>
                   <th className="text-left py-2.5 px-4 font-medium text-muted-foreground">Machine</th>
-                  <th className="text-right py-2.5 px-3 font-medium text-muted-foreground">Rejection %</th>
+                  <th className="text-right py-2.5 px-3 font-medium text-muted-foreground">{rejectionLabel}</th>
                   <th className="text-right py-2.5 px-3 font-medium text-muted-foreground">Rejected (kg)</th>
                   <th className="text-right py-2.5 px-3 font-medium text-muted-foreground">Good (kg)</th>
                   <th className="text-right py-2.5 px-4 font-medium text-muted-foreground">Run hrs</th>

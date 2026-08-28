@@ -8,7 +8,7 @@ import {
 import { logger } from "../lib/logger";
 import type * as ExcelJSType from "exceljs";
 import { db, itemMasterTable, planRunsTable, planRunResultsTable } from "@workspace/db";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -175,19 +175,33 @@ router.get("/ops/orders", async (req, res): Promise<void> => {
 
   try {
     const tabs = await listTabs(sheetId);
-    const monthlyTabs = FISCAL_MONTHS.filter((m) => tabs.includes(m));
+    const tabByMonth = new Map<string, string>();
+    for (const tab of tabs) {
+      const month = normalizeMonth(tab);
+      if (month && FISCAL_MONTHS.includes(month as typeof FISCAL_MONTHS[number])) {
+        // Prefer the canonical short tab when both "Jul" and "July" exist.
+        if (!tabByMonth.has(month) || tab === month) tabByMonth.set(month, tab);
+      }
+    }
+    const monthlyTabs = FISCAL_MONTHS
+      .map((month) => tabByMonth.get(month))
+      .filter((tab): tab is string => Boolean(tab));
 
     let allRows: Record<string, string>[] = [];
     const failedTabs: string[] = [];
+    const emptyTabs: string[] = [];
+    const availableTabs = monthlyTabs.map((tab) => normalizeMonth(tab) ?? tab);
     for (const tab of monthlyTabs) {
       try {
         const values = await getTabValues(sheetId, tab, "A1:Z50000");
         const rows = rowsToObjects(values);
         allRows = allRows.concat(rows.map((r) => ({ ...r, _tab: tab })));
+        const month = normalizeMonth(tab) ?? tab;
+        if (rows.length === 0) emptyTabs.push(month);
         await new Promise((r) => setTimeout(r, 300));
       } catch (err) {
         logger.warn({ err, tab }, "Failed to read order tab");
-        failedTabs.push(tab);
+        failedTabs.push(normalizeMonth(tab) ?? tab);
       }
     }
 
@@ -231,10 +245,10 @@ router.get("/ops/orders", async (req, res): Promise<void> => {
       if (plant) plantMap.set(plant, (plantMap.get(plant) ?? 0) + value);
     }
 
-    const monthly = FISCAL_MONTHS
-      .filter((m) => monthlyMap.has(m))
+    const monthly = availableTabs
+      .filter((m) => !failedTabs.includes(m))
       .map((m) => {
-        const d = monthlyMap.get(m)!;
+        const d = monthlyMap.get(m) ?? { value: 0, qty: 0, docs: new Set<string>(), customers: new Set<string>() };
         return { month: m, value: d.value, qty: d.qty, docs: d.docs.size, customers: d.customers.size };
       });
 
@@ -255,8 +269,12 @@ router.get("/ops/orders", async (req, res): Promise<void> => {
       orderData: {
         complete: failedTabs.length === 0,
         failedTabs,
+        availableTabs,
+        emptyTabs,
         note: failedTabs.length === 0
-          ? "All available fiscal-month Order Sheet tabs were read."
+          ? emptyTabs.length > 0
+            ? `All available fiscal-month Order Sheet tabs were read. Empty tabs: ${emptyTabs.join(", ")}.`
+            : "All available fiscal-month Order Sheet tabs were read."
           : `Order totals are incomplete: ${failedTabs.join(", ")} could not be read.`,
       },
     };
@@ -282,7 +300,16 @@ router.get("/ops/orders/yoy", async (_req, res): Promise<void> => {
     if (!sheetId) continue;
     try {
       const tabs = await listTabs(sheetId);
-      for (const tab of FISCAL_MONTHS.filter((m) => tabs.includes(m))) {
+      const tabByMonth = new Map<string, string>();
+      for (const tab of tabs) {
+        const month = normalizeMonth(tab);
+        if (month && FISCAL_MONTHS.includes(month as typeof FISCAL_MONTHS[number])) {
+          if (!tabByMonth.has(month) || tab === month) tabByMonth.set(month, tab);
+        }
+      }
+      for (const tab of FISCAL_MONTHS
+        .map((month) => tabByMonth.get(month))
+        .filter((tab): tab is string => Boolean(tab))) {
         try {
           const values = await getTabValues(sheetId, tab, "A1:Z20000");
           const rows = rowsToObjects(values);
@@ -569,7 +596,16 @@ router.get("/ops/overview", async (req, res): Promise<void> => {
   if (sheetId) {
     try {
       const tabs = await listTabs(sheetId);
-      const monthlyTabs = FISCAL_MONTHS.filter((m) => tabs.includes(m));
+      const tabByMonth = new Map<string, string>();
+      for (const tab of tabs) {
+        const month = normalizeMonth(tab);
+        if (month && FISCAL_MONTHS.includes(month as typeof FISCAL_MONTHS[number])) {
+          if (!tabByMonth.has(month) || tab === month) tabByMonth.set(month, tab);
+        }
+      }
+      const monthlyTabs = FISCAL_MONTHS
+        .map((month) => tabByMonth.get(month))
+        .filter((tab): tab is string => Boolean(tab));
       for (const tab of monthlyTabs) {
         try {
           const values = await getTabValues(sheetId, tab, "A1:Z20000");
@@ -597,24 +633,36 @@ router.get("/ops/overview", async (req, res): Promise<void> => {
   // salesValue: orders ARE dispatched sales; use the segment-filtered order value.
   const salesValue = orderValue;
 
-  // productionPlan: latest saved plan run for the current month + this segment.
-  // Falls back to 0 if no plan run has been saved yet.
-  let productionPlan = 0;
+  // The overview exposes both the issued demand and executable production.
+  // Keep productionPlan as the legacy demand alias for older clients.
+  let demandPlan = 0;
+  let fittedProduction: number | null = null;
+  let planBasis: "demand" | "executable" | "none" = "none";
   try {
     const normSegment = segment === "Plumbing" ? "Plumbing" : "PTMT";
     const month = currentMonthIst();
     const [latestRun] = await db
-      .select({ id: planRunsTable.id })
+      .select({ id: planRunsTable.id, planType: planRunsTable.planType })
       .from(planRunsTable)
       .where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, normSegment)))
-      .orderBy(desc(planRunsTable.createdAt))
+      .orderBy(
+        sql`CASE WHEN ${planRunsTable.planType} = 'production' THEN 0 ELSE 1 END`,
+        desc(planRunsTable.createdAt),
+      )
       .limit(1);
     if (latestRun) {
       const results = await db
-        .select({ productionPlan: planRunResultsTable.productionPlan })
+        .select({
+          demandPlan: planRunResultsTable.demandPlan,
+          productionPlan: planRunResultsTable.productionPlan,
+        })
         .from(planRunResultsTable)
         .where(eq(planRunResultsTable.runId, latestRun.id));
-      productionPlan = results.reduce((s, r) => s + Math.max(r.productionPlan, 0), 0);
+      demandPlan = results.reduce((s, r) => s + Math.max(r.demandPlan ?? r.productionPlan, 0), 0);
+      fittedProduction = latestRun.planType === "production"
+        ? results.reduce((s, r) => s + Math.max(r.productionPlan, 0), 0)
+        : null;
+      planBasis = latestRun.planType === "production" ? "executable" : "demand";
     }
   } catch (err) {
     logger.warn({ err }, "overview productionPlan fetch failed");
@@ -634,7 +682,10 @@ router.get("/ops/overview", async (req, res): Promise<void> => {
         : "All available fiscal-month Order Sheet tabs were read.",
     },
     salesValue,
-    productionPlan,
+    demandPlan,
+    fittedProduction,
+    planBasis,
+    productionPlan: demandPlan,
     festivals: FESTIVAL_CONFIG,
   };
   if (!partialRead) setCached(cacheKey, result); // never cache a partial aggregate

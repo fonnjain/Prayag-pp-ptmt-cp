@@ -16,12 +16,23 @@ import {
   buildPlanItems,
   loadLatestUploadRowsByKind,
   type PlanItemWithBom,
+  type PlanningInputDiagnostics,
 } from "../routes/plan";
 import { annotateWeeklyRelease, type CalcPlanItem } from "./calc";
 import { logger } from "./logger";
 import { defaultEffectiveDate, savePlanVersionSnapshot } from "./plant-plan-timeline";
 import { diagnoseInputRows, type InputReadDiagnostics } from "./input-diagnostics";
 import { LivePendingReadError } from "./corrective-errors";
+import {
+  runPlumbingCorrectiveSchedule,
+  type PlumbingCorrectiveSchedule,
+} from "./plumbing-scheduler";
+import {
+  runPtmtPass2,
+  selectPtmtCapacityWindow,
+  type PtmtPass2ItemResult,
+} from "./ptmt-pass2-engine";
+import { countWorkingDaysInWeek } from "./working-days";
 
 const round = (n: number) => Math.round(n * 100) / 100;
 
@@ -46,11 +57,15 @@ function computeRunFingerprint(content: {
   originalMonthTotal: number;
   revisedMonthTotal: number;
   unfulfillableQty: number;
+   notScheduledQty: number;
+   unfulfillableOnlyQty: number;
   weekStats: CorrectiveWeekStat[];
   warnings: CorrectiveWarning[];
   items: CorrectiveItemResult[];
   categories: CorrectiveCategoryResult[];
   workingDaysRemaining: number;
+  schedulerWeekOffset: number | null;
+  schedulerOriginalWeeks: number[];
 }): string {
   const q = (n: number | null) => (n == null ? null : Math.fround(n));
   const payload = {
@@ -67,6 +82,8 @@ function computeRunFingerprint(content: {
     originalMonthTotal: q(content.originalMonthTotal),
     revisedMonthTotal: q(content.revisedMonthTotal),
     unfulfillableQty: q(content.unfulfillableQty),
+    notScheduledQty: q(content.notScheduledQty),
+    unfulfillableOnlyQty: q(content.unfulfillableOnlyQty),
     weekStats: content.weekStats.map(w => [w.week, w.weekLabel, q(w.released), q(w.capacity), w.workingDays, q(w.produced), q(w.lag), q(w.loadFactor), w.status]),
     warnings: content.warnings.map(w => [w.code, w.severity, w.message, q(w.value ?? null), q(w.threshold ?? null), w.category ?? null, w.items ?? null]),
     items: [...content.items]
@@ -78,6 +95,8 @@ function computeRunFingerprint(content: {
         q(i.originalPlan), i.originalWeek, q(i.bufferReqRev), q(i.planRev), q(i.remainingToProduce),
         q(i.kgRev), q(i.remainingKg), q(i.deltaNewOrders), q(i.deltaProduction), q(i.deltaNet),
         q(i.coverNow), i.newWeek, q(i.w1Rev), q(i.w2Rev), q(i.w3Rev), q(i.w4Rev),
+         q(i.temporaryCorrective), q(i.correctiveProduction), q(i.cannotBeMade), i.cannotBeMadeReason,
+         i.feasibilityStatus,
         i.status, i.isNewItem ? 1 : 0,
       ]),
     workingDaysRemaining: content.workingDaysRemaining,
@@ -88,7 +107,11 @@ function computeRunFingerprint(content: {
         q(c.capPerDay), c.capacityMethod, c.capacityDays,
         q(c.feasible), q(c.shortfall),
         c.daysRun, q(c.feasibleAtRunRate), c.runRateDivergenceFlag ? 1 : 0,
+         q(c.temporaryCorrective), q(c.correctiveProduction), q(c.cannotBeMade),
+         q(c.notScheduled), q(c.unfulfillable),
       ]),
+    schedulerWeekOffset: content.schedulerWeekOffset,
+    schedulerOriginalWeeks: content.schedulerOriginalWeeks,
   };
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex");
 }
@@ -153,6 +176,15 @@ export interface CorrectiveItemResult {
   w2Rev: number;
   w3Rev: number;
   w4Rev: number;
+  /** Temporary corrective demand before any capacity fitting. */
+  temporaryCorrective: number;
+  /** Quantity that the machine/capacity fitter can release in the open window. */
+  correctiveProduction: number;
+  /** Temporary corrective demand that cannot be released in the open window. */
+  cannotBeMade: number;
+  cannotBeMadeReason: string | null;
+  /** Explicit executable state; consumers must not infer this from a boolean. */
+  feasibilityStatus: "fitted" | "not-scheduled" | "unfulfillable";
   status: string;
   isNewItem: boolean;
 }
@@ -186,6 +218,11 @@ export interface CorrectiveCategoryResult {
   feasibleAtRunRate: number;
   /** True when feasibleAtCapacity > feasibleAtRunRate × 1.5 — optimism flag for review. */
   runRateDivergenceFlag: boolean;
+  temporaryCorrective: number;
+  correctiveProduction: number;
+  cannotBeMade: number;
+  notScheduled: number;
+  unfulfillable: number;
 }
 
 export interface CorrectiveReplanResult {
@@ -204,12 +241,35 @@ export interface CorrectiveReplanResult {
   originalMonthTotal: number;
   revisedMonthTotal: number;
   unfulfillableQty: number;
+  notScheduledQty: number;
+  unfulfillableOnlyQty: number;
   weekStats: CorrectiveWeekStat[];
   warnings: CorrectiveWarning[];
   items: CorrectiveItemResult[];
   categories: CorrectiveCategoryResult[];
   unplannedProduction: Array<{ code: string; qty: number }>;
   unplannedTotal: number;
+  schedulerWeekOffset: number | null;
+  schedulerOriginalWeeks: number[];
+  invariants: {
+    temporaryCorrectiveUnchanged: boolean;
+    noClosedWeekRelease: boolean;
+    weeklyCapacity: boolean;
+    producedFloor: boolean;
+    reconciliation: boolean;
+    machineFeasibility: boolean;
+    pass2Conservation: boolean;
+    pass2WeeklySum: boolean;
+    pass2DummyPriority: boolean;
+    allPass: boolean;
+  };
+  feasibility?: {
+    schedulerWeekOffset?: number | null;
+    schedulerOriginalWeeks?: number[];
+    schedulerWeekDays?: number[];
+    schedulerAudit?: Record<string, number | boolean>;
+    invariants?: CorrectiveReplanResult["invariants"];
+  };
   /** Plan run cited as the baseline (null = live rebuild, no frozen run used). */
   baselinePlanRunId: number | null;
   /** "frozen-run" when the baseline came from an immutable plan run snapshot. */
@@ -314,6 +374,36 @@ function lastDayOfWeekN(month: string, weekN: number, wdPerWeek: number): string
     d.setUTCDate(d.getUTCDate() + 1);
   }
   return d.toISOString().slice(0, 10);
+}
+
+function weekDateRange(month: string, week: number): { start: string; end: string } {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const daysInMonth = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+  const startDay = week === 1 ? 1 : week === 2 ? 8 : week === 3 ? 15 : 22;
+  const endDay = week === 4 ? daysInMonth : Math.min(startDay + 6, daysInMonth);
+  return {
+    start: `${month}-${String(startDay).padStart(2, "0")}`,
+    end: `${month}-${String(endDay).padStart(2, "0")}`,
+  };
+}
+
+function remainingWorkingDaysByWeek(
+  month: string,
+  asOfDate: string | undefined,
+): Array<{ week: 1 | 2 | 3 | 4; days: number }> {
+  const nextDate = asOfDate
+    ? (() => {
+        const date = new Date(`${asOfDate}T00:00:00Z`);
+        date.setUTCDate(date.getUTCDate() + 1);
+        return date.toISOString().slice(0, 10);
+      })()
+    : `${month}-01`;
+  return ([1, 2, 3, 4] as const).map((week) => {
+    const range = weekDateRange(month, week);
+    const from = nextDate > range.start ? nextDate : range.start;
+    if (from > range.end) return { week, days: 0 };
+    return { week, days: countWorkingDays(from, range.end) };
+  });
 }
 
 /**
@@ -445,6 +535,9 @@ async function loadFrozenBaselineItems(
       bufferReq: r.bufferReq,
       minProduction: r.minProduction,
       maxProduction: r.productionPlan,
+      temporaryPlan: r.temporaryPlan,
+      material: r.material ?? (segment === "Plumbing" ? r.category.split(" ")[0] : undefined),
+      weightKg: r.weightKg ?? undefined,
       pendingOrderLastMonth: inp?.pendingLastMonth ?? 0,
       pendingOrder: inp?.pendingCurrent ?? 0,
       order: 0,
@@ -462,6 +555,22 @@ async function loadFrozenBaselineItems(
 // ── Main engine ───────────────────────────────────────────────────────────────
 
 export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise<CorrectiveReplanResult> {
+  return runCorrectiveReplanInternal(input, false);
+}
+
+/**
+ * Diagnostic-only corrective calculation used by validation endpoints. It may
+ * inspect the unreviewed current-pending ledger to report machine feasibility,
+ * but it is never used by a route that creates or serves a corrective plan.
+ */
+export async function runCorrectiveDiagnostic(input: CorrectiveReplanInput): Promise<CorrectiveReplanResult> {
+  return runCorrectiveReplanInternal(input, true);
+}
+
+async function runCorrectiveReplanInternal(
+  input: CorrectiveReplanInput,
+  diagnosticOnly: boolean,
+): Promise<CorrectiveReplanResult> {
   const { month } = input;
   const segment = input.segment ?? "PTMT";
   // 21335 was the old circular PTMT fallback (plan ÷ 27 days). Removed: any path
@@ -473,18 +582,16 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   logger.info({ month, weekClosed: input.weekClosed, asOfDate: input.asOfDate, segment }, "corrective-engine: starting replan");
 
   // ── Fetch all data in parallel ────────────────────────────────────────────
-  const [
-    originalItems,
-    plumbingSheet3Raw,
-    ptmtActualsRaw,
-    livePendingTotals,
-    bufferRows,
-    bandRows,
-    catCapRows,
-  ] = await Promise.all([
+  const settled = await Promise.allSettled([
     input.planRunId != null
       ? loadFrozenBaselineItems(input.planRunId, month, segment)
-      : buildPlanItems(month, segment),
+      : buildPlanItems(
+        month,
+        segment,
+        diagnosticOnly && segment === "Plumbing"
+          ? { allowUnreviewedCurrentPending: true }
+          : undefined,
+      ),
     // Do NOT swallow Sheet3 failures: a missing/unreadable workbook must fail
     // the replan loudly, never present as zero production (stale-plan hazard).
     segment === "Plumbing"
@@ -498,6 +605,36 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
     db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment)),
   ]);
+
+  if (settled[0].status === "rejected") {
+    const reason = settled[0].reason;
+    const livePendingResult = settled[3];
+    if (
+      segment === "Plumbing"
+      && livePendingResult.status === "fulfilled"
+      && reason instanceof Error
+      && reason.name === "PlanningInputError"
+    ) {
+      const planningError = reason as Error & { inputDiagnostics?: PlanningInputDiagnostics };
+      planningError.inputDiagnostics = {
+        ...planningError.inputDiagnostics,
+        livePending: livePendingResult.value.diagnostics,
+      };
+    }
+    throw reason;
+  }
+
+  const unwrap = <T>(result: PromiseSettledResult<T>): T => {
+    if (result.status === "rejected") throw result.reason;
+    return result.value;
+  };
+  const originalItems = unwrap(settled[0]);
+  const plumbingSheet3Raw = unwrap(settled[1]);
+  const ptmtActualsRaw = unwrap(settled[2]);
+  const livePendingTotals = unwrap(settled[3]);
+  const bufferRows = unwrap(settled[4]);
+  const bandRows = unwrap(settled[5]);
+  const catCapRows = unwrap(settled[6]);
 
   // ── P5: Resolve effective asOfDate (weekClosed → last day of that week) ───
   const monthStart = `${month}-01`;
@@ -657,7 +794,12 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     const pendingAtPlan = orig.pendingOrder;
     const pendingLastMonth = orig.pendingOrderLastMonth;
 
-    const multiplier = bufferByCategory.get(orig.category) ?? 1;
+    // A NULL buffer on the source plan means the product was unresolved. Keep
+    // corrective calculations demand-only instead of resurrecting the old
+    // category fallback multiplier.
+    const multiplier = orig.bufferReq == null
+      ? 0
+      : (bufferByCategory.get(orig.category) ?? 0);
     const avg3MoSale = orig.avg3MoSale;
     const bufferReqRev = round(avg3MoSale * multiplier);
 
@@ -707,6 +849,11 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       w2Rev: 0,
       w3Rev: 0,
       w4Rev: 0,
+      temporaryCorrective: remainingToProduce,
+      correctiveProduction: 0,
+      cannotBeMade: remainingToProduce,
+      cannotBeMadeReason: remainingToProduce > 0 ? "NOT_FITTED" : null,
+      feasibilityStatus: "not-scheduled",
       status: "on-plan",
       isNewItem: false,
     });
@@ -750,77 +897,219 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   const remainingWeeks: number[] = [];
   for (let w = weekClosed + 1; w <= 4; w++) remainingWeeks.push(w);
 
-  const schedulable = items.filter(i => i.remainingToProduce > 0);
-  schedulable.sort((a, b) => {
-    const ca = a.coverNow ?? 999;
-    const cb = b.coverNow ?? 999;
-    return ca - cb;
-  });
-
-  const catWeekBuckets = new Map<number, Map<string, number>>();
-  for (const w of remainingWeeks) catWeekBuckets.set(w, new Map());
+  const remainingWindow = remainingWorkingDaysByWeek(month, effectiveAsOfDate)
+    .filter(({ week, days }) => week > weekClosed && days > 0)
+    .map(({ week, days }) => ({ week, days }));
 
   const originalByKey = new Map(originalItems.map(i => [itemKey(i.itemCode, i.colour), i]));
+  let plumbingSchedule: PlumbingCorrectiveSchedule | null = null;
+  let pass2Invariants: ReturnType<typeof runPtmtPass2>["invariants"] | null = null;
+  let solventUnconstrainedPieces = 0;
 
-  for (const item of schedulable) {
-    const band = bandsByCategory.get(item.category);
-    let assignedWeek: number | null = null;
+  // Closed weeks are represented by zero local capacity for PTMT. The current
+  // week uses only days after the snapshot; production already completed before
+  // the snapshot is already reflected in remainingToProduce and must not be
+  // subtracted from that remaining-day capacity a second time.
+  const weeklyCapacityOverrides: Partial<Record<1 | 2 | 3 | 4, Map<string, number>>> = {};
+  for (const week of [1, 2, 3, 4] as const) weeklyCapacityOverrides[week] = new Map();
+  for (const row of catCapRows) {
+    const capacity = selectPtmtCapacityWindow(row);
+    const capPerDay = capacity.overrideCapacity ?? capacity.selectedP90;
+    for (const week of [1, 2, 3, 4] as const) {
+      const windowDays = remainingWindow.find((entry) => entry.week === week)?.days ?? 0;
+      const available = Math.max(capPerDay * windowDays, 0);
+      weeklyCapacityOverrides[week]!.set(
+        row.category,
+        week > weekClosed ? available : 0,
+      );
+    }
+  }
 
-    if (band && item.coverNow !== null) {
-      const c = item.coverNow;
-      if (c < band.w1Upper && remainingWeeks.includes(1)) assignedWeek = 1;
-      else if (c < band.w2Upper && remainingWeeks.includes(2)) assignedWeek = 2;
-      else if (c < band.w3Upper && remainingWeeks.includes(3)) assignedWeek = 3;
-      else if (c < band.w4Upper && remainingWeeks.includes(4)) assignedWeek = 4;
+  if (segment === "PTMT") {
+    const pass2 = runPtmtPass2(
+      month,
+      items.map((item) => {
+        const temporaryPlan = Math.round(item.remainingToProduce);
+        const dummy = Math.min(temporaryPlan, Math.round(Math.max(item.pendingLastMonth, 0)));
+        const orders = Math.min(
+          Math.max(temporaryPlan - dummy, 0),
+          Math.round(Math.max(item.pendingNow, 0)),
+        );
+        return {
+          itemCode: item.itemCode,
+          colour: item.colour,
+          category: item.category,
+          avg3MoSale: item.avg3MoSale,
+          stock: item.stockNow,
+          pendingCurrent: orders,
+          pendingLastMonth: dummy,
+          bufferReq: item.bufferReqRev,
+          minProduction: 0,
+          temporaryPlan,
+        };
+      }),
+      catCapRows,
+      [],
+      { weeklyCapacityOverrides },
+    );
+    pass2Invariants = pass2.invariants;
+    const pass2ByKey = new Map(
+      pass2.items.map((result) => [itemKey(result.itemCode, result.colour), result]),
+    );
+    for (const item of items) {
+      const fitted = pass2ByKey.get(itemKey(item.itemCode, item.colour));
+      if (!fitted) continue;
+      item.w1Rev = fitted.w1;
+      item.w2Rev = fitted.w2;
+      item.w3Rev = fitted.w3;
+      item.w4Rev = fitted.w4;
+      item.correctiveProduction = fitted.productionPlan;
+      item.cannotBeMade = fitted.cannotBeMade;
+      item.cannotBeMadeReason = fitted.cannotBeMade > 0
+        ? "PTMT_CAPACITY_EXHAUSTED"
+        : null;
+      item.newWeek = fitted.releaseWeek;
+    }
+  } else if (segment === "Plumbing") {
+    const schedulerWeeks = remainingWindow
+      .map(({ week, days }, index) => ({
+        originalWeek: week as 1 | 2 | 3 | 4,
+        workingDays: days,
+        index,
+      }))
+      .filter((entry) => entry.workingDays > 0)
+      .map(({ originalWeek, workingDays }) => ({ originalWeek, workingDays }));
+
+    const demandByKind = {
+      pipe: [] as Array<{ item_code: string; material: string; qty_pcs: number; weight_kg_per_piece?: number }>,
+      fitting: [] as Array<{ item_code: string; material: string; qty_pcs: number; weight_kg_per_piece?: number }>,
+    };
+    const weightByCode = new Map<string, number>();
+    for (const item of items) {
+      if (item.remainingToProduce <= 0 || item.category.endsWith("Solvent")) continue;
+      const kind = item.category.endsWith("Pipe") ? "pipe" : item.category.endsWith("Fitting") ? "fitting" : null;
+      if (!kind) {
+        item.cannotBeMade = item.remainingToProduce;
+        item.cannotBeMadeReason = "UNSUPPORTED_PLUMBING_CATEGORY";
+        continue;
+      }
+      const weightPerPiece = originalByKey.get(itemKey(item.itemCode, item.colour))?.weightKg;
+      const originalPlan = originalByKey.get(itemKey(item.itemCode, item.colour))?.maxProduction ?? 0;
+      if (!weightPerPiece || originalPlan <= 0) {
+        item.cannotBeMade = item.remainingToProduce;
+        item.cannotBeMadeReason = "NO_BOM_WEIGHT";
+        continue;
+      }
+      const weight = weightPerPiece / originalPlan;
+      const demand = {
+        item_code: item.itemCode,
+        material: item.category.split(" ")[0]!,
+        qty_pcs: Math.round(item.remainingToProduce),
+        weight_kg_per_piece: weight,
+      };
+      demandByKind[kind].push(demand);
+      weightByCode.set(item.itemCode, weight);
     }
 
-    if (assignedWeek !== null && !remainingWeeks.includes(assignedWeek)) {
-      assignedWeek = remainingWeeks[0] ?? null;
+    plumbingSchedule = await runPlumbingCorrectiveSchedule({
+      month,
+      weeks: schedulerWeeks,
+      demandByKind,
+      weightByCode,
+    });
+    const allocations = new Map(plumbingSchedule.allocations.map((allocation) => [allocation.itemCode, allocation]));
+    const unroutable = new Map(plumbingSchedule.unroutable.map((row) => [row.item_code, row.reason]));
+    const firstWeek = schedulerWeeks[0]?.originalWeek ?? null;
+    for (const item of items) {
+      if (item.remainingToProduce <= 0) continue;
+      if (item.category.endsWith("Solvent")) {
+        // Solvent has no machine route in the public scheduler. It is
+        // explicitly unconstrained, but still needs an open-week assignment;
+        // without one it is not feasible rather than silently "fitted".
+        if (firstWeek === null) {
+          item.correctiveProduction = 0;
+          item.cannotBeMade = item.remainingToProduce;
+          item.cannotBeMadeReason = "NO_OPEN_WEEK_WINDOW";
+          item.newWeek = null;
+        } else {
+          item.correctiveProduction = item.remainingToProduce;
+          item.cannotBeMade = 0;
+          item.cannotBeMadeReason = null;
+          item.newWeek = firstWeek;
+          solventUnconstrainedPieces += item.remainingToProduce;
+          if (firstWeek === 1) item.w1Rev = item.remainingToProduce;
+          if (firstWeek === 2) item.w2Rev = item.remainingToProduce;
+          if (firstWeek === 3) item.w3Rev = item.remainingToProduce;
+          if (firstWeek === 4) item.w4Rev = item.remainingToProduce;
+        }
+        continue;
+      }
+      const allocation = allocations.get(item.itemCode);
+      const scheduled = allocation?.scheduledPieces ?? 0;
+      item.w1Rev = allocation?.weeks[0] ?? 0;
+      item.w2Rev = allocation?.weeks[1] ?? 0;
+      item.w3Rev = allocation?.weeks[2] ?? 0;
+      item.w4Rev = allocation?.weeks[3] ?? 0;
+      item.correctiveProduction = scheduled;
+      item.cannotBeMade = Math.max(item.remainingToProduce - scheduled, 0);
+      item.cannotBeMadeReason = item.cannotBeMade > 0
+        ? (unroutable.get(item.itemCode) ?? "PLUMBING_MACHINE_CAPACITY_EXHAUSTED")
+        : null;
+      item.newWeek = scheduled > 0
+        ? ([item.w1Rev, item.w2Rev, item.w3Rev, item.w4Rev].findIndex((qty) => qty > 0) + 1 || null) as 1 | 2 | 3 | 4 | null
+        : null;
     }
-    if (assignedWeek === null) assignedWeek = remainingWeeks[0] ?? null;
-    if (assignedWeek === null) {
-      item.status = "unfulfillable";
+  }
+
+  // Feasibility is a persisted state, not a truthy/falsey inference. In
+  // particular, a solvent with no open week is not the same as a routed item
+  // that exhausted machine capacity: both can have a residual, but only the
+  // latter is unfulfillable.
+  for (const item of items) {
+    if (item.temporaryCorrective <= 0 || item.cannotBeMade <= 0) {
+      item.feasibilityStatus = "fitted";
+    } else if (
+      item.category.endsWith("Solvent")
+      && item.cannotBeMadeReason === "NO_OPEN_WEEK_WINDOW"
+    ) {
+      item.feasibilityStatus = "not-scheduled";
+    } else {
+      item.feasibilityStatus = "unfulfillable";
+    }
+  }
+
+  const catWeekBuckets = new Map<number, Map<string, number>>();
+  for (const w of [1, 2, 3, 4]) {
+    catWeekBuckets.set(w, new Map());
+    for (const item of items) {
+      const release = w === 1 ? item.w1Rev : w === 2 ? item.w2Rev : w === 3 ? item.w3Rev : item.w4Rev;
+      if (release > 0) {
+        const bucket = catWeekBuckets.get(w)!;
+        bucket.set(item.category, (bucket.get(item.category) ?? 0) + release);
+      }
+    }
+  }
+
+  for (const item of items) {
+    if (item.remainingToProduce === 0 && item.status === "on-plan") {
+      item.status = "replenished";
       continue;
     }
-
-    const appliedDailyCap = getCapPerDay(item.category);
-    const catWDays = getWdPerWeek(item.category);
-    const catWeekCap = appliedDailyCap * catWDays;
-
-    let finalWeek: number | null = null;
-    let spill = assignedWeek;
-    while (spill <= 4) {
-      if (!remainingWeeks.includes(spill)) { spill++; continue; }
-      const catBuckets = catWeekBuckets.get(spill)!;
-      const catLoad = catBuckets.get(item.category) ?? 0;
-      if (catLoad + item.remainingToProduce <= catWeekCap) {
-        finalWeek = spill;
-        catBuckets.set(item.category, catLoad + item.remainingToProduce);
-        break;
-      }
-      spill++;
-    }
-
-    if (finalWeek === null) {
+    const scheduled = item.correctiveProduction;
+    if (item.cannotBeMade > 0) {
       item.status = "unfulfillable";
-      item.newWeek = null;
+      item.newWeek = scheduled > 0 ? item.newWeek : null;
+      continue;
+    }
+    const origItem = originalByKey.get(itemKey(item.itemCode, item.colour));
+    if (!origItem || origItem.maxProduction === 0) {
+      item.status = "new-item";
+    } else if ((item.newWeek ?? 0) > (item.originalWeek ?? 0) && item.originalWeek !== null) {
+      item.status = "carried-over";
+    } else if (item.deltaNewOrders > 0.1 * origItem.maxProduction) {
+      item.status = "demand-spike";
     } else {
-      item.newWeek = finalWeek;
-      item.w1Rev = finalWeek === 1 ? item.remainingToProduce : 0;
-      item.w2Rev = finalWeek === 2 ? item.remainingToProduce : 0;
-      item.w3Rev = finalWeek === 3 ? item.remainingToProduce : 0;
-      item.w4Rev = finalWeek === 4 ? item.remainingToProduce : 0;
-
-      const origItem = originalByKey.get(itemKey(item.itemCode, item.colour));
-      if (!origItem || origItem.maxProduction === 0) {
-        item.status = "new-item";
-      } else if (finalWeek > (item.originalWeek ?? 0) && item.originalWeek !== null) {
-        item.status = "carried-over";
-      } else if (item.deltaNewOrders > 0.1 * origItem.maxProduction) {
-        item.status = "demand-spike";
-      } else {
-        item.status = "on-plan";
-      }
+      item.status = "on-plan";
     }
   }
 
@@ -837,17 +1126,29 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     originalPlanTotal: number;
     newDemandDeltaTotal: number;
     kgRemainingTotal: number;
+    temporaryCorrectiveTotal: number;
+    correctiveProductionTotal: number;
+    cannotBeMadeTotal: number;
+    notScheduledTotal: number;
+    unfulfillableTotal: number;
   }>();
   for (const item of items) {
     const c = catGroupMap.get(item.category) ?? {
       planRevTotal: 0, producedTotal: 0, originalPlanTotal: 0,
       newDemandDeltaTotal: 0, kgRemainingTotal: 0,
+      temporaryCorrectiveTotal: 0, correctiveProductionTotal: 0, cannotBeMadeTotal: 0,
+      notScheduledTotal: 0, unfulfillableTotal: 0,
     };
     c.planRevTotal += item.planRev;
     c.producedTotal += item.producedToDate;
     c.originalPlanTotal += item.originalPlan;
     c.newDemandDeltaTotal += Math.max(item.deltaNewOrders, 0);
     c.kgRemainingTotal += item.remainingKg;
+    c.temporaryCorrectiveTotal += item.temporaryCorrective;
+    c.correctiveProductionTotal += item.correctiveProduction;
+    c.cannotBeMadeTotal += item.cannotBeMade;
+    c.notScheduledTotal += item.feasibilityStatus === "not-scheduled" ? item.cannotBeMade : 0;
+    c.unfulfillableTotal += item.feasibilityStatus === "unfulfillable" ? item.cannotBeMade : 0;
     catGroupMap.set(item.category, c);
   }
 
@@ -916,6 +1217,11 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       elapsedWorkingDays: workingDaysUsed,
       feasibleAtRunRate,
       runRateDivergenceFlag,
+      temporaryCorrective: Math.round(c.temporaryCorrectiveTotal),
+      correctiveProduction: Math.round(c.correctiveProductionTotal),
+      cannotBeMade: Math.round(c.cannotBeMadeTotal),
+      notScheduled: Math.round(c.notScheduledTotal),
+      unfulfillable: Math.round(c.unfulfillableTotal),
     });
   }
   categories.sort((a, b) => a.category.localeCompare(b.category));
@@ -959,8 +1265,73 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
   const originalMonthTotal = round(originalItems.reduce((s, i) => s + i.maxProduction, 0));
   const revisedMonthTotal = round(items.reduce((s, i) => s + i.planRev, 0));
   const unfulfillableQty = round(
-    items.filter(i => i.status === "unfulfillable").reduce((s, i) => s + i.remainingToProduce, 0)
+    items.reduce((s, i) => s + i.cannotBeMade, 0)
   );
+  const notScheduledQty = round(
+    items.reduce((s, i) => s + (i.feasibilityStatus === "not-scheduled" ? i.cannotBeMade : 0), 0),
+  );
+  const unfulfillableOnlyQty = round(
+    items.reduce((s, i) => s + (i.feasibilityStatus === "unfulfillable" ? i.cannotBeMade : 0), 0),
+  );
+  const temporaryCorrectiveUnchanged = items.every(
+    (item) => Math.abs(item.temporaryCorrective - item.remainingToProduce) <= 1,
+  );
+  const noClosedWeekRelease = items.every((item) =>
+    [item.w1Rev, item.w2Rev, item.w3Rev, item.w4Rev]
+      .slice(0, weekClosed)
+      .every((quantity) => Math.abs(quantity) <= 1),
+  );
+  const weeklyCapacity = [1, 2, 3, 4].every((week) => {
+    if (week <= weekClosed) return true;
+    const bucket = catWeekBuckets.get(week) ?? new Map<string, number>();
+    return [...bucket.entries()].every(([category, load]) => {
+      if (segment === "Plumbing" && category.endsWith("Solvent")) return true;
+      const limit = weeklyCapacityOverrides[week as 1 | 2 | 3 | 4]?.get(category);
+      return limit == null || load <= limit + 1;
+    });
+  });
+  const producedFloor = items.every((item) => item.planRev + 1 >= item.producedToDate);
+  const reconciliation = items.every(
+    (item) => Math.abs(item.temporaryCorrective - item.correctiveProduction - item.cannotBeMade) <= 1,
+  );
+  const machineFeasibility = items.every((item) => {
+    if (item.correctiveProduction <= 0) return true;
+    return [item.w1Rev, item.w2Rev, item.w3Rev, item.w4Rev]
+      .slice(weekClosed)
+      .some((quantity) => quantity > 0);
+  });
+  const pass2Conservation = segment === "PTMT" ? (pass2Invariants?.conservation ?? false) : true;
+  const pass2WeeklySum = segment === "PTMT" ? (pass2Invariants?.weeklySum ?? false) : true;
+  const pass2DummyPriority = segment === "PTMT" ? (pass2Invariants?.dummyPriority ?? false) : true;
+  const schedulerAudit = segment === "Plumbing" ? {
+    demandPieces: items.reduce((sum, item) => sum + item.temporaryCorrective, 0),
+    fittedPieces: items.reduce((sum, item) => sum + item.correctiveProduction, 0),
+    cannotBeMadePieces: items.reduce((sum, item) => sum + item.cannotBeMade, 0),
+    solventUnconstrainedPieces,
+    machineScheduledPieces: plumbingSchedule?.results.reduce((sum, result) => sum + result.total_scheduled_pcs, 0) ?? 0,
+    machineUnfinishedPieces: plumbingSchedule?.results.reduce((sum, result) => sum + result.total_unfinished_pcs, 0) ?? 0,
+    machineCapacityHours: plumbingSchedule?.results.reduce((sum, result) => sum + result.total_capacity_hrs, 0) ?? 0,
+    machineScheduledHours: plumbingSchedule?.results.reduce((sum, result) => sum + result.total_scheduled_hrs, 0) ?? 0,
+    machineIdleHours: plumbingSchedule?.results.reduce((sum, result) => sum + result.total_idle_hrs, 0) ?? 0,
+    machineUnallocatedHours: plumbingSchedule?.results.reduce(
+      (sum, result) => sum + Math.max(0, result.total_capacity_hrs - result.total_scheduled_hrs - result.total_idle_hrs),
+      0,
+    ) ?? 0,
+    unroutablePieces: plumbingSchedule?.unroutable.reduce((sum, row) => sum + row.qty_pcs, 0) ?? 0,
+  } : undefined;
+  const invariants = {
+    temporaryCorrectiveUnchanged,
+    noClosedWeekRelease,
+    weeklyCapacity,
+    producedFloor,
+    reconciliation,
+    machineFeasibility,
+    pass2Conservation,
+    pass2WeeklySum,
+    pass2DummyPriority,
+    allPass: temporaryCorrectiveUnchanged && noClosedWeekRelease && weeklyCapacity && producedFloor &&
+      reconciliation && machineFeasibility && pass2Conservation && pass2WeeklySum && pass2DummyPriority,
+  };
 
   // ── Baseline integrity guard ──────────────────────────────────────────────
   // When the caller supplies the plan run's stored grandMaxTotal, assert that
@@ -1107,6 +1478,8 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     originalMonthTotal,
     revisedMonthTotal,
     unfulfillableQty,
+    notScheduledQty,
+    unfulfillableOnlyQty,
     weekStats,
     warnings,
     items,
@@ -1114,6 +1487,8 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     // NEW run (otherwise dedupe would reuse a run with stale categoriesJson).
     categories,
     workingDaysRemaining,
+    schedulerWeekOffset: plumbingSchedule?.weekOffset ?? null,
+    schedulerOriginalWeeks: plumbingSchedule?.originalWeeks ?? [],
   });
 
   const versionEffectiveFrom = effectiveAsOfDate
@@ -1155,6 +1530,18 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
       originalMonthTotal,
       revisedMonthTotal,
       unfulfillableQty,
+       temporaryCorrectiveTotal: round(items.reduce((sum, item) => sum + item.temporaryCorrective, 0)),
+       correctiveProductionTotal: round(items.reduce((sum, item) => sum + item.correctiveProduction, 0)),
+       cannotBeMadeTotal: unfulfillableQty,
+       notScheduledTotal: notScheduledQty,
+       unfulfillableTotal: unfulfillableOnlyQty,
+      feasibilityJson: {
+         schedulerWeekOffset: plumbingSchedule?.weekOffset ?? null,
+         schedulerOriginalWeeks: plumbingSchedule?.originalWeeks ?? [],
+         schedulerWeekDays: plumbingSchedule?.weekDays ?? [],
+          schedulerAudit,
+         invariants,
+       },
       weekStatsJson: weekStats,
       warningsJson: warnings,
       categoriesJson: categories,
@@ -1203,6 +1590,11 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
           w2Rev: item.w2Rev,
           w3Rev: item.w3Rev,
           w4Rev: item.w4Rev,
+           temporaryCorrective: item.temporaryCorrective,
+           correctiveProduction: item.correctiveProduction,
+           cannotBeMade: item.cannotBeMade,
+           cannotBeMadeReason: item.cannotBeMadeReason,
+            feasibilityStatus: item.feasibilityStatus,
             status: item.status,
             isNewItem: item.isNewItem ? 1 : 0,
           })),
@@ -1232,7 +1624,10 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
         itemCode: item.itemCode,
         colour: item.colour,
         category: item.category,
-        maxPcs: item.planRev,
+        // A corrective version is the executable month target: actual output
+        // already produced plus the machine-fitted open-window release. Keep
+        // the temporary demand visible on the corrective run itself.
+        maxPcs: item.producedToDate + item.correctiveProduction,
         minPcs: 0,
         w1: item.w1Rev,
         w2: item.w2Rev,
@@ -1258,12 +1653,24 @@ export async function runCorrectiveReplan(input: CorrectiveReplanInput): Promise
     originalMonthTotal,
     revisedMonthTotal,
     unfulfillableQty,
+    notScheduledQty,
+    unfulfillableOnlyQty,
     weekStats,
     warnings,
     items,
     categories,
     unplannedProduction,
     unplannedTotal,
+    schedulerWeekOffset: plumbingSchedule?.weekOffset ?? null,
+    schedulerOriginalWeeks: plumbingSchedule?.originalWeeks ?? [],
+    invariants,
+    feasibility: {
+      schedulerWeekOffset: plumbingSchedule?.weekOffset ?? null,
+      schedulerOriginalWeeks: plumbingSchedule?.originalWeeks ?? [],
+      schedulerWeekDays: plumbingSchedule?.weekDays ?? [],
+      schedulerAudit,
+      invariants,
+    },
     baselinePlanRunId: input.planRunId ?? null,
     baselineSource: input.planRunId != null ? "frozen-run" : "live",
     frozenPlanGrandMax: input.planRunGrandMax != null ? Math.round(input.planRunGrandMax) : null,

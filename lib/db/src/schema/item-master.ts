@@ -10,6 +10,9 @@ export const itemMasterTable = pgTable(
     category: text("category").notNull(),
     itemCode: text("item_code").notNull(),
     colour: text("colour").notNull(),
+    classificationStatus: text("classification_status").notNull().default("classified"),
+    classificationSource: text("classification_source"),
+    classificationNote: text("classification_note"),
   },
   (table) => [unique().on(table.itemCode, table.colour, table.category)],
 );

@@ -1,8 +1,8 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { exportTimestamp } from "../lib/export-filename";
-import { db, itemMasterTable, bufferCategoriesTable, uploadedFilesTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable } from "@workspace/db";
-import { and, desc, eq } from "drizzle-orm";
+import { db, itemMasterTable, bufferCategoriesTable, uploadedFilesTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, planRunsTable, planRunResultsTable } from "@workspace/db";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   computeItemPlan,
   annotateWeeklyRelease,
@@ -20,26 +20,51 @@ import {
   fetchPlumbingPlanData,
   fetchPlumbingSheet3Production,
   pendingCoverageFromParsedRows,
+  pendingOrderTotalsFromRows,
+  pendingPlanDiagnosticsFromParsedRows,
+  applyPendingOrderAlias,
+  buildPendingRosterIndex,
   itemKey,
   normalizeCode,
   normalizeCodeStrict,
+  pendingRosterItemKey,
+  pendingTotalsByRosterItem,
+  pendingJoinModeForItem,
   runInPlanningContext,
   PlanningIsolationError,
   PlumbingInputUnreadableError,
   UpstreamTimeoutError,
   type DualTotals,
   type PlumbingSheet3Row,
+  type PendingOrderRow,
 } from "../lib/sheets";
 import { logger } from "../lib/logger";
+import { reviewedBufferMultiplier } from "../lib/master-products";
 import { buildElapsedProductionDays } from "../lib/plant-engine";
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "../lib/plant-lifecycle";
-import { exportPlanExcel } from "../lib/excel-export";
 import { exportPlanPdf } from "../lib/pdf-export";
 import { exportWeeklyReleaseExcel } from "../lib/weekly-excel-export";
+import {
+  exportFrozenProductionPdf,
+  exportFrozenRunExcel,
+  getLatestFinalizedRun,
+  loadProductionExportRows,
+} from "../lib/frozen-plan-export";
+import { PlumbingScheduleExportError } from "../lib/plumbing-schedule-export";
+import { WeeklyExportInvariantError } from "../lib/weekly-excel-export";
 import { runMachineCascade, type PlanItemForCascade } from "../lib/machine-capacity-engine";
-import { runCorrectiveReplan } from "../lib/corrective-engine";
+import { runCorrectiveDiagnostic, runCorrectiveReplan } from "../lib/corrective-engine";
 import { LivePendingReadError } from "../lib/corrective-errors";
-import { diagnoseInputRows } from "../lib/input-diagnostics";
+import { diagnoseInputRows, type InputReadDiagnostics } from "../lib/input-diagnostics";
+import {
+  captureLivePendingRead,
+  ensureEvidenceBackedPendingBaseline,
+  getActivePendingReadBaseline,
+  livePendingFailureDiagnostics,
+  pendingExclusionFingerprint,
+  persistPendingReadSnapshot,
+  updatePendingReadSnapshotDiagnostics,
+} from "../lib/pending-read-snapshot";
 import {
   PLUMBING_GOLDEN,
   PLUMBING_GRAND_TOTAL,
@@ -70,7 +95,6 @@ import {
   PTMT_AUG_LM_TOTAL,
   PTMT_AUG_PENDING_TOTAL,
   PLUMBING_AUG_PENDING_TOTAL,
-  PLUMBING_UNMATCHED_PENDING_TOTAL,
   PLUMBING_PENDING_PLAN_MOVEMENT,
   PLUMBING_PENDING_PLAN_CLAMP_LOSS,
   PTMT_AUG_AVG3MO_144O_WHITE,
@@ -78,6 +102,7 @@ import {
   PTMT_TOLERANCE,
   PTMT_CATEGORY_GOLDEN,
   PTMT_MULTIPLIER_GOLDEN,
+  getGoldenIntegrityChecks,
   PLUMBING_MON_W1_MAPPED,
   PLUMBING_MON_W2_MAPPED,
   PLUMBING_MON_W1_UNMAPPED,
@@ -125,11 +150,19 @@ export class MissingUploadError extends Error {
   }
 }
 
+export type PlanningInputDiagnostics = {
+  pendingAtPlan?: InputReadDiagnostics;
+  livePending?: InputReadDiagnostics;
+};
+
 /** Thrown when a planning input is present but fails a sanity check. */
 export class PlanningInputError extends Error {
-  constructor(message: string) {
+  public inputDiagnostics?: PlanningInputDiagnostics;
+
+  constructor(message: string, inputDiagnostics?: PlanningInputDiagnostics) {
     super(message);
     this.name = "PlanningInputError";
+    this.inputDiagnostics = inputDiagnostics;
   }
 }
 
@@ -137,53 +170,75 @@ export class PlanningInputError extends Error {
  *  guard fires. AsyncLocalStorage-scoped so a concurrent real plan request can
  *  never see a simulated-missing upload. */
 const _simulateMissingUploads = new AsyncLocalStorage<Set<string>>();
-function withSimulatedMissingUpload<T>(kind: string, fn: () => Promise<T>): Promise<T> {
+export function withSimulatedMissingUpload<T>(kind: string, fn: () => Promise<T>): Promise<T> {
   return _simulateMissingUploads.run(new Set([kind]), fn);
 }
 
 /** Loads the latest upload of `kind`; throws MissingUploadError when absent or empty. */
-async function requireUploadRows(kind: string, fileLabel: string): Promise<Record<string, unknown>[]> {
+async function requireUploadSnapshot(kind: string, fileLabel: string): Promise<UploadRowsSnapshot> {
   if (_simulateMissingUploads.getStore()?.has(kind)) throw new MissingUploadError(kind, fileLabel);
-  const rows = await loadLatestUploadRowsByKind(kind);
-  if (rows.length === 0) throw new MissingUploadError(kind, fileLabel);
-  return rows;
+  const snapshot = await loadLatestUploadSnapshotByKind(kind);
+  if (snapshot.rows.length === 0) throw new MissingUploadError(kind, fileLabel);
+  return snapshot;
+}
+
+/** Loads the latest upload of `kind`; throws MissingUploadError when absent or empty. */
+async function requireUploadRows(kind: string, fileLabel: string): Promise<Record<string, unknown>[]> {
+  return (await requireUploadSnapshot(kind, fileLabel)).rows;
 }
 
 /** Maps plan-path errors to HTTP responses: 422 for named input failures. */
 export function handlePlanError(res: Response, err: unknown): void {
+  const pendingReadCaptureId = res.locals?.pendingReadCaptureId;
+  const withCaptureId = (body: Record<string, unknown>): Record<string, unknown> =>
+    pendingReadCaptureId ? { ...body, pendingReadCaptureId } : body;
   if (err instanceof UpstreamTimeoutError) {
     const provider = err.provider === "google-drive" ? "Google Drive" : "Google Sheets";
-    res.status(504).set("Retry-After", "5").json({
+    res.status(504).set("Retry-After", "5").json(withCaptureId({
       error: err.code,
       message: `${provider} did not respond in time while loading planning data. Retry shortly.`,
       upstreamErrorType: err.upstreamErrorType,
       retryable: err.retryable,
-    });
+    }));
     return;
   }
   if (err instanceof PlumbingInputUnreadableError) {
-    res.status(422).json({
+    res.status(422).json(withCaptureId({
       error: err.code,
       month: err.month,
       workbookId: err.workbookId,
       skippedTabs: err.skippedTabs,
       detail: err.detail,
-    });
+    }));
     return;
   }
   if (err instanceof MissingUploadError || err instanceof PlanningInputError || err instanceof PlanningIsolationError) {
-    res.status(422).json({ error: err.message, kind: err.name });
+    res.status(422).json(withCaptureId({
+      error: err.message,
+      kind: err.name,
+      ...(err instanceof PlanningInputError && err.inputDiagnostics
+        ? { inputDiagnostics: err.inputDiagnostics }
+        : {}),
+    }));
     return;
   }
   if (err instanceof LivePendingReadError) {
-    res.status(503).json({
+    res.status(503).json(withCaptureId({
       error: err.code,
       message: err.message,
       diagnostics: err.diagnostics,
-    });
+    }));
     return;
   }
   throw err;
+}
+
+export async function captureValidationLivePending(segment: string) {
+  return captureLivePendingRead(
+    segment,
+    "validation",
+    () => fetchLivePendingOrderTotals(segment),
+  );
 }
 
 type PlanCheckResult = {
@@ -280,13 +335,9 @@ export function classifyPendingSource(rows: Record<string, unknown>[]): {
 async function annotateLiveOrders(items: PlanItemWithBom[], month: string, segment: string): Promise<void> {
   try {
     const totals = await fetchLiveOrderTotals(month, segment === "Plumbing" ? "PLUMBING" : "PTMT");
-    const codeCounts = new Map<string, number>();
+    const rosterIndex = buildPendingRosterIndex(items);
     for (const i of items) {
-      const k = normalizeCode(i.itemCode);
-      codeCounts.set(k, (codeCounts.get(k) ?? 0) + 1);
-    }
-    for (const i of items) {
-      const single = (codeCounts.get(normalizeCode(i.itemCode)) ?? 0) <= 1;
+      const single = pendingJoinModeForItem(rosterIndex, i) === "code";
       i.order = resolveTotal(totals, i.itemCode, i.colour, single);
     }
   } catch (err) {
@@ -325,6 +376,193 @@ export function sumByKey(
   return totals;
 }
 
+function pendingRowsFromInput(
+  rows: Record<string, unknown>[],
+  options: {
+    segment: string;
+    codeKeys: string[];
+    colourKeys: string[];
+    quantityKeys: string[];
+    sourceRole: string;
+    transformQuantity?: (quantity: number) => number;
+  },
+): PendingOrderRow[] {
+  const firstValue = (row: Record<string, unknown>, keys: string[]): unknown =>
+    keys.map((key) => row[key]).find((value) => value !== undefined && value !== null && value !== "");
+
+  return rows.flatMap((row): PendingOrderRow[] => {
+    const rawCode = firstValue(row, options.codeKeys);
+    if (rawCode === undefined || rawCode === null || String(rawCode).trim() === "") return [];
+    const rawQuantity = firstValue(row, options.quantityKeys);
+    const parsedQuantity = typeof rawQuantity === "number"
+      ? rawQuantity
+      : Number(String(rawQuantity ?? "0").replace(/,/g, "")) || 0;
+    const rawColour = firstValue(row, options.colourKeys);
+    const rawCodeText = String(rawCode).trim();
+    const aliased = applyPendingOrderAlias(rawCodeText, String(rawColour ?? "").trim());
+    return [{
+      segment: options.segment,
+      catNo: aliased.code,
+      colour: aliased.colour,
+      description: String(row["Description"] ?? row["Item Name"] ?? row["Product Name"] ?? "").trim(),
+      qty: options.transformQuantity ? options.transformQuantity(parsedQuantity) : parsedQuantity,
+    }];
+  });
+}
+
+function totalsFromPendingRows(rows: PendingOrderRow[]): DualTotals {
+  const totals: DualTotals = { exact: new Map(), byCode: new Map(), pendingRows: rows };
+  for (const row of rows) {
+    const exactKey = itemKey(row.catNo, row.colour);
+    const codeKey = normalizeCode(row.catNo);
+    totals.exact.set(exactKey, (totals.exact.get(exactKey) ?? 0) + row.qty);
+    totals.byCode.set(codeKey, (totals.byCode.get(codeKey) ?? 0) + row.qty);
+  }
+  return totals;
+}
+
+function pendingRowsFromTotals(totals: DualTotals, segment: string): PendingOrderRow[] {
+  return [...totals.exact.entries()].map(([key, qty]) => {
+    const separator = key.indexOf("::");
+    return {
+      segment,
+      catNo: separator >= 0 ? key.slice(0, separator) : key,
+      colour: separator >= 0 ? key.slice(separator + 2) : "",
+      description: "",
+      qty,
+    };
+  });
+}
+
+function totalByCode(totals: DualTotals): number {
+  return [...totals.byCode.values()].reduce((sum, quantity) => sum + quantity, 0);
+}
+
+type ReviewedPendingExclusionPolicy = {
+  maxUnmatchedQuantity: number;
+  maxResolutionLossQuantity: number;
+  reviewedFingerprint: string;
+  rationale: string;
+};
+
+/**
+ * Explicitly reviewed exclusion ceilings for the current uploaded source set.
+ *
+ * A roster exclusion is not automatically harmless just because it has a
+ * machine-generated reason.  These ceilings preserve the known source/roster
+ * boundary while making a newly introduced or enlarged loss fail plan
+ * creation until it is reviewed and deliberately baselined.
+ *
+ * The source uploads are not month-keyed in the database, so the policy is
+ * keyed by segment and source role rather than pretending that an upload has
+ * a historical month assignment.
+ */
+const REVIEWED_PENDING_EXCLUSION_POLICY: Record<string, ReviewedPendingExclusionPolicy> = {
+  "PTMT:pending_current": {
+    maxUnmatchedQuantity: 2_549,
+    maxResolutionLossQuantity: 0,
+    reviewedFingerprint: "9a03dfe32e9e18705495f79a4e4c6285f10e6edca900a63e28e7cfd45606efec",
+    rationale: "Approved 2026-08-27 after catalogue sync and canonicalisation. predecessor upload #12: source=4590, joined=2041, excluded=2549, predecessorFingerprint=be24296cfc8b260ee7c7830d33d98a653308d4874385b96c2340eb2632c61038; approved upload #14: source=6075, joined=5321, excluded=754, currentFingerprint=9a03dfe32e9e18705495f79a4e4c6285f10e6edca900a63e28e7cfd45606efec; joined delta=+3280, excluded delta=-1795. Approved current exclusion ledger by code (all NO_ROSTER_MATCH, 754 pieces): 122-L=33, 124-QP=66, 124-QR=66, 1322-NR=30, 136-L=50, 1375-NG=1, 147-NR=30, 147-U=30, PTA-26=18, QD-20=210, QD-24=30, QD-34=30, QD-35=30, SNPT-89HF=50, SNPTC-1=20, SNPTC-9=20, SNPTCSL-1=20, SNPTCSL-9=20; 39 additional unmatched code keys carry zero balance. The changed exclusion set is fully accounted for by the catalogue sync/canonicalisation boundary and is the documented predecessor for the approved fingerprint.",
+  },
+  "PTMT:pending_last_month": {
+    maxUnmatchedQuantity: 73_104,
+    maxResolutionLossQuantity: 0,
+    reviewedFingerprint: "bdad1b1ad5833cc49536404e4e7989719c7f47068c20cfc5f5879cf4f13396e2",
+    rationale: "August 2026 last-month pending roster boundary after category-scoped duplicate-code matching",
+  },
+  "Plumbing:pending_current": {
+    maxUnmatchedQuantity: 234,
+    maxResolutionLossQuantity: 0,
+    reviewedFingerprint: "9380b02828fdb193462269298ab9c7db62e8591a9ebd436a2f97ddad203b0504",
+    rationale: "August 2026 uploaded current-pending roster boundary",
+  },
+  "Plumbing:pending_last_month": {
+    maxUnmatchedQuantity: 13_583,
+    maxResolutionLossQuantity: 0,
+    reviewedFingerprint: "e9a898b6fb97ceb7c52da36e8916c2cf5823339737090f77e8ee04e82e882446",
+    rationale: "Approved upload #12 for August 2026: FG Stock and pending production month of July-2026.xlsx was the correct Plumbing July source, not a CP file; later CP-folder filing reflects subsequent file gathering and is not evidence about the 5 August upload. source=486033, joined=476663, excluded=9370, currentFingerprint=e9a898b6fb97ceb7c52da36e8916c2cf5823339737090f77e8ee04e82e882446; predecessor upload #8 was source=544544, joined=530961, excluded=13583, predecessorFingerprint=37273146ab579bef38f26c206020f6839e29ea77a87756f009e1b2d39f54c3eb; exclusion-set comparison=23 added codes (6 absent from upload #8, 17 positive-June-to-negative-July stock crossings), 22 dropped codes, 24 changed shared codes, 2 unchanged shared codes; all 9370 excluded pieces are accounted for and the change is ordinary inventory movement, not a source-file error",
+  },
+};
+
+function assertPendingJoinIdentity(
+  sourceLabel: string,
+  diagnostics: ReturnType<typeof pendingPlanDiagnosticsFromParsedRows>,
+  expectedSourceQuantity?: number,
+  policy?: ReviewedPendingExclusionPolicy,
+  inputDiagnostics?: PlanningInputDiagnostics,
+): void {
+  const identity = diagnostics.reconciliation;
+  const sourceMismatch = expectedSourceQuantity === undefined
+    ? 0
+    : expectedSourceQuantity - identity.sourceQuantity;
+  const policyDetail = policy
+    ? `, reviewedLimits=(unmatched<=${policy.maxUnmatchedQuantity}, resolutionLoss<=${policy.maxResolutionLossQuantity}, fingerprint=${policy.reviewedFingerprint}; ${policy.rationale})`
+    : ", reviewedLimits=missing";
+  const actualFingerprint = pendingExclusionFingerprint(diagnostics);
+  const exceedsReviewedLimit = policy !== undefined
+    && (
+      diagnostics.unmatchedQuantity > policy.maxUnmatchedQuantity + 0.01
+      || diagnostics.resolutionLossQuantity > policy.maxResolutionLossQuantity + 0.01
+      || (
+        diagnostics.unmatchedQuantity + diagnostics.resolutionLossQuantity > 0.01
+        && actualFingerprint !== policy.reviewedFingerprint
+      )
+    );
+  if (
+    !identity.reconciled
+    || !Number.isFinite(identity.unexplainedResidual)
+    || Math.abs(sourceMismatch) > 0.01
+    || exceedsReviewedLimit
+  ) {
+    throw new PlanningInputError(
+      `Pending join reconciliation failed for ${sourceLabel}: ` +
+      `source=${identity.sourceQuantity}, joined=${identity.joinedQuantity}, ` +
+      `explainedExclusions=${identity.explainedExclusionQuantity}, ` +
+      `unexplainedResidual=${identity.unexplainedResidual}` +
+      (Math.abs(sourceMismatch) > 0.01 ? `, parsedSourceMismatch=${sourceMismatch}` : "") +
+      `, unmatched=${diagnostics.unmatchedQuantity}, resolutionLoss=${diagnostics.resolutionLossQuantity}` +
+      (exceedsReviewedLimit && policy ? `, actualExclusionFingerprint=${actualFingerprint}` : "") +
+      policyDetail +
+      `. Refusing to build a partial plan.`,
+      inputDiagnostics,
+    );
+  }
+}
+
+/**
+ * The source-to-roster diagnostic and the actual plan rows must consume the
+ * same quantity. This catches a quieter failure mode where diagnostics report
+ * a match but a later plan-specific lookup drops it or duplicates it.
+ */
+function assertPlanUsesPendingJoin(
+  sourceLabel: string,
+  diagnostics: ReturnType<typeof pendingPlanDiagnosticsFromParsedRows>,
+  items: PlanItemWithBom[],
+  field: "pendingOrder" | "pendingOrderLastMonth",
+): void {
+  const planPendingQuantity = items.reduce((sum, item) => sum + item[field], 0);
+  const residual = diagnostics.planResolvedQuantity - planPendingQuantity;
+  if (!Number.isFinite(residual) || Math.abs(residual) > 0.01) {
+    throw new PlanningInputError(
+      `Pending plan join diverged for ${sourceLabel}: ` +
+      `diagnosticJoined=${diagnostics.planResolvedQuantity}, actualPlan${field}=${planPendingQuantity}, ` +
+      `residual=${residual}. Refusing to build a partial or duplicated plan.`,
+    );
+  }
+}
+
+function reviewedPendingExclusionPolicy(
+  segment: "PTMT" | "Plumbing",
+  sourceRole: string,
+): ReviewedPendingExclusionPolicy {
+  return REVIEWED_PENDING_EXCLUSION_POLICY[`${segment}:${sourceRole}`] ?? {
+    maxUnmatchedQuantity: 0,
+    maxResolutionLossQuantity: 0,
+    reviewedFingerprint: "",
+    rationale: "no reviewed policy exists for this segment/source role",
+  };
+}
+
 /**
  * Resolve an item's total from a dual-totals map. When an item's code has more
  * than one item_master row (real colour variants), colour is a meaningful
@@ -342,28 +580,23 @@ function resolveTotal(totals: DualTotals, itemCode: string, colour: string, isSi
 }
 
 /**
- * Rebuild the live-pending view used only by validation reconciliation.
- *
- * Production planning intentionally uses the uploaded current-pending file,
- * while /plan/validate still measures the live Bal. Qty source. Overlaying the
- * live values onto the already-built plan items keeps those concerns separate
- * without comparing live pending against a plan built with uploaded pending.
+ * Overlay live pending only for the Plumbing validation coverage report.
+ * Plumbing's historical pending checks are explicitly against the live report;
+ * PTMT validation uses buildPtmtPlanItemsForValidation below with the uploaded
+ * pending totals that production planning actually consumes.
  */
 function withLivePendingForReconciliation(
   items: PlanItemWithBom[],
   livePending: DualTotals,
 ): PlanItemWithBom[] {
-  const codeCounts = new Map<string, number>();
-  for (const item of items) {
-    const key = `${item.category}::${normalizeCode(item.itemCode)}`;
-    codeCounts.set(key, (codeCounts.get(key) ?? 0) + 1);
-  }
+  const pendingByRoster = pendingTotalsByRosterItem(
+    livePending.pendingRows ?? pendingRowsFromTotals(livePending, "PTMT"),
+    items,
+  );
   return items.map((item) => {
-    const isSingleVariant =
-      (codeCounts.get(`${item.category}::${normalizeCode(item.itemCode)}`) ?? 0) <= 1;
     return {
       ...item,
-      pendingOrder: resolveTotal(livePending, item.itemCode, item.colour, isSingleVariant),
+      pendingOrder: pendingByRoster.get(pendingRosterItemKey(item)) ?? 0,
     };
   });
 }
@@ -387,7 +620,9 @@ function hasEntry(totals: DualTotals, itemCode: string, colour: string, isSingle
  * PTMT items do not carry these fields (undefined).
  */
 export type PlanItemWithBom = ReturnType<typeof computeItemPlan> & {
+  material?: string;
   weightKg?: number;
+  temporaryPlan?: number;
   noBomWeight?: boolean;
   machineW1?: number;
   machineW2?: number;
@@ -397,6 +632,142 @@ export type PlanItemWithBom = ReturnType<typeof computeItemPlan> & {
   machineWeek?: 1 | 2 | 3 | 4 | null;
   machineUnfulfillable?: boolean;
 };
+
+type PlanBuildOptions = {
+  /**
+   * Validation must be able to capture and classify the independent live
+   * pending source even when the uploaded planning source is awaiting review.
+   * Normal plan construction keeps the reviewed-limit gate enabled.
+   */
+  allowUnreviewedCurrentPending?: boolean;
+  /**
+   * Validation can build the roster and plan diagnostics from the already
+   * captured live read before inspecting the independent uploaded source.
+   */
+  pendingTotalsOverride?: DualTotals;
+};
+
+type PlumbingValidationEvidencePersistence = {
+  updateSnapshotDiagnostics?: typeof updatePendingReadSnapshotDiagnostics;
+  ensureBaseline?: typeof ensureEvidenceBackedPendingBaseline;
+};
+
+/**
+ * Persist and promote the live validation evidence before reading the
+ * independent uploaded pending source. Keeping the upload read last means an
+ * invalid upload can still return a complete live evidence payload.
+ */
+export async function preparePlumbingValidationEvidence(
+  captureId: number,
+  pendingTotals: DualTotals,
+  items: PlanItemWithBom[],
+  readUploadedPending: () => Promise<UploadRowsSnapshot>,
+  persistence: PlumbingValidationEvidencePersistence = {},
+) {
+  const sourcePendingDiagnostics = pendingTotals.diagnostics ?? diagnoseInputRows([], {
+    code: ["Old ERP Code", "Item Code", "Item No."],
+    colour: ["Colour", "Color", "COLOR", "COLUOR"],
+    quantity: ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"],
+  }, { source: "Pending order / report · Plumbing" });
+  const livePendingPlanDiagnostics = pendingPlanDiagnosticsFromParsedRows(
+    pendingTotals.pendingRows ?? [],
+    items,
+    { sourceRole: "pending_current" },
+  );
+  const pendingCoverage = pendingCoverageFromParsedRows(
+    pendingTotals.pendingRows ?? [],
+    items.map((item) => item.itemCode),
+  );
+  const pendingDiagnostics = {
+    ...sourcePendingDiagnostics,
+    pendingPlan: livePendingPlanDiagnostics,
+    pendingCoverage,
+  };
+  await (persistence.updateSnapshotDiagnostics ?? updatePendingReadSnapshotDiagnostics)(
+    captureId,
+    pendingDiagnostics,
+  );
+  const pendingBaseline = await (persistence.ensureBaseline ?? ensureEvidenceBackedPendingBaseline)(
+    captureId,
+  );
+  const pendingUploadSnapshot = await readUploadedPending();
+  return {
+    pendingDiagnostics,
+    livePendingPlanDiagnostics,
+    pendingCoverage,
+    pendingBaseline,
+    pendingUploadSnapshot,
+  };
+}
+
+export type PtmtPlanValidationInputs = {
+  itemRows: Array<typeof itemMasterTable.$inferSelect>;
+  bufferRows: Array<typeof bufferCategoriesTable.$inferSelect>;
+  avg3MoTotals: DualTotals;
+  stockTotals: DualTotals;
+  pendingLastMoTotals: DualTotals;
+  pendingTotals: DualTotals;
+  liveOrderTotals: DualTotals;
+  currentStockRows: Record<string, unknown>[];
+};
+
+/**
+ * Build the PTMT validation items with the same source resolution as the
+ * production plan. Current pending is passed separately from live orders so
+ * validation can prove uploaded pending reaches the actual item plans while
+ * still exposing the live report as an independent diagnostic.
+ */
+export function buildPtmtPlanItemsForValidation({
+  itemRows,
+  bufferRows,
+  avg3MoTotals,
+  stockTotals,
+  pendingLastMoTotals,
+  pendingTotals,
+  liveOrderTotals,
+  currentStockRows,
+}: PtmtPlanValidationInputs): PlanItemWithBom[] {
+  const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
+  const rosterIndex = buildPendingRosterIndex(itemRows);
+  const pendingLastMonthRows = pendingLastMoTotals.pendingRows
+    ?? pendingRowsFromTotals(pendingLastMoTotals, "PTMT");
+  const pendingCurrentRows = pendingTotals.pendingRows
+    ?? pendingRowsFromTotals(pendingTotals, "PTMT");
+  const pendingLastMonthByRoster = pendingTotalsByRosterItem(pendingLastMonthRows, itemRows);
+  const pendingCurrentByRoster = pendingTotalsByRosterItem(pendingCurrentRows, itemRows);
+
+  const items = itemRows.map((item) => {
+    const isSingleVariant = pendingJoinModeForItem(rosterIndex, item) === "code";
+    return computeItemPlan(
+      {
+        itemCode: item.itemCode,
+        colour: item.colour,
+        avg3MoSaleTotal3Mo: resolveTotal(avg3MoTotals, item.itemCode, item.colour, isSingleVariant),
+        stock: resolveTotal(stockTotals, item.itemCode, item.colour, isSingleVariant),
+        stockNeedsReview:
+          currentStockRows.length > 0 && !hasEntry(stockTotals, item.itemCode, item.colour, isSingleVariant),
+        pendingOrderLastMonth: pendingLastMonthByRoster.get(pendingRosterItemKey(item)) ?? 0,
+        pendingOrder: pendingCurrentByRoster.get(pendingRosterItemKey(item)) ?? 0,
+        order: resolveTotal(liveOrderTotals, item.itemCode, item.colour, isSingleVariant),
+      },
+       item.category,
+       reviewedBufferMultiplier(item.classificationStatus, item.category, bufferByCategory),
+    );
+  });
+  const lastMonthDiagnostics = pendingPlanDiagnosticsFromParsedRows(
+    pendingLastMonthRows,
+    itemRows,
+    { sourceRole: "pending_last_month" },
+  );
+  const currentDiagnostics = pendingPlanDiagnosticsFromParsedRows(
+    pendingCurrentRows,
+    itemRows,
+    { sourceRole: "pending_current" },
+  );
+  assertPlanUsesPendingJoin("PTMT validation last-month pending", lastMonthDiagnostics, items, "pendingOrderLastMonth");
+  assertPlanUsesPendingJoin("PTMT validation current pending", currentDiagnostics, items, "pendingOrder");
+  return items;
+}
 
 /**
  * Plumbing plan — correct two-source architecture:
@@ -423,11 +794,20 @@ export type PlanItemWithBom = ReturnType<typeof computeItemPlan> & {
  *   different (correct) planning values vs the source sheet figures.
  * The workbook's Stock/PendingLM columns are NOT used — FG Stock upload is authoritative.
  */
-async function buildPlumbingPlanItemsFromWorkbook(month: string): Promise<PlanItemWithBom[]> {
-  return runInPlanningContext(`Plumbing plan build (${month})`, () => buildPlumbingPlanItemsInner(month));
+async function buildPlumbingPlanItemsFromWorkbook(
+  month: string,
+  options: PlanBuildOptions = {},
+): Promise<PlanItemWithBom[]> {
+  return runInPlanningContext(
+    `Plumbing plan build (${month})`,
+    () => buildPlumbingPlanItemsInner(month, options),
+  );
 }
 
-async function buildPlumbingPlanItemsInner(month: string): Promise<PlanItemWithBom[]> {
+async function buildPlumbingPlanItemsInner(
+  month: string,
+  options: PlanBuildOptions = {},
+): Promise<PlanItemWithBom[]> {
   // ── 1. UPLOADS + DB FIRST — fail fast (loudly, naming the file) before any sheet read ──
   const [fgStockRows, bufferRows, bandRows, machineRows] = await Promise.all([
     requireUploadRows("plumbing_fg_stock", "Plumbing FG Stock"),
@@ -438,17 +818,19 @@ async function buildPlumbingPlanItemsInner(month: string): Promise<PlanItemWithB
 
   // ── 2. Reference-data sheet reads (allow-listed: workbook roster/avg/multiplier
   // and BOM). Current pending is plan-only and deliberately switchable.
-  const pendingTotalsPromise = PLAN_PENDING_SOURCE === "live"
+  const pendingTotalsPromise = options.pendingTotalsOverride
+    ? Promise.resolve(options.pendingTotalsOverride)
+    : PLAN_PENDING_SOURCE === "live"
     ? fetchLivePendingOrderTotals("Plumbing")
-    : requireUploadRows("pending_orders", "Current Pending Orders").then((rows) =>
-        sumByKey(
-          rows,
-          ["Old Item Code", "Item Code", "Item No."],
-          ["Colour", "Color", "COLOR"],
-          ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty", "Qty"],
-          { source: "uploaded pending orders · Plumbing" },
-        ),
-      );
+    : requireUploadSnapshot("pending_orders", "Current Pending Orders").then((snapshot) => {
+        const totals = pendingOrderTotalsFromRows(snapshot.rows, "Plumbing");
+        if (totals.diagnostics) {
+          totals.diagnostics.source = "uploaded pending orders · Plumbing";
+          totals.diagnostics.uploadId = snapshot.id;
+          totals.diagnostics.filename = snapshot.filename;
+        }
+        return totals;
+      });
   const [workbookRows, bomWeights, pendingTotals] = await Promise.all([
     fetchPlumbingPlanData(month),
     fetchPlumbingBomWeights(),
@@ -495,9 +877,62 @@ async function buildPlumbingPlanItemsInner(month: string): Promise<PlanItemWithB
     if (netStock > 0) {
       stockMap.set(code, (stockMap.get(code) ?? 0) + netStock);
     } else if (netStock < 0) {
-      pendingLmMap.set(code, (pendingLmMap.get(code) ?? 0) + Math.abs(netStock));
+      const pendingCode = normalizeCode(applyPendingOrderAlias(code, "").code);
+      pendingLmMap.set(pendingCode, (pendingLmMap.get(pendingCode) ?? 0) + Math.abs(netStock));
     }
   }
+
+  // The same roster join is used for both pending sources. Keep the source
+  // total and every excluded row visible before the plan is assembled; a
+  // broken join must never look like a legitimate zero contribution.
+  const plumbingRoster = workbookRows
+    .filter((row) => row.type !== null)
+    .map((row) => ({
+      itemCode: row.itemCode,
+      colour: "",
+      category: `${row.material} ${row.type}`,
+    }));
+  const plumbingCurrentPendingDiagnostics = pendingPlanDiagnosticsFromParsedRows(
+    pendingTotals.pendingRows ?? [],
+    plumbingRoster,
+    { sourceRole: "pending_current" },
+  );
+  assertPendingJoinIdentity(
+    "Plumbing current pending",
+    plumbingCurrentPendingDiagnostics,
+    totalByCode(pendingTotals),
+    options.allowUnreviewedCurrentPending
+      ? undefined
+      : reviewedPendingExclusionPolicy("Plumbing", "pending_current"),
+    { pendingAtPlan: pendingTotals.diagnostics },
+  );
+  const plumbingLastMonthPendingRows = pendingRowsFromInput(fgStockRows, {
+    segment: "Plumbing",
+    codeKeys: ["Item Code"],
+    colourKeys: [],
+    quantityKeys: ["Net Stock"],
+    sourceRole: "pending_last_month",
+    transformQuantity: (quantity) => Math.max(-quantity, 0),
+  });
+  const plumbingLastMonthPendingDiagnostics = pendingPlanDiagnosticsFromParsedRows(
+    plumbingLastMonthPendingRows,
+    plumbingRoster,
+    { sourceRole: "pending_last_month" },
+  );
+  assertPendingJoinIdentity(
+    "Plumbing last-month pending",
+    plumbingLastMonthPendingDiagnostics,
+    totalByCode({ exact: new Map(), byCode: pendingLmMap }),
+    reviewedPendingExclusionPolicy("Plumbing", "pending_last_month"),
+  );
+  const plumbingCurrentPendingByRoster = pendingTotalsByRosterItem(
+    pendingTotals.pendingRows ?? pendingRowsFromTotals(pendingTotals, "Plumbing"),
+    plumbingRoster,
+  );
+  const plumbingLastMonthPendingByRoster = pendingTotalsByRosterItem(
+    plumbingLastMonthPendingRows,
+    plumbingRoster,
+  );
 
   // Join-coverage guard: the FG upload parsed, but if NONE of its codes match
   // the workbook roster the key normalisation is broken → zero-stock plan.
@@ -542,6 +977,11 @@ async function buildPlumbingPlanItemsInner(month: string): Promise<PlanItemWithB
       const resolvedType = row.type;
       if (!resolvedType) return null; // ~3 rows per tab lack a type tag — drop
       const resolvedCategory = `${row.material} ${resolvedType}`;
+      const rosterKey = pendingRosterItemKey({
+        itemCode: row.itemCode,
+        colour: "",
+        category: resolvedCategory,
+      });
 
       const source: ItemSourceRow = {
         itemCode: row.itemCode,
@@ -553,10 +993,10 @@ async function buildPlumbingPlanItemsInner(month: string): Promise<PlanItemWithB
         // Stock and pendingLM come from the FG Stock UPLOAD — NOT from the workbook.
         stock:                 stockMap.get(code) ?? 0,
         stockNeedsReview:      false,
-        pendingOrderLastMonth: pendingLmMap.get(code) ?? 0,
+        pendingOrderLastMonth: plumbingLastMonthPendingByRoster.get(rosterKey) ?? 0,
         // Current pending is plan-only and selected through PLAN_PENDING_SOURCE.
         // Validation/corrective paths continue to read live Bal. Qty explicitly.
-        pendingOrder:          pendingTotals.byCode.get(code) ?? 0,
+        pendingOrder:          plumbingCurrentPendingByRoster.get(rosterKey) ?? 0,
         // Order is display-only and annotated OUTSIDE the planning context.
         order:                 0,
       };
@@ -583,6 +1023,18 @@ async function buildPlumbingPlanItemsInner(month: string): Promise<PlanItemWithB
     })
     .filter((item): item is PlanItemWithBom => item !== null);
 
+  assertPlanUsesPendingJoin(
+    "Plumbing current pending",
+    plumbingCurrentPendingDiagnostics,
+    items,
+    "pendingOrder",
+  );
+  assertPlanUsesPendingJoin(
+    "Plumbing last-month pending",
+    plumbingLastMonthPendingDiagnostics,
+    items,
+    "pendingOrderLastMonth",
+  );
   annotateWeeklyRelease(items, bandsByCategory);
 
   if (machineRows.length > 0) {
@@ -598,10 +1050,14 @@ async function buildPlumbingPlanItemsInner(month: string): Promise<PlanItemWithB
  * (avg sale, stock, pending, pending-LM) from the workbook by header-name mapping.
  * segment defaults to "PTMT".
  */
-export async function buildPlanItems(month: string, segment: string = "PTMT"): Promise<PlanItemWithBom[]> {
+export async function buildPlanItems(
+  month: string,
+  segment: string = "PTMT",
+  options: PlanBuildOptions = {},
+): Promise<PlanItemWithBom[]> {
   // Plumbing: all inputs come from the daily-production workbook — no item_master or uploads.
   if (segment === "Plumbing") {
-    return buildPlumbingPlanItemsFromWorkbook(month);
+    return buildPlumbingPlanItemsFromWorkbook(month, options);
   }
 
   return runInPlanningContext(`PTMT plan build (${month})`, () => buildPtmtPlanItemsInner(month, segment));
@@ -623,13 +1079,7 @@ async function buildPtmtPlanItemsInner(month: string, segment: string): Promise<
   const pendingTotalsPromise = PLAN_PENDING_SOURCE === "live"
     ? fetchLivePendingOrderTotals(segment)
     : requireUploadRows("pending_orders", "Current Pending Orders").then((rows) =>
-        sumByKey(
-          rows,
-          ["Old Item Code", "Item Code", "Item No."],
-          ["Colour", "Color", "COLOR"],
-          ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty", "Qty"],
-          { source: `uploaded pending orders · ${segment}` },
-        ),
+        pendingOrderTotalsFromRows(rows, segment),
       );
   const [avg3MoTotals, pendingOrderTotals] = await Promise.all([
     fetchAvg3MoSaleTotals(month),
@@ -652,11 +1102,36 @@ async function buildPtmtPlanItemsInner(month: string, segment: string): Promise<
   );
 
   // Last-month pending: PTMT tab columns: "Item Code" / "Cat No" → code; "Colour" / "Color" → colour; "Qty" → qty.
-  const pendingLastMoTotals = sumByKey(
-    pendingLastMoRows,
-    ["Item Code", "Cat No", "Cat-No", "Old Item Code"],
-    ["Colour", "Color"],
-    ["Qty", "Qty.", "Balance_Qty", "Balance Qty"],
+  const pendingLastMonthRows = pendingRowsFromInput(pendingLastMoRows, {
+    segment,
+    codeKeys: ["Item Code", "Cat No", "Cat-No", "Old Item Code"],
+    colourKeys: ["Colour", "Color"],
+    quantityKeys: ["Qty", "Qty.", "Balance_Qty", "Balance Qty"],
+    sourceRole: "pending_last_month",
+  });
+  const pendingLastMoTotals = totalsFromPendingRows(pendingLastMonthRows);
+
+  const ptmtLastMonthPendingDiagnostics = pendingPlanDiagnosticsFromParsedRows(
+    pendingLastMonthRows,
+    itemRows,
+    { sourceRole: "pending_last_month" },
+  );
+  assertPendingJoinIdentity(
+    "PTMT last-month pending",
+    ptmtLastMonthPendingDiagnostics,
+    totalByCode(pendingLastMoTotals),
+    reviewedPendingExclusionPolicy("PTMT", "pending_last_month"),
+  );
+  const ptmtCurrentPendingDiagnostics = pendingPlanDiagnosticsFromParsedRows(
+    pendingOrderTotals.pendingRows ?? [],
+    itemRows,
+    { sourceRole: "pending_current" },
+  );
+  assertPendingJoinIdentity(
+    "PTMT current pending",
+    ptmtCurrentPendingDiagnostics,
+    totalByCode(pendingOrderTotals),
+    reviewedPendingExclusionPolicy("PTMT", "pending_current"),
   );
 
   // Stock: F.G Sheet — try every item-code column variant the FG Stock upload may carry.
@@ -688,18 +1163,17 @@ async function buildPtmtPlanItemsInner(month: string, segment: string): Promise<
   }
 
   // Scoped per category: the same item code can legitimately exist in two
-  // different categories (e.g. a code split by colour under one category,
-  // and re-listed as a single combined item with a placeholder colour under
-  // another). Counting codes globally would wrongly force exact colour
-  // matching on the single-variant side and break its byCode aggregation.
-  const codeCounts = new Map<string, number>();
-  for (const item of itemRows) {
-    const codeKey = `${item.category}::${normalizeCode(item.itemCode)}`;
-    codeCounts.set(codeKey, (codeCounts.get(codeKey) ?? 0) + 1);
-  }
+  // different categories. Pending rows have no category discriminator, so the
+  // shared pending matcher resolves only an unambiguous candidate.
+  const rosterIndex = buildPendingRosterIndex(itemRows);
+  const pendingLastMonthByRoster = pendingTotalsByRosterItem(pendingLastMonthRows, itemRows);
+  const pendingCurrentByRoster = pendingTotalsByRosterItem(
+    pendingOrderTotals.pendingRows ?? pendingRowsFromTotals(pendingOrderTotals, segment),
+    itemRows,
+  );
 
   const items: PlanItemWithBom[] = itemRows.map((item) => {
-    const isSingleVariant = (codeCounts.get(`${item.category}::${normalizeCode(item.itemCode)}`) ?? 0) <= 1;
+    const isSingleVariant = pendingJoinModeForItem(rosterIndex, item) === "code";
     const source: ItemSourceRow = {
       itemCode: item.itemCode,
       colour: item.colour,
@@ -707,17 +1181,29 @@ async function buildPtmtPlanItemsInner(month: string, segment: string): Promise<
       stock: resolveTotal(stockTotals, item.itemCode, item.colour, isSingleVariant),
       stockNeedsReview:
         currentStockRows.length > 0 && !hasEntry(stockTotals, item.itemCode, item.colour, isSingleVariant),
-      pendingOrderLastMonth: resolveTotal(pendingLastMoTotals, item.itemCode, item.colour, isSingleVariant),
-      pendingOrder: resolveTotal(pendingOrderTotals, item.itemCode, item.colour, isSingleVariant),
+      pendingOrderLastMonth: pendingLastMonthByRoster.get(pendingRosterItemKey(item)) ?? 0,
+      pendingOrder: pendingCurrentByRoster.get(pendingRosterItemKey(item)) ?? 0,
       // Order is display-only and annotated OUTSIDE the planning context (annotateLiveOrders).
       order: 0,
     };
-    const multiplier = bufferByCategory.get(item.category) ?? 1;
+    const multiplier = reviewedBufferMultiplier(item.classificationStatus, item.category, bufferByCategory);
     // One formula for all PTMT categories: max(BufferReq − Stock + PendingLM + Pending, 0).
     const computed = computeItemPlan(source, item.category, multiplier);
     return computed;
   });
 
+  assertPlanUsesPendingJoin(
+    "PTMT current pending",
+    ptmtCurrentPendingDiagnostics,
+    items,
+    "pendingOrder",
+  );
+  assertPlanUsesPendingJoin(
+    "PTMT last-month pending",
+    ptmtLastMonthPendingDiagnostics,
+    items,
+    "pendingOrderLastMonth",
+  );
   annotateWeeklyRelease(items, bandsByCategory);
   return items;
 }
@@ -778,33 +1264,33 @@ router.get("/plan", async (req, res): Promise<void> => {
   }
 });
 
-// All 12 Plumbing category tabs that must always appear in the export,
-// even when an individual category has zero items (e.g. AGRI Solvent = 0, SWR Solvent tab).
-const PLUMBING_CATEGORIES = [
-  "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
-  "UPVC Pipe", "UPVC Fitting", "UPVC Solvent",
-  "SWR Pipe",  "SWR Fitting",  "SWR Solvent",
-  "AGRI Pipe", "AGRI Fitting", "AGRI Solvent",
-];
-
 router.get("/plan/export/excel", async (req, res): Promise<void> => {
   const month = String(req.query.month ?? "");
   if (!month) {
     res.status(400).json({ error: "month is required" });
     return;
   }
-  const segment = String(req.query.segment ?? "PTMT");
+  const rawSegment = String(req.query.segment ?? "PTMT");
+  const segment = rawSegment.toLowerCase() === "plumbing" ? "Plumbing" : rawSegment;
   try {
-    const items = await buildPlanItems(month, segment);
-    await annotateLiveOrders(items, month, segment); // display-only Order column
-    const summary = summarizePlan(items);
-    const requiredCategories = segment === "Plumbing" ? PLUMBING_CATEGORIES : undefined;
-    const buffer = await exportPlanExcel(month, items, summary, requiredCategories);
+    const run = await getLatestFinalizedRun(month, segment, "production");
+    if (!run) {
+      res.status(422).json({
+        error: "NO_FINALIZED_PRODUCTION_PLAN",
+        message: `No finalized capacity-fitted Production Plan exists for ${segment} ${month}.`,
+      });
+      return;
+    }
+    const buffer = await exportFrozenRunExcel(run, "production");
     const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Production_Plan_${month}_${exportTimestamp()}.xlsx"`);
     res.send(buffer);
   } catch (err) {
+    if (err instanceof PlumbingScheduleExportError || err instanceof WeeklyExportInvariantError) {
+      res.status(422).json({ error: err.code, message: err.message });
+      return;
+    }
     handlePlanError(res, err);
   }
 });
@@ -815,17 +1301,59 @@ router.get("/plan/export/pdf", async (req, res): Promise<void> => {
     res.status(400).json({ error: "month is required" });
     return;
   }
-  const segment = String(req.query.segment ?? "PTMT");
+  const rawSegment = String(req.query.segment ?? "PTMT");
+  const segment = rawSegment.toLowerCase() === "plumbing" ? "Plumbing" : rawSegment;
   const startedAt = Date.now();
   try {
-    const items = await buildPlanItems(month, segment);
-    await annotateLiveOrders(items, month, segment); // display-only Order column
-    const summary = summarizePlan(items);
-    const buffer = await exportPlanPdf(month, items, summary);
+    const run = await getLatestFinalizedRun(month, segment, "production");
+    if (!run) {
+      res.status(422).json({
+        error: "NO_FINALIZED_PRODUCTION_PLAN",
+        message: `No finalized capacity-fitted Production Plan exists for ${segment} ${month}.`,
+      });
+      return;
+    }
+    const { rows } = await loadProductionExportRows(run);
+    const buffer = await exportFrozenProductionPdf(month, rows);
     logger.info({ month, segment, renderMs: Date.now() - startedAt }, "plan/export/pdf complete");
     const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Production_Plan_${month}_${exportTimestamp()}.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    if (err instanceof PlumbingScheduleExportError || err instanceof WeeklyExportInvariantError) {
+      res.status(422).json({ error: err.code, message: err.message });
+      return;
+    }
+    handlePlanError(res, err);
+  }
+});
+
+router.get("/plan/export/temporary-excel", async (req, res): Promise<void> => {
+  const month = String(req.query.month ?? "");
+  if (!month) {
+    res.status(400).json({ error: "month is required" });
+    return;
+  }
+  const rawSegment = String(req.query.segment ?? "PTMT");
+  const segment = rawSegment.toLowerCase() === "plumbing" ? "Plumbing" : rawSegment;
+  try {
+    // Newer runs retain the Temporary Plan values on the linked Production
+    // results. Use that frozen lineage when an older run was finalized without
+    // a separate temporaryRunId, rather than rebuilding from live inputs.
+    const run = await getLatestFinalizedRun(month, segment, "temporary")
+      ?? await getLatestFinalizedRun(month, segment, "production");
+    if (!run) {
+      res.status(422).json({
+        error: "NO_FINALIZED_TEMPORARY_PLAN",
+        message: `No finalized demand-true Temporary Plan snapshot exists for ${segment} ${month}.`,
+      });
+      return;
+    }
+    const buffer = await exportFrozenRunExcel(run, "temporary");
+    const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Temporary_Plan_${month}_${exportTimestamp()}.xlsx"`);
     res.send(buffer);
   } catch (err) {
     handlePlanError(res, err);
@@ -838,15 +1366,31 @@ router.get("/plan/export/weekly-excel", async (req, res): Promise<void> => {
     res.status(400).json({ error: "month is required" });
     return;
   }
-  const segment = String(req.query.segment ?? "PTMT");
+  const rawSegment = String(req.query.segment ?? "PTMT");
+  const segment = rawSegment.toLowerCase() === "plumbing" ? "Plumbing" : rawSegment;
   try {
-  const items = await buildPlanItems(month, segment);
-  const buffer = await exportWeeklyReleaseExcel(month, items);
-  const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
-  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Weekly_Release_Plan_${month}_${exportTimestamp()}.xlsx"`);
-  res.send(buffer);
+    const run = await getLatestFinalizedRun(month, segment, "production");
+    if (!run) {
+      res.status(422).json({
+        error: "NO_FINALIZED_PRODUCTION_PLAN",
+        message: `No finalized capacity-fitted Production Plan exists for ${segment} ${month}.`,
+      });
+      return;
+    }
+    const { rows } = await loadProductionExportRows(run);
+    const sourceDescription = segment === "Plumbing"
+      ? "finalized Plumbing machine-app schedule; item pieces distributed by non-idle block-hours within each scheduler week"
+      : "finalized PTMT Pass 2 capacity fit";
+    const buffer = await exportWeeklyReleaseExcel(month, rows, sourceDescription);
+    const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Weekly_Release_Plan_${month}_${exportTimestamp()}.xlsx"`);
+    res.send(buffer);
   } catch (err) {
+    if (err instanceof PlumbingScheduleExportError || err instanceof WeeklyExportInvariantError) {
+      res.status(422).json({ error: err.code, message: err.message });
+      return;
+    }
     handlePlanError(res, err);
   }
 });
@@ -1105,7 +1649,7 @@ router.get("/plan/corrective-replan", async (req, res): Promise<void> => {
   try {
     replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing", dryRun: true });
   } catch (err) {
-    if (err instanceof PlumbingInputUnreadableError || err instanceof LivePendingReadError || err instanceof UpstreamTimeoutError) {
+    if (err instanceof PlumbingInputUnreadableError || err instanceof PlanningInputError || err instanceof LivePendingReadError || err instanceof UpstreamTimeoutError) {
       handlePlanError(res, err);
       return;
     }
@@ -1168,9 +1712,9 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
   // regression suite doesn't persist a duplicate corrective run on every pass
   let replan: Awaited<ReturnType<typeof runCorrectiveReplan>>;
   try {
-    replan = await runCorrectiveReplan({ month, weekClosed: 0, asOfDate, segment: "Plumbing", dryRun: true });
+    replan = await runCorrectiveDiagnostic({ month, weekClosed: 0, asOfDate, segment: "Plumbing", dryRun: true });
   } catch (err) {
-    if (err instanceof PlumbingInputUnreadableError || err instanceof LivePendingReadError || err instanceof UpstreamTimeoutError) {
+    if (err instanceof PlumbingInputUnreadableError || err instanceof PlanningInputError || err instanceof LivePendingReadError || err instanceof UpstreamTimeoutError) {
       handlePlanError(res, err);
       return;
     }
@@ -1327,10 +1871,22 @@ router.get("/plan/validate-replan", async (req, res): Promise<void> => {
  * Data sources (Plumbing):
  *   Stock + PendingLM   → plumbing_fg_stock UPLOAD (Net Stock col: +ve=stock, -ve=pendingLM)
  *   Avg3Mo              → daily-production workbook by header-name mapping (lib/sheets.ts)
- *   Current pending     → live Pending order / report sheet, filtered by segment
+   *   Current pending     → uploaded pending-orders file, filtered by segment
  *   Live orders         → Order Sheet 26-27
  *   KGs                 → BOM sheet (1R7k5O6w4qaT74G-5X2VXBtD7-Fg3uByvIw3-TeViMmA)
  */
+router.get("/plan/golden-integrity", (_req, res): void => {
+  const checks = getGoldenIntegrityChecks();
+  const invalidFamilies = [...new Set(
+    checks.filter((check) => !check.pass).map((check) => check.family),
+  )];
+  res.json({
+    allPass: invalidFamilies.length === 0,
+    checks,
+    invalidFamilies,
+  });
+});
+
 async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   const month = String(req.query.month ?? "");
   if (!month) {
@@ -1338,6 +1894,27 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     return;
   }
   const segment = String(req.query.segment ?? "PTMT");
+  let pendingReadCaptureId: number | null = null;
+
+  // Keep the validation route's PTMT upload contract identical to production
+  // planning. This also lets the isolation regression exercise the route
+  // without starting the live Sheets reads when the required upload is absent.
+  if (segment === "PTMT" && _simulateMissingUploads.getStore()?.has("pending_orders")) {
+    const missingUpload = new MissingUploadError("pending_orders", "Current Pending Orders");
+    const captureId = await persistPendingReadSnapshot({
+      captureContext: "validation",
+      segment,
+      sourceKind: "validation_pre_read",
+      sourceName: "Validation pre-read · Current Pending Orders",
+      sourceSpreadsheetId: null,
+      sourceTabName: null,
+      diagnostics: livePendingFailureDiagnostics(segment, missingUpload),
+      status: "pre_read_failed",
+      errorText: missingUpload.message,
+    });
+    res.locals.pendingReadCaptureId = captureId;
+    await requireUploadSnapshot("pending_orders", "Current Pending Orders");
+  }
 
   type CheckResult = {
     name: string;
@@ -1354,15 +1931,23 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     let items: PlanItemWithBom[];
     let fgStockRows: Record<string, unknown>[];
     let pendingTotals: DualTotals;
+    let pendingUploadSnapshot: UploadRowsSnapshot;
     let pendingDiagnostics: ReturnType<typeof diagnoseInputRows>;
     let bufferRows: typeof bufferCategoriesTable.$inferSelect[];
     let bandRows: typeof weeklyReleaseBandsTable.$inferSelect[];
     let sheet3Rows: PlumbingSheet3Row[];
+    const livePendingCapture = await captureValidationLivePending("Plumbing");
+    pendingReadCaptureId = livePendingCapture.captureId;
+    res.locals.pendingReadCaptureId = pendingReadCaptureId;
+    if (!livePendingCapture.totals) throw livePendingCapture.error;
     try {
-      [items, fgStockRows, pendingTotals, bufferRows, bandRows, sheet3Rows] = await Promise.all([
-        buildPlanItems(month, "Plumbing"),
+      pendingTotals = livePendingCapture.totals;
+      [items, fgStockRows, bufferRows, bandRows, sheet3Rows] = await Promise.all([
+        buildPlanItems(month, "Plumbing", {
+          allowUnreviewedCurrentPending: true,
+          pendingTotalsOverride: pendingTotals,
+        }),
         loadLatestUploadRowsByKind("plumbing_fg_stock"),
-        fetchLivePendingOrderTotals("Plumbing"),
         db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
         db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
         fetchPlumbingSheet3Production(month),
@@ -1380,23 +1965,111 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     const checks: CheckResult[] = [];
     const roundInt = (v: number) => Math.round(v);
     let pendingPlanReconciliation: PendingPlanReconciliation | undefined;
+    let pendingAtPlanDiagnostics: ReturnType<typeof diagnoseInputRows>;
+    let pendingLastMonthAtPlan: ReturnType<typeof pendingPlanDiagnosticsFromParsedRows>;
 
     // ── 0. Planning-isolation guards (live pending is explicitly allow-listed) ──
     checks.push(...(await buildPlanningIsolationChecks(month, "Plumbing")));
     {
-      // Pending-source check: the live report exposes the required code and
-      // Bal. Qty fields. A valid empty read remains diagnostic data, while
-      // missing required columns fail the check instead of looking like zero.
-      pendingDiagnostics = pendingTotals.diagnostics ?? diagnoseInputRows([], {
-        code: ["Old ERP Code", "Item Code", "Item No."],
-        colour: ["Colour", "Color", "COLOR", "COLUOR"],
-        quantity: ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"],
-      }, { source: "Pending order / report · Plumbing" });
-      const pendingCoverage = pendingCoverageFromParsedRows(
-        pendingTotals.pendingRows ?? [],
-        items.map((item) => item.itemCode),
+      // Persist and promote live evidence before reading the independent
+      // uploaded pending source. A valid empty read remains diagnostic data,
+      // while missing required columns fail baseline eligibility.
+      const liveEvidence = await preparePlumbingValidationEvidence(
+        pendingReadCaptureId,
+        pendingTotals,
+        items,
+        () => requireUploadSnapshot("pending_orders", "Current Pending Orders"),
       );
-      pendingDiagnostics.pendingCoverage = pendingCoverage;
+      pendingDiagnostics = liveEvidence.pendingDiagnostics;
+      const { livePendingPlanDiagnostics, pendingCoverage, pendingBaseline } = liveEvidence;
+      const fgPendingRows = pendingRowsFromInput(fgStockRows, {
+        segment: "Plumbing",
+        codeKeys: ["Item Code"],
+        colourKeys: [],
+        quantityKeys: ["Net Stock"],
+        sourceRole: "pending_last_month",
+        transformQuantity: (quantity) => Math.max(-quantity, 0),
+      });
+      pendingLastMonthAtPlan = pendingPlanDiagnosticsFromParsedRows(
+        fgPendingRows,
+        items,
+        { sourceRole: "pending_last_month" },
+      );
+      const fgPendingTotal = fgPendingRows.reduce((sum, row) => sum + row.qty, 0);
+      pendingUploadSnapshot = liveEvidence.pendingUploadSnapshot;
+      const pendingAtPlanTotals = pendingOrderTotalsFromRows(pendingUploadSnapshot.rows, "Plumbing");
+      const pendingAtPlanPlanDiagnostics = pendingPlanDiagnosticsFromParsedRows(
+        pendingAtPlanTotals.pendingRows ?? [],
+        items,
+        { sourceRole: "pending_current" },
+      );
+      pendingAtPlanDiagnostics = {
+        ...(pendingAtPlanTotals.diagnostics ?? diagnoseInputRows([], {
+          code: ["Old ERP Code", "Item Code", "Item No."],
+          colour: ["Colour", "Color", "COLOR", "COLUOR"],
+          quantity: ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"],
+        }, {
+          source: "uploaded pending orders · Plumbing",
+          uploadId: pendingUploadSnapshot.id,
+          filename: pendingUploadSnapshot.filename,
+        })),
+        source: "uploaded pending orders · Plumbing",
+        uploadId: pendingUploadSnapshot.id,
+        filename: pendingUploadSnapshot.filename,
+      };
+      pendingAtPlanDiagnostics.pendingPlan = pendingAtPlanPlanDiagnostics;
+      const validationJoinChecks: Array<{
+        label: string;
+        diagnostics: ReturnType<typeof pendingPlanDiagnosticsFromParsedRows>;
+        expectedSourceQuantity: number;
+        policy?: ReviewedPendingExclusionPolicy;
+      }> = [
+        {
+          label: "Plumbing uploaded current pending (validation)",
+          diagnostics: pendingAtPlanPlanDiagnostics,
+          expectedSourceQuantity: totalByCode(pendingAtPlanTotals),
+          policy: reviewedPendingExclusionPolicy("Plumbing", "pending_current"),
+        },
+        {
+          label: "Plumbing live pending (validation)",
+          diagnostics: livePendingPlanDiagnostics,
+          expectedSourceQuantity: totalByCode(pendingTotals),
+        },
+        {
+          label: "Plumbing last-month pending (validation)",
+          diagnostics: pendingLastMonthAtPlan,
+          expectedSourceQuantity: fgPendingTotal,
+          policy: reviewedPendingExclusionPolicy("Plumbing", "pending_last_month"),
+        },
+      ];
+      for (const joinCheck of validationJoinChecks) {
+        try {
+          assertPendingJoinIdentity(
+            joinCheck.label,
+            joinCheck.diagnostics,
+            joinCheck.expectedSourceQuantity,
+            joinCheck.policy,
+          );
+          checks.push({
+            name: `${joinCheck.label} · reviewed reconciliation`,
+            expected: 1,
+            actual: 1,
+            pass: true,
+            tolerance: "exact source/join identity and reviewed exclusions",
+          });
+        } catch (err) {
+          // Validation must return the complete evidence payload even when a
+          // planning input is rejected. The failed assertion remains visible
+          // as a check rather than discarding the persisted live capture.
+          checks.push({
+            name: `${joinCheck.label} · reviewed reconciliation`,
+            expected: 1,
+            actual: 0,
+            pass: false,
+            tolerance: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
       const pendOk = pendingDiagnostics.missingRequiredFields.length === 0;
       checks.push({
         name: "ISOLATION · live pending source present & parsed (Bal. Qty)",
@@ -1438,11 +2111,33 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
         tolerance: `${pendingCoverage.unmatchedRows.length} stable aggregated rows`,
       });
       checks.push({
+        name: "Pending · baseline is evidence-backed and active",
+        expected: 1,
+        actual: pendingBaseline ? 1 : 0,
+        pass: pendingBaseline !== null,
+        tolerance: pendingBaseline
+          ? `captureId=${pendingBaseline.captureId}, environment=${pendingBaseline.environment}, observedAt=${pendingBaseline.observedAt?.toISOString() ?? "n/a"}`
+          : "a complete captured live read is required before strict comparison",
+      });
+      checks.push({
         name: "Pending · unmatched quantity",
-        expected: PLUMBING_UNMATCHED_PENDING_TOTAL,
+        expected: pendingBaseline?.unmatchedQuantity ?? 0,
         actual: pendingCoverage.unmatchedQuantity,
-        pass: pendingCoverage.unmatchedQuantity === PLUMBING_UNMATCHED_PENDING_TOTAL,
-        tolerance: "exact baseline",
+        pass: pendingBaseline !== null
+          && pendingCoverage.unmatchedQuantity === pendingBaseline.unmatchedQuantity,
+        tolerance: pendingBaseline
+          ? `exact evidence-backed baseline captureId=${pendingBaseline.captureId}`
+          : "baseline unavailable",
+      });
+      const liveFingerprint = pendingExclusionFingerprint(livePendingPlanDiagnostics);
+      checks.push({
+        name: "Pending · exclusion fingerprint = cited baseline",
+        expected: 1,
+        actual: pendingBaseline?.fingerprint === liveFingerprint ? 1 : 0,
+        pass: pendingBaseline !== null && pendingBaseline.fingerprint === liveFingerprint,
+        tolerance: pendingBaseline
+          ? `exact; captureId=${pendingBaseline.captureId}`
+          : "baseline unavailable",
       });
       const pendingIdentityActual = pendingPlanReconciliation.planMovement
         + pendingPlanReconciliation.clampLoss;
@@ -2010,13 +2705,19 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     res.json({
       month,
       segment,
+      pendingReadCaptureId,
       allPass,
       passCount: checks.length - failCount,
       failCount,
       checks,
       categoryTotals,
       machineFeasible,
-      inputDiagnostics: { pending: pendingDiagnostics },
+      inputDiagnostics: {
+        pending: pendingDiagnostics,
+        pendingAtPlan: pendingAtPlanDiagnostics,
+        pendingLastMonthAtPlan,
+      },
+      pendingBaseline: await getActivePendingReadBaseline("Plumbing"),
       pendingPlanReconciliation,
     });
     return;
@@ -2025,6 +2726,10 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   // ── PTMT self-check ────────────────────────────────────────────────────────
   // Fetch everything in one parallel batch — DB reads + both Sheets calls
   // so we only pay the throttle penalty once (they overlap in Promise.all).
+  const livePendingCapture = await captureValidationLivePending("PTMT");
+  pendingReadCaptureId = livePendingCapture.captureId;
+  res.locals.pendingReadCaptureId = pendingReadCaptureId;
+  if (!livePendingCapture.totals) throw livePendingCapture.error;
   const [
     stockRows,
     lastMoRows,
@@ -2033,14 +2738,16 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     avg3MoTotals,
     pendingTotals,
     liveOrderTotals,
+    pendingUploadSnapshot,
   ] = await Promise.all([
     loadLatestUploadRowsByKind("current_stock"),
     loadLatestUploadRowsByKind("last_month_pending"),
     db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, "PTMT")),
     db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "PTMT")),
     fetchAvg3MoSaleTotals(month),
-    fetchLivePendingOrderTotals("PTMT"),
+    Promise.resolve(livePendingCapture.totals),
     fetchLiveOrderTotals(month),
+    requireUploadSnapshot("pending_orders", "Current Pending Orders"),
   ]);
 
   const checks: CheckResult[] = [];
@@ -2049,6 +2756,26 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     colour: ["Colour", "Color", "COLOR", "COLUOR"],
     quantity: ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"],
   }, { source: "Pending order / report · PTMT" });
+  await updatePendingReadSnapshotDiagnostics(pendingReadCaptureId, pendingDiagnostics);
+  const pendingUploadTotals = pendingOrderTotalsFromRows(pendingUploadSnapshot.rows, "PTMT");
+  const pendingUploadDiagnostics = pendingUploadTotals.diagnostics ?? diagnoseInputRows([], {
+    code: ["Old ERP Code", "Item Code", "Item No."],
+    colour: ["Colour", "Color", "COLOR", "COLUOR"],
+    quantity: ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"],
+  }, {
+    source: "uploaded pending orders · PTMT",
+    uploadId: pendingUploadSnapshot.id,
+    filename: pendingUploadSnapshot.filename,
+  });
+  pendingUploadDiagnostics.source = "uploaded pending orders · PTMT";
+  pendingUploadDiagnostics.uploadId = pendingUploadSnapshot.id;
+  pendingUploadDiagnostics.filename = pendingUploadSnapshot.filename;
+  const pendingPlanDiagnostics = pendingPlanDiagnosticsFromParsedRows(
+    pendingUploadTotals.pendingRows ?? [],
+    itemRows,
+    { sourceRole: "pending_current" },
+  );
+  pendingUploadDiagnostics.pendingPlan = pendingPlanDiagnostics;
 
   // ── 0. Planning-isolation guards (live pending is explicitly allow-listed) ──
   checks.push(...(await buildPlanningIsolationChecks(month, "PTMT")));
@@ -2121,6 +2848,23 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   const lmTotal = Math.round([...lmTotals.byCode.values()].reduce((a, b) => a + b, 0));
   const lmExp = isAugGolden ? PTMT_AUG_LM_TOTAL : 137939;
   checks.push({ name: "Last-month pending total", expected: lmExp, actual: lmTotal, pass: lmTotal === lmExp });
+  const pendingLastMonthDiagnostics = pendingPlanDiagnosticsFromParsedRows(
+    pendingRowsFromInput(lastMoRows, {
+      segment: "PTMT",
+      codeKeys: ["Item Code", "Cat No", "Cat-No", "Old Item Code"],
+      colourKeys: ["Colour", "Color"],
+      quantityKeys: ["Qty", "Qty.", "Balance_Qty", "Balance Qty"],
+      sourceRole: "pending_last_month",
+    }),
+    itemRows,
+    { sourceRole: "pending_last_month" },
+  );
+  assertPendingJoinIdentity(
+    "PTMT last-month pending (validation)",
+    pendingLastMonthDiagnostics,
+    totalByCode(lmTotals),
+    reviewedPendingExclusionPolicy("PTMT", "pending_last_month"),
+  );
 
   // ── 3. Current pending ────────────────────────────────────────────────
   const pendTotals = pendingTotals;
@@ -2151,38 +2895,54 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
 
   // ── 5 & 6. Grand totals ≈ Max 576,037 / Min 301,918 (±5 %) ──────────
   // Build plan items directly from already-fetched data — no second Sheets round trip.
-  const pendingOrderTotals = pendingTotals;
-  const pendingLastMoTotals = sumByKey(
-    lastMoRows,
-    ["Item Code", "Cat No", "Cat-No", "Old Item Code"],
-    ["Colour", "Color"],
-    ["Qty", "Qty.", "Balance_Qty", "Balance Qty"],
-  );
-  const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
-  const codeCounts = new Map<string, number>();
-  for (const item of itemRows) {
-    const codeKey = `${item.category}::${normalizeCode(item.itemCode)}`;
-    codeCounts.set(codeKey, (codeCounts.get(codeKey) ?? 0) + 1);
-  }
-  const currentStockRows = stockRows;
+   const pendingOrderTotals = pendingUploadTotals;
+  const pendingLastMonthRows = pendingRowsFromInput(lastMoRows, {
+    segment: "PTMT",
+    codeKeys: ["Item Code", "Cat No", "Cat-No", "Old Item Code"],
+    colourKeys: ["Colour", "Color"],
+    quantityKeys: ["Qty", "Qty.", "Balance_Qty", "Balance Qty"],
+    sourceRole: "pending_last_month",
+  });
+  const pendingLastMoTotals = totalsFromPendingRows(pendingLastMonthRows);
   const stockTotalsForPlan = stockTotals;
-  const planItems = itemRows.map((item) => {
-    const isSingleVariant = (codeCounts.get(`${item.category}::${normalizeCode(item.itemCode)}`) ?? 0) <= 1;
-    return computeItemPlan(
-      {
-        itemCode: item.itemCode,
-        colour: item.colour,
-        avg3MoSaleTotal3Mo: resolveTotal(avg3MoTotals, item.itemCode, item.colour, isSingleVariant),
-        stock: resolveTotal(stockTotalsForPlan, item.itemCode, item.colour, isSingleVariant),
-        stockNeedsReview:
-          currentStockRows.length > 0 && !hasEntry(stockTotalsForPlan, item.itemCode, item.colour, isSingleVariant),
-        pendingOrderLastMonth: resolveTotal(pendingLastMoTotals, item.itemCode, item.colour, isSingleVariant),
-        pendingOrder: resolveTotal(pendingOrderTotals, item.itemCode, item.colour, isSingleVariant),
-        order: resolveTotal(liveOrderTotals, item.itemCode, item.colour, isSingleVariant),
-      },
-      item.category,
-      bufferByCategory.get(item.category) ?? 1,
-    );
+  const rosterIndex = buildPendingRosterIndex(itemRows);
+  const planItems = buildPtmtPlanItemsForValidation({
+    itemRows,
+    bufferRows,
+    avg3MoTotals,
+    stockTotals: stockTotalsForPlan,
+    pendingLastMoTotals,
+    pendingTotals: pendingOrderTotals,
+    liveOrderTotals,
+    currentStockRows: stockRows,
+  });
+  const pendingPlanReconciliation = reconcilePendingPlan(
+    planItems,
+    pendingPlanDiagnostics.sourceQuantity,
+    pendingPlanDiagnostics.planResolvedQuantity,
+    pendingPlanDiagnostics.unmatchedQuantity,
+  );
+  const pendingIdentityActual =
+    pendingPlanDiagnostics.planResolvedQuantity
+    + pendingPlanDiagnostics.unmatchedQuantity
+    + pendingPlanDiagnostics.resolutionLossQuantity;
+  checks.push({
+    name: "Uploaded pending · source = plan-resolved + unmatched + resolution loss",
+    expected: pendingPlanDiagnostics.sourceQuantity,
+    actual: pendingIdentityActual,
+    pass: Math.abs(pendingIdentityActual - pendingPlanDiagnostics.sourceQuantity) <= 0.01,
+    tolerance: "exact quantity identity",
+  });
+  checks.push({
+    name: "Uploaded pending · roster matched = plan-resolved + resolution loss",
+    expected: pendingPlanDiagnostics.rosterMatchedQuantity,
+    actual: pendingPlanDiagnostics.planResolvedQuantity + pendingPlanDiagnostics.resolutionLossQuantity,
+    pass: Math.abs(
+      pendingPlanDiagnostics.rosterMatchedQuantity
+      - pendingPlanDiagnostics.planResolvedQuantity
+      - pendingPlanDiagnostics.resolutionLossQuantity,
+    ) <= 0.01,
+    tolerance: "exact quantity identity",
   });
   const summary = summarizePlan(planItems);
   const grandMaxExp = isAugGolden ? PTMT_AUG_GRAND_MAX : PTMT_GRAND_MAX;
@@ -2271,7 +3031,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   let stockJoinMisses = 0;       // engine-normalization layer — must be 0
   let stockJoinStrictMisses = 0; // strict layer — baseline 1 (501-S WHITE, hyphen-variant in FG file)
   for (const item of itemRows) {
-    const isSingleVariant = (codeCounts.get(`${item.category}::${normalizeCode(item.itemCode)}`) ?? 0) <= 1;
+    const isSingleVariant = pendingJoinModeForItem(rosterIndex, item) === "code";
     const engineStock = resolveTotal(stockTotalsForPlan, item.itemCode, item.colour, isSingleVariant);
     if (engineStock !== 0) continue;
     const code = normalizeCode(item.itemCode);
@@ -2322,7 +3082,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   }
   const joinedKeys = new Map<string, number>();
   for (const item of itemRows) {
-    const isSingleVariant = (codeCounts.get(`${item.category}::${normalizeCode(item.itemCode)}`) ?? 0) <= 1;
+    const isSingleVariant = pendingJoinModeForItem(rosterIndex, item) === "code";
     const key = isSingleVariant ? `code::${normalizeCode(item.itemCode)}` : `exact::${normalizeCode(item.itemCode)}::${item.colour.trim().toUpperCase()}`;
     if (!joinedKeys.has(key)) joinedKeys.set(key, resolveTotal(stockTotalsForPlan, item.itemCode, item.colour, isSingleVariant));
   }
@@ -2403,6 +3163,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   res.json({
     month,
     segment,
+    pendingReadCaptureId,
     allPass,
     passCount: checks.length - failCount,
     failCount,
@@ -2413,7 +3174,15 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
       planNotInSourceByCategory: Object.fromEntries(planNotInSource),
       planNotInSourceCount: planNotInSourceTotal,
     },
-    inputDiagnostics: { pending: pendingDiagnostics },
+    inputDiagnostics: {
+      pending: pendingDiagnostics,
+      pendingAtPlan: pendingUploadDiagnostics,
+      pendingLastMonthAtPlan: pendingLastMonthDiagnostics,
+    },
+    pendingBaseline: segment === "Plumbing"
+      ? await getActivePendingReadBaseline("Plumbing")
+      : null,
+    pendingPlanReconciliation,
   });
 }
 
@@ -2442,7 +3211,7 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
  */
 export async function computePlumbingMonitoringPayload(month: string) {
   const [planItems, sheet3Rows] = await Promise.all([
-    buildPlanItems(month, "Plumbing"),
+    buildPlanItems(month, "Plumbing", { allowUnreviewedCurrentPending: true }),
     fetchPlumbingSheet3Production(month),
   ]);
 
@@ -2743,18 +3512,14 @@ router.get("/plan/plumbing-monitoring", async (req, res) => {
     const payload = await getPlumbingMonitoringPayloadCached(month);
     res.json(payload);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
     req.log.error({ err, month }, "plan/plumbing-monitoring failed");
-    if (err instanceof UpstreamTimeoutError) {
+    // Surface named input/source failures to the plant instead of hiding the
+    // reconciliation, roster, or workbook diagnosis behind a generic 500.
+    try {
       handlePlanError(res, err);
       return;
-    }
-    // Surface date-format errors with the full diagnostic message so the plant
-    // sees the workbook ID, bad-date sample, and supported formats in the UI —
-    // not just a generic "Failed" string.
-    if (msg.includes("unrecognised date formats")) {
-      res.status(422).json({ error: msg });
-    } else {
+    } catch {
+      // Unknown/unclassified failures still get the stable generic response.
       res.status(500).json({ error: "Failed to compute Plumbing monitoring" });
     }
   }
@@ -2771,7 +3536,7 @@ router.get("/plan/validate-plumbing-monitoring", async (req, res) => {
   }
   try {
     const [planItems, sheet3Rows] = await Promise.all([
-      buildPlanItems(month, "Plumbing"),
+      buildPlanItems(month, "Plumbing", { allowUnreviewedCurrentPending: true }),
       fetchPlumbingSheet3Production(month),
     ]);
 
@@ -2871,10 +3636,47 @@ router.get("/plan/summary", async (req, res): Promise<void> => {
     }
     // Merged categories: both old shape (category/minTotal/maxTotal)
     // and new shape (name/pcs/kg) so both consumers work
+    const [latestRun] = await db
+      .select({ id: planRunsTable.id, planType: planRunsTable.planType })
+      .from(planRunsTable)
+      .where(and(
+        eq(planRunsTable.month, month),
+        eq(planRunsTable.segment, segment),
+        eq(planRunsTable.status, "finalized"),
+      ))
+      .orderBy(
+        sql`CASE WHEN ${planRunsTable.planType} = 'production' THEN 0 ELSE 1 END`,
+        desc(planRunsTable.id),
+      )
+      .limit(1);
+    const finalizedResults = latestRun
+      ? await db
+        .select({
+          itemCode: planRunResultsTable.itemCode,
+          colour: planRunResultsTable.colour,
+          category: planRunResultsTable.category,
+          demandPlan: planRunResultsTable.demandPlan,
+          productionPlan: planRunResultsTable.productionPlan,
+        })
+        .from(planRunResultsTable)
+        .where(eq(planRunResultsTable.runId, latestRun.id))
+      : [];
+    const grandDemandTotal = finalizedResults.length > 0
+      ? finalizedResults.reduce((sum, item) => sum + Math.max(item.demandPlan ?? item.productionPlan, 0), 0)
+      : planSummary.grandMaxTotal;
+    const grandFittedTotal = latestRun?.planType === "production" && finalizedResults.length > 0
+      ? finalizedResults.reduce((sum, item) => sum + Math.max(item.productionPlan, 0), 0)
+      : null;
+    const fittedByCategory = new Map<string, number>();
+    for (const item of finalizedResults) {
+      fittedByCategory.set(item.category, (fittedByCategory.get(item.category) ?? 0) + Math.max(item.productionPlan, 0));
+    }
     const categories = planSummary.categories.map((c) => ({
       ...c,                          // category, minTotal, maxTotal (summary page)
       name: c.category,             // ops-dashboard
-      pcs:  Math.round(c.maxTotal), // ops-dashboard
+      pcs:  Math.round(c.maxTotal), // legacy demand alias for ops-dashboard
+      demandPcs: Math.round(c.maxTotal),
+      fittedPcs: latestRun?.planType === "production" ? Math.round(fittedByCategory.get(c.category) ?? 0) : null,
       kg:   catKg.get(c.category) ?? 0, // ops-dashboard
     }));
     res.json({
@@ -2882,9 +3684,15 @@ router.get("/plan/summary", async (req, res): Promise<void> => {
       segment,
       // production-planning summary page fields
       grandMinTotal: planSummary.grandMinTotal,
-      grandMaxTotal: planSummary.grandMaxTotal,
+      grandMaxTotal: Math.round(grandDemandTotal),
+      grandDemandTotal: Math.round(grandDemandTotal),
+      grandFittedTotal: grandFittedTotal === null ? null : Math.round(grandFittedTotal),
+      demandBasis: "demand",
+      fittedBasis: grandFittedTotal === null ? null : "executable",
       // ops-dashboard fields
-      totalPcs: planSummary.grandMaxTotal,
+      totalPcs: Math.round(grandDemandTotal),
+      demandPcs: Math.round(grandDemandTotal),
+      fittedPcs: grandFittedTotal === null ? null : Math.round(grandFittedTotal),
       totalKg:  Math.round(totalKg),
       totalMin: planSummary.grandMinTotal,
       categories,
