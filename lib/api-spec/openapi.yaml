@@ -288,6 +288,19 @@ paths:
             application/json:
               schema: { type: object }
 
+  /master-products/rate-list-report:
+    get:
+      operationId: getMasterProductRateListReport
+      tags: [masterProducts]
+      summary: Report the governed PTMT rate-list source and July stock reconciliation
+      responses:
+        "200":
+          description: Rate-list provenance and reconciliation report
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RateListReport" }
+        "500": { description: Rate-list report unavailable }
+
   /master-products/products:
     get:
       operationId: listMasterProducts
@@ -2295,7 +2308,7 @@ components:
 
     UploadKind:
       type: string
-      enum: [pending_orders, last_month_pending, current_stock, plumbing_fg_stock]
+      enum: [pending_orders, last_month_pending, current_stock, plumbing_fg_stock, rate_list]
 
     BufferCategory:
       type: object
@@ -2459,6 +2472,23 @@ components:
         grandFittedTotal: { type: ["number", "null"], description: "Executable quantity from the finalized Production run; null when only a Temporary run exists." }
         demandBasis: { type: string, enum: [demand] }
         fittedBasis: { type: ["string", "null"], enum: [executable, null] }
+        inputProvenance:
+          $ref: "#/components/schemas/PlanInputProvenance"
+
+    PlanInputProvenance:
+      type: object
+      additionalProperties:
+        $ref: "#/components/schemas/PlanInputProvenanceEntry"
+
+    PlanInputProvenanceEntry:
+      type: object
+      required: [source, mode]
+      properties:
+        source: { type: string }
+        mode: { type: string, enum: [upload, live, frozen, not-used] }
+        uploadId: { type: integer }
+        filename: { type: string }
+        capturedAt: { type: string, format: date-time }
 
     CreatePlanRunRequest:
       type: object
@@ -3816,6 +3846,8 @@ components:
         baselineSource: { type: string, enum: [frozen-run, live], description: "Where the original plan baseline came from" }
         unplannedTotal: { type: integer, description: "Sum of unplannedProduction quantities" }
         frozenPlanGrandMax: { type: ["integer", "null"], description: "Grand total (pcs) from the cited baseline plan run's results rows; null when no frozen baseline or run predates drift tracking" }
+        inputProvenance:
+          $ref: "#/components/schemas/PlanInputProvenance"
         schedulerWeekOffset: { type: ["integer", "null"], description: "Persisted offset from scheduler-local weeks to original month weeks" }
         schedulerOriginalWeeks:
           type: array
@@ -4265,7 +4297,7 @@ components:
         division: { type: ["string", "null"] }
         category: { type: string }
         status: { type: string, enum: [classified, unclassified, ambiguous] }
-        source: { type: ["string", "null"], enum: [workbook, catalogue, seed, null] }
+        source: { type: ["string", "null"], enum: [workbook, rate-list, catalogue, seed, null] }
         note: { type: ["string", "null"] }
         inCatalogue: { type: boolean }
         inPlanningWorkbook: { type: boolean }
@@ -4286,6 +4318,67 @@ components:
         categories:
           type: array
           items: { type: string }
+
+    RateListReport:
+      type: object
+      required: [source, julySource, reconciliation]
+      properties:
+        source:
+          $ref: "#/components/schemas/RateListSource"
+        julySource:
+          $ref: "#/components/schemas/RateListSource"
+        reconciliation:
+          $ref: "#/components/schemas/RateListReconciliation"
+        coverage:
+          $ref: "#/components/schemas/RateListCoverage"
+
+    RateListCoverage:
+      type: ["object", "null"]
+      properties:
+        rateListOnlyCodeCount: { type: integer }
+        itemMasterOnlyCodeCount: { type: integer }
+        bothSourceCodeCount: { type: integer }
+        crossSegmentCodeCount: { type: integer }
+        legacyReconciliation:
+          $ref: "#/components/schemas/RateListReconciliation"
+        explainedExclusions:
+          type: array
+          items:
+            $ref: "#/components/schemas/RateListUnmatchedCode"
+        remainingReviewCodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/RateListUnmatchedCode"
+
+    RateListSource:
+      type: ["object", "null"]
+      properties:
+        id: { type: integer }
+        filename: { type: string }
+        rowCount: { type: integer }
+        uploadedAt: { type: string, format: date-time }
+        distinctCodeCount: { type: integer }
+
+    RateListReconciliation:
+      type: ["object", "null"]
+      properties:
+        rateListCodeCount: { type: integer }
+        sourceCodeCount: { type: integer }
+        matchedCodeCount: { type: integer }
+        unmatchedCodeCount: { type: integer }
+        matchedQuantity: { type: number }
+        unmatchedQuantity: { type: number }
+        unmatchedCodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/RateListUnmatchedCode"
+
+    RateListUnmatchedCode:
+      type: object
+      required: [code, quantity]
+      properties:
+        code: { type: string }
+        quantity: { type: number }
 
     ProductReclassificationInput:
       type: object

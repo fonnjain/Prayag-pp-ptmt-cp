@@ -34,6 +34,32 @@ const STATUS_FLAG: Record<string, string> = {
   "on-plan":       "",
 };
 
+type CorrectiveInputProvenanceEntry = {
+  source: string;
+  mode: "upload" | "live" | "frozen" | "not-used";
+  capturedAt?: string;
+  planRunId?: number;
+};
+
+function buildCorrectiveInputProvenance(
+  segment: string,
+  baselineSource: "frozen-run" | "live",
+  baselinePlanRunId: number | null | undefined,
+  capturedAt: Date | string,
+): Record<string, CorrectiveInputProvenanceEntry> {
+  const at = new Date(capturedAt).toISOString();
+  const baseline = baselineSource === "frozen-run"
+    ? `Frozen cited plan run${baselinePlanRunId == null ? "" : ` #${baselinePlanRunId}`}`
+    : "Live rebuild";
+  return {
+    stock: { source: baseline, mode: baselineSource === "frozen-run" ? "frozen" : "live", capturedAt: at, planRunId: baselinePlanRunId ?? undefined },
+    dummyStock: { source: segment === "PTMT" ? baseline : "Not used by the Plumbing corrective", mode: segment === "PTMT" ? (baselineSource === "frozen-run" ? "frozen" : "live") : "not-used", capturedAt: at, planRunId: baselinePlanRunId ?? undefined },
+    currentPending: { source: "Live pending balance read for corrective/recompute", mode: "live", capturedAt: at },
+    average3MoSales: { source: "Live planning workbook read", mode: "live", capturedAt: at },
+    orderTotals: { source: "Live Google Sheets order flow (display-only)", mode: "live", capturedAt: at },
+  };
+}
+
 const PLUMBING_CATS_ORDER = [
   "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
   "UPVC Pipe", "UPVC Fitting", "UPVC Solvent",
@@ -260,7 +286,15 @@ router.post("/corrective/replan", async (req, res): Promise<void> => {
       return;
     }
 
-    res.json(result);
+    res.json({
+      ...result,
+      inputProvenance: buildCorrectiveInputProvenance(
+        seg,
+        result.baselineSource,
+        result.baselinePlanRunId,
+        new Date(),
+      ),
+    });
   } catch (err) {
     req.log.error({ err }, "corrective/replan failed");
     if (err instanceof LivePendingReadError) {
@@ -555,6 +589,12 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
     workingDaysRemaining: run.workingDaysRemaining ?? 0,
     planRunId: run.planRunId ?? null,
     frozenPlanGrandMax: run.frozenPlanGrandMax ?? null,
+    inputProvenance: buildCorrectiveInputProvenance(
+      run.segment,
+      run.planRunId != null ? "frozen-run" : "live",
+      run.planRunId ?? null,
+      run.createdAt,
+    ),
     pinned: run.pinned ?? false,
     weekStats: run.weekStatsJson,
     warnings: run.warningsJson,
@@ -639,6 +679,11 @@ async function buildCorrectiveExcel(
     ["Temporary Corrective Demand (pcs)", Math.round(run.temporaryCorrectiveTotal).toLocaleString()],
     ["Fitted Corrective Production (pcs)", Math.round(run.correctiveProductionTotal).toLocaleString()],
     ["Cannot Be Made (pcs)", Math.round(run.cannotBeMadeTotal).toLocaleString()],
+    ["Source · Stock", run.planRunId != null ? `Frozen plan run #${run.planRunId}` : "Live rebuild"],
+    ["Source · Dummy Stock", segmentLabel === "PTMT" ? (run.planRunId != null ? `Frozen plan run #${run.planRunId}` : "Live rebuild") : "Not used"],
+    ["Source · Current Pending", "Live pending balance read"],
+    ["Source · 3-month average sales", "Live planning workbook read"],
+    ["Source · Order totals", "Live Google Sheets order flow (display-only)"],
     ["Scheduler Week Offset", run.feasibilityJson && typeof run.feasibilityJson.schedulerWeekOffset === "number" ? String(run.feasibilityJson.schedulerWeekOffset) : "—"],
     ...weekStats.map(ws => [
       `${ws.weekLabel}: Load Factor`,

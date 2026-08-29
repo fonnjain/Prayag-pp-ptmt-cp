@@ -11,6 +11,9 @@ import type { PlanRunSummaryEffectiveFrom } from './planRunSummaryEffectiveFrom'
 import type { PlanRunSummaryNote } from './planRunSummaryNote';
 import type { PlanRunSummaryPlanStatusReason } from './planRunSummaryPlanStatusReason';
 import type { PlanRunSummaryPass2 } from './planRunSummaryPass2';
+import type { PlanRunSummaryGrandFittedTotal } from './planRunSummaryGrandFittedTotal';
+import type { PlanRunSummaryDemandBasis } from './planRunSummaryDemandBasis';
+import type { PlanRunSummaryFittedBasis } from './planRunSummaryFittedBasis';
 
 export interface PlanRunSummary {
   id: number;
@@ -29,12 +32,13 @@ export interface PlanRunSummary {
   pass2: PlanRunSummaryPass2;
   itemCount: number;
   grandMinTotal: number;
+  /** Compatibility alias for the issued demand total. */
   grandMaxTotal: number;
   /** Issued/demand quantity owed by the plan. */
   grandDemandTotal: number;
   /** Executable quantity; null for demand-only Temporary Plans. */
-  grandFittedTotal: number | null;
-  demandBasis: 'demand';
-  fittedBasis: 'executable' | null;
+  grandFittedTotal: PlanRunSummaryGrandFittedTotal;
+  demandBasis: PlanRunSummaryDemandBasis;
+  fittedBasis: PlanRunSummaryFittedBasis;
   createdAt: string;
 }

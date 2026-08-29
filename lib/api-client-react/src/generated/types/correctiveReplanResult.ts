@@ -14,6 +14,9 @@ import type { CorrectiveReplanResultUnplannedProductionItem } from './corrective
 import type { CorrectiveReplanResultBaselinePlanRunId } from './correctiveReplanResultBaselinePlanRunId';
 import type { CorrectiveReplanResultBaselineSource } from './correctiveReplanResultBaselineSource';
 import type { CorrectiveReplanResultFrozenPlanGrandMax } from './correctiveReplanResultFrozenPlanGrandMax';
+import type { PlanInputProvenance } from './planInputProvenance';
+import type { CorrectiveReplanResultSchedulerWeekOffset } from './correctiveReplanResultSchedulerWeekOffset';
+import type { CorrectiveReplanResultInvariants } from './correctiveReplanResultInvariants';
 
 export interface CorrectiveReplanResult {
   runId: number;
@@ -34,6 +37,7 @@ export interface CorrectiveReplanResult {
   newOrdersQty: number;
   originalMonthTotal: number;
   revisedMonthTotal: number;
+  /** Backward-compatible aggregate residual. */
   unfulfillableQty: number;
   /** Residual demand with no assignment yet, but not classified as impossible. */
   notScheduledQty: number;
@@ -54,16 +58,10 @@ export interface CorrectiveReplanResult {
   unplannedTotal: number;
   /** Grand total (pcs) from the cited baseline plan run's results rows; null when no frozen baseline or run predates drift tracking */
   frozenPlanGrandMax?: CorrectiveReplanResultFrozenPlanGrandMax;
+  inputProvenance?: PlanInputProvenance;
   /** Persisted offset from scheduler-local weeks to original month weeks */
-  schedulerWeekOffset: number | null;
+  schedulerWeekOffset: CorrectiveReplanResultSchedulerWeekOffset;
   /** Original weeks represented by scheduler-local W1 onward */
   schedulerOriginalWeeks: number[];
-  invariants: {
-    temporaryCorrectiveUnchanged: boolean;
-    noClosedWeekRelease: boolean;
-    weeklyCapacity: boolean;
-    producedFloor: boolean;
-    reconciliation: boolean;
-    allPass: boolean;
-  };
+  invariants: CorrectiveReplanResultInvariants;
 }

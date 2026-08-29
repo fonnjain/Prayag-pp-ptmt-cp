@@ -374,7 +374,7 @@ export const recomputeSeasonalityResponse = zod.object({
 
 export const listUploadsResponseItem = zod.object({
   "id": zod.number(),
-  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock', 'plumbing_fg_stock']),
+  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock', 'plumbing_fg_stock', 'rate_list']),
   "filename": zod.string(),
   "uploadedAt": zod.string().datetime({}),
   "rowCount": zod.number()
@@ -383,7 +383,7 @@ export const listUploadsResponse = zod.array(listUploadsResponseItem)
 
 
 export const createUploadParams = zod.object({
-  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock', 'plumbing_fg_stock'])
+  "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock', 'plumbing_fg_stock', 'rate_list'])
 })
 
 export const createUploadBody = zod.object({
@@ -456,6 +456,65 @@ export const getMasterProductCoverageResponse = zod.object({
 
 
 /**
+ * @summary Report the governed PTMT rate-list source and July stock reconciliation
+ */
+export const getMasterProductRateListReportResponse = zod.object({
+  "source": zod.object({
+  "id": zod.number().optional(),
+  "filename": zod.string().optional(),
+  "rowCount": zod.number().optional(),
+  "uploadedAt": zod.string().datetime({}).optional(),
+  "distinctCodeCount": zod.number().optional()
+}).nullable(),
+  "julySource": zod.object({
+  "id": zod.number().optional(),
+  "filename": zod.string().optional(),
+  "rowCount": zod.number().optional(),
+  "uploadedAt": zod.string().datetime({}).optional(),
+  "distinctCodeCount": zod.number().optional()
+}).nullable(),
+  "reconciliation": zod.object({
+  "rateListCodeCount": zod.number().optional(),
+  "sourceCodeCount": zod.number().optional(),
+  "matchedCodeCount": zod.number().optional(),
+  "unmatchedCodeCount": zod.number().optional(),
+  "matchedQuantity": zod.number().optional(),
+  "unmatchedQuantity": zod.number().optional(),
+  "unmatchedCodes": zod.array(zod.object({
+  "code": zod.string(),
+  "quantity": zod.number()
+})).optional()
+}).nullable(),
+  "coverage": zod.object({
+  "rateListOnlyCodeCount": zod.number().optional(),
+  "itemMasterOnlyCodeCount": zod.number().optional(),
+  "bothSourceCodeCount": zod.number().optional(),
+  "crossSegmentCodeCount": zod.number().optional(),
+  "legacyReconciliation": zod.object({
+  "rateListCodeCount": zod.number().optional(),
+  "sourceCodeCount": zod.number().optional(),
+  "matchedCodeCount": zod.number().optional(),
+  "unmatchedCodeCount": zod.number().optional(),
+  "matchedQuantity": zod.number().optional(),
+  "unmatchedQuantity": zod.number().optional(),
+  "unmatchedCodes": zod.array(zod.object({
+  "code": zod.string(),
+  "quantity": zod.number()
+})).optional()
+}).nullish(),
+  "explainedExclusions": zod.array(zod.object({
+  "code": zod.string(),
+  "quantity": zod.number()
+})).optional(),
+  "remainingReviewCodes": zod.array(zod.object({
+  "code": zod.string(),
+  "quantity": zod.number()
+})).optional()
+}).nullish()
+})
+
+
+/**
  * @summary List the complete product review roster for a planning segment
  */
 export const listMasterProductsQuerySegmentDefault = "PTMT";
@@ -478,7 +537,7 @@ export const listMasterProductsResponse = zod.object({
   "division": zod.string().nullable(),
   "category": zod.string(),
   "status": zod.enum(['classified', 'unclassified', 'ambiguous']),
-  "source": zod.union([zod.literal('workbook'),zod.literal('catalogue'),zod.literal('seed'),zod.literal(null)]).nullable(),
+  "source": zod.union([zod.literal('workbook'),zod.literal('rate-list'),zod.literal('catalogue'),zod.literal('seed'),zod.literal(null)]).nullable(),
   "note": zod.string().nullable(),
   "inCatalogue": zod.boolean(),
   "inPlanningWorkbook": zod.boolean(),
@@ -537,7 +596,9 @@ export const runCorrectiveReplanResponse = zod.object({
   "newOrdersQty": zod.number(),
   "originalMonthTotal": zod.number(),
   "revisedMonthTotal": zod.number(),
-  "unfulfillableQty": zod.number(),
+  "unfulfillableQty": zod.number().describe('Backward-compatible aggregate residual.'),
+  "notScheduledQty": zod.number().describe('Residual demand with no assignment yet, but not classified as impossible.'),
+  "unfulfillableOnlyQty": zod.number().describe('Residual demand classified as impossible within the route\/capacity\/window.'),
   "weekStats": zod.array(zod.object({
   "week": zod.number(),
   "weekLabel": zod.string(),
@@ -586,6 +647,11 @@ export const runCorrectiveReplanResponse = zod.object({
   "w2Rev": zod.number(),
   "w3Rev": zod.number(),
   "w4Rev": zod.number(),
+  "temporaryCorrective": zod.number().describe('Demand-true corrective quantity before capacity fitting'),
+  "correctiveProduction": zod.number().describe('Quantity fitted into open-week capacity or machine schedule'),
+  "cannotBeMade": zod.number().describe('Temporary corrective quantity not fitted in the open window'),
+  "cannotBeMadeReason": zod.string().nullish(),
+  "feasibilityStatus": zod.enum(['fitted', 'not-scheduled', 'unfulfillable']),
   "status": zod.string(),
   "isNewItem": zod.boolean()
 })),
@@ -602,7 +668,12 @@ export const runCorrectiveReplanResponse = zod.object({
   "newDemandDelta": zod.number().describe('sum(max(deltaNewOrders, 0)) — new orders added mid-month'),
   "capacityShortfall": zod.number().describe('Alias for shortfall for variance-attribution clarity'),
   "flags": zod.array(zod.string()).describe('UNFULFILLABLE_THIS_MONTH | NOT_STARTED | NO_DEMONSTRATED_CAPACITY'),
-  "kgRemaining": zod.number().describe('Total remaining kg for Plumbing categories; 0 for PTMT')
+  "kgRemaining": zod.number().describe('Total remaining kg for Plumbing categories; 0 for PTMT'),
+  "temporaryCorrective": zod.number(),
+  "correctiveProduction": zod.number(),
+  "cannotBeMade": zod.number(),
+  "notScheduled": zod.number(),
+  "unfulfillable": zod.number()
 })).describe('Per-category aggregates with variance attribution (P7)'),
   "unplannedProduction": zod.array(zod.object({
   "code": zod.string(),
@@ -611,7 +682,24 @@ export const runCorrectiveReplanResponse = zod.object({
   "baselinePlanRunId": zod.number().nullish().describe('Immutable plan run cited as the baseline (null = live rebuild)'),
   "baselineSource": zod.enum(['frozen-run', 'live']).optional().describe('Where the original plan baseline came from'),
   "unplannedTotal": zod.number().describe('Sum of unplannedProduction quantities'),
-  "frozenPlanGrandMax": zod.number().nullish().describe('Grand total (pcs) from the cited baseline plan run\'s results rows; null when no frozen baseline or run predates drift tracking')
+  "frozenPlanGrandMax": zod.number().nullish().describe('Grand total (pcs) from the cited baseline plan run\'s results rows; null when no frozen baseline or run predates drift tracking'),
+  "inputProvenance": zod.record(zod.string(), zod.object({
+  "source": zod.string(),
+  "mode": zod.enum(['upload', 'live', 'frozen', 'not-used']),
+  "uploadId": zod.number().optional(),
+  "filename": zod.string().optional(),
+  "capturedAt": zod.string().datetime({}).optional()
+})).optional(),
+  "schedulerWeekOffset": zod.number().nullable().describe('Persisted offset from scheduler-local weeks to original month weeks'),
+  "schedulerOriginalWeeks": zod.array(zod.number()).describe('Original weeks represented by scheduler-local W1 onward'),
+  "invariants": zod.object({
+  "temporaryCorrectiveUnchanged": zod.boolean(),
+  "noClosedWeekRelease": zod.boolean(),
+  "weeklyCapacity": zod.boolean(),
+  "producedFloor": zod.boolean(),
+  "reconciliation": zod.boolean(),
+  "allPass": zod.boolean()
+})
 })
 
 
@@ -633,6 +721,8 @@ export const listCorrectiveRunsResponseItem = zod.object({
   "originalMonthTotal": zod.number(),
   "revisedMonthTotal": zod.number(),
   "unfulfillableQty": zod.number(),
+  "notScheduledTotal": zod.number(),
+  "unfulfillableTotal": zod.number(),
   "planRunId": zod.number().nullish().describe('Immutable plan run cited as the baseline (null = live rebuild)'),
   "pinned": zod.boolean().describe('When true, deletion and frozen-baseline changes are blocked.'),
   "warnings": zod.array(zod.object({
@@ -668,7 +758,9 @@ export const getCorrectiveRunResponse = zod.object({
   "newOrdersQty": zod.number(),
   "originalMonthTotal": zod.number(),
   "revisedMonthTotal": zod.number(),
-  "unfulfillableQty": zod.number(),
+  "unfulfillableQty": zod.number().describe('Backward-compatible aggregate residual.'),
+  "notScheduledQty": zod.number().describe('Residual demand with no assignment yet, but not classified as impossible.'),
+  "unfulfillableOnlyQty": zod.number().describe('Residual demand classified as impossible within the route\/capacity\/window.'),
   "weekStats": zod.array(zod.object({
   "week": zod.number(),
   "weekLabel": zod.string(),
@@ -717,6 +809,11 @@ export const getCorrectiveRunResponse = zod.object({
   "w2Rev": zod.number(),
   "w3Rev": zod.number(),
   "w4Rev": zod.number(),
+  "temporaryCorrective": zod.number().describe('Demand-true corrective quantity before capacity fitting'),
+  "correctiveProduction": zod.number().describe('Quantity fitted into open-week capacity or machine schedule'),
+  "cannotBeMade": zod.number().describe('Temporary corrective quantity not fitted in the open window'),
+  "cannotBeMadeReason": zod.string().nullish(),
+  "feasibilityStatus": zod.enum(['fitted', 'not-scheduled', 'unfulfillable']),
   "status": zod.string(),
   "isNewItem": zod.boolean()
 })),
@@ -733,7 +830,12 @@ export const getCorrectiveRunResponse = zod.object({
   "newDemandDelta": zod.number().describe('sum(max(deltaNewOrders, 0)) — new orders added mid-month'),
   "capacityShortfall": zod.number().describe('Alias for shortfall for variance-attribution clarity'),
   "flags": zod.array(zod.string()).describe('UNFULFILLABLE_THIS_MONTH | NOT_STARTED | NO_DEMONSTRATED_CAPACITY'),
-  "kgRemaining": zod.number().describe('Total remaining kg for Plumbing categories; 0 for PTMT')
+  "kgRemaining": zod.number().describe('Total remaining kg for Plumbing categories; 0 for PTMT'),
+  "temporaryCorrective": zod.number(),
+  "correctiveProduction": zod.number(),
+  "cannotBeMade": zod.number(),
+  "notScheduled": zod.number(),
+  "unfulfillable": zod.number()
 })).describe('Per-category aggregates with variance attribution (P7)'),
   "unplannedProduction": zod.array(zod.object({
   "code": zod.string(),
@@ -742,7 +844,24 @@ export const getCorrectiveRunResponse = zod.object({
   "baselinePlanRunId": zod.number().nullish().describe('Immutable plan run cited as the baseline (null = live rebuild)'),
   "baselineSource": zod.enum(['frozen-run', 'live']).optional().describe('Where the original plan baseline came from'),
   "unplannedTotal": zod.number().describe('Sum of unplannedProduction quantities'),
-  "frozenPlanGrandMax": zod.number().nullish().describe('Grand total (pcs) from the cited baseline plan run\'s results rows; null when no frozen baseline or run predates drift tracking')
+  "frozenPlanGrandMax": zod.number().nullish().describe('Grand total (pcs) from the cited baseline plan run\'s results rows; null when no frozen baseline or run predates drift tracking'),
+  "inputProvenance": zod.record(zod.string(), zod.object({
+  "source": zod.string(),
+  "mode": zod.enum(['upload', 'live', 'frozen', 'not-used']),
+  "uploadId": zod.number().optional(),
+  "filename": zod.string().optional(),
+  "capturedAt": zod.string().datetime({}).optional()
+})).optional(),
+  "schedulerWeekOffset": zod.number().nullable().describe('Persisted offset from scheduler-local weeks to original month weeks'),
+  "schedulerOriginalWeeks": zod.array(zod.number()).describe('Original weeks represented by scheduler-local W1 onward'),
+  "invariants": zod.object({
+  "temporaryCorrectiveUnchanged": zod.boolean(),
+  "noClosedWeekRelease": zod.boolean(),
+  "weeklyCapacity": zod.boolean(),
+  "producedFloor": zod.boolean(),
+  "reconciliation": zod.boolean(),
+  "allPass": zod.boolean()
+})
 })
 
 
@@ -1103,10 +1222,23 @@ export const getPlanSummaryResponse = zod.object({
   "categories": zod.array(zod.object({
   "category": zod.string(),
   "minTotal": zod.number(),
-  "maxTotal": zod.number()
+  "maxTotal": zod.number(),
+  "demandPcs": zod.number().optional().describe('Issued\/demand quantity for the category.'),
+  "fittedPcs": zod.number().nullish().describe('Executable quantity for the category; null when not scheduled.')
 })),
   "grandMinTotal": zod.number(),
-  "grandMaxTotal": zod.number()
+  "grandMaxTotal": zod.number().describe('Compatibility alias for the issued demand total.'),
+  "grandDemandTotal": zod.number().describe('Issued\/demand quantity owed by the plan.'),
+  "grandFittedTotal": zod.number().nullable().describe('Executable quantity from the finalized Production run; null when only a Temporary run exists.'),
+  "demandBasis": zod.enum(['demand']),
+  "fittedBasis": zod.union([zod.literal('executable'),zod.literal(null)]).nullable(),
+  "inputProvenance": zod.record(zod.string(), zod.object({
+  "source": zod.string(),
+  "mode": zod.enum(['upload', 'live', 'frozen', 'not-used']),
+  "uploadId": zod.number().optional(),
+  "filename": zod.string().optional(),
+  "capturedAt": zod.string().datetime({}).optional()
+})).optional()
 })
 
 
@@ -1309,7 +1441,11 @@ export const listPlanRunsResponseItem = zod.object({
 }).nullable(),
   "itemCount": zod.number(),
   "grandMinTotal": zod.number(),
-  "grandMaxTotal": zod.number(),
+  "grandMaxTotal": zod.number().describe('Compatibility alias for the issued demand total.'),
+  "grandDemandTotal": zod.number().describe('Issued\/demand quantity owed by the plan.'),
+  "grandFittedTotal": zod.number().nullable().describe('Executable quantity; null for demand-only Temporary Plans.'),
+  "demandBasis": zod.enum(['demand']),
+  "fittedBasis": zod.union([zod.literal('executable'),zod.literal(null)]).nullable(),
   "createdAt": zod.string().datetime({})
 })
 export const listPlanRunsResponse = zod.array(listPlanRunsResponseItem)
@@ -1411,7 +1547,11 @@ export const getPlanRunResponse = zod.object({
 }).nullable(),
   "itemCount": zod.number(),
   "grandMinTotal": zod.number(),
-  "grandMaxTotal": zod.number(),
+  "grandMaxTotal": zod.number().describe('Compatibility alias for the issued demand total.'),
+  "grandDemandTotal": zod.number().describe('Issued\/demand quantity owed by the plan.'),
+  "grandFittedTotal": zod.number().nullable().describe('Executable quantity; null for demand-only Temporary Plans.'),
+  "demandBasis": zod.enum(['demand']),
+  "fittedBasis": zod.union([zod.literal('executable'),zod.literal(null)]).nullable(),
   "createdAt": zod.string().datetime({})
 }),
   "items": zod.array(zod.object({
@@ -1424,9 +1564,11 @@ export const getPlanRunResponse = zod.object({
   "pendingLastMonth": zod.number(),
   "bufferReq": zod.number().nullable(),
   "minProduction": zod.number(),
-  "productionPlan": zod.number(),
+  "demandPlan": zod.number().describe('Frozen demand\/owed quantity before machine fitting.'),
+  "productionPlan": zod.number().describe('Executable quantity for a fitted Production Plan; demand quantity for a Temporary Plan.'),
   "temporaryPlan": zod.number().describe('Frozen Temporary Plan demand before PTMT capacity fitting.'),
   "cannotBeMade": zod.number().describe('Temporary demand remaining after all four weekly category capacities are consumed.'),
+  "feasibilityStatus": zod.enum(['fitted', 'not-scheduled', 'unfulfillable']),
   "dummy": zod.number(),
   "orders": zod.number(),
   "buffer": zod.number(),
@@ -1695,7 +1837,11 @@ export const finalizePlanRunResponse = zod.object({
 }).nullable(),
   "itemCount": zod.number(),
   "grandMinTotal": zod.number(),
-  "grandMaxTotal": zod.number(),
+  "grandMaxTotal": zod.number().describe('Compatibility alias for the issued demand total.'),
+  "grandDemandTotal": zod.number().describe('Issued\/demand quantity owed by the plan.'),
+  "grandFittedTotal": zod.number().nullable().describe('Executable quantity; null for demand-only Temporary Plans.'),
+  "demandBasis": zod.enum(['demand']),
+  "fittedBasis": zod.union([zod.literal('executable'),zod.literal(null)]).nullable(),
   "createdAt": zod.string().datetime({})
 })
 

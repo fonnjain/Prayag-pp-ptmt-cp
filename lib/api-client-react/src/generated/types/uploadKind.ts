@@ -14,4 +14,5 @@ export const UploadKind = {
   last_month_pending: 'last_month_pending',
   current_stock: 'current_stock',
   plumbing_fg_stock: 'plumbing_fg_stock',
+  rate_list: 'rate_list',
 } as const;

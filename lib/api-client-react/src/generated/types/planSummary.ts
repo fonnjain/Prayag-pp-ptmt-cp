@@ -5,16 +5,22 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { CategorySummary } from './categorySummary';
+import type { PlanSummaryGrandFittedTotal } from './planSummaryGrandFittedTotal';
+import type { PlanSummaryDemandBasis } from './planSummaryDemandBasis';
+import type { PlanSummaryFittedBasis } from './planSummaryFittedBasis';
+import type { PlanInputProvenance } from './planInputProvenance';
 
 export interface PlanSummary {
   month: string;
   categories: CategorySummary[];
   grandMinTotal: number;
+  /** Compatibility alias for the issued demand total. */
   grandMaxTotal: number;
+  /** Issued/demand quantity owed by the plan. */
   grandDemandTotal: number;
-  grandFittedTotal: number | null;
-  demandBasis: 'demand';
-  fittedBasis: 'executable' | null;
-  demandPcs: number;
-  fittedPcs: number | null;
+  /** Executable quantity from the finalized Production run; null when only a Temporary run exists. */
+  grandFittedTotal: PlanSummaryGrandFittedTotal;
+  demandBasis: PlanSummaryDemandBasis;
+  fittedBasis: PlanSummaryFittedBasis;
+  inputProvenance?: PlanInputProvenance;
 }

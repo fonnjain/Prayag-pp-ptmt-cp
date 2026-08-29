@@ -3,6 +3,10 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { db, uploadedFilesTable, itemMasterTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
+import {
+  parseRateListRows,
+  RATE_LIST_UPLOAD_KIND,
+} from "../lib/rate-list";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -12,6 +16,7 @@ const VALID_KINDS = new Set([
   "last_month_pending",
   "current_stock",
   "plumbing_fg_stock",
+  RATE_LIST_UPLOAD_KIND,
 ]);
 
 const PENDING_BALANCE_HEADERS = ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty"];
@@ -329,6 +334,10 @@ export function applyPendingOrderAlias(code: string, colour: string): { code: st
 }
 
 export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<string, unknown>[] {
+  if (kind === RATE_LIST_UPLOAD_KIND) {
+    return extractRateListRows(workbook);
+  }
+
   if (kind === "pending_orders") {
     // DATA.xlsx — shared across ALL segments (PTMT + Plumbing).
     // Store every row; plan.ts filters by segment when consuming.
@@ -457,6 +466,35 @@ export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<strin
   });
   const sheet = workbook.Sheets[sheetSelection.name]!;
   return sheetToObjects(sheet);
+}
+
+export function extractRateListRows(workbook: XLSX.WorkBook): Record<string, unknown>[] {
+  const firstSheetName = workbook.SheetNames[0];
+  if (!firstSheetName || !workbook.Sheets[firstSheetName]) {
+    throw new Error("Rate-list CSV has no worksheet.");
+  }
+  const sheet = workbook.Sheets[firstSheetName]!;
+  const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null });
+  const rows = sheetToObjects(sheet);
+  if (rows.length === 0 && raw[0]) {
+    const headerOnly: Record<string, unknown> = {};
+    (raw[0] ?? []).forEach((header, index) => {
+      const key = String(header ?? "").trim();
+      if (key) headerOnly[key] = null;
+    });
+    // Preserve the header vocabulary so a header-only file gets the specific
+    // "no recognised code rows" error rather than an opaque empty upload.
+    parseRateListRows([headerOnly]);
+  }
+  // parseRateListRows performs strict header and empty-recognised-row
+  // validation, then we store the canonical field names as the durable source.
+  return parseRateListRows(rows).map((row) => ({
+    source_tab: row.sourceTab,
+    code: row.code,
+    name: row.name,
+    range: row.range,
+    range_name: row.rangeName,
+  }));
 }
 
 /**

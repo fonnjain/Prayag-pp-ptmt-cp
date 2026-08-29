@@ -2,7 +2,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { exportTimestamp } from "../lib/export-filename";
 import { db, itemMasterTable, bufferCategoriesTable, uploadedFilesTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, planRunsTable, planRunResultsTable } from "@workspace/db";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   computeItemPlan,
   annotateWeeklyRelease,
@@ -40,6 +40,7 @@ import {
 } from "../lib/sheets";
 import { logger } from "../lib/logger";
 import { reviewedBufferMultiplier } from "../lib/master-products";
+import { getEffectivePtmtRoster } from "../lib/rate-list";
 import { buildElapsedProductionDays } from "../lib/plant-engine";
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "../lib/plant-lifecycle";
 import { exportPlanPdf } from "../lib/pdf-export";
@@ -1067,7 +1068,7 @@ async function buildPtmtPlanItemsInner(month: string, segment: string): Promise<
   // ── 1. UPLOADS + DB FIRST — fail fast (loudly, naming the file) before any sheet read ──
   const [itemRows, bufferRows, bandRows, currentStockRows, pendingLastMoRows] =
     await Promise.all([
-      db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, segment)),
+      getEffectivePtmtRoster(),
       db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
       db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
       requireUploadRows("current_stock", "FG Stock (current stock)"),
@@ -2742,7 +2743,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   ] = await Promise.all([
     loadLatestUploadRowsByKind("current_stock"),
     loadLatestUploadRowsByKind("last_month_pending"),
-    db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, "PTMT")),
+    getEffectivePtmtRoster(),
     db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "PTMT")),
     fetchAvg3MoSaleTotals(month),
     Promise.resolve(livePendingCapture.totals),
@@ -3609,6 +3610,64 @@ router.get("/plan/validate-plumbing-monitoring", async (req, res) => {
   }
 });
 
+type PlanInputProvenanceEntry = {
+  source: string;
+  mode: "upload" | "live" | "not-used";
+  uploadId?: number;
+  filename?: string;
+  capturedAt?: string;
+};
+
+async function getPlanInputProvenance(month: string, segment: string): Promise<Record<string, PlanInputProvenanceEntry>> {
+  const kinds = segment === "Plumbing"
+    ? ["pending_orders", "last_month_pending"]
+    : ["current_stock", "pending_orders", "last_month_pending"];
+  const uploads = await db
+    .select({
+      id: uploadedFilesTable.id,
+      kind: uploadedFilesTable.kind,
+      filename: uploadedFilesTable.filename,
+      uploadedAt: uploadedFilesTable.uploadedAt,
+    })
+    .from(uploadedFilesTable)
+    .where(inArray(uploadedFilesTable.kind, kinds))
+    .orderBy(desc(uploadedFilesTable.uploadedAt));
+  const latest = (kind: string) => uploads.find((upload) => upload.kind === kind);
+  const uploadEntry = (kind: string, label: string): PlanInputProvenanceEntry => {
+    const upload = latest(kind);
+    return upload
+      ? {
+        source: label,
+        mode: "upload",
+        uploadId: upload.id,
+        filename: upload.filename,
+        capturedAt: upload.uploadedAt.toISOString(),
+      }
+      : { source: `${label} upload`, mode: "upload" };
+  };
+  const liveEntry = (source: string): PlanInputProvenanceEntry => ({
+    source,
+    mode: "live",
+    capturedAt: new Date().toISOString(),
+  });
+  if (segment === "Plumbing") {
+    return {
+      stock: liveEntry(`Daily Production workbook for ${month}`),
+      dummyStock: { source: "Not used by the Plumbing plan", mode: "not-used" },
+      currentPending: uploadEntry("pending_orders", "Uploaded pending balance"),
+      average3MoSales: liveEntry(`Daily Production workbook for ${month}`),
+      orderTotals: liveEntry("Google Sheets order flow (display-only)"),
+    };
+  }
+  return {
+    stock: uploadEntry("current_stock", "Uploaded current stock"),
+    dummyStock: { source: "No separate dummy-stock input in the PTMT plan", mode: "not-used" },
+    currentPending: uploadEntry("pending_orders", "Uploaded pending balance"),
+    average3MoSales: liveEntry("Google Sheets planning workbook"),
+    orderTotals: liveEntry("Google Sheets order flow (display-only)"),
+  };
+}
+
 // ── GET /plan/summary ─────────────────────────────────────────────────────────
 // Unified plan summary consumed by both:
 //   • production-planning /summary page  → grandMinTotal, grandMaxTotal,
@@ -3682,6 +3741,7 @@ router.get("/plan/summary", async (req, res): Promise<void> => {
     res.json({
       month,
       segment,
+      inputProvenance: await getPlanInputProvenance(month, segment),
       // production-planning summary page fields
       grandMinTotal: planSummary.grandMinTotal,
       grandMaxTotal: Math.round(grandDemandTotal),

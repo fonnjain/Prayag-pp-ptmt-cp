@@ -10,6 +10,12 @@ import {
   type MasterProduct,
 } from "@workspace/db";
 import { pendingOrderTotalsFromRows } from "./sheets";
+import {
+  normalizeRateListCode,
+  parseRateListRows,
+  RATE_LIST_UPLOAD_KIND,
+  rateListPlanningCategory,
+} from "./rate-list";
 
 export const MASTER_PRODUCT_SOURCE = "competition-analysis";
 export const CATALOGUE_PAGE_SIZE = 200;
@@ -108,7 +114,7 @@ export type SegmentCoverage = {
 };
 
 export type ProductClassificationStatus = "classified" | "unclassified" | "ambiguous";
-export type ProductClassificationSource = "workbook" | "catalogue" | "seed" | null;
+export type ProductClassificationSource = "workbook" | "rate-list" | "catalogue" | "seed" | null;
 
 export type ProductListRow = {
   key: string;
@@ -151,7 +157,7 @@ export async function getProducts(input: {
   source?: Exclude<ProductClassificationSource, null>;
   search?: string;
 }): Promise<{ rows: ProductListRow[]; total: number; categories: string[] }> {
-  const [items, catalogues, buffers, pendingFile, lastMonthFile, audits] = await Promise.all([
+  const [items, catalogues, buffers, pendingFile, lastMonthFile, audits, rateListFile] = await Promise.all([
     db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, input.segment)),
     db.select().from(masterProductsTable).where(and(
       eq(masterProductsTable.source, MASTER_PRODUCT_SOURCE),
@@ -167,9 +173,16 @@ export async function getProducts(input: {
       .orderBy(desc(uploadedFilesTable.uploadedAt)).limit(1),
     db.select().from(productClassificationAuditTable)
       .where(eq(productClassificationAuditTable.segment, input.segment)),
+    db.select({ rows: uploadedFilesTable.rows }).from(uploadedFilesTable)
+      .where(eq(uploadedFilesTable.kind, RATE_LIST_UPLOAD_KIND))
+      .orderBy(desc(uploadedFilesTable.uploadedAt)).limit(1),
   ]);
 
   const catalogueByCode = new Map(catalogues.map((row) => [normalizeCatalogueCode(row.itemCode), row]));
+  const rateRows = rateListFile[0]
+    ? parseRateListRows(rateListFile[0].rows as Record<string, unknown>[])
+    : [];
+  const rateByCode = new Map(rateRows.map((row) => [row.code, row]));
   const bufferByCategory = new Map(buffers.map((row) => [row.name, row.multiplier]));
   const pendingCurrent = pendingOrderTotalsFromRows((pendingFile[0]?.rows ?? []) as Record<string, unknown>[], input.segment);
   const pendingLast = pendingOrderTotalsFromRows((lastMonthFile[0]?.rows ?? []) as Record<string, unknown>[], input.segment);
@@ -202,8 +215,10 @@ export async function getProducts(input: {
       division: catalogue?.division ?? null,
       category,
       status,
-      source: item.classificationSource === "workbook" || item.classificationSource === "catalogue" || item.classificationSource === "seed"
-        ? item.classificationSource
+      source: rateByCode.has(code)
+        ? "rate-list"
+        : item.classificationSource === "workbook" || item.classificationSource === "catalogue" || item.classificationSource === "seed"
+          ? item.classificationSource
         : null,
       note: item.classificationNote ?? null,
       inCatalogue: Boolean(catalogue),
@@ -213,6 +228,35 @@ export async function getProducts(input: {
       dummyQuantity: 0,
       bufferReq: reviewedBufferMultiplier(status, category, bufferByCategory),
       auditCount: auditsByKey.get(productKey(input.segment, code, colour)) ?? 0,
+    });
+    representedCodes.add(code);
+  }
+
+  for (const rate of rateRows) {
+    const code = normalizeRateListCode(rate.code);
+    if (representedCodes.has(code)) continue;
+    const catalogue = catalogueByCode.get(code);
+    const category = rateListPlanningCategory(rate);
+    rows.push({
+      key: productKey(input.segment, code, null, category),
+      segment: input.segment,
+      itemCode: code,
+      colour: null,
+      productName: rate.name || catalogue?.productName || null,
+      division: catalogue?.division ?? null,
+      category,
+      status: category === "Unclassified" ? "unclassified" : "classified",
+      source: "rate-list",
+      note: category === "Unclassified"
+        ? `Rate list: ${rate.rangeName}; category review required.`
+        : `Rate list: ${rate.rangeName}.`,
+      inCatalogue: Boolean(catalogue),
+      inPlanningWorkbook: false,
+      lastSeenProductionMonth: null,
+      pendingQuantity: Math.max(0, pendingByCode.get(code) ?? 0),
+      dummyQuantity: 0,
+      bufferReq: reviewedBufferMultiplier(category === "Unclassified" ? "unclassified" : "classified", category, bufferByCategory),
+      auditCount: auditsByKey.get(productKey(input.segment, code, null)) ?? 0,
     });
     representedCodes.add(code);
   }

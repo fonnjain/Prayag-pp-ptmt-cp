@@ -14,6 +14,7 @@ import {
   InvalidProductClassificationError,
   type ProductClassificationStatus,
 } from "../lib/master-products";
+import { getRateListReport } from "../lib/rate-list";
 
 const router: IRouter = Router();
 
@@ -33,8 +34,8 @@ router.get("/master-products/products", async (req, res): Promise<void> => {
     return;
   }
   const source = req.query.source == null ? undefined : String(req.query.source);
-  if (source && !["workbook", "catalogue", "seed"].includes(source)) {
-    res.status(400).json({ error: "INVALID_SOURCE", message: "source must be workbook, catalogue, or seed." });
+   if (source && !["workbook", "rate-list", "catalogue", "seed"].includes(source)) {
+    res.status(400).json({ error: "INVALID_SOURCE", message: "source must be workbook, rate-list, catalogue, or seed." });
     return;
   }
   try {
@@ -42,7 +43,7 @@ router.get("/master-products/products", async (req, res): Promise<void> => {
       segment,
       status: status as ProductClassificationStatus | undefined,
       category: req.query.category == null ? undefined : String(req.query.category),
-      source: source as "workbook" | "catalogue" | "seed" | undefined,
+       source: source as "workbook" | "rate-list" | "catalogue" | "seed" | undefined,
       search: req.query.search == null ? undefined : String(req.query.search),
     }));
   } catch (error) {
@@ -186,6 +187,17 @@ router.get("/master-products/coverage", async (_req, res): Promise<void> => {
     res.status(500).json({
       error: "MASTER_PRODUCTS_COVERAGE_FAILED",
       message: error instanceof Error ? error.message : "Could not build master product coverage.",
+    });
+  }
+});
+
+router.get("/master-products/rate-list-report", async (_req, res): Promise<void> => {
+  try {
+    res.json(await getRateListReport());
+  } catch (error) {
+    res.status(500).json({
+      error: "RATE_LIST_REPORT_FAILED",
+      message: error instanceof Error ? error.message : "Could not build the rate-list report.",
     });
   }
 });

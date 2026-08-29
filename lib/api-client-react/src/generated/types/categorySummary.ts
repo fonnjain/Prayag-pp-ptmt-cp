@@ -4,11 +4,14 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { CategorySummaryFittedPcs } from './categorySummaryFittedPcs';
 
 export interface CategorySummary {
   category: string;
   minTotal: number;
   maxTotal: number;
+  /** Issued/demand quantity for the category. */
   demandPcs?: number;
-  fittedPcs?: number | null;
+  /** Executable quantity for the category; null when not scheduled. */
+  fittedPcs?: CategorySummaryFittedPcs;
 }

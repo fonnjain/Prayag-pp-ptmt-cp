@@ -5,4 +5,7 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export type ProductListRowSource = 'workbook' | 'rate-list' | 'catalogue' | 'seed' | null;
+export interface RateListUnmatchedCode {
+  code: string;
+  quantity: number;
+}

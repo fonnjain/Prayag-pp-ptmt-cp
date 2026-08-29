@@ -7,6 +7,8 @@
 import type { CorrectiveItemResultOriginalWeek } from './correctiveItemResultOriginalWeek';
 import type { CorrectiveItemResultCoverNow } from './correctiveItemResultCoverNow';
 import type { CorrectiveItemResultNewWeek } from './correctiveItemResultNewWeek';
+import type { CorrectiveItemResultCannotBeMadeReason } from './correctiveItemResultCannotBeMadeReason';
+import type { CorrectiveItemResultFeasibilityStatus } from './correctiveItemResultFeasibilityStatus';
 
 export interface CorrectiveItemResult {
   itemCode: string;
@@ -44,8 +46,8 @@ export interface CorrectiveItemResult {
   correctiveProduction: number;
   /** Temporary corrective quantity not fitted in the open window */
   cannotBeMade: number;
-  cannotBeMadeReason?: string | null;
-  feasibilityStatus: 'fitted' | 'not-scheduled' | 'unfulfillable';
+  cannotBeMadeReason?: CorrectiveItemResultCannotBeMadeReason;
+  feasibilityStatus: CorrectiveItemResultFeasibilityStatus;
   status: string;
   isNewItem: boolean;
 }

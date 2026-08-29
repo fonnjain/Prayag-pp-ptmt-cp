@@ -136,6 +136,7 @@ import type {
   PlumbingScheduleResponse,
   ProductListResponse,
   ProductReclassificationInput,
+  RateListReport,
   RecomputeCategoryCapacityParams,
   RecomputeSeasonalityParams,
   ResetAlertThresholdBody,
@@ -170,7 +171,7 @@ export type getHealthzResponse200 = {
   data: HealthStatus
   status: 200
 }
-    
+
 export type getHealthzResponseSuccess = (getHealthzResponse200) & {
   headers: Headers;
 };
@@ -181,19 +182,19 @@ export type getHealthzResponse = (getHealthzResponseSuccess)
 export const getGetHealthzUrl = () => {
 
 
-  
+
 
   return `/api/healthz`
 }
 
 export const getHealthz = async ( options?: RequestInit): Promise<getHealthzResponse> => {
-  
+
   return customFetch<getHealthzResponse>(getGetHealthzUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
 
@@ -207,7 +208,7 @@ export const getGetHealthzQueryKey = () => {
     ] as const;
     }
 
-    
+
 export const getGetHealthzQueryOptions = <TData = Awaited<ReturnType<typeof getHealthz>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHealthz>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -215,7 +216,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetHealthzQueryKey();
 
-  
+
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getHealthz>>> = ({ signal }) => getHealthz({ signal, ...requestOptions });
 
@@ -1764,6 +1765,102 @@ export function useGetMasterProductCoverage<TData = Awaited<ReturnType<typeof ge
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetMasterProductCoverageQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
+ * @summary Report the governed PTMT rate-list source and July stock reconciliation
+ */
+export type getMasterProductRateListReportResponse200 = {
+  data: RateListReport
+  status: 200
+}
+
+export type getMasterProductRateListReportResponse500 = {
+  data: void
+  status: 500
+}
+    
+export type getMasterProductRateListReportResponseSuccess = (getMasterProductRateListReportResponse200) & {
+  headers: Headers;
+};
+export type getMasterProductRateListReportResponseError = (getMasterProductRateListReportResponse500) & {
+  headers: Headers;
+};
+
+export type getMasterProductRateListReportResponse = (getMasterProductRateListReportResponseSuccess | getMasterProductRateListReportResponseError)
+
+export const getGetMasterProductRateListReportUrl = () => {
+
+
+  
+
+  return `/api/master-products/rate-list-report`
+}
+
+export const getMasterProductRateListReport = async ( options?: RequestInit): Promise<getMasterProductRateListReportResponse> => {
+  
+  return customFetch<getMasterProductRateListReportResponse>(getGetMasterProductRateListReportUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetMasterProductRateListReportQueryKey = () => {
+    return [
+    `/api/master-products/rate-list-report`
+    ] as const;
+    }
+
+    
+export const getGetMasterProductRateListReportQueryOptions = <TData = Awaited<ReturnType<typeof getMasterProductRateListReport>>, TError = void>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMasterProductRateListReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMasterProductRateListReportQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMasterProductRateListReport>>> = ({ signal }) => getMasterProductRateListReport({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMasterProductRateListReport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMasterProductRateListReportQueryResult = NonNullable<Awaited<ReturnType<typeof getMasterProductRateListReport>>>
+export type GetMasterProductRateListReportQueryError = void
+
+
+/**
+ * @summary Report the governed PTMT rate-list source and July stock reconciliation
+ */
+
+export function useGetMasterProductRateListReport<TData = Awaited<ReturnType<typeof getMasterProductRateListReport>>, TError = void>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMasterProductRateListReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMasterProductRateListReportQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -43,6 +43,12 @@ const GLOBAL_UPLOAD_KINDS: UploadKindDef[] = [
 // ── Segment-local uploads — consumed only by the active segment ───────────────
 const PTMT_LOCAL_UPLOAD_KINDS: UploadKindDef[] = [
   {
+    kind: UploadKind.rate_list,
+    label: "PTMT rate list — governed roster source",
+    hint: "CSV with source_tab, code, name, range, and range_name. Adds new PTMT identities without replacing legacy workbook-only items; unmapped categories stay explicitly unclassified.",
+    required: false,
+  },
+  {
     kind: UploadKind.current_stock,
     label: "1 · F.G. STOCK Factory Excel",
     hint: "F.G. STOCK <month>.xlsx — reads F.G Sheet only: col A = Item Code, col B = Colour, col C = C/Stock. Provides current stock figures.",

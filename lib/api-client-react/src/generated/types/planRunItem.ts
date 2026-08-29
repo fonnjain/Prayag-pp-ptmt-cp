@@ -5,6 +5,7 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { PlanRunItemBufferReq } from './planRunItemBufferReq';
+import type { PlanRunItemFeasibilityStatus } from './planRunItemFeasibilityStatus';
 import type { PlanRunItemMaterial } from './planRunItemMaterial';
 import type { PlanRunItemWeightKg } from './planRunItemWeightKg';
 import type { PlanRunItemUrgencyRank } from './planRunItemUrgencyRank';
@@ -22,12 +23,13 @@ export interface PlanRunItem {
   minProduction: number;
   /** Frozen demand/owed quantity before machine fitting. */
   demandPlan: number;
+  /** Executable quantity for a fitted Production Plan; demand quantity for a Temporary Plan. */
   productionPlan: number;
   /** Frozen Temporary Plan demand before PTMT capacity fitting. */
   temporaryPlan: number;
   /** Temporary demand remaining after all four weekly category capacities are consumed. */
   cannotBeMade: number;
-  feasibilityStatus: 'fitted' | 'not-scheduled' | 'unfulfillable';
+  feasibilityStatus: PlanRunItemFeasibilityStatus;
   dummy: number;
   orders: number;
   buffer: number;

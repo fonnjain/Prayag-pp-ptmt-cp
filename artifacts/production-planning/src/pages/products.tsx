@@ -4,6 +4,7 @@ import {
   useListMasterProducts,
   useReclassifyMasterProduct,
   getListMasterProductsQueryKey,
+  useGetMasterProductRateListReport,
   type ProductListRow,
   type ProductListResponse,
 } from "@workspace/api-client-react";
@@ -104,6 +105,8 @@ export default function ProductsPage() {
 
   const { data: rawData, isLoading, isError } = useListMasterProducts(queryParams);
   const data = rawData as unknown as ProductListResponse | undefined;
+  const { data: rawRateListReport } = useGetMasterProductRateListReport();
+  const rateListReport = rawRateListReport as any;
 
   const sortedRows = useMemo(() => {
     if (!data?.rows) return [];
@@ -353,6 +356,7 @@ export default function ProductsPage() {
             <SelectContent>
               <SelectItem value="all">All Sources</SelectItem>
               <SelectItem value="workbook">Workbook</SelectItem>
+              <SelectItem value="rate-list">Rate list</SelectItem>
               <SelectItem value="catalogue">Catalogue</SelectItem>
               <SelectItem value="seed">Seed</SelectItem>
             </SelectContent>
@@ -375,6 +379,62 @@ export default function ProductsPage() {
             </Card>
           ))}
         </div>
+
+        <Card className="border-dashed">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold">Governed PTMT rate list</div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {rateListReport?.source
+                    ? `${rateListReport.source.distinctCodeCount.toLocaleString()} distinct codes from ${rateListReport.source.filename}.`
+                    : "No rate-list CSV has been uploaded yet."}
+                  {" "}Rate-list-only products remain visible and unresolved categories are not given a buffer.
+                </p>
+              </div>
+              {rateListReport?.reconciliation && (
+                <div className="text-xs sm:text-right text-muted-foreground">
+                  <div className="font-medium text-foreground">
+                    July: {rateListReport.reconciliation.matchedQuantity.toLocaleString()} matched
+                  </div>
+                  <div>
+                    {rateListReport.reconciliation.unmatchedQuantity.toLocaleString()} across{" "}
+                    {rateListReport.reconciliation.unmatchedCodeCount} absent codes
+                  </div>
+                </div>
+              )}
+            </div>
+            {rateListReport?.coverage && (
+              <div className="mt-3 grid grid-cols-2 gap-2 border-t pt-3 text-xs sm:grid-cols-4">
+                <div>
+                  <div className="text-muted-foreground">Rate-list only</div>
+                  <div className="font-semibold">{rateListReport.coverage.rateListOnlyCodeCount.toLocaleString()} codes</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Both sources</div>
+                  <div className="font-semibold">{rateListReport.coverage.bothSourceCodeCount.toLocaleString()} codes</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Legacy July matched</div>
+                  <div className="font-semibold">{rateListReport.coverage.legacyReconciliation?.matchedQuantity?.toLocaleString() ?? "—"} pcs</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Rate-list July matched</div>
+                  <div className="font-semibold">{rateListReport.reconciliation?.matchedQuantity?.toLocaleString() ?? "—"} pcs</div>
+                </div>
+              </div>
+            )}
+            {rateListReport?.reconciliation?.unmatchedCodes?.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {rateListReport.reconciliation.unmatchedCodes.map((entry: { code: string; quantity: number }) => (
+                  <Badge key={entry.code} variant="outline" className="font-mono text-[10px]">
+                    {entry.code} · {entry.quantity.toLocaleString()}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Table */}
         <Card className="overflow-hidden">
@@ -457,7 +517,7 @@ export default function ProductsPage() {
                             {getStatusBadge(row.status)}
                           </div>
                           <div className="text-[10px] text-muted-foreground font-mono leading-tight">
-                            Src: {row.source ?? "None"}{" "}
+                            Src: {row.source === "rate-list" ? "rate list" : row.source ?? "None"}{" "}
                             {row.auditCount > 0 && (
                               <span className="text-amber-600 font-semibold">
                                 · Audits: {row.auditCount}

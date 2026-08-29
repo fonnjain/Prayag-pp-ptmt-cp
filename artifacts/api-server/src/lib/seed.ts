@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import * as XLSX from "xlsx";
 import { eq } from "drizzle-orm";
-import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, correctivePlanRunsTable } from "@workspace/db";
+import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, correctivePlanRunsTable, uploadedFilesTable } from "@workspace/db";
 import { logger } from "./logger";
 import { SHEET_LABELS, normalizeCode, normalizeColour } from "./sheets";
 import { seedBootstrapAdmins } from "./user-auth";
+import { parseRateListRows, RATE_LIST_UPLOAD_KIND } from "./rate-list";
 
 const DEFAULT_BUFFER_CATEGORIES: { name: string; multiplier: number }[] = [
   { name: "Cocks Standard", multiplier: 1.5 },
@@ -43,6 +45,53 @@ function parseItemMasterCsv(csv: string): { category: string; itemCode: string; 
       colour: normalizeColour(colour),
     };
   }).filter((row) => !(row.category === "Cocks Standard" && row.itemCode === "186"));
+}
+
+function findRateListCsvPath(): string | null {
+  const candidates = [
+    path.resolve(process.cwd(), "attached_assets/prayag_rate_list_codes_1787993531227.csv"),
+    path.resolve(process.cwd(), "../../attached_assets/prayag_rate_list_codes_1787993531227.csv"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      readFileSync(candidate, "utf-8");
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+async function seedRateList(): Promise<void> {
+  const existing = await db.select({ id: uploadedFilesTable.id })
+    .from(uploadedFilesTable)
+    .where(eq(uploadedFilesTable.kind, RATE_LIST_UPLOAD_KIND))
+    .limit(1);
+  if (existing.length > 0) return;
+  const csvPath = findRateListCsvPath();
+  if (!csvPath) {
+    logger.warn("Rate-list seed CSV not found; upload it from the Data page to enable governed PTMT roster coverage");
+    return;
+  }
+  const workbook = XLSX.read(readFileSync(csvPath, "utf-8"), { type: "string" });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]!];
+  if (!sheet) throw new Error(`Rate-list seed CSV has no worksheet: ${csvPath}`);
+  const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null });
+  const rows = parseRateListRows(rawRows).map((row) => ({
+    source_tab: row.sourceTab,
+    code: row.code,
+    name: row.name,
+    range: row.range,
+    range_name: row.rangeName,
+  }));
+  await db.insert(uploadedFilesTable).values({
+    kind: RATE_LIST_UPLOAD_KIND,
+    filename: "prayag_rate_list_codes.csv",
+    rowCount: rows.length,
+    rows,
+  });
+  logger.info({ count: rows.length, csvPath }, "Seeded governed PTMT rate list");
 }
 
 async function seedBufferCategories(): Promise<void> {
@@ -291,6 +340,7 @@ export async function ensureSeedData(): Promise<void> {
   await seedBootstrapAdmins();
   await seedBufferCategories();
   await seedItemMaster();
+  await seedRateList();
   await seedSyncSources();
   await seedPlantSourceConfigs();
   await seedPlantConfigs();
