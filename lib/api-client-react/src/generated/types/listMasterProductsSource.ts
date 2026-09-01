@@ -11,6 +11,7 @@ export type ListMasterProductsSource = typeof ListMasterProductsSource[keyof typ
 // eslint-disable-next-line @typescript-eslint/no-redeclare
 export const ListMasterProductsSource = {
   workbook: 'workbook',
+  'rate-list': 'rate-list',
   catalogue: 'catalogue',
   seed: 'seed',
 } as const;

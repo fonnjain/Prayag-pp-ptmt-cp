@@ -29,6 +29,7 @@ import type {
   AnalyzeAiPlantBody,
   ApiKey,
   ApiKeyWithSecret,
+  AvailableMonthsResponse,
   BufferCategory,
   BufferCategoryUpdate,
   CategoryCapacity,
@@ -83,6 +84,7 @@ import type {
   HealthStatus,
   IdealHoursOverride,
   IdealHoursOverrideUpsert,
+  ImportMasterProductMrpBody,
   InvalidatePlantCacheBody,
   ItemWeight,
   ItemWeightUpsert,
@@ -107,6 +109,8 @@ import type {
   MonitoringQuality,
   MonitoringVelocity,
   MonitoringWarnings,
+  MrpImportResult,
+  MrpReport,
   MuteAlertRequest,
   OkResult,
   PinCorrectiveRun200,
@@ -171,7 +175,7 @@ export type getHealthzResponse200 = {
   data: HealthStatus
   status: 200
 }
-
+    
 export type getHealthzResponseSuccess = (getHealthzResponse200) & {
   headers: Headers;
 };
@@ -182,19 +186,19 @@ export type getHealthzResponse = (getHealthzResponseSuccess)
 export const getGetHealthzUrl = () => {
 
 
-
+  
 
   return `/api/healthz`
 }
 
 export const getHealthz = async ( options?: RequestInit): Promise<getHealthzResponse> => {
-
+  
   return customFetch<getHealthzResponse>(getGetHealthzUrl(),
-  {
+  {      
     ...options,
     method: 'GET'
-
-
+    
+    
   }
 );}
 
@@ -208,7 +212,7 @@ export const getGetHealthzQueryKey = () => {
     ] as const;
     }
 
-
+    
 export const getGetHealthzQueryOptions = <TData = Awaited<ReturnType<typeof getHealthz>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getHealthz>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
@@ -216,7 +220,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetHealthzQueryKey();
 
-
+  
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getHealthz>>> = ({ signal }) => getHealthz({ signal, ...requestOptions });
 
@@ -1105,6 +1109,9 @@ export const createUpload = async (kind: UploadKind,
     createUploadBody: CreateUploadBody, options?: RequestInit): Promise<createUploadResponse> => {
     const formData = new FormData();
 formData.append(`file`, createUploadBody.file)
+if(createUploadBody.period !== undefined) {
+ formData.append(`period`, createUploadBody.period)
+ }
 
   return customFetch<createUploadResponse>(getCreateUploadUrl(kind),
   {      
@@ -1873,6 +1880,205 @@ export function useGetMasterProductRateListReport<TData = Awaited<ReturnType<typ
 
 
 
+/**
+ * @summary Show authoritative MRP provenance, coverage, disagreements, and the PTMT hold
+ */
+export type getMasterProductMrpReportResponse200 = {
+  data: MrpReport
+  status: 200
+}
+
+export type getMasterProductMrpReportResponse500 = {
+  data: void
+  status: 500
+}
+    
+export type getMasterProductMrpReportResponseSuccess = (getMasterProductMrpReportResponse200) & {
+  headers: Headers;
+};
+export type getMasterProductMrpReportResponseError = (getMasterProductMrpReportResponse500) & {
+  headers: Headers;
+};
+
+export type getMasterProductMrpReportResponse = (getMasterProductMrpReportResponseSuccess | getMasterProductMrpReportResponseError)
+
+export const getGetMasterProductMrpReportUrl = () => {
+
+
+  
+
+  return `/api/master-products/mrp-report`
+}
+
+export const getMasterProductMrpReport = async ( options?: RequestInit): Promise<getMasterProductMrpReportResponse> => {
+  
+  return customFetch<getMasterProductMrpReportResponse>(getGetMasterProductMrpReportUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getGetMasterProductMrpReportQueryKey = () => {
+    return [
+    `/api/master-products/mrp-report`
+    ] as const;
+    }
+
+    
+export const getGetMasterProductMrpReportQueryOptions = <TData = Awaited<ReturnType<typeof getMasterProductMrpReport>>, TError = void>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMasterProductMrpReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetMasterProductMrpReportQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getMasterProductMrpReport>>> = ({ signal }) => getMasterProductMrpReport({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getMasterProductMrpReport>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetMasterProductMrpReportQueryResult = NonNullable<Awaited<ReturnType<typeof getMasterProductMrpReport>>>
+export type GetMasterProductMrpReportQueryError = void
+
+
+/**
+ * @summary Show authoritative MRP provenance, coverage, disagreements, and the PTMT hold
+ */
+
+export function useGetMasterProductMrpReport<TData = Awaited<ReturnType<typeof getMasterProductMrpReport>>, TError = void>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getMasterProductMrpReport>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetMasterProductMrpReportQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+/**
+ * @summary Import and hold an authoritative MRP workbook for review
+ */
+export type importMasterProductMrpResponse201 = {
+  data: MrpImportResult
+  status: 201
+}
+
+export type importMasterProductMrpResponse400 = {
+  data: void
+  status: 400
+}
+
+export type importMasterProductMrpResponse401 = {
+  data: void
+  status: 401
+}
+
+export type importMasterProductMrpResponse403 = {
+  data: void
+  status: 403
+}
+    
+export type importMasterProductMrpResponseSuccess = (importMasterProductMrpResponse201) & {
+  headers: Headers;
+};
+export type importMasterProductMrpResponseError = (importMasterProductMrpResponse400 | importMasterProductMrpResponse401 | importMasterProductMrpResponse403) & {
+  headers: Headers;
+};
+
+export type importMasterProductMrpResponse = (importMasterProductMrpResponseSuccess | importMasterProductMrpResponseError)
+
+export const getImportMasterProductMrpUrl = () => {
+
+
+  
+
+  return `/api/master-products/mrp/import`
+}
+
+export const importMasterProductMrp = async (importMasterProductMrpBody: ImportMasterProductMrpBody, options?: RequestInit): Promise<importMasterProductMrpResponse> => {
+    const formData = new FormData();
+formData.append(`file`, importMasterProductMrpBody.file)
+
+  return customFetch<importMasterProductMrpResponse>(getImportMasterProductMrpUrl(),
+  {      
+    ...options,
+    method: 'POST'
+    ,
+    body: 
+      formData,
+  }
+);}
+
+
+
+
+export const getImportMasterProductMrpMutationOptions = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importMasterProductMrp>>, TError,{data: ImportMasterProductMrpBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof importMasterProductMrp>>, TError,{data: ImportMasterProductMrpBody}, TContext> => {
+
+const mutationKey = ['importMasterProductMrp'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+      
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof importMasterProductMrp>>, {data: ImportMasterProductMrpBody}> = (props) => {
+          const {data} = props ?? {};
+
+          return  importMasterProductMrp(data,requestOptions)
+        }
+
+        
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ImportMasterProductMrpMutationResult = NonNullable<Awaited<ReturnType<typeof importMasterProductMrp>>>
+    export type ImportMasterProductMrpMutationBody = ImportMasterProductMrpBody
+    export type ImportMasterProductMrpMutationError = void
+
+    /**
+ * @summary Import and hold an authoritative MRP workbook for review
+ */
+export const useImportMasterProductMrp = <TError = void,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof importMasterProductMrp>>, TError,{data: ImportMasterProductMrpBody}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof importMasterProductMrp>>,
+        TError,
+        {data: ImportMasterProductMrpBody},
+        TContext
+      > => {
+
+      const mutationOptions = getImportMasterProductMrpMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+    
 /**
  * @summary List the complete product review roster for a planning segment
  */
@@ -3534,6 +3740,89 @@ export function useGetPlanSummary<TData = Awaited<ReturnType<typeof getPlanSumma
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetPlanSummaryQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  query.queryKey = queryOptions.queryKey ;
+
+  return query;
+}
+
+
+
+
+
+export type listAvailableMonthsResponse200 = {
+  data: AvailableMonthsResponse
+  status: 200
+}
+    
+export type listAvailableMonthsResponseSuccess = (listAvailableMonthsResponse200) & {
+  headers: Headers;
+};
+;
+
+export type listAvailableMonthsResponse = (listAvailableMonthsResponseSuccess)
+
+export const getListAvailableMonthsUrl = () => {
+
+
+  
+
+  return `/api/plan/available-months`
+}
+
+export const listAvailableMonths = async ( options?: RequestInit): Promise<listAvailableMonthsResponse> => {
+  
+  return customFetch<listAvailableMonthsResponse>(getListAvailableMonthsUrl(),
+  {      
+    ...options,
+    method: 'GET'
+    
+    
+  }
+);}
+
+
+
+
+
+export const getListAvailableMonthsQueryKey = () => {
+    return [
+    `/api/plan/available-months`
+    ] as const;
+    }
+
+    
+export const getListAvailableMonthsQueryOptions = <TData = Awaited<ReturnType<typeof listAvailableMonths>>, TError = unknown>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAvailableMonths>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAvailableMonthsQueryKey();
+
+  
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAvailableMonths>>> = ({ signal }) => listAvailableMonths({ signal, ...requestOptions });
+
+      
+
+      
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAvailableMonths>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAvailableMonthsQueryResult = NonNullable<Awaited<ReturnType<typeof listAvailableMonths>>>
+export type ListAvailableMonthsQueryError = unknown
+
+
+
+export function useListAvailableMonths<TData = Awaited<ReturnType<typeof listAvailableMonths>>, TError = unknown>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAvailableMonths>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+  
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAvailableMonthsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

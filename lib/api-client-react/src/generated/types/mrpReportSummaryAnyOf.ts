@@ -5,4 +5,4 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export type ProductListRowSource = 'workbook' | 'rate-list' | 'catalogue' | 'seed' | 'mrp' | null;
+export type MrpReportSummaryAnyOf = { [key: string]: unknown };
