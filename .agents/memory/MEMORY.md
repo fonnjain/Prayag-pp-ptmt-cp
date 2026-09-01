@@ -45,6 +45,7 @@
 - [Workbook ID config](workbook-id-config.md) — workbook_config DB table (migration 012) stores IDs per division+month; getWorkbookIdForMonth() checks DB first then hardcoded maps; WorkbookConfigPanel on Data page allows UI edits.
 - [Replan invariant rounding](replan-invariant-rounding.md) — round planTotal before storing in c.plan; derive remaining = planTotal − producedCapped (never round independently); update point-in-time goldens each time Sheet3 advances significantly.
 - [Upload column aliases](upload-column-aliases.md) — Aug uploads renamed qty/code headers; alias lists in sumByKey calls must cover every layout or stock/pending silently zero.
+- [Upload period semantics](upload-period-semantics.md) — explicit YYYY-MM wins; legacy previous-month source filenames shift forward and monthless DATA falls back to upload date.
 - [Pending open-balance source](pending-open-balance-source.md) — current pending is unfulfilled `Bal. Qty`; invoice `Quantity` is never a substitute and invoice-only layouts remain explicit structural zero.
 - [Planning uploads-only isolation](planning-isolation.md) — plan build reads stock/pending from uploads only (loud named 422 when missing); sheet reads gated by allow-list guard in sheets.ts; Order column display-only.
 - [Plan-run baseline citation](plan-run-baseline.md) — corrective replans cite frozen plan runs; engine stays live unless route passes planRunId; cited runs undeletable; drift keys need category.
@@ -54,6 +55,7 @@
 - [Plant-live proxy auth](plant-live-proxy.md) — /api/plant-live/records requires a managed Bearer API key (only route using validateApiKey); upstream fetches have 20s timeout; document 401/503 in openapi.
 - [Corrective export provenance](corrective-export-provenance.md) — exports render persisted engine categoriesJson (never DB capacity table); new persisted fields must join the dedupe fingerprint payload; frozenPlanGrandMax fix: explicit-planRunId calls were silently skipped, disabling BASELINE_INTEGRITY_ERROR for pinned baselines.
 - [GitHub push safety](gh-push-truncation.md) — Contents truncates large pushes; prefer UTF-8 Git Trees, with GraphQL atomic commit as fallback when Git Data REST is Cloudflare-blocked.
+- [GitHub integration write throttle](github-integration-write-throttle.md) — authenticated reads can work while repeated Git Data API writes receive Cloudflare HTML 403 responses.
 - [Plumbing machine cascade](plumbing-machine-cascade.md) — 9 PIPE + 24 MOULDING in plumbing_machine_capacity; cascade runs after annotateWeeklyRelease; AGRI Pipe → flex only (MC3/MC4/MC5); Solvent unconstrained; machineW1-W4 on PlanItemWithBom; DataPage has no month prop (panel derives from new Date()).
 - [Plumbing plan run casing](plumbing-plan-run-casing.md) — POST /plan/runs requires segment="Plumbing" (title-case); "PLUMBING" produces 0 items silently; GET /plan normalises internally but the plan-runs route does not.
 - [Corrective empty-baseline guard](corrective-empty-baseline-guard.md) — POST /corrective/replan returns 422 EMPTY_BASELINE when live rebuild yields 0 items+0 categories; prevents silent zero plan passing as a real result.
@@ -94,3 +96,8 @@
 - [Unreproducible pending baseline](pending-baseline-null-fingerprint.md) — the historical baseline intentionally uses NULL fingerprint/capture because its original exclusion ledger was never persisted.
 - [Legacy corrective provenance](legacy-corrective-provenance.md) — old corrective targets may lack frozen input snapshots, so later Temporary Plans need explicit source-state reconciliation.
 - [PTMT rate-list roster](rate-list-roster.md) — the supplied rate list is governed PTMT identity evidence, with workbook precedence and conservative category classification.
+- [PTMT mapping business hold](ptmt-mapping-business-hold.md) — CONNECTION is 63,230 July pieces alone; hold planning until Prayag resolves its category/capacity treatment.
+- [Authoritative MRP controls](authoritative-mrp-controls.md) — MRP series outrank inferred mappings; disputed families stay held until category and capacity treatment are approved.
+- [MRP API discontinued boundary](mrp-api-discontinued-boundary.md) — only 18 of 233 discontinued rows have API dates; the MRP file remains the authoritative withdrawal source.
+- [Month selection semantics](month-selection-semantics.md) — no-query current month may fall back; any month present in the URL is explicit and must show a neutral empty state.
+- [Historical reporting fallback](historical-reporting-fallback.md) — finalized runs are the historical source of truth; legacy Plumbing reporting may use raw frozen rows when scheduler evidence is absent.

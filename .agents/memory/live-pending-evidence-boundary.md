@@ -14,3 +14,9 @@ Validation must persist the complete live source diagnostics before evaluating i
 **Why:** A validation route can correctly reject a stale or incomplete planning upload while still having a valid live capture that is needed to establish the first immutable baseline.
 
 **How to apply:** Keep the live capture/update and baseline promotion ahead of upload policy failures; production corrective replans remain strict, while only an explicitly diagnostic validation/monitoring path may inspect unreviewed input. Preserve upload ID/filename separately from live-sheet provenance in validation diagnostics.
+
+At the 2026-08-28 closeout, the current known-and-unrelated blocker was the **uploaded current-pending validation path**: source quantity **7,944**, joined **2,495**, unmatched **5,449** (reviewed/explained exclusions; unexplained residual 0). Live capture 23 remained separate evidence at **75,046 / 73,257 / 1,789** (source / joined / unmatched). The **7,993 / 27,558** observation had not been reconciled with either path and was not used as the blocker.
+
+**Why:** These are different source cuts and exclusion sets; combining them would make the closeout impossible to audit and could incorrectly treat a live recompute as proof that the uploaded first-plan path is valid.
+
+**How to apply:** When closing a regression, name the active path and all three quantities, then list other observations explicitly as separate or unreconciled evidence.

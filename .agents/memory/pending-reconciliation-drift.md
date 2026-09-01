@@ -16,3 +16,9 @@ Reviewed pending-exclusion policies are also source-specific: a changed upload m
 **Why:** A valid-looking replacement can contain real rows that do not belong to the planning roster; accepting an unreviewed fingerprint would create a partial demand snapshot while appearing healthy.
 
 **How to apply:** Return a named input error for an over-limit or unknown exclusion set, and preserve the source diagnostics so the upload can be reviewed and explicitly approved later.
+
+When upload period inference selects a historical source for a specific planning month, reviewed exclusion policies must be resolved with that month before falling back to a segment/source-role policy.
+
+**Why:** A predecessor upload can be valid for its own month while having a different, separately reviewed exclusion fingerprint from the newer upload used for the current month.
+
+**How to apply:** Keep the reconciliation guard strict and add a month-specific ledger entry for each reviewed historical source; never reuse a newer month’s fingerprint just because it is the latest available policy.

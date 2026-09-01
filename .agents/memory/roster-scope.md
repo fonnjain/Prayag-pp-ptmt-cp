@@ -27,6 +27,32 @@ authoritative key set.
 - The roster loader and every join use the same `rosterKey(itemCode, colour)`
   helper so keys line up.
 
+**Variant rule:** Repeated MRP/product rows with the same item code but different
+colour or pack are intentional planning variants, not duplicates. For example,
+item 3271 can appear four times. Do not collapse these rows with a generic
+item-code dedupe; PTMT planning needs the item+colour distinctions and must
+retain the variant data.
+
+**Why:** the MRP deliberately splits one planning item into colour/pack rows.
+Collapsing them loses distinctions required by the PTMT roster and plan.
+
+**How to apply:** report the variant identities before proposing any cleanup.
+Only merge rows after confirming that the complete planning identity is the
+same, including the relevant colour/pack dimensions.
+
+**Collision rule:** an authoritative MRP category can collapse multiple legacy
+source rows to one effective planning category without removing the underlying
+source-level collision. Both facts must remain reportable; a repeated rendered
+key is evidence to investigate, not permission to make the key more unique or
+delete a row.
+
+**Why:** hiding a collision in a UI key leaves the source ambiguity—and its
+potential multiplier impact—unresolved.
+
+**How to apply:** report source category sets and effective MRP category/status
+side by side. Treat held MRP series as unresolved business decisions with no
+buffer multiplier, even when the effective display category is `Unclassified`.
+
 **Operational consequence (sharp edge):** plan scope now depends on a stock pull
 having loaded `stock_opening`. If stock is empty/stale for a division+month, the
 plan shrinks toward empty. A normal pull loads stock, so this is fine in
