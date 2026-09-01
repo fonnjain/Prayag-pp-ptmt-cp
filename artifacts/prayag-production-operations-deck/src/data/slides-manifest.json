@@ -1,0 +1,146 @@
+[
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b101",
+    "position": 1,
+    "filepath": "src/pages/slides/Slide01.tsx",
+    "title": "Prayag India Production Planning & Operations",
+    "description": "One operating layer for demand, capacity, machine feasibility, and corrective action.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b102",
+    "position": 2,
+    "filepath": "src/pages/slides/Slide02.tsx",
+    "title": "The operating challenge",
+    "description": "Issued demand, distributed inputs, and machine constraints require one traceable operating view.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b103",
+    "position": 3,
+    "filepath": "src/pages/slides/Slide03.tsx",
+    "title": "What the app changes",
+    "description": "The product separates demand owed from executable production and preserves decision lineage.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b104",
+    "position": 4,
+    "filepath": "src/pages/slides/Slide04.tsx",
+    "title": "One workflow, from source to action",
+    "description": "A governed loop from ingest and validation through planning, release, monitoring, and corrective replanning.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b105",
+    "position": 5,
+    "filepath": "src/pages/slides/Slide05.tsx",
+    "title": "Two numbers that must stay separate",
+    "description": "Issued demand and executable plan are different quantity bases, with deferred and unfulfillable quantities explicit.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b106",
+    "position": 6,
+    "filepath": "src/pages/slides/Slide06.tsx",
+    "title": "A governed data foundation",
+    "description": "Source identity, capture evidence, reconciliation, and failed validations remain visible.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b107",
+    "position": 7,
+    "filepath": "src/pages/slides/Slide07.tsx",
+    "title": "Planning workspace",
+    "description": "A month- and segment-aware workspace for catalogue, stock, pending orders, demand, and governed baselines.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b108",
+    "position": 8,
+    "filepath": "src/pages/slides/Slide08.tsx",
+    "title": "Capacity intelligence, not just totals",
+    "description": "Capacity methods use historical evidence and expose variation and limitations.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b109",
+    "position": 9,
+    "filepath": "src/pages/slides/Slide09.tsx",
+    "title": "From category plan to machine release",
+    "description": "Category plans are cascaded through machine constraints and weekly release windows.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b110",
+    "position": 10,
+    "filepath": "src/pages/slides/Slide10.tsx",
+    "title": "Monitoring the plan in motion",
+    "description": "Plan, actuals, run rate, remaining demand, RAG, and governing plans stay connected.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b111",
+    "position": 11,
+    "filepath": "src/pages/slides/Slide11.tsx",
+    "title": "Corrective action with lineage",
+    "description": "Corrective replans start from frozen baselines and export persisted results with lineage.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b112",
+    "position": 12,
+    "filepath": "src/pages/slides/Slide12.tsx",
+    "title": "PTMT: item-and-colour planning",
+    "description": "PTMT retains item and colour identity from governed inputs through machine execution.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b113",
+    "position": 13,
+    "filepath": "src/pages/slides/Slide13.tsx",
+    "title": "Plumbing: category-to-machine planning",
+    "description": "Plumbing planning connects product families, workbook evidence, and machine cascades.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b114",
+    "position": 14,
+    "filepath": "src/pages/slides/Slide14.tsx",
+    "title": "Guardrails that protect decisions",
+    "description": "Structural, freshness, lineage, baseline, and classification guardrails prevent silent errors.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b115",
+    "position": 15,
+    "filepath": "src/pages/slides/Slide15.tsx",
+    "title": "Administration and accountability",
+    "description": "Access, audit, source configuration, and plan history make operational decisions reviewable.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b116",
+    "position": 16,
+    "filepath": "src/pages/slides/Slide16.tsx",
+    "title": "What a decision looks like in practice",
+    "description": "The app turns production questions into explicit demand, capacity, release, and baseline decisions.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b117",
+    "position": 17,
+    "filepath": "src/pages/slides/Slide17.tsx",
+    "title": "The result: one source of operational truth",
+    "description": "Planning, execution, corrective change, and historical reporting share one operating language.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b118",
+    "position": 18,
+    "filepath": "src/pages/slides/Slide18.tsx",
+    "title": "Next operating priorities",
+    "description": "The next priorities strengthen Plumbing reconciliation, staleness protection, independent evidence approval, and end-to-end scheduling.",
+    "speakerNotes": ""
+  }
+]
