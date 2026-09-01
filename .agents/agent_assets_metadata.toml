@@ -6,30 +6,35 @@ id = "CVcUe_4oA2pYWoBjgDqCV"
 uri = "file://exports/PTMT_Pending_Order_Gap_Report.xlsx"
 type = "table"
 title = "Pending Order Gap Report (Excel)"
+logical_id = "cfb0cbc4-0bb0-4cda-8081-ad0527d9841d"
 
 [[outputs]]
 id = "gjBT2e9nBFnyMh3HSygmU"
 uri = "file://exports/PTMT_Pending_Order_Gap_Report.docx"
 type = "word_document"
 title = "Pending Order Gap Report (Word)"
+logical_id = "5fae25a8-8c7c-4d23-b14c-3bf63233d49f"
 
 [[outputs]]
 id = "35hD1G_q-WpgEIHX3yqGR"
 uri = "file://exports/Architecture-and-Database.xlsx"
 type = "table"
 title = "Architecture & Database Schema (Excel)"
+logical_id = "3119370b-8669-4ec6-851b-e97e3f8bc6ff"
 
 [[outputs]]
 id = "XQBpQSutf_xMSc-2CJDKk"
 uri = "file://exports/Business-Logic.docx"
 type = "word_document"
 title = "Business Logic Reference (Word)"
+logical_id = "3f902bb6-7826-44c0-b021-c4a90ef2c172"
 
 [[outputs]]
 id = "cUumWBPlqSP1cPnriIzKC"
 uri = "file://exports/Plant-API-Guide.docx"
 type = "word_document"
 title = "Plant API Key Guide (Word)"
+logical_id = "f7282d1e-5a45-40bf-b85b-8f6a022225c1"
 
 [[outputs]]
 id = "YVraQUGv0ubLULi5uYb_A"
@@ -37,6 +42,7 @@ uri = "file://reports/item-master-coverage-ptmt-2026-08.xlsx"
 type = "table"
 title = "PTMT Item-Master Coverage Report — Aug 2026"
 description = "A) FG stock codes absent from the item master (354 codes / 137,766 units); B) plan rows with no FG stock entry (1,829 rows, 49,098 planned Max — Ball Cock dominant)."
+logical_id = "607a0703-f83c-4737-8250-45b2045726fc"
 
 [[outputs]]
 id = "WkUmx-5z5kajI7cM3flcY"
@@ -44,6 +50,7 @@ uri = "file://reports/Plant_Plan_Import_Feature_Documentation.docx"
 type = "word_document"
 title = "Plant Plan Import — Feature Documentation"
 description = "Complete documentation of the new Excel import: where to find it, how to use it, expected file format, what's stored, summary view, history, API endpoints, and verified test results."
+logical_id = "edf43b76-0047-47b6-b1c1-6cbee6bfffb2"
 
 [[outputs]]
 id = "0Mo7XxXVq2xaHSb5YQVdX"
@@ -51,6 +58,7 @@ uri = "file://docs/plant-velocity-data-explanation.md"
 type = "text"
 title = "Plant Velocity data and calculation guide"
 description = "Plain-language explanation of the PTMT Plant Velocity screen, its spreadsheet sources, logic, and formulas."
+logical_id = "d7e06559-b0d1-4095-9c21-9eda36806965"
 
 [[outputs]]
 id = "ldwU_YvdACC0mWHlrmVtQ"
@@ -58,6 +66,7 @@ uri = "file://docs/plant-attainment-data-explanation.md"
 type = "text"
 title = "PTMT Plant Attainment Data Guide"
 description = "Plain-English explanation of the PTMT August 2026 Plan vs Actual Attainment chart, including spreadsheet names, data flow, formulas, matching rules, and refresh behavior."
+logical_id = "72b37d75-7627-49a2-96de-964c57189700"
 
 [[outputs]]
 id = "l2h6Gz5d-7aHgLTwWVW_X"
@@ -65,6 +74,7 @@ uri = "file://.agents/outputs/suggested-tasks.txt"
 type = "text"
 title = "Suggested task list"
 description = "Plain-text copy of the suggested snapshot-provenance task."
+logical_id = "3b68f4fc-c2ee-4769-a1af-14078a4ddd80"
 
 [[outputs]]
 id = "nU0_OrzxZiuEyPDsRA9vU"
@@ -72,6 +82,7 @@ uri = "file://.agents/outputs/prayag-planning-export-2026-08-26.zip"
 type = "unspecified"
 title = "Prayag planning data export ZIP"
 description = "Read-only planning export covering FY 2025-26 and FY 2026-27, with CSV data, manifest, README, schema, and source/provenance profiles. ZIP integrity verified successfully."
+logical_id = "cb47a356-08ff-4422-bea0-fc3327bb73b9"
 
 [[outputs]]
 id = "KP8EowL0IQsdCwrkm63Vk"
@@ -79,6 +90,7 @@ uri = "file://reports/ptmt-roster-reconciliation-2026-08-26.md"
 type = "text"
 title = "Updated PTMT roster reconciliation report"
 description = "Updated read-only production report with trailing .0 test results, exact combined-division audit, 36 residual codes, placeholder counts, July comparisons, and June loss evidence."
+logical_id = "083a6eed-0f6d-42d6-95c9-20dbd820b469"
 
 [[outputs]]
 id = "q5q94mdn_rylrGL2RK1PO"
@@ -86,6 +98,7 @@ uri = "file://reports/ptmt-item-master-only-2026-08-26.csv"
 type = "table"
 title = "Updated PTMT gap audit CSV"
 description = "All 133 PTMT gap codes with post-audit status: canonicalize trailing .0, map exact combined division, manual review, or other-segment review."
+logical_id = "c1554c3c-0081-4fbd-bfc8-5706e7ef349e"
 
 [[outputs]]
 id = "mjuaT0mgGdpQl7-l74JDa"
@@ -93,6 +106,7 @@ uri = "file://reports/ptmt-roster-reconciliation-2026-08-26.json"
 type = "unspecified"
 title = "Updated PTMT reconciliation JSON"
 description = "Machine-readable production reconciliation with the complete normalization audit and residual review set."
+logical_id = "a12d372f-bd84-4d2c-8339-ad095f82995a"
 
 [[outputs]]
 id = "_272H1vlFIMlp1XuS0AHo"
@@ -100,3 +114,26 @@ uri = "file://reports/production-post-publish-verification-2026-08-26.md"
 type = "text"
 title = "Post-publish production verification"
 description = "Production SHA/data alignment, July reconciliation results, verifier classification, and the unresolved catalogue classification question."
+logical_id = "2a21b24a-371f-4c7f-9b09-c43053c8100a"
+
+[[outputs]]
+id = "AkXRIfjaQTgcBbeK24CvR"
+uri = "file://.local/outputs/Prayag-India-Production-Planning-and-Operations.pptx"
+type = "slides"
+title = "Prayag India Production Planning & Operations (PPTX)"
+description = "18-slide PowerPoint deck covering demand, executable production, capacity, machine release, monitoring, corrective action, governance, and next priorities."
+logical_id = "2d91fd50-ecdb-4f71-b7d3-6b4257405a16"
+
+[[outputs]]
+id = "WWGCj4Ls6JZYScmNFZQyC"
+uri = "file://.local/outputs/PTMT-range-mapping-business-review-2026-09-01.pdf"
+type = "pdf"
+title = "PTMT range mapping business review — clarified states"
+description = "Refreshed PDF with State B (current MRP precedence) leading the review, State A proposal-only utilisation clearly scoped, State C projected after the nine crosswalk rows, and the unchanged CONNECTION decision section."
+logical_id = "a7010f28-8618-4c49-8a75-c084bb2549a9"
+content_hash = "sha256:29d9d81675f2e362870afcdb90543c7118acf28929bee7843eb926ef4d540002"
+size = 143998
+mtime_ms = 1788234230202
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/a7010f28-8618-4c49-8a75-c084bb2549a9/a1214695-0ec8-4bd3-9ce9-ab75ae292d36"
+storage_version_token = "1788234268874382"
+content_type = "application/pdf"
