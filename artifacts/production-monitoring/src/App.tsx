@@ -5,6 +5,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/app-layout";
 import { useDateFilter } from "@/hooks/use-date-filter";
+import { MonthProvider, useMonth } from "@workspace/month-filter";
+import { useListAvailableMonths, type AvailableMonthsResponse } from "@workspace/api-client-react";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
@@ -213,26 +215,55 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <><ActivityTracker app="production-monitoring" />{children}</>;
 }
 
-function App() {
-  const { month, preset, customMonth, dateRange, setPreset, setCustomMonth } = useDateFilter();
+function DateFilteredApp() {
+  const monthFilter = useMonth();
+  const { month, preset, customMonth, dateRange, setPreset, setCustomMonth } = useDateFilter(monthFilter);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
+  return (
+    <Router
+      month={month}
+      preset={preset}
+      customMonth={customMonth}
+      dateRange={dateRange}
+      setPreset={setPreset}
+      setCustomMonth={setCustomMonth}
+      selectedCategory={selectedCategory}
+      setSelectedCategory={setSelectedCategory}
+    />
+  );
+}
+
+function AvailableMonthsApp() {
+  const { data: availableMonthsRaw, isLoading: availableMonthsLoading, isError: availableMonthsError, error } = useListAvailableMonths({
+    query: { staleTime: 5 * 60 * 1000 },
+  } as any);
+  const availableMonths = (availableMonthsRaw as unknown as AvailableMonthsResponse | undefined)?.months ?? [];
+
+  if (availableMonthsError) {
+    const message = error instanceof Error ? error.message : "The month availability service did not respond.";
+    return (
+      <div className="min-h-screen p-8 text-sm text-red-600">
+        Failed to load monitoring month availability: {message}
+      </div>
+    );
+  }
+
+  return (
+    <MonthProvider availableMonths={availableMonths} availableMonthsLoading={availableMonthsLoading}>
+      <DateFilteredApp />
+    </MonthProvider>
+  );
+}
+
+function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <AuthGate>
-              <Router
-                month={month}
-                preset={preset}
-                customMonth={customMonth}
-                dateRange={dateRange}
-                setPreset={setPreset}
-                setCustomMonth={setCustomMonth}
-                selectedCategory={selectedCategory}
-                setSelectedCategory={setSelectedCategory}
-              />
+              <AvailableMonthsApp />
             </AuthGate>
           </WouterRouter>
         </AuthProvider>

@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SegmentProvider } from "@/contexts/segment-context";
+import { MonthProvider } from "@workspace/month-filter";
+import { useListAvailableMonths, type AvailableMonthsResponse } from "@workspace/api-client-react";
 import { AuthProvider, useAuth } from "@/contexts/auth-context";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
@@ -62,6 +64,19 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <><ActivityTracker app="production-planning" />{children}</>;
 }
 
+function AuthenticatedApp() {
+  const { data: availableMonthsRaw, isLoading: availableMonthsLoading } = useListAvailableMonths({
+    query: { staleTime: 5 * 60 * 1000 },
+  } as any);
+  const availableMonths = (availableMonthsRaw as unknown as AvailableMonthsResponse | undefined)?.months ?? [];
+
+  return (
+    <MonthProvider availableMonths={availableMonths} availableMonthsLoading={availableMonthsLoading}>
+      <Router />
+    </MonthProvider>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -70,7 +85,7 @@ function App() {
           <TooltipProvider>
             <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
               <AuthGate>
-                <Router />
+                <AuthenticatedApp />
               </AuthGate>
             </WouterRouter>
             <Toaster />

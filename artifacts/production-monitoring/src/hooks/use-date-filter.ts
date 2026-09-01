@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { MonthFilterState } from "@workspace/month-filter";
 
 export type DatePreset = "7d" | "15d" | "30d" | "mtd" | "month";
 
@@ -46,13 +47,18 @@ export function computeDateRange(preset: DatePreset, customMonth: string): DateR
   return { start: toISO(start), end: toISO(end), month: safeMonth };
 }
 
-export function useDateFilter() {
+export function useDateFilter(sharedMonth?: Pick<MonthFilterState, "month" | "setMonth">) {
   const [preset, setPreset] = useState<DatePreset>("month");
-  const [customMonth, setCustomMonth] = useState<string>(() => {
+  const [localMonth, setLocalMonth] = useState<string>(() => {
     const t = new Date();
     return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`;
   });
 
+  const customMonth = sharedMonth?.month ?? localMonth;
+  const setCustomMonth = (nextMonth: string) => {
+    if (sharedMonth) sharedMonth.setMonth(nextMonth);
+    else setLocalMonth(nextMonth);
+  };
   const dateRange = computeDateRange(preset, customMonth);
 
   return { preset, setPreset, customMonth, setCustomMonth, dateRange, month: dateRange.month };

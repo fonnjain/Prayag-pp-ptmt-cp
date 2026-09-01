@@ -36,6 +36,8 @@ import {
 } from "@/components/ui/select";
 import type { DatePreset, DateRange } from "@/hooks/use-date-filter";
 import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "@workspace/api-client-react";
+import { formatMonthLabel, preserveMonthInUrl, useMonth } from "@workspace/month-filter";
+import { UnavailableMonthState } from "@/components/unavailable-month-state";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -131,6 +133,7 @@ function UserControls() {
 
 // ─── Cross-App Nav ────────────────────────────────────────────────────────────
 function CrossAppNav() {
+  const { month, isFallback } = useMonth();
   const path = window.location.pathname;
   const isOps = path.startsWith("/ops-dashboard");
   const isMon = path.startsWith("/monitoring");
@@ -144,11 +147,13 @@ function CrossAppNav() {
     { label: "Products",              href: "/products",       active: isProducts },
     { label: "Alerts",                href: "/alerts",         active: isAlerts },
   ];
+  const hrefForMonth = (href: string) =>
+    isFallback ? href : `${href}?month=${encodeURIComponent(month)}`;
   return (
     <nav className="fixed top-0 left-0 right-0 z-30 h-9 flex items-center px-4 gap-1 border-b border-sidebar-border bg-sidebar">
       <span className="text-[11px] font-bold mr-3" style={{ color: "hsl(38 90% 48%)" }}>prayag</span>
       {tabs.map((app) => (
-        <a key={app.href} href={app.href}
+        <a key={app.href} href={hrefForMonth(app.href)}
           className={cn(
             "px-3 py-1 rounded text-xs font-medium transition-colors",
             app.active
@@ -166,17 +171,30 @@ export function AppLayout({
   setPreset, setCustomMonth, selectedCategory, setSelectedCategory,
 }: AppLayoutProps) {
   const [location] = useLocation();
+  const monthState = useMonth();
   const isPlantPage    = PLANT_PATHS.has(location);
   const isPlumbingPage = PLUMBING_PATHS.has(location) || location.startsWith("/plumbing");
 
   const { data: bundleRaw } = useGetPlantBundle(
     { month },
-    { query: { queryKey: getGetPlantBundleQueryKey({ month }), enabled: isPlantPage } }
+    {
+      query: {
+        queryKey: getGetPlantBundleQueryKey({ month }),
+        enabled: isPlantPage && !monthState.isAvailableMonthsLoading && monthState.isMonthAvailable,
+      },
+    }
   ) as { data: unknown };
   const bundle = bundleRaw as PlantBundle | undefined;
   const categoryOptions: string[] = isPlumbingPage
     ? PLUMBING_CATEGORIES
     : bundle?.categories?.map((c) => c.category) ?? [];
+
+  useEffect(() => {
+    preserveMonthInUrl(
+      monthState.month,
+      !monthState.isFallback && !monthState.isAvailableMonthsLoading,
+    );
+  }, [location, monthState.isAvailableMonthsLoading, monthState.isFallback, monthState.month]);
 
   // The filter is shared across both segments. Do not keep a PTMT category
   // selected after navigating to Plumbing (or vice versa), otherwise every
@@ -302,8 +320,8 @@ export function AppLayout({
               <h1 className="shrink-0 whitespace-nowrap text-base font-semibold sm:text-lg">Production Performance &amp; Monitoring</h1>
               {/* PTMT / Plumbing segment toggle */}
               <div className="flex shrink-0 gap-0.5 rounded-md bg-muted p-0.5 text-sm">
-                <a
-                  href="/monitoring/plant"
+                  <a
+                  href={monthState.isFallback ? "/monitoring/plant" : `/monitoring/plant?month=${encodeURIComponent(monthState.month)}`}
                   className={cn(
                     "rounded px-3 py-1 transition-colors",
                     !isPlumbingPage
@@ -311,8 +329,8 @@ export function AppLayout({
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >PTMT</a>
-                <a
-                  href="/monitoring/plumbing"
+                  <a
+                  href={monthState.isFallback ? "/monitoring/plumbing" : `/monitoring/plumbing?month=${encodeURIComponent(monthState.month)}`}
                   className={cn(
                     "rounded px-3 py-1 transition-colors",
                     isPlumbingPage
@@ -359,12 +377,22 @@ export function AppLayout({
 
               {/* Month picker — only when "Month" is selected */}
               {preset === "month" && (
-                <input
-                  type="month"
-                  value={customMonth}
+                <select
+                  aria-label="Plan month"
+                  value={monthState.month}
                   onChange={(e) => setCustomMonth(e.target.value)}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                />
+                  className="h-8 max-w-52 rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  {!monthState.availableMonths.includes(monthState.currentMonth) && (
+                    <option value={monthState.currentMonth}>{formatMonthLabel(monthState.currentMonth)} (current)</option>
+                  )}
+                  {monthState.availableMonths.map((availableMonth) => (
+                    <option key={availableMonth} value={availableMonth}>{formatMonthLabel(availableMonth)}</option>
+                  ))}
+                  {!monthState.isAvailableMonthsLoading && !monthState.isMonthAvailable && !monthState.availableMonths.includes(monthState.month) && (
+                    <option value={monthState.month}>{formatMonthLabel(monthState.month)} (selected)</option>
+                  )}
+                </select>
               )}
 
               {/* Date range badge for non-month presets */}
@@ -380,7 +408,40 @@ export function AppLayout({
           </div>
         </header>
 
-        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>
+        <main className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6 lg:p-8">
+          {monthState.isFallback && monthState.fallbackFrom && (
+            <div role="status" className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+              <strong>
+                Showing {formatMonthLabel(monthState.month)} — {formatMonthLabel(monthState.fallbackFrom)} has not run yet.
+              </strong>
+              <span>{formatMonthLabel(monthState.fallbackFrom)}'s input files have not been uploaded.</span>
+              <button
+                type="button"
+                onClick={() => monthState.setMonth(monthState.fallbackFrom!)}
+                className="font-semibold underline underline-offset-2"
+              >
+                View {formatMonthLabel(monthState.fallbackFrom)}
+              </button>
+              <a
+                href={`/?month=${encodeURIComponent(monthState.fallbackFrom)}`}
+                className="font-semibold underline underline-offset-2"
+              >
+                Go to Data
+              </a>
+            </div>
+          )}
+          {monthState.invalidMonth && (
+            <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
+              “{monthState.invalidMonth}” is not a valid month. Showing {formatMonthLabel(monthState.month)}.
+            </div>
+          )}
+          {monthState.isAvailableMonthsLoading
+            ? <div className="flex items-center justify-center h-64 text-sm text-muted-foreground">Loading available months…</div>
+            : !monthState.isMonthAvailable
+            ? <UnavailableMonthState />
+            : children}
+        </main>
       </div>
     </div>
     </>
