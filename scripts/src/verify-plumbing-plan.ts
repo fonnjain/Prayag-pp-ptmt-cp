@@ -2387,25 +2387,50 @@ async function main(): Promise<void> {
       };
     }));
 
-    // NC9: PTMT plan run save + retrieve (infrastructure parity with Plumbing)
-    const ptmtRunResp = await fetch(`${API_BASE}/api/plan/runs`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ month: PTMT_MONTH, segment: "PTMT", note: "suite-NC9" }),
-    });
-    const ptmtRun = await ptmtRunResp.json() as Record<string, unknown>;
-    const ptmtRunSaved = ptmtRunResp.status === 201 && typeof ptmtRun.id === "number";
-    // Verify retrieval
+    // NC9: PTMT plan run save + retrieve (infrastructure parity with Plumbing).
+    // PTMT Production Plans require a finalized Temporary Plan lineage. This
+    // regression check is testing persistence/listing itself, so create an
+    // isolated Temporary Plan rather than omitting planType and accidentally
+    // asking the route for an invalid PTMT Production Plan.
+    let ptmtRunStatus = 0;
+    let ptmtRunError = "";
+    let ptmtRunId: number | null = null;
+    let ptmtRunSaved = false;
     let ptmtRunRetrieved = false;
-    if (ptmtRunSaved) {
-      const listResp = await fetch(`${API_BASE}/api/plan/runs?month=${PTMT_MONTH}&segment=PTMT`);
-      const list = await listResp.json() as Array<Record<string, unknown>>;
-      ptmtRunRetrieved = Array.isArray(list) && list.some((r) => r.id === ptmtRun.id);
+    let ptmtRunCleaned = false;
+    try {
+      const ptmtRunResp = await fetch(`${API_BASE}/api/plan/runs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          month: PTMT_MONTH,
+          segment: "PTMT",
+          planType: "temporary",
+          note: "suite-NC9",
+        }),
+      });
+      ptmtRunStatus = ptmtRunResp.status;
+      const ptmtRun = await ptmtRunResp.json() as Record<string, unknown>;
+      ptmtRunError = typeof ptmtRun.error === "string" ? ptmtRun.error : "";
+      ptmtRunId = typeof ptmtRun.id === "number" ? ptmtRun.id : null;
+      ptmtRunSaved = ptmtRunResp.status === 201 && ptmtRunId !== null;
+
+      if (ptmtRunSaved && ptmtRunId !== null) {
+        const listResp = await fetch(`${API_BASE}/api/plan/runs?month=${PTMT_MONTH}&segment=PTMT`);
+        const list = await listResp.json() as Array<Record<string, unknown>>;
+        ptmtRunRetrieved = listResp.ok && Array.isArray(list) && list.some((r) => r.id === ptmtRunId);
+      }
+    } finally {
+      if (ptmtRunId !== null) {
+        const cleanupResp = await fetch(`${API_BASE}/api/plan/runs/${ptmtRunId}`, { method: "DELETE" });
+        ptmtRunCleaned = cleanupResp.status === 204;
+      }
     }
     newChecks.push({
-      name: `NC9 · PTMT plan run · save (201) and retrieve from list`,
-      expected: 1, actual: (ptmtRunSaved && ptmtRunRetrieved) ? 1 : 0,
-      pass: ptmtRunSaved && ptmtRunRetrieved, tolerance: "POST 201 + appears in GET list",
+      name: `NC9 · PTMT Temporary Plan · save (${ptmtRunStatus || "no response"}) and retrieve from list${ptmtRunError ? ` (${ptmtRunError})` : ""}`,
+      expected: 1, actual: (ptmtRunSaved && ptmtRunRetrieved && ptmtRunCleaned) ? 1 : 0,
+      pass: ptmtRunSaved && ptmtRunRetrieved && ptmtRunCleaned,
+      tolerance: "POST 201 + appears in GET list + DELETE 204 cleanup",
     });
 
     // NC10: Ops overview segment filter — PTMT ≠ Plumbing ≠ Combined orderValue
