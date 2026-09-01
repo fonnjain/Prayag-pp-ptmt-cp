@@ -7,6 +7,8 @@ import {
   bufferCategoriesTable,
   uploadedFilesTable,
   productClassificationAuditTable,
+  mrpControlRowsTable,
+  mrpControlSourcesTable,
   type MasterProduct,
 } from "@workspace/db";
 import { pendingOrderTotalsFromRows } from "./sheets";
@@ -16,6 +18,7 @@ import {
   RATE_LIST_UPLOAD_KIND,
   rateListPlanningCategory,
 } from "./rate-list";
+import { resolveMrpClassification, type MrpClassificationRow } from "./mrp-classification";
 
 export const MASTER_PRODUCT_SOURCE = "competition-analysis";
 export const CATALOGUE_PAGE_SIZE = 200;
@@ -114,7 +117,7 @@ export type SegmentCoverage = {
 };
 
 export type ProductClassificationStatus = "classified" | "unclassified" | "ambiguous";
-export type ProductClassificationSource = "workbook" | "rate-list" | "catalogue" | "seed" | null;
+export type ProductClassificationSource = "workbook" | "rate-list" | "catalogue" | "seed" | "mrp" | null;
 
 export type ProductListRow = {
   key: string;
@@ -157,7 +160,7 @@ export async function getProducts(input: {
   source?: Exclude<ProductClassificationSource, null>;
   search?: string;
 }): Promise<{ rows: ProductListRow[]; total: number; categories: string[] }> {
-  const [items, catalogues, buffers, pendingFile, lastMonthFile, audits, rateListFile] = await Promise.all([
+  const [items, catalogues, buffers, pendingFile, lastMonthFile, audits, rateListFile, mrpSource] = await Promise.all([
     db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, input.segment)),
     db.select().from(masterProductsTable).where(and(
       eq(masterProductsTable.source, MASTER_PRODUCT_SOURCE),
@@ -176,6 +179,8 @@ export async function getProducts(input: {
     db.select({ rows: uploadedFilesTable.rows }).from(uploadedFilesTable)
       .where(eq(uploadedFilesTable.kind, RATE_LIST_UPLOAD_KIND))
       .orderBy(desc(uploadedFilesTable.uploadedAt)).limit(1),
+    db.select({ id: mrpControlSourcesTable.id }).from(mrpControlSourcesTable)
+      .orderBy(desc(mrpControlSourcesTable.importedAt)).limit(1),
   ]);
 
   const catalogueByCode = new Map(catalogues.map((row) => [normalizeCatalogueCode(row.itemCode), row]));
@@ -184,6 +189,20 @@ export async function getProducts(input: {
     : [];
   const rateByCode = new Map(rateRows.map((row) => [row.code, row]));
   const bufferByCategory = new Map(buffers.map((row) => [row.name, row.multiplier]));
+  const mrpRows: MrpClassificationRow[] = input.segment === "PTMT" && mrpSource[0]
+    ? await db.select({
+      itemCode: mrpControlRowsTable.itemCode,
+      division: mrpControlRowsTable.division,
+      series: mrpControlRowsTable.series,
+    }).from(mrpControlRowsTable).where(and(
+      eq(mrpControlRowsTable.sourceId, mrpSource[0].id),
+      eq(mrpControlRowsTable.rowType, "product"),
+      eq(mrpControlRowsTable.segment, "PTMT"),
+      eq(mrpControlRowsTable.isLoadable, true),
+    ))
+    : [];
+  const mrpByCode = new Map(mrpRows.map((row) => [normalizeCatalogueCode(row.itemCode), row]));
+  const modelCategories = new Set(buffers.map((row) => row.name));
   const pendingCurrent = pendingOrderTotalsFromRows((pendingFile[0]?.rows ?? []) as Record<string, unknown>[], input.segment);
   const pendingLast = pendingOrderTotalsFromRows((lastMonthFile[0]?.rows ?? []) as Record<string, unknown>[], input.segment);
   const pendingByCode = new Map<string, number>();
@@ -202,7 +221,21 @@ export async function getProducts(input: {
     const catalogue = catalogueByCode.get(code);
     const colour = item.colour || null;
     const status = normalizedStatus(item.classificationStatus);
-    const category = item.category?.trim() || "Unclassified";
+    const itemCategory = item.category?.trim() || "Unclassified";
+    const rate = rateByCode.get(code);
+    const retainsWorkbookClassification = status === "classified" && itemCategory !== "Unclassified";
+    const fallbackCategory = retainsWorkbookClassification
+      ? itemCategory
+      : rate
+        ? rateListPlanningCategory(rate)
+        : itemCategory;
+    const mrpClassification = input.segment === "PTMT"
+      ? resolveMrpClassification(mrpByCode.get(code), fallbackCategory, modelCategories)
+      : null;
+    const category = mrpClassification?.category ?? fallbackCategory;
+    const resolvedStatus = mrpClassification?.status ?? (retainsWorkbookClassification
+      ? status
+      : category === "Unclassified" ? "unclassified" : "classified");
     const pendingQuantity = pendingCurrent.exact.get(`${code}::${(colour ?? "").trim().toUpperCase()}`)
       ?? pendingByCode.get(code)
       ?? 0;
@@ -214,19 +247,23 @@ export async function getProducts(input: {
       productName: catalogue?.productName ?? null,
       division: catalogue?.division ?? null,
       category,
-      status,
-      source: rateByCode.has(code)
+      status: resolvedStatus,
+      source: mrpClassification?.source === "mrp"
+        ? "mrp"
+        : rateByCode.has(code)
         ? "rate-list"
         : item.classificationSource === "workbook" || item.classificationSource === "catalogue" || item.classificationSource === "seed"
           ? item.classificationSource
         : null,
-      note: item.classificationNote ?? null,
+      note: mrpClassification?.note ?? (rate
+        ? `Rate list: ${rate.rangeName}${category === "Unclassified" ? "; category review required." : "."}`
+        : item.classificationNote ?? null),
       inCatalogue: Boolean(catalogue),
       inPlanningWorkbook: true,
       lastSeenProductionMonth: null,
       pendingQuantity: Math.max(0, pendingQuantity),
       dummyQuantity: 0,
-      bufferReq: reviewedBufferMultiplier(status, category, bufferByCategory),
+      bufferReq: reviewedBufferMultiplier(resolvedStatus, category, bufferByCategory),
       auditCount: auditsByKey.get(productKey(input.segment, code, colour)) ?? 0,
     });
     representedCodes.add(code);
@@ -236,7 +273,15 @@ export async function getProducts(input: {
     const code = normalizeRateListCode(rate.code);
     if (representedCodes.has(code)) continue;
     const catalogue = catalogueByCode.get(code);
-    const category = rateListPlanningCategory(rate);
+    const classification = input.segment === "PTMT"
+      ? resolveMrpClassification(mrpByCode.get(code), rateListPlanningCategory(rate), modelCategories)
+      : {
+        category: rateListPlanningCategory(rate),
+        status: rateListPlanningCategory(rate) === "Unclassified" ? "unclassified" as const : "classified" as const,
+        source: "rate-list" as const,
+        note: null,
+      };
+    const category = classification.category;
     rows.push({
       key: productKey(input.segment, code, null, category),
       segment: input.segment,
@@ -245,11 +290,11 @@ export async function getProducts(input: {
       productName: rate.name || catalogue?.productName || null,
       division: catalogue?.division ?? null,
       category,
-      status: category === "Unclassified" ? "unclassified" : "classified",
-      source: "rate-list",
-      note: category === "Unclassified"
+      status: classification.status,
+      source: classification.source,
+      note: classification.note ?? (category === "Unclassified"
         ? `Rate list: ${rate.rangeName}; category review required.`
-        : `Rate list: ${rate.rangeName}.`,
+        : `Rate list: ${rate.rangeName}.`),
       inCatalogue: Boolean(catalogue),
       inPlanningWorkbook: false,
       lastSeenProductionMonth: null,
@@ -264,8 +309,17 @@ export async function getProducts(input: {
   for (const catalogue of catalogues) {
     const code = normalizeCatalogueCode(catalogue.itemCode);
     if (representedCodes.has(code)) continue;
-    const category = catalogue.planningCategory?.trim() || "Unclassified";
-    const status: ProductClassificationStatus = catalogue.planningCategory ? "classified" : "unclassified";
+    const fallbackCategory = catalogue.planningCategory?.trim() || "Unclassified";
+    const classification = input.segment === "PTMT"
+      ? resolveMrpClassification(mrpByCode.get(code), fallbackCategory, modelCategories)
+      : {
+        category: fallbackCategory,
+        status: (catalogue.planningCategory ? "classified" : "unclassified") as ProductClassificationStatus,
+        source: "rate-list" as const,
+        note: null,
+      };
+    const category = classification.category;
+    const status = classification.status;
     rows.push({
       key: productKey(input.segment, code, null, category),
       segment: input.segment,
@@ -275,8 +329,8 @@ export async function getProducts(input: {
       division: catalogue.division,
       category,
       status,
-      source: catalogue.planningCategory ? "catalogue" : null,
-      note: catalogue.planningCategory ? "Catalogue classification; not yet in the planning roster." : "Catalogue product has no reviewed planning category.",
+      source: classification.source === "mrp" ? "mrp" : catalogue.planningCategory ? "catalogue" : null,
+      note: classification.note ?? (catalogue.planningCategory ? "Catalogue classification; not yet in the planning roster." : "Catalogue product has no reviewed planning category."),
       inCatalogue: true,
       inPlanningWorkbook: false,
       lastSeenProductionMonth: null,

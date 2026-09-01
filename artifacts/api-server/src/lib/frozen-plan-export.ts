@@ -135,7 +135,7 @@ export async function loadProductionExportRows(
   return { rows, temporaryRows };
 }
 
-function frozenRowsAsCalcItems(rows: FrozenPlanRow[]): CalcPlanItem[] {
+export function frozenRowsAsCalcItems(rows: FrozenPlanRow[]): CalcPlanItem[] {
   return rows.map((row) => ({
     itemCode: row.itemCode,
     colour: row.colour,
@@ -149,6 +149,7 @@ function frozenRowsAsCalcItems(rows: FrozenPlanRow[]): CalcPlanItem[] {
     pendingOrderLastMonth: row.pendingLastMonth,
     pendingOrder: row.pendingCurrent,
     order: row.pendingCurrent,
+    weightKg: row.weightKg ?? 0,
     achievementPct: null,
     cover: row.avg3MoSale > 0 ? row.stock / row.avg3MoSale : "OS",
     week: row.releaseWeek as 1 | 2 | 3 | 4 | null,

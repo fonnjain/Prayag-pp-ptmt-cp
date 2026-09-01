@@ -14,12 +14,36 @@ import {
   SheetSelectionError,
   selectPendingSheet,
 } from "./uploads.js";
+import { inferUploadPlanningMonth } from "../lib/upload-period.js";
 
 function segmentTotal(rows: Record<string, unknown>[], segment: string): number {
   return rows
     .filter((row) => row.Segment === segment)
     .reduce((total, row) => total + Number(row.Balance_Qty ?? 0), 0);
 }
+
+test("upload periods map source filenames to the planning month", () => {
+  assert.equal(
+    inferUploadPlanningMonth("current_stock", "F.G Stock on 1st Aug 2026.xlsx", new Date("2026-08-05T00:00:00Z")),
+    "2026-08",
+  );
+  assert.equal(
+    inferUploadPlanningMonth("last_month_pending", "LAST MONTH PENDING ORDERS JULY 2026.xlsx", new Date("2026-08-05T00:00:00Z")),
+    "2026-08",
+  );
+  assert.equal(
+    inferUploadPlanningMonth("plumbing_fg_stock", "FG Stock and pending production month of July-2026.xlsx", new Date("2026-08-26T00:00:00Z")),
+    "2026-08",
+  );
+  assert.equal(
+    inferUploadPlanningMonth("pending_orders", "DATA.xlsx", new Date("2026-08-27T00:00:00Z")),
+    "2026-08",
+  );
+  assert.equal(
+    inferUploadPlanningMonth("pending_orders", "DATA.xlsx", new Date("2026-08-27T00:00:00Z"), "2026-09"),
+    "2026-09",
+  );
+});
 
 test("June and July pending fixtures use the balance-bearing sheet and preserve totals", () => {
   const fixtures = [

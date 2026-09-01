@@ -1,12 +1,16 @@
 import { and, desc, eq } from "drizzle-orm";
 import {
   db,
+  bufferCategoriesTable,
   itemMasterTable,
   masterProductsTable,
+  mrpControlRowsTable,
+  mrpControlSourcesTable,
   uploadedFilesTable,
   type ItemMaster,
   type MasterProduct,
 } from "@workspace/db";
+import { resolveMrpClassification, type MrpClassificationRow } from "./mrp-classification";
 
 export const RATE_LIST_UPLOAD_KIND = "rate_list";
 export const RATE_LIST_REQUIRED_HEADERS = ["source_tab", "code", "name", "range", "range_name"] as const;
@@ -27,6 +31,7 @@ export type EffectivePtmtRosterItem = ItemMaster & {
 
 export type RateListReconciliation = {
   rateListCodeCount: number;
+  rosterCodeCount: number;
   sourceCodeCount: number;
   matchedCodeCount: number;
   unmatchedCodeCount: number;
@@ -45,8 +50,36 @@ export type RateListCoverageReport = {
   remainingReviewCodes: Array<{ code: string; quantity: number }>;
 };
 
+export type RateListRangeAudit = {
+  rangeName: string;
+  category: string;
+  codeCount: number;
+};
+
+export type RateListCategorySplit = {
+  category: string;
+  codeCount: number;
+  julySourceQuantity: number;
+  multiplier: number | null;
+};
+
+export type RateListCategorySplitReport = {
+  before: RateListCategorySplit[];
+  after: RateListCategorySplit[];
+};
+
 const CODE_ALIASES = ["code", "Code", "Item Code", "Old Item Code", "Cat No", "Cat-No", "Item No."] as const;
 const QTY_ALIASES = ["Qty", "Quantity", "Closing Stock", "C/Stock", "C Stock", "Net Stock"] as const;
+const PTMT_CATEGORY_ORDER = [
+  "Cocks Standard",
+  "Cocks Premium",
+  "Faucets & Jetsprays & Shower",
+  "Accessorise",
+  "Ball Cock",
+  "Cistern & Seat Cover",
+  "Cabinet",
+  "Unclassified",
+] as const;
 
 function normaliseHeader(value: unknown): string {
   return String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -55,6 +88,82 @@ function normaliseHeader(value: unknown): string {
 export function normalizeRateListCode(value: unknown): string {
   return String(value ?? "").trim().toUpperCase().replace(/\.0$/, "");
 }
+
+export function normalizeRateListRangeName(value: unknown): string {
+  const normalized = String(value ?? "").trim().toUpperCase().replace(/\s+/g, " ");
+  const formattingAliases: Record<string, string> = {
+    "BLAZE (62)": "BLAZE 62",
+    "CYGNUS(71)": "CYGNUS 71",
+    "EVIAN (87)": "EVIAN 87",
+    "LAGUNA(93)": "LAGUNA 93",
+    "MARCUS(68)": "MARCUS 68",
+    "POLO (60)": "POLO 60",
+    "SAPPHIRE(68 BLACK)": "SAPPHIRE (68 BLACK)",
+    "ZIRCON(71 ROSE GOLD)": "ZIRCON(71 ROSE GOLD)",
+  };
+  return formattingAliases[normalized] ?? normalized;
+}
+
+const PTMT_RANGE_CATEGORY_OVERRIDES: Readonly<Record<string, string>> = {
+  "SINK COCK (132)": "Cocks Standard",
+  "BIB COCK FANCY (123)": "Cocks Standard",
+  "SINK COCK (133)": "Cocks Standard",
+  "BIB COCK LONG BODY (124)": "Cocks Standard",
+  "PILLAR COCK (130)": "Cocks Standard",
+  "BIB COCK STANDARD (121)": "Cocks Standard",
+  "PILLAR COCK (131)": "Cocks Standard",
+  "BIB COCK STANDARD (120)": "Cocks Standard",
+  "2 WAY BIB COCK (129)": "Cocks Standard",
+  "BIB COCK STANDARD (125)": "Cocks Standard",
+  "ANGLE COCK (144)": "Cocks Standard",
+  "BIB COCK NOZZLE (127)": "Cocks Standard",
+  "2 WAY ANGLE COCK (145)": "Cocks Standard",
+  "BIB COCK (122)": "Cocks Standard",
+  "SINK MIXER (134)": "Cocks Standard",
+  "PUSH COCK": "Cocks Standard",
+  "URINAL COCK": "Cocks Standard",
+  "PILLAR COCK SWAN NECK (147)": "Cocks Premium",
+  "WALL MIXER (1375)": "Cocks Premium",
+  "WALL MIXER (135)": "Cocks Premium",
+  "STOP COCK": "Cocks Premium",
+  "CONCEALED STOP COCK": "Cocks Premium",
+  "MUTE SERIES": "Cocks Premium",
+  "OVER HEAD SHOWER": "Faucets & Jetsprays & Shower",
+  "CENTER HOLE BASIN": "Faucets & Jetsprays & Shower",
+  "SINGLE LEVER BASIN (400)": "Faucets & Jetsprays & Shower",
+  "2 IN 1 FAUCET": "Faucets & Jetsprays & Shower",
+  "WASHING MACHINE TAP": "Faucets & Jetsprays & Shower",
+  "WASHING MACHINE": "Faucets & Jetsprays & Shower",
+  "JET SPRAY": "Faucets & Jetsprays & Shower",
+  "HAND SHOWER": "Faucets & Jetsprays & Shower",
+  "HEALTH FAUCET": "Faucets & Jetsprays & Shower",
+  "FLUSH VALVE": "Faucets & Jetsprays & Shower",
+  "WASTE PIPE": "Accessorise",
+  "CONNECTION": "Accessorise",
+  "GRATING": "Accessorise",
+  "LIQUID SOAP CONTAINER": "Accessorise",
+  "WASTE COUPLING": "Accessorise",
+  "SOAP DISH": "Accessorise",
+  "TOWEL RING": "Accessorise",
+  "TOWEL RAIL": "Accessorise",
+  "TOWEL RACK": "Accessorise",
+  "SHELF": "Accessorise",
+  "BOTTLE TRAP": "Accessorise",
+  "TOILET PAPER HOLDER": "Accessorise",
+  "TOOTH BRUSH HOLDER": "Accessorise",
+  "TANK NIPPLES": "Accessorise",
+  "NIPPLE": "Accessorise",
+  "FLANGE": "Accessorise",
+  "LINE FILTER": "Accessorise",
+  "END PLUG": "Accessorise",
+  "SPINDLES SET": "Accessorise",
+  "BALL COCK": "Ball Cock",
+  "BALL COCK CHUTKI": "Ball Cock",
+  "CISTERN": "Cistern & Seat Cover",
+  "SEAT COVER": "Cistern & Seat Cover",
+  "CISTERN ACCESSORIES": "Cistern & Seat Cover",
+  "CABINET": "Cabinet",
+};
 
 function firstValue(row: Record<string, unknown>, aliases: readonly string[]): unknown {
   const keys = Object.keys(row);
@@ -122,7 +231,12 @@ function rateListByCode(rows: RateListRow[]): Map<string, RateListRow> {
  * cannot silently invent a production multiplier.
  */
 export function rateListPlanningCategory(row: RateListRow): string {
-  const value = `${row.rangeName} ${row.name}`.toUpperCase();
+  const value = normalizeRateListRangeName(row.rangeName).toUpperCase();
+  return PTMT_RANGE_CATEGORY_OVERRIDES[value] ?? "Unclassified";
+}
+
+function legacyRateListPlanningCategory(row: RateListRow): string {
+  const value = normalizeRateListRangeName(row.rangeName).toUpperCase();
   if (value.includes("BALL COCK")) return "Ball Cock";
   if (value.includes("CISTERN") || value.includes("SEAT COVER")) return "Cistern & Seat Cover";
   if (value.includes("CABINET")) return "Cabinet";
@@ -130,16 +244,40 @@ export function rateListPlanningCategory(row: RateListRow): string {
   return "Unclassified";
 }
 
+export function buildRateListRangeAudit(rateRows: RateListRow[]): RateListRangeAudit[] {
+  const byRange = new Map<string, { category: string; codes: Set<string> }>();
+  for (const row of rateRows) {
+    const rangeName = normalizeRateListRangeName(row.rangeName);
+    const current = byRange.get(rangeName) ?? {
+      category: rateListPlanningCategory(row),
+      codes: new Set<string>(),
+    };
+    current.codes.add(row.code);
+    byRange.set(rangeName, current);
+  }
+  return [...byRange.entries()]
+    .map(([rangeName, value]) => ({
+      rangeName,
+      category: value.category,
+      codeCount: value.codes.size,
+    }))
+    .sort((a, b) => b.codeCount - a.codeCount || a.rangeName.localeCompare(b.rangeName));
+}
+
 function isReviewedCatalogueProduct(row: MasterProduct): boolean {
   return row.segment === "PTMT" && Boolean(row.planningCategory?.trim());
 }
 
-export function buildEffectivePtmtRoster(
+function buildEffectivePtmtRosterWithClassifier(
   itemRows: ItemMaster[],
   rateRows: RateListRow[],
   catalogueRows: MasterProduct[] = [],
+  classifyRateRow: (row: RateListRow) => string = rateListPlanningCategory,
+  mrpRows: MrpClassificationRow[] = [],
+  modelCategories: ReadonlySet<string> = new Set<string>(),
 ): EffectivePtmtRosterItem[] {
   const rateByCode = rateListByCode(rateRows);
+  const mrpByCode = new Map(mrpRows.map((row) => [normalizeRateListCode(row.itemCode), row]));
   const represented = new Set<string>();
   const result: EffectivePtmtRosterItem[] = [];
 
@@ -147,21 +285,26 @@ export function buildEffectivePtmtRoster(
     if (row.segment !== "PTMT") continue;
     const code = normalizeRateListCode(row.itemCode);
     const rate = rateByCode.get(code);
-    const category = row.classificationStatus === "classified" && row.category !== "Unclassified"
+    const fallbackCategory = row.classificationStatus === "classified" && row.category !== "Unclassified"
       ? row.category
-      : rate ? rateListPlanningCategory(rate) : row.category;
-    const status = row.classificationStatus === "classified" && row.category !== "Unclassified"
+      : rate ? classifyRateRow(rate) : row.category;
+    const mrp = mrpByCode.get(code);
+    const mrpClassification = mrp
+      ? resolveMrpClassification(mrp, fallbackCategory, modelCategories)
+      : null;
+    const category = mrpClassification?.category ?? fallbackCategory;
+    const status = mrpClassification?.status ?? (row.classificationStatus === "classified" && row.category !== "Unclassified"
       ? row.classificationStatus
-      : category === "Unclassified" ? "unclassified" : "classified";
+      : category === "Unclassified" ? "unclassified" : "classified");
     result.push({
       ...row,
       itemCode: code,
       category,
       classificationStatus: status,
-      classificationSource: rate ? "rate-list" : (row.classificationSource ?? "workbook"),
-      classificationNote: rate
+      classificationSource: mrpClassification?.source ?? (rate ? "rate-list" : (row.classificationSource ?? "workbook")),
+      classificationNote: mrpClassification?.note ?? (rate
         ? `Rate list: ${rate.rangeName}${category === "Unclassified" ? " (category review required)" : ""}`
-        : row.classificationNote,
+        : row.classificationNote),
       rosterSource: rate ? "rate-list" : "workbook",
       rateListName: rate?.name ?? null,
       rateListRange: rate?.rangeName ?? null,
@@ -178,12 +321,28 @@ export function buildEffectivePtmtRoster(
     result.push({
       id: -1 * (result.length + 1),
       segment: "PTMT",
-      category: row.planningCategory!.trim(),
+      category: resolveMrpClassification(
+        mrpByCode.get(code),
+        row.planningCategory!.trim(),
+        modelCategories,
+      ).category,
       itemCode: code,
       colour: "",
-      classificationStatus: "classified",
-      classificationSource: "catalogue",
-      classificationNote: "Reviewed catalogue product promoted into the governed PTMT roster.",
+      classificationStatus: resolveMrpClassification(
+        mrpByCode.get(code),
+        row.planningCategory!.trim(),
+        modelCategories,
+      ).status,
+      classificationSource: resolveMrpClassification(
+        mrpByCode.get(code),
+        row.planningCategory!.trim(),
+        modelCategories,
+      ).source === "mrp" ? "mrp" : "catalogue",
+      classificationNote: resolveMrpClassification(
+        mrpByCode.get(code),
+        row.planningCategory!.trim(),
+        modelCategories,
+      ).note ?? "Reviewed catalogue product promoted into the governed PTMT roster.",
       rosterSource: "catalogue",
       rateListName: null,
       rateListRange: null,
@@ -195,15 +354,21 @@ export function buildEffectivePtmtRoster(
   // rows that have not appeared in the planning workbook yet.
   for (const row of rateByCode.values()) {
     if (represented.has(row.code)) continue;
+    const classification = resolveMrpClassification(
+      mrpByCode.get(row.code),
+      classifyRateRow(row),
+      modelCategories,
+    );
     result.push({
       id: -1 * (result.length + 1),
       segment: "PTMT",
-      category: rateListPlanningCategory(row),
+      category: classification.category,
       itemCode: row.code,
       colour: "",
-      classificationStatus: rateListPlanningCategory(row) === "Unclassified" ? "unclassified" : "classified",
-      classificationSource: "rate-list",
-      classificationNote: `Rate list: ${row.rangeName}${rateListPlanningCategory(row) === "Unclassified" ? " (category review required)" : ""}`,
+      classificationStatus: classification.status,
+      classificationSource: classification.source,
+      classificationNote: classification.note
+        ?? `Rate list: ${row.rangeName}${classification.category === "Unclassified" ? " (category review required)" : ""}`,
       rosterSource: "rate-list",
       rateListName: row.name,
       rateListRange: row.rangeName,
@@ -212,6 +377,14 @@ export function buildEffectivePtmtRoster(
   }
 
   return result.sort((a, b) => a.itemCode.localeCompare(b.itemCode) || a.colour.localeCompare(b.colour));
+}
+
+export function buildEffectivePtmtRoster(
+  itemRows: ItemMaster[],
+  rateRows: RateListRow[],
+  catalogueRows: MasterProduct[] = [],
+): EffectivePtmtRosterItem[] {
+  return buildEffectivePtmtRosterWithClassifier(itemRows, rateRows, catalogueRows, rateListPlanningCategory);
 }
 
 function buildCodeReconciliation(
@@ -238,6 +411,7 @@ function buildCodeReconciliation(
   unmatchedCodes.sort((a, b) => b.quantity - a.quantity || a.code.localeCompare(b.code));
   return {
     rateListCodeCount: acceptedCodes.size,
+    rosterCodeCount: acceptedCodes.size,
     sourceCodeCount: quantities.size,
     matchedCodeCount: [...quantities.keys()].filter((code) => acceptedCodes.has(code)).length,
     unmatchedCodeCount: unmatchedCodes.length,
@@ -254,8 +428,66 @@ export function buildRateListReconciliation(
   return buildCodeReconciliation(new Set(rateRows.map((row) => row.code)), sourceRows);
 }
 
+function sourceQuantitiesByCode(sourceRows: Record<string, unknown>[]): Map<string, number> {
+  const quantities = new Map<string, number>();
+  for (const row of sourceRows) {
+    const code = normalizeRateListCode(firstValue(row, CODE_ALIASES));
+    if (!code) continue;
+    quantities.set(code, (quantities.get(code) ?? 0) + numericValue(firstValue(row, QTY_ALIASES)));
+  }
+  return quantities;
+}
+
+export function buildRateListCategorySplit(
+  roster: EffectivePtmtRosterItem[],
+  sourceQuantities: Map<string, number>,
+  bufferByCategory: ReadonlyMap<string, number>,
+): RateListCategorySplit[] {
+  const categoryByCode = new Map<string, string>();
+  const ambiguousCodes = new Set<string>();
+  for (const item of roster) {
+    const code = normalizeRateListCode(item.itemCode);
+    if (!code) continue;
+    if (ambiguousCodes.has(code)) continue;
+    const category = item.category?.trim() || "Unclassified";
+    const existing = categoryByCode.get(code);
+    if (!existing || existing === category) {
+      categoryByCode.set(code, category);
+    } else {
+      // A code appearing under multiple categories is not safe to assign to
+      // either governed category for a partitioned demand view. Keep the
+      // ambiguous state terminal so query row order cannot reclassify it.
+      categoryByCode.set(code, "Unclassified");
+      ambiguousCodes.add(code);
+    }
+  }
+  const categories = new Map<string, Set<string>>();
+  for (const [code, category] of categoryByCode) {
+    const codes = categories.get(category) ?? new Set<string>();
+    codes.add(code);
+    categories.set(category, codes);
+  }
+  const orderedCategories = [
+    ...PTMT_CATEGORY_ORDER,
+    ...[...categories.keys()].filter((category) => !(PTMT_CATEGORY_ORDER as readonly string[]).includes(category)).sort(),
+  ];
+  return orderedCategories.map((category) => {
+    const codes = categories.get(category) ?? new Set<string>();
+    const julySourceQuantity = [...codes].reduce(
+      (total, code) => total + (sourceQuantities.get(code) ?? 0),
+      0,
+    );
+    return {
+      category,
+      codeCount: codes.size,
+      julySourceQuantity: Math.round(julySourceQuantity),
+      multiplier: category === "Unclassified" ? null : bufferByCategory.get(category) ?? null,
+    };
+  });
+}
+
 export async function getEffectivePtmtRoster(): Promise<EffectivePtmtRosterItem[]> {
-  const [itemRows, rateUpload, catalogueRows] = await Promise.all([
+  const [itemRows, rateUpload, catalogueRows, mrpSource, bufferRows] = await Promise.all([
     db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, "PTMT")),
     db.select({ rows: uploadedFilesTable.rows }).from(uploadedFilesTable)
       .where(eq(uploadedFilesTable.kind, RATE_LIST_UPLOAD_KIND))
@@ -264,14 +496,37 @@ export async function getEffectivePtmtRoster(): Promise<EffectivePtmtRosterItem[
       eq(masterProductsTable.segment, "PTMT"),
       eq(masterProductsTable.isActive, true),
     )),
+    db.select({ id: mrpControlSourcesTable.id }).from(mrpControlSourcesTable)
+      .orderBy(desc(mrpControlSourcesTable.importedAt)).limit(1),
+    db.select({ name: bufferCategoriesTable.name }).from(bufferCategoriesTable)
+      .where(eq(bufferCategoriesTable.segment, "PTMT")),
   ]);
   const rawRateRows = (rateUpload[0]?.rows ?? []) as Record<string, unknown>[];
   const rateRows = rawRateRows.length > 0 ? parseRateListRows(rawRateRows) : [];
-  return buildEffectivePtmtRoster(itemRows, rateRows, catalogueRows);
+  const mrpRows = mrpSource[0]
+    ? await db.select({
+      itemCode: mrpControlRowsTable.itemCode,
+      division: mrpControlRowsTable.division,
+      series: mrpControlRowsTable.series,
+    }).from(mrpControlRowsTable).where(and(
+      eq(mrpControlRowsTable.sourceId, mrpSource[0].id),
+      eq(mrpControlRowsTable.rowType, "product"),
+      eq(mrpControlRowsTable.segment, "PTMT"),
+      eq(mrpControlRowsTable.isLoadable, true),
+    ))
+    : [];
+  return buildEffectivePtmtRosterWithClassifier(
+    itemRows,
+    rateRows,
+    catalogueRows,
+    rateListPlanningCategory,
+    mrpRows,
+    new Set(bufferRows.map((row) => row.name)),
+  );
 }
 
 export async function getRateListReport() {
-  const [rateUpload, stockUploads, itemRows] = await Promise.all([
+  const [rateUpload, pendingUploads, itemRows, catalogueRows, bufferRows, mrpSource] = await Promise.all([
     db.select({
       id: uploadedFilesTable.id,
       filename: uploadedFilesTable.filename,
@@ -288,18 +543,49 @@ export async function getRateListReport() {
       uploadedAt: uploadedFilesTable.uploadedAt,
       rows: uploadedFilesTable.rows,
     }).from(uploadedFilesTable)
-      .where(eq(uploadedFilesTable.kind, "current_stock"))
+      .where(eq(uploadedFilesTable.kind, "last_month_pending"))
       .orderBy(desc(uploadedFilesTable.uploadedAt)),
+    db.select().from(itemMasterTable),
+    db.select().from(masterProductsTable).where(and(
+      eq(masterProductsTable.segment, "PTMT"),
+      eq(masterProductsTable.isActive, true),
+    )),
     db.select({
-      itemCode: itemMasterTable.itemCode,
-      segment: itemMasterTable.segment,
-    }).from(itemMasterTable),
+      name: bufferCategoriesTable.name,
+      multiplier: bufferCategoriesTable.multiplier,
+    }).from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "PTMT")),
+    db.select({ id: mrpControlSourcesTable.id }).from(mrpControlSourcesTable)
+      .orderBy(desc(mrpControlSourcesTable.importedAt)).limit(1),
   ]);
   const latestRate = rateUpload[0];
   const rateRows = latestRate ? parseRateListRows(latestRate.rows as Record<string, unknown>[]) : [];
-  const julyStock = stockUploads.find((upload) => /july/i.test(upload.filename));
-  const sourceRows = julyStock ? julyStock.rows as Record<string, unknown>[] : [];
+  const julyPending = pendingUploads.find((upload) => /july/i.test(upload.filename));
+  const sourceRows = julyPending ? julyPending.rows as Record<string, unknown>[] : [];
+  const sourceQuantities = sourceQuantitiesByCode(sourceRows);
+  const bufferByCategory = new Map(bufferRows.map((row) => [row.name, row.multiplier]));
+  const mrpRows: MrpClassificationRow[] = mrpSource[0]
+    ? await db.select({
+      itemCode: mrpControlRowsTable.itemCode,
+      division: mrpControlRowsTable.division,
+      series: mrpControlRowsTable.series,
+    }).from(mrpControlRowsTable).where(and(
+      eq(mrpControlRowsTable.sourceId, mrpSource[0].id),
+      eq(mrpControlRowsTable.rowType, "product"),
+      eq(mrpControlRowsTable.segment, "PTMT"),
+      eq(mrpControlRowsTable.isLoadable, true),
+    ))
+    : [];
+  const beforeRoster = buildEffectivePtmtRosterWithClassifier(itemRows, rateRows, catalogueRows, legacyRateListPlanningCategory);
+  const afterRoster = buildEffectivePtmtRosterWithClassifier(
+    itemRows,
+    rateRows,
+    catalogueRows,
+    rateListPlanningCategory,
+    mrpRows,
+    new Set(bufferRows.map((row) => row.name)),
+  );
   const rateCodes = new Set(rateRows.map((row) => row.code));
+  const effectiveRosterCodes = new Set(afterRoster.map((row) => normalizeRateListCode(row.itemCode)));
   const ptmtItemCodes = new Set(
     itemRows
       .filter((row) => row.segment === "PTMT")
@@ -312,11 +598,14 @@ export async function getRateListReport() {
     segments.add(row.segment);
     allItemSegments.set(code, segments);
   }
-  const legacyReconciliation = julyStock
+  const legacyReconciliation = julyPending
     ? buildCodeReconciliation(ptmtItemCodes, sourceRows)
     : null;
-  const reconciliation = julyStock
-    ? buildCodeReconciliation(rateCodes, sourceRows)
+  const reconciliation = julyPending
+    ? {
+      ...buildCodeReconciliation(effectiveRosterCodes, sourceRows),
+      rateListCodeCount: rateCodes.size,
+    }
     : null;
   const explainedExclusions = reconciliation && legacyReconciliation
     ? legacyReconciliation.unmatchedCodes
@@ -330,11 +619,16 @@ export async function getRateListReport() {
       uploadedAt: latestRate.uploadedAt,
       distinctCodeCount: new Set(rateRows.map((row) => row.code)).size,
     } : null,
-    julySource: julyStock ? {
-      id: julyStock.id,
-      filename: julyStock.filename,
-      rowCount: julyStock.rowCount,
-      uploadedAt: julyStock.uploadedAt,
+    rangeAudit: buildRateListRangeAudit(rateRows),
+    categorySplit: {
+      before: buildRateListCategorySplit(beforeRoster, sourceQuantities, bufferByCategory),
+      after: buildRateListCategorySplit(afterRoster, sourceQuantities, bufferByCategory),
+    } satisfies RateListCategorySplitReport,
+    julySource: julyPending ? {
+      id: julyPending.id,
+      filename: julyPending.filename,
+      rowCount: sourceRows.length,
+      uploadedAt: julyPending.uploadedAt,
     } : null,
     reconciliation,
     coverage: latestRate ? {

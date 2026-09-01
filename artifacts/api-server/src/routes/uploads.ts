@@ -7,6 +7,7 @@ import {
   parseRateListRows,
   RATE_LIST_UPLOAD_KIND,
 } from "../lib/rate-list";
+import { inferUploadPlanningMonth } from "../lib/upload-period";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -53,12 +54,18 @@ router.get("/uploads", async (_req, res): Promise<void> => {
       id: uploadedFilesTable.id,
       kind: uploadedFilesTable.kind,
       filename: uploadedFilesTable.filename,
+      period: uploadedFilesTable.period,
       rowCount: uploadedFilesTable.rowCount,
       uploadedAt: uploadedFilesTable.uploadedAt,
     })
     .from(uploadedFilesTable)
     .orderBy(desc(uploadedFilesTable.uploadedAt));
-  res.json(rows);
+  res.json(rows.map((row) => ({
+    ...row,
+    // Legacy rows predate the explicit period column. Derive their period
+    // once at the API boundary so every consumer applies the same rule.
+    period: inferUploadPlanningMonth(row.kind, row.filename, row.uploadedAt, row.period),
+  })));
 });
 
 router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<void> => {
@@ -71,6 +78,12 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
     res.status(400).json({ error: "No file provided" });
     return;
   }
+  const requestedPeriod = typeof req.body?.period === "string" ? req.body.period.trim() : "";
+  if (requestedPeriod && !/^\d{4}-(0[1-9]|1[0-2])$/.test(requestedPeriod)) {
+    res.status(400).json({ error: "Invalid upload period", message: "period must use YYYY-MM format" });
+    return;
+  }
+  const period = inferUploadPlanningMonth(raw, req.file.originalname, new Date(), requestedPeriod || null);
 
   let workbook: XLSX.WorkBook;
   let rows: Record<string, unknown>[];
@@ -109,6 +122,7 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
     .values({
       kind: raw,
       filename: req.file.originalname,
+      period,
       rowCount: rows.length,
       rows,
     })
@@ -116,11 +130,16 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
       id: uploadedFilesTable.id,
       kind: uploadedFilesTable.kind,
       filename: uploadedFilesTable.filename,
+      period: uploadedFilesTable.period,
       rowCount: uploadedFilesTable.rowCount,
       uploadedAt: uploadedFilesTable.uploadedAt,
     });
 
-  res.status(201).json({ ...record, ...(itemMasterUpsert ? { itemMasterUpsert } : {}) });
+  res.status(201).json({
+    ...record,
+    period: inferUploadPlanningMonth(record!.kind, record!.filename, record!.uploadedAt, record!.period),
+    ...(itemMasterUpsert ? { itemMasterUpsert } : {}),
+  });
 });
 
 const HEADER_HINTS = ["item code", "item no.", "old item code", "colour", "color", "qty", "balance_qty", "segment"];

@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { exportTimestamp } from "../lib/export-filename";
-import { db, itemMasterTable, bufferCategoriesTable, uploadedFilesTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, planRunsTable, planRunResultsTable } from "@workspace/db";
+import { db, itemMasterTable, bufferCategoriesTable, uploadedFilesTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, planRunsTable, planRunResultsTable, plantMonthSnapshotsTable } from "@workspace/db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   computeItemPlan,
@@ -40,6 +40,7 @@ import {
 } from "../lib/sheets";
 import { logger } from "../lib/logger";
 import { reviewedBufferMultiplier } from "../lib/master-products";
+import { getMrpPlanningGate } from "../lib/mrp-control";
 import { getEffectivePtmtRoster } from "../lib/rate-list";
 import { buildElapsedProductionDays } from "../lib/plant-engine";
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "../lib/plant-lifecycle";
@@ -48,7 +49,9 @@ import { exportWeeklyReleaseExcel } from "../lib/weekly-excel-export";
 import {
   exportFrozenProductionPdf,
   exportFrozenRunExcel,
+  frozenRowsAsCalcItems,
   getLatestFinalizedRun,
+  loadFrozenRows,
   loadProductionExportRows,
 } from "../lib/frozen-plan-export";
 import { PlumbingScheduleExportError } from "../lib/plumbing-schedule-export";
@@ -57,6 +60,7 @@ import { runMachineCascade, type PlanItemForCascade } from "../lib/machine-capac
 import { runCorrectiveDiagnostic, runCorrectiveReplan } from "../lib/corrective-engine";
 import { LivePendingReadError } from "../lib/corrective-errors";
 import { diagnoseInputRows, type InputReadDiagnostics } from "../lib/input-diagnostics";
+import { inferUploadPlanningMonth } from "../lib/upload-period";
 import {
   captureLivePendingRead,
   ensureEvidenceBackedPendingBaseline,
@@ -66,6 +70,21 @@ import {
   persistPendingReadSnapshot,
   updatePendingReadSnapshotDiagnostics,
 } from "../lib/pending-read-snapshot";
+
+async function loadHistoricalReportingRows(run: typeof planRunsTable.$inferSelect) {
+  try {
+    return (await loadProductionExportRows(run)).rows;
+  } catch (error) {
+    // Some legacy Plumbing production runs predate persisted pipe/fitting
+    // scheduler results. Their frozen plan rows are still valid for reporting;
+    // exports keep the stricter reconciliation contract.
+    if (run.segment === "Plumbing" && error instanceof PlumbingScheduleExportError) {
+      logger.warn({ runId: run.id, month: run.month }, "using raw frozen rows for legacy Plumbing historical reporting");
+      return loadFrozenRows(run);
+    }
+    throw error;
+  }
+}
 import {
   PLUMBING_GOLDEN,
   PLUMBING_GRAND_TOTAL,
@@ -140,6 +159,28 @@ const router: IRouter = Router();
  */
 export const PLAN_PENDING_SOURCE: "live" | "upload" = "upload";
 
+/**
+ * Withdrawn Plumbing products remain demand-bearing: current orders and the
+ * prior-month pending/dummy quantity must still be released. Only speculative
+ * buffer is removed until the withdrawn-product policy is revisited.
+ */
+export const DISCONTINUED_PLUMBING_DEMAND_ONLY_CODES = new Set([
+  "C122",
+  "C123",
+  "U121",
+  "U122",
+  "U123",
+]);
+
+export function effectivePlumbingBufferMultiplier(
+  itemCode: string,
+  multiplier: number | null,
+): number | null {
+  return DISCONTINUED_PLUMBING_DEMAND_ONLY_CODES.has(normalizeCode(itemCode))
+    ? null
+    : multiplier;
+}
+
 /** Thrown when a required planning upload is missing or empty. */
 export class MissingUploadError extends Error {
   constructor(public readonly uploadKind: string, public readonly fileLabel: string) {
@@ -176,16 +217,18 @@ export function withSimulatedMissingUpload<T>(kind: string, fn: () => Promise<T>
 }
 
 /** Loads the latest upload of `kind`; throws MissingUploadError when absent or empty. */
-async function requireUploadSnapshot(kind: string, fileLabel: string): Promise<UploadRowsSnapshot> {
+async function requireUploadSnapshot(kind: string, fileLabel: string, month?: string): Promise<UploadRowsSnapshot> {
   if (_simulateMissingUploads.getStore()?.has(kind)) throw new MissingUploadError(kind, fileLabel);
-  const snapshot = await loadLatestUploadSnapshotByKind(kind);
-  if (snapshot.rows.length === 0) throw new MissingUploadError(kind, fileLabel);
+  const snapshot = await loadLatestUploadSnapshotByKind(kind, month);
+  if (snapshot.rows.length === 0) {
+    throw new MissingUploadError(kind, month ? `${fileLabel} for ${month}` : fileLabel);
+  }
   return snapshot;
 }
 
 /** Loads the latest upload of `kind`; throws MissingUploadError when absent or empty. */
-async function requireUploadRows(kind: string, fileLabel: string): Promise<Record<string, unknown>[]> {
-  return (await requireUploadSnapshot(kind, fileLabel)).rows;
+async function requireUploadRows(kind: string, fileLabel: string, month?: string): Promise<Record<string, unknown>[]> {
+  return (await requireUploadSnapshot(kind, fileLabel, month)).rows;
 }
 
 /** Maps plan-path errors to HTTP responses: 422 for named input failures. */
@@ -485,6 +528,15 @@ const REVIEWED_PENDING_EXCLUSION_POLICY: Record<string, ReviewedPendingExclusion
   },
 };
 
+const MONTH_REVIEWED_PENDING_EXCLUSION_POLICY: Record<string, ReviewedPendingExclusionPolicy> = {
+  "Plumbing:pending_last_month:2026-07": {
+    maxUnmatchedQuantity: 13_583,
+    maxResolutionLossQuantity: 0,
+    reviewedFingerprint: "37273146ab579bef38f26c206020f6839e29ea77a87756f009e1b2d39f54c3eb",
+    rationale: "Reviewed July 2026 predecessor source: the June-labeled Plumbing FG Stock upload is the correct source for July planning.",
+  },
+};
+
 function assertPendingJoinIdentity(
   sourceLabel: string,
   diagnostics: ReturnType<typeof pendingPlanDiagnosticsFromParsedRows>,
@@ -555,13 +607,18 @@ function assertPlanUsesPendingJoin(
 function reviewedPendingExclusionPolicy(
   segment: "PTMT" | "Plumbing",
   sourceRole: string,
+  month?: string,
 ): ReviewedPendingExclusionPolicy {
-  return REVIEWED_PENDING_EXCLUSION_POLICY[`${segment}:${sourceRole}`] ?? {
-    maxUnmatchedQuantity: 0,
-    maxResolutionLossQuantity: 0,
-    reviewedFingerprint: "",
-    rationale: "no reviewed policy exists for this segment/source role",
-  };
+  return (
+    (month ? MONTH_REVIEWED_PENDING_EXCLUSION_POLICY[`${segment}:${sourceRole}:${month}`] : undefined)
+    ?? REVIEWED_PENDING_EXCLUSION_POLICY[`${segment}:${sourceRole}`]
+    ?? {
+      maxUnmatchedQuantity: 0,
+      maxResolutionLossQuantity: 0,
+      reviewedFingerprint: "",
+      rationale: "no reviewed policy exists for this segment/source role",
+    }
+  );
 }
 
 /**
@@ -641,6 +698,11 @@ type PlanBuildOptions = {
    * Normal plan construction keeps the reviewed-limit gate enabled.
    */
   allowUnreviewedCurrentPending?: boolean;
+  /**
+   * Temporary PTMT Plans are demand snapshots and do not require approved
+   * MRP capacity classifications. Production Plans must leave this disabled.
+   */
+  allowUnapprovedMrp?: boolean;
   /**
    * Validation can build the roster and plan diagnostics from the already
    * captured live read before inspecting the independent uploaded source.
@@ -811,7 +873,7 @@ async function buildPlumbingPlanItemsInner(
 ): Promise<PlanItemWithBom[]> {
   // ── 1. UPLOADS + DB FIRST — fail fast (loudly, naming the file) before any sheet read ──
   const [fgStockRows, bufferRows, bandRows, machineRows] = await Promise.all([
-    requireUploadRows("plumbing_fg_stock", "Plumbing FG Stock"),
+    requireUploadRows("plumbing_fg_stock", "Plumbing FG Stock", month),
     db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
     db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
     db.select().from(plumbingMachineCapacityTable).where(eq(plumbingMachineCapacityTable.segment, "Plumbing")),
@@ -823,7 +885,7 @@ async function buildPlumbingPlanItemsInner(
     ? Promise.resolve(options.pendingTotalsOverride)
     : PLAN_PENDING_SOURCE === "live"
     ? fetchLivePendingOrderTotals("Plumbing")
-    : requireUploadSnapshot("pending_orders", "Current Pending Orders").then((snapshot) => {
+    : requireUploadSnapshot("pending_orders", "Current Pending Orders", month).then((snapshot) => {
         const totals = pendingOrderTotalsFromRows(snapshot.rows, "Plumbing");
         if (totals.diagnostics) {
           totals.diagnostics.source = "uploaded pending orders · Plumbing";
@@ -904,7 +966,7 @@ async function buildPlumbingPlanItemsInner(
     totalByCode(pendingTotals),
     options.allowUnreviewedCurrentPending
       ? undefined
-      : reviewedPendingExclusionPolicy("Plumbing", "pending_current"),
+      : reviewedPendingExclusionPolicy("Plumbing", "pending_current", month),
     { pendingAtPlan: pendingTotals.diagnostics },
   );
   const plumbingLastMonthPendingRows = pendingRowsFromInput(fgStockRows, {
@@ -924,7 +986,7 @@ async function buildPlumbingPlanItemsInner(
     "Plumbing last-month pending",
     plumbingLastMonthPendingDiagnostics,
     totalByCode({ exact: new Map(), byCode: pendingLmMap }),
-    reviewedPendingExclusionPolicy("Plumbing", "pending_last_month"),
+    reviewedPendingExclusionPolicy("Plumbing", "pending_last_month", month),
   );
   const plumbingCurrentPendingByRoster = pendingTotalsByRosterItem(
     pendingTotals.pendingRows ?? pendingRowsFromTotals(pendingTotals, "Plumbing"),
@@ -1014,7 +1076,8 @@ async function buildPlumbingPlanItemsInner(
       // One formula for all 12 Plumbing categories: max((Buffer − Stock) + PendingLM + Pending, 0).
       // AGRI: columns located by header name — the AGRI tab's own cell formula transposes Stock
       // and Buffer, so our header-name mapping intentionally differs from the source sheet figures.
-      const computed = computeItemPlan(source, resolvedCategory, multiplier);
+       const effectiveMultiplier = effectivePlumbingBufferMultiplier(code, multiplier);
+      const computed = computeItemPlan(source, resolvedCategory, effectiveMultiplier);
 
       // BOM weight — ~3% of items may have no BOM entry; flag them, never drop or guess.
       const weightPcs = bomWeights.get(code);
@@ -1061,27 +1124,39 @@ export async function buildPlanItems(
     return buildPlumbingPlanItemsFromWorkbook(month, options);
   }
 
-  return runInPlanningContext(`PTMT plan build (${month})`, () => buildPtmtPlanItemsInner(month, segment));
+  return runInPlanningContext(`PTMT plan build (${month})`, () => buildPtmtPlanItemsInner(month, segment, options));
 }
 
-async function buildPtmtPlanItemsInner(month: string, segment: string): Promise<PlanItemWithBom[]> {
+async function buildPtmtPlanItemsInner(
+  month: string,
+  segment: string,
+  options: PlanBuildOptions = {},
+): Promise<PlanItemWithBom[]> {
   // ── 1. UPLOADS + DB FIRST — fail fast (loudly, naming the file) before any sheet read ──
-  const [itemRows, bufferRows, bandRows, currentStockRows, pendingLastMoRows] =
+  const [itemRows, bufferRows, bandRows, currentStockRows, pendingLastMoRows, pendingOrderRows] =
     await Promise.all([
       getEffectivePtmtRoster(),
       db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
       db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
-      requireUploadRows("current_stock", "FG Stock (current stock)"),
-      requireUploadRows("last_month_pending", "Last-Month Pending"),
+      requireUploadRows("current_stock", "FG Stock (current stock)", month),
+      requireUploadRows("last_month_pending", "Last-Month Pending", month),
+      PLAN_PENDING_SOURCE === "live"
+        ? Promise.resolve(null)
+        : requireUploadRows("pending_orders", "Current Pending Orders", month),
     ]);
+
+  if (!options.allowUnapprovedMrp) {
+    const mrpGate = await getMrpPlanningGate();
+    if (mrpGate.held) {
+      throw new PlanningInputError(`PTMT planning is held by authoritative MRP controls (source ${mrpGate.sourceId ?? "latest"}): ${mrpGate.reason}`);
+    }
+  }
 
   // ── 2. Reference-data sheet reads (allow-listed: sales history). Current
   // pending is plan-only and deliberately switchable.
   const pendingTotalsPromise = PLAN_PENDING_SOURCE === "live"
     ? fetchLivePendingOrderTotals(segment)
-    : requireUploadRows("pending_orders", "Current Pending Orders").then((rows) =>
-        pendingOrderTotalsFromRows(rows, segment),
-      );
+    : Promise.resolve(pendingOrderTotalsFromRows(pendingOrderRows ?? [], segment));
   const [avg3MoTotals, pendingOrderTotals] = await Promise.all([
     fetchAvg3MoSaleTotals(month),
     pendingTotalsPromise,
@@ -1121,7 +1196,7 @@ async function buildPtmtPlanItemsInner(month: string, segment: string): Promise<
     "PTMT last-month pending",
     ptmtLastMonthPendingDiagnostics,
     totalByCode(pendingLastMoTotals),
-    reviewedPendingExclusionPolicy("PTMT", "pending_last_month"),
+    reviewedPendingExclusionPolicy("PTMT", "pending_last_month", month),
   );
   const ptmtCurrentPendingDiagnostics = pendingPlanDiagnosticsFromParsedRows(
     pendingOrderTotals.pendingRows ?? [],
@@ -1132,7 +1207,7 @@ async function buildPtmtPlanItemsInner(month: string, segment: string): Promise<
     "PTMT current pending",
     ptmtCurrentPendingDiagnostics,
     totalByCode(pendingOrderTotals),
-    reviewedPendingExclusionPolicy("PTMT", "pending_current"),
+    reviewedPendingExclusionPolicy("PTMT", "pending_current", month),
   );
 
   // Stock: F.G Sheet — try every item-code column variant the FG Stock upload may carry.
@@ -1212,16 +1287,18 @@ async function buildPtmtPlanItemsInner(month: string, segment: string): Promise<
 export interface UploadRowsSnapshot {
   id: number | null;
   filename: string | null;
+  period: string | null;
   rowCount: number | null;
   uploadedAt: Date | null;
   rows: Record<string, unknown>[];
 }
 
-export async function loadLatestUploadSnapshotByKind(kind: string): Promise<UploadRowsSnapshot> {
-  const [file] = await db
+export async function loadLatestUploadSnapshotByKind(kind: string, month?: string): Promise<UploadRowsSnapshot> {
+  const files = await db
     .select({
       id: uploadedFilesTable.id,
       filename: uploadedFilesTable.filename,
+      period: uploadedFilesTable.period,
       rowCount: uploadedFilesTable.rowCount,
       uploadedAt: uploadedFilesTable.uploadedAt,
       rows: uploadedFilesTable.rows,
@@ -1229,18 +1306,25 @@ export async function loadLatestUploadSnapshotByKind(kind: string): Promise<Uplo
     .from(uploadedFilesTable)
     .where(eq(uploadedFilesTable.kind, kind))
     .orderBy(desc(uploadedFilesTable.uploadedAt))
-    .limit(1);
+    ;
+  const file = files
+    .map((candidate) => ({
+      ...candidate,
+      period: inferUploadPlanningMonth(kind, candidate.filename, candidate.uploadedAt, candidate.period),
+    }))
+    .find((candidate) => !month || candidate.period === month);
   return {
     id: file?.id ?? null,
     filename: file?.filename ?? null,
+    period: file?.period ?? null,
     rowCount: file?.rowCount ?? null,
     uploadedAt: file?.uploadedAt ?? null,
     rows: file?.rows ?? [],
   };
 }
 
-export async function loadLatestUploadRowsByKind(kind: string): Promise<Record<string, unknown>[]> {
-  return (await loadLatestUploadSnapshotByKind(kind)).rows;
+export async function loadLatestUploadRowsByKind(kind: string, month?: string): Promise<Record<string, unknown>[]> {
+  return (await loadLatestUploadSnapshotByKind(kind, month)).rows;
 }
 
 router.get("/plan", async (req, res): Promise<void> => {
@@ -1256,6 +1340,19 @@ router.get("/plan", async (req, res): Promise<void> => {
   // Missing required uploads throw MissingUploadError → 422 naming the file.
   const normSegment = segment.toLowerCase() === "plumbing" ? "Plumbing" : segment;
   try {
+    // Historical finalized runs are the reporting source of truth. Do not
+    // rebuild them from today's uploads/live workbooks: those inputs may have
+    // advanced, been replaced, or be unavailable while the frozen month is
+    // still expected to be viewable.
+    const frozenRun = await getLatestFinalizedRun(month, normSegment, "production")
+      ?? await getLatestFinalizedRun(month, normSegment, "temporary");
+    if (frozenRun) {
+      const rows = await loadHistoricalReportingRows(frozenRun);
+      const items = frozenRowsAsCalcItems(rows) as unknown as PlanItemWithBom[];
+      const filtered = category ? items.filter((i) => i.category === category) : items;
+      res.json(filtered);
+      return;
+    }
     const items = await buildPlanItems(month, normSegment);
     await annotateLiveOrders(items, month, normSegment); // display-only, sheet-outage tolerant
     const filtered = category ? items.filter((i) => i.category === category) : items;
@@ -1914,7 +2011,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
       errorText: missingUpload.message,
     });
     res.locals.pendingReadCaptureId = captureId;
-    await requireUploadSnapshot("pending_orders", "Current Pending Orders");
+    await requireUploadSnapshot("pending_orders", "Current Pending Orders", month);
   }
 
   type CheckResult = {
@@ -1948,7 +2045,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
           allowUnreviewedCurrentPending: true,
           pendingTotalsOverride: pendingTotals,
         }),
-        loadLatestUploadRowsByKind("plumbing_fg_stock"),
+        loadLatestUploadRowsByKind("plumbing_fg_stock", month),
         db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
         db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
         fetchPlumbingSheet3Production(month),
@@ -1979,7 +2076,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
         pendingReadCaptureId,
         pendingTotals,
         items,
-        () => requireUploadSnapshot("pending_orders", "Current Pending Orders"),
+        () => requireUploadSnapshot("pending_orders", "Current Pending Orders", month),
       );
       pendingDiagnostics = liveEvidence.pendingDiagnostics;
       const { livePendingPlanDiagnostics, pendingCoverage, pendingBaseline } = liveEvidence;
@@ -2029,7 +2126,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
           label: "Plumbing uploaded current pending (validation)",
           diagnostics: pendingAtPlanPlanDiagnostics,
           expectedSourceQuantity: totalByCode(pendingAtPlanTotals),
-          policy: reviewedPendingExclusionPolicy("Plumbing", "pending_current"),
+          policy: reviewedPendingExclusionPolicy("Plumbing", "pending_current", month),
         },
         {
           label: "Plumbing live pending (validation)",
@@ -2040,7 +2137,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
           label: "Plumbing last-month pending (validation)",
           diagnostics: pendingLastMonthAtPlan,
           expectedSourceQuantity: fgPendingTotal,
-          policy: reviewedPendingExclusionPolicy("Plumbing", "pending_last_month"),
+          policy: reviewedPendingExclusionPolicy("Plumbing", "pending_last_month", month),
         },
       ];
       for (const joinCheck of validationJoinChecks) {
@@ -2741,14 +2838,14 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     liveOrderTotals,
     pendingUploadSnapshot,
   ] = await Promise.all([
-    loadLatestUploadRowsByKind("current_stock"),
-    loadLatestUploadRowsByKind("last_month_pending"),
+    loadLatestUploadRowsByKind("current_stock", month),
+    loadLatestUploadRowsByKind("last_month_pending", month),
     getEffectivePtmtRoster(),
     db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "PTMT")),
     fetchAvg3MoSaleTotals(month),
     Promise.resolve(livePendingCapture.totals),
     fetchLiveOrderTotals(month),
-    requireUploadSnapshot("pending_orders", "Current Pending Orders"),
+    requireUploadSnapshot("pending_orders", "Current Pending Orders", month),
   ]);
 
   const checks: CheckResult[] = [];
@@ -2864,7 +2961,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     "PTMT last-month pending (validation)",
     pendingLastMonthDiagnostics,
     totalByCode(lmTotals),
-    reviewedPendingExclusionPolicy("PTMT", "pending_last_month"),
+    reviewedPendingExclusionPolicy("PTMT", "pending_last_month", month),
   );
 
   // ── 3. Current pending ────────────────────────────────────────────────
@@ -3627,12 +3724,18 @@ async function getPlanInputProvenance(month: string, segment: string): Promise<R
       id: uploadedFilesTable.id,
       kind: uploadedFilesTable.kind,
       filename: uploadedFilesTable.filename,
+      period: uploadedFilesTable.period,
       uploadedAt: uploadedFilesTable.uploadedAt,
     })
     .from(uploadedFilesTable)
     .where(inArray(uploadedFilesTable.kind, kinds))
     .orderBy(desc(uploadedFilesTable.uploadedAt));
-  const latest = (kind: string) => uploads.find((upload) => upload.kind === kind);
+  const latest = (kind: string) => uploads
+    .map((upload) => ({
+      ...upload,
+      period: inferUploadPlanningMonth(kind, upload.filename, upload.uploadedAt, upload.period),
+    }))
+    .find((upload) => upload.kind === kind && upload.period === month);
   const uploadEntry = (kind: string, label: string): PlanInputProvenanceEntry => {
     const upload = latest(kind);
     return upload
@@ -3682,7 +3785,15 @@ router.get("/plan/summary", async (req, res): Promise<void> => {
     return;
   }
   try {
-    const items = await buildPlanItems(month, segment);
+    // Prefer the immutable finalized run for historical reporting. Rebuilding
+    // a past month from current inputs can fail on the MRP gate or a missing
+    // live workbook, and would make an otherwise available snapshot spin.
+    const latestRun = await getLatestFinalizedRun(month, segment, "production")
+      ?? await getLatestFinalizedRun(month, segment, "temporary");
+    const frozenRows = latestRun ? await loadHistoricalReportingRows(latestRun) : null;
+    const items = frozenRows
+      ? frozenRowsAsCalcItems(frozenRows) as unknown as PlanItemWithBom[]
+      : await buildPlanItems(month, segment);
     // Full summarizePlan result (used by summary page)
     const planSummary = summarizePlan(items);
     // Per-category kg accumulator (Plumbing BOM weight)
@@ -3695,19 +3806,6 @@ router.get("/plan/summary", async (req, res): Promise<void> => {
     }
     // Merged categories: both old shape (category/minTotal/maxTotal)
     // and new shape (name/pcs/kg) so both consumers work
-    const [latestRun] = await db
-      .select({ id: planRunsTable.id, planType: planRunsTable.planType })
-      .from(planRunsTable)
-      .where(and(
-        eq(planRunsTable.month, month),
-        eq(planRunsTable.segment, segment),
-        eq(planRunsTable.status, "finalized"),
-      ))
-      .orderBy(
-        sql`CASE WHEN ${planRunsTable.planType} = 'production' THEN 0 ELSE 1 END`,
-        desc(planRunsTable.id),
-      )
-      .limit(1);
     const finalizedResults = latestRun
       ? await db
         .select({
@@ -3761,6 +3859,22 @@ router.get("/plan/summary", async (req, res): Promise<void> => {
     req.log.error({ err, month, segment }, "plan/summary failed");
     res.status(500).json({ error: "Failed to compute plan summary" });
   }
+});
+
+// ── GET /plan/available-months ────────────────────────────────────────────────
+// The selector is shared by Planning and Monitoring, so this intentionally
+// returns the union across both segments rather than filtering by the active
+// segment. A month can remain selected while the user switches PTMT/Plumbing.
+router.get("/plan/available-months", async (_req, res): Promise<void> => {
+  const [runMonths, snapshotMonths] = await Promise.all([
+    db.selectDistinct({ month: planRunsTable.month }).from(planRunsTable),
+    db.selectDistinct({ month: plantMonthSnapshotsTable.month }).from(plantMonthSnapshotsTable),
+  ]);
+  const months = [...new Set([...runMonths, ...snapshotMonths]
+    .map((row) => row.month)
+    .filter((month) => /^\d{4}-(0[1-9]|1[0-2])$/.test(month)))]
+    .sort((a, b) => b.localeCompare(a));
+  res.json({ months });
 });
 
 export default router;

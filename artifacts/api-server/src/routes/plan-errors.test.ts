@@ -16,10 +16,33 @@ import {
   PLAN_PENDING_SOURCE,
   PlanningInputError,
   withSimulatedMissingUpload,
+  effectivePlumbingBufferMultiplier,
 } from "./plan.js";
+import { computeItemPlan } from "../lib/calc.js";
 import planRouter from "./plan.js";
 import { parseStatusReasonInput } from "./plan-runs.js";
 import { runCorrectiveReplan } from "../lib/corrective-engine.js";
+
+test("withdrawn Plumbing codes keep pending demand but remove speculative buffer", () => {
+  const demandOnlyCodes = ["C122", "C123", "U121", "U122", "U123"];
+  for (const itemCode of demandOnlyCodes) {
+    const item = computeItemPlan({
+      itemCode,
+      colour: "",
+      avg3MoSaleTotal3Mo: 900,
+      stock: 20,
+      stockNeedsReview: false,
+      pendingOrderLastMonth: 17,
+      pendingOrder: 23,
+      order: 0,
+    }, "Plumbing Pipe", effectivePlumbingBufferMultiplier(itemCode, 1.5));
+
+    assert.equal(item.bufferReq, null, itemCode);
+    assert.equal(item.pendingOrderLastMonth, 17, itemCode);
+    assert.equal(item.pendingOrder, 23, itemCode);
+    assert.equal(item.maxProduction, 40, itemCode);
+  }
+});
 
 test("Google Sheets connector 504 becomes a named upstream timeout", async () => {
   const connectors = {
@@ -170,7 +193,7 @@ test("validation evidence is persisted before an uploaded pending read can fail"
   ]);
 });
 
-test("Plumbing corrective live rebuild keeps the reviewed pending guard", async () => {
+test("Plumbing corrective live rebuild uses the month-correct source before machine checks", async () => {
   await assert.rejects(
     () => runCorrectiveReplan({
       month: "2026-07",
@@ -181,7 +204,7 @@ test("Plumbing corrective live rebuild keeps the reviewed pending guard", async 
     (error: unknown) => {
       assert.match(
         String(error),
-        /Pending join reconciliation failed for Plumbing current pending/,
+        /no non-idle corrective machine-hour blocks/,
       );
       return true;
     },

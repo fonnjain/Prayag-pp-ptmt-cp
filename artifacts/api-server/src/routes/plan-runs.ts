@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db, bufferCategoriesTable, categoryCapacityTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, planRunInputSnapshotsTable, pendingReadSnapshotsTable, correctivePlanRunsTable, plantMonthSnapshotsTable, planScheduleResultsTable, plumbingMachineCapacityTable } from "@workspace/db";
 import { and, asc, eq, desc, ne, sql } from "drizzle-orm";
 import { buildPlanItems, loadLatestUploadSnapshotByKind, type UploadRowsSnapshot, handlePlanError } from "./plan";
+import { getMrpPlanningGate } from "../lib/mrp-control";
 import {
   fetchPlumbingBomWeights,
   fetchLivePendingOrderTotals,
@@ -50,14 +51,14 @@ function pendingSourceKinds(segment: string): {
 
 type PendingSourceSnapshot = UploadRowsSnapshot & { sourceContentHash?: string };
 
-async function loadPendingSources(segment: string): Promise<{
+async function loadPendingSources(segment: string, month: string): Promise<{
   current: PendingSourceSnapshot;
   lastMonth: PendingSourceSnapshot;
 }> {
   const kinds = pendingSourceKinds(segment);
   const [current, lastMonth] = await Promise.all([
-    loadLatestUploadSnapshotByKind(kinds.current),
-    loadLatestUploadSnapshotByKind(kinds.lastMonth),
+    loadLatestUploadSnapshotByKind(kinds.current, month),
+    loadLatestUploadSnapshotByKind(kinds.lastMonth, month),
   ]);
   return {
     current,
@@ -337,6 +338,18 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
     });
     return;
   }
+  if (planType === "production" && segment === "PTMT") {
+    const mrpGate = await getMrpPlanningGate();
+    if (mrpGate.held) {
+      res.status(422).json({
+        error: "PTMT_MRP_APPROVAL_REQUIRED",
+        message: `PTMT Production planning is held by authoritative MRP controls (source ${mrpGate.sourceId ?? "latest"}): ${mrpGate.reason}`,
+        month,
+        segment,
+      });
+      return;
+    }
+  }
   if (planType === "production" && temporaryRunId != null) {
     const [temporaryRun] = await db.select({
       id: planRunsTable.id,
@@ -514,9 +527,11 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
     // paired with the wrong frozen plan run.
     let pendingSourcesBefore: Awaited<ReturnType<typeof loadPendingSources>>;
     try {
-      pendingSourcesBefore = await loadPendingSources(segment);
-      planItems = await buildPlanItems(month, segment);
-      const pendingSourcesAfter = await loadPendingSources(segment);
+      pendingSourcesBefore = await loadPendingSources(segment, month);
+      planItems = await buildPlanItems(month, segment, {
+        allowUnapprovedMrp: planType === "temporary" && segment === "PTMT",
+      });
+      const pendingSourcesAfter = await loadPendingSources(segment, month);
       if (
         !sameUploadSnapshot(pendingSourcesBefore.current, pendingSourcesAfter.current)
         || !sameUploadSnapshot(pendingSourcesBefore.lastMonth, pendingSourcesAfter.lastMonth)

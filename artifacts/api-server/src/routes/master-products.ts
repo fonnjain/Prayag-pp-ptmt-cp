@@ -15,8 +15,11 @@ import {
   type ProductClassificationStatus,
 } from "../lib/master-products";
 import { getRateListReport } from "../lib/rate-list";
+import multer from "multer";
+import { getMrpReport, importMrpSources } from "../lib/mrp-control";
 
 const router: IRouter = Router();
+const mrpUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 function isSegment(value: unknown): value is "PTMT" | "Plumbing" | "CP" {
   return CATALOGUE_PLANNING_SEGMENTS.includes(String(value) as "PTMT" | "Plumbing" | "CP");
@@ -34,8 +37,8 @@ router.get("/master-products/products", async (req, res): Promise<void> => {
     return;
   }
   const source = req.query.source == null ? undefined : String(req.query.source);
-   if (source && !["workbook", "rate-list", "catalogue", "seed"].includes(source)) {
-    res.status(400).json({ error: "INVALID_SOURCE", message: "source must be workbook, rate-list, catalogue, or seed." });
+   if (source && !["workbook", "rate-list", "catalogue", "seed", "mrp"].includes(source)) {
+    res.status(400).json({ error: "INVALID_SOURCE", message: "source must be workbook, rate-list, catalogue, seed, or mrp." });
     return;
   }
   try {
@@ -43,7 +46,7 @@ router.get("/master-products/products", async (req, res): Promise<void> => {
       segment,
       status: status as ProductClassificationStatus | undefined,
       category: req.query.category == null ? undefined : String(req.query.category),
-       source: source as "workbook" | "rate-list" | "catalogue" | "seed" | undefined,
+       source: source as "workbook" | "rate-list" | "catalogue" | "seed" | "mrp" | undefined,
       search: req.query.search == null ? undefined : String(req.query.search),
     }));
   } catch (error) {
@@ -198,6 +201,33 @@ router.get("/master-products/rate-list-report", async (_req, res): Promise<void>
     res.status(500).json({
       error: "RATE_LIST_REPORT_FAILED",
       message: error instanceof Error ? error.message : "Could not build the rate-list report.",
+    });
+  }
+});
+
+router.get("/master-products/mrp-report", async (_req, res): Promise<void> => {
+  try {
+    res.json(await getMrpReport());
+  } catch (error) {
+    res.status(500).json({
+      error: "MRP_REPORT_FAILED",
+      message: error instanceof Error ? error.message : "Could not build the MRP report.",
+    });
+  }
+});
+
+router.post("/master-products/mrp/import", requireAdmin, mrpUpload.single("file"), async (req, res): Promise<void> => {
+  if (!req.file) {
+    res.status(400).json({ error: "MRP_FILE_REQUIRED", message: "Upload the authoritative MRP workbook." });
+    return;
+  }
+  try {
+    const result = await importMrpSources(req.file.buffer, { sourceFilename: req.file.originalname });
+    res.status(201).json(result);
+  } catch (error) {
+    res.status(400).json({
+      error: "MRP_IMPORT_INVALID",
+      message: error instanceof Error ? error.message : "Could not validate the authoritative MRP workbook.",
     });
   }
 });
