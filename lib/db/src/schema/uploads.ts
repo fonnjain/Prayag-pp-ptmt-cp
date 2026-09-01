@@ -6,6 +6,7 @@ export const uploadedFilesTable = pgTable("uploaded_files", {
   id: serial("id").primaryKey(),
   kind: text("kind").notNull(),
   filename: text("filename").notNull(),
+  period: text("period"),
   rowCount: integer("row_count").notNull().default(0),
   rows: jsonb("rows").notNull().$type<Record<string, unknown>[]>(),
   uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),

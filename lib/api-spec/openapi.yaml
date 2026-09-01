@@ -180,6 +180,10 @@ paths:
                 file:
                   type: string
                   format: binary
+                period:
+                  type: string
+                  pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+                  description: Planning month represented by this upload (YYYY-MM).
       responses:
         "201":
           description: Uploaded file processed
@@ -301,6 +305,43 @@ paths:
               schema: { $ref: "#/components/schemas/RateListReport" }
         "500": { description: Rate-list report unavailable }
 
+  /master-products/mrp-report:
+    get:
+      operationId: getMasterProductMrpReport
+      tags: [masterProducts]
+      summary: Show authoritative MRP provenance, coverage, disagreements, and the PTMT hold
+      responses:
+        "200":
+          description: Authoritative MRP review report
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MrpReport" }
+        "500": { description: MRP report unavailable }
+
+  /master-products/mrp/import:
+    post:
+      operationId: importMasterProductMrp
+      tags: [masterProducts]
+      summary: Import and hold an authoritative MRP workbook for review
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        "201":
+          description: MRP workbook imported and held for approval
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MrpImportResult" }
+        "400": { description: Invalid MRP workbook }
+        "401": { description: Authentication required }
+        "403": { description: Admin access required }
+
   /master-products/products:
     get:
       operationId: listMasterProducts
@@ -322,7 +363,7 @@ paths:
         - name: source
           in: query
           required: false
-          schema: { type: string, enum: [workbook, catalogue, seed] }
+          schema: { type: string, enum: [workbook, rate-list, catalogue, seed] }
         - name: search
           in: query
           required: false
@@ -747,6 +788,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlanSummary"
+
+  /plan/available-months:
+    get:
+      operationId: listAvailableMonths
+      tags: [plan]
+      responses:
+        "200":
+          description: Months with at least one plan run or frozen plant snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AvailableMonthsResponse"
 
   /dashboard:
     get:
@@ -2372,12 +2425,13 @@ components:
 
     UploadedFile:
       type: object
-      required: [id, kind, filename, uploadedAt, rowCount]
+      required: [id, kind, filename, uploadedAt, rowCount, period]
       properties:
         id: { type: integer }
         kind:
           $ref: "#/components/schemas/UploadKind"
         filename: { type: string }
+        period: { type: ["string", "null"], pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
         uploadedAt: { type: string, format: date-time }
         rowCount: { type: integer }
 
@@ -2474,6 +2528,17 @@ components:
         fittedBasis: { type: ["string", "null"], enum: [executable, null] }
         inputProvenance:
           $ref: "#/components/schemas/PlanInputProvenance"
+
+    AvailableMonthsResponse:
+      type: object
+      required: [months]
+      properties:
+        months:
+          type: array
+          items:
+            type: string
+            pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+          description: Calendar months with a plan run or immutable plant snapshot, sorted newest first.
 
     PlanInputProvenance:
       type: object
@@ -4297,7 +4362,7 @@ components:
         division: { type: ["string", "null"] }
         category: { type: string }
         status: { type: string, enum: [classified, unclassified, ambiguous] }
-        source: { type: ["string", "null"], enum: [workbook, rate-list, catalogue, seed, null] }
+        source: { type: ["string", "null"], enum: [workbook, rate-list, catalogue, seed, mrp, null] }
         note: { type: ["string", "null"] }
         inCatalogue: { type: boolean }
         inPlanningWorkbook: { type: boolean }
@@ -4321,7 +4386,7 @@ components:
 
     RateListReport:
       type: object
-      required: [source, julySource, reconciliation]
+      required: [source, julySource, reconciliation, rangeAudit, categorySplit]
       properties:
         source:
           $ref: "#/components/schemas/RateListSource"
@@ -4331,6 +4396,67 @@ components:
           $ref: "#/components/schemas/RateListReconciliation"
         coverage:
           $ref: "#/components/schemas/RateListCoverage"
+        rangeAudit:
+          type: array
+          items:
+            $ref: "#/components/schemas/RateListRangeAudit"
+        categorySplit:
+          $ref: "#/components/schemas/RateListCategorySplitReport"
+
+    MrpImportResult:
+      type: object
+      required: [sourceId, sourceFilename, sourceSha256, productRowCount, discontinuedRowCount, excludedRowCount, seriesValueCount, planningApproved, holdReason]
+      properties:
+        sourceId: { type: integer }
+        sourceFilename: { type: string }
+        sourceSha256: { type: string }
+        productRowCount: { type: integer }
+        discontinuedRowCount: { type: integer }
+        excludedRowCount: { type: integer }
+        seriesValueCount: { type: integer }
+        planningApproved: { type: boolean }
+        holdReason: { type: string }
+
+    MrpReport:
+      type: object
+      required: [source, summary]
+      properties:
+        source:
+          type: ["object", "null"]
+          additionalProperties: true
+        summary:
+          type: ["object", "null"]
+          additionalProperties: true
+
+    RateListRangeAudit:
+      type: object
+      required: [rangeName, category, codeCount]
+      properties:
+        rangeName: { type: string }
+        category: { type: string }
+        codeCount: { type: integer }
+
+    RateListCategorySplitReport:
+      type: object
+      required: [before, after]
+      properties:
+        before:
+          type: array
+          items:
+            $ref: "#/components/schemas/RateListCategorySplit"
+        after:
+          type: array
+          items:
+            $ref: "#/components/schemas/RateListCategorySplit"
+
+    RateListCategorySplit:
+      type: object
+      required: [category, codeCount, julySourceQuantity, multiplier]
+      properties:
+        category: { type: string }
+        codeCount: { type: integer }
+        julySourceQuantity: { type: number }
+        multiplier: { type: ["number", "null"] }
 
     RateListCoverage:
       type: ["object", "null"]
@@ -4363,6 +4489,7 @@ components:
       type: ["object", "null"]
       properties:
         rateListCodeCount: { type: integer }
+        rosterCodeCount: { type: integer }
         sourceCodeCount: { type: integer }
         matchedCodeCount: { type: integer }
         unmatchedCodeCount: { type: integer }

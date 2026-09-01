@@ -8,6 +8,7 @@ import type { RateListUnmatchedCode } from './rateListUnmatchedCode';
 
 export type RateListReconciliationAnyOf = {
   rateListCodeCount?: number;
+  rosterCodeCount?: number;
   sourceCodeCount?: number;
   matchedCodeCount?: number;
   unmatchedCodeCount?: number;

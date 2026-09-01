@@ -7,10 +7,14 @@
 import type { RateListSource } from './rateListSource';
 import type { RateListReconciliation } from './rateListReconciliation';
 import type { RateListCoverage } from './rateListCoverage';
+import type { RateListRangeAudit } from './rateListRangeAudit';
+import type { RateListCategorySplitReport } from './rateListCategorySplitReport';
 
 export interface RateListReport {
   source: RateListSource;
   julySource: RateListSource;
   reconciliation: RateListReconciliation;
   coverage?: RateListCoverage;
+  rangeAudit: RateListRangeAudit[];
+  categorySplit: RateListCategorySplitReport;
 }

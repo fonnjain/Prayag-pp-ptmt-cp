@@ -5,11 +5,14 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { UploadKind } from './uploadKind';
+import type { UploadedFilePeriod } from './uploadedFilePeriod';
 
 export interface UploadedFile {
   id: number;
   kind: UploadKind;
   filename: string;
+  /** @pattern ^\d{4}-(0[1-9]|1[0-2])$ */
+  period: UploadedFilePeriod;
   uploadedAt: string;
   rowCount: number;
 }

@@ -372,10 +372,14 @@ export const recomputeSeasonalityResponse = zod.object({
 })
 
 
+export const listUploadsResponsePeriodRegExp = new RegExp('^\\d{4}-(0[1-9]|1[0-2])$');
+
+
 export const listUploadsResponseItem = zod.object({
   "id": zod.number(),
   "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock', 'plumbing_fg_stock', 'rate_list']),
   "filename": zod.string(),
+  "period": zod.string().regex(listUploadsResponsePeriodRegExp).nullable(),
   "uploadedAt": zod.string().datetime({}),
   "rowCount": zod.number()
 })
@@ -386,8 +390,12 @@ export const createUploadParams = zod.object({
   "kind": zod.enum(['pending_orders', 'last_month_pending', 'current_stock', 'plumbing_fg_stock', 'rate_list'])
 })
 
+export const createUploadBodyPeriodRegExp = new RegExp('^\\d{4}-(0[1-9]|1[0-2])$');
+
+
 export const createUploadBody = zod.object({
-  "file": zod.instanceof(File)
+  "file": zod.instanceof(File),
+  "period": zod.string().regex(createUploadBodyPeriodRegExp).optional().describe('Planning month represented by this upload (YYYY-MM).')
 })
 
 
@@ -475,6 +483,7 @@ export const getMasterProductRateListReportResponse = zod.object({
 }).nullable(),
   "reconciliation": zod.object({
   "rateListCodeCount": zod.number().optional(),
+  "rosterCodeCount": zod.number().optional(),
   "sourceCodeCount": zod.number().optional(),
   "matchedCodeCount": zod.number().optional(),
   "unmatchedCodeCount": zod.number().optional(),
@@ -492,6 +501,7 @@ export const getMasterProductRateListReportResponse = zod.object({
   "crossSegmentCodeCount": zod.number().optional(),
   "legacyReconciliation": zod.object({
   "rateListCodeCount": zod.number().optional(),
+  "rosterCodeCount": zod.number().optional(),
   "sourceCodeCount": zod.number().optional(),
   "matchedCodeCount": zod.number().optional(),
   "unmatchedCodeCount": zod.number().optional(),
@@ -510,7 +520,43 @@ export const getMasterProductRateListReportResponse = zod.object({
   "code": zod.string(),
   "quantity": zod.number()
 })).optional()
-}).nullish()
+}).nullish(),
+  "rangeAudit": zod.array(zod.object({
+  "rangeName": zod.string(),
+  "category": zod.string(),
+  "codeCount": zod.number()
+})),
+  "categorySplit": zod.object({
+  "before": zod.array(zod.object({
+  "category": zod.string(),
+  "codeCount": zod.number(),
+  "julySourceQuantity": zod.number(),
+  "multiplier": zod.number().nullable()
+})),
+  "after": zod.array(zod.object({
+  "category": zod.string(),
+  "codeCount": zod.number(),
+  "julySourceQuantity": zod.number(),
+  "multiplier": zod.number().nullable()
+}))
+})
+})
+
+
+/**
+ * @summary Show authoritative MRP provenance, coverage, disagreements, and the PTMT hold
+ */
+export const getMasterProductMrpReportResponse = zod.object({
+  "source": zod.record(zod.string(), zod.unknown()).nullable(),
+  "summary": zod.record(zod.string(), zod.unknown()).nullable()
+})
+
+
+/**
+ * @summary Import and hold an authoritative MRP workbook for review
+ */
+export const importMasterProductMrpBody = zod.object({
+  "file": zod.instanceof(File)
 })
 
 
@@ -523,7 +569,7 @@ export const listMasterProductsQueryParams = zod.object({
   "segment": zod.enum(['PTMT', 'Plumbing', 'CP']).default(listMasterProductsQuerySegmentDefault),
   "status": zod.enum(['classified', 'unclassified', 'ambiguous']).optional(),
   "category": zod.string().optional(),
-  "source": zod.enum(['workbook', 'catalogue', 'seed']).optional(),
+  "source": zod.enum(['workbook', 'rate-list', 'catalogue', 'seed']).optional(),
   "search": zod.string().optional()
 })
 
@@ -537,7 +583,7 @@ export const listMasterProductsResponse = zod.object({
   "division": zod.string().nullable(),
   "category": zod.string(),
   "status": zod.enum(['classified', 'unclassified', 'ambiguous']),
-  "source": zod.union([zod.literal('workbook'),zod.literal('rate-list'),zod.literal('catalogue'),zod.literal('seed'),zod.literal(null)]).nullable(),
+  "source": zod.union([zod.literal('workbook'),zod.literal('rate-list'),zod.literal('catalogue'),zod.literal('seed'),zod.literal('mrp'),zod.literal(null)]).nullable(),
   "note": zod.string().nullable(),
   "inCatalogue": zod.boolean(),
   "inPlanningWorkbook": zod.boolean(),
@@ -1239,6 +1285,14 @@ export const getPlanSummaryResponse = zod.object({
   "filename": zod.string().optional(),
   "capturedAt": zod.string().datetime({}).optional()
 })).optional()
+})
+
+
+export const listAvailableMonthsResponseMonthsItemRegExp = new RegExp('^\\d{4}-(0[1-9]|1[0-2])$');
+
+
+export const listAvailableMonthsResponse = zod.object({
+  "months": zod.array(zod.string().regex(listAvailableMonthsResponseMonthsItemRegExp)).describe('Calendar months with a plan run or immutable plant snapshot, sorted newest first.')
 })
 
 

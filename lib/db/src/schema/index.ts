@@ -30,3 +30,4 @@ export * from "./plan-schedule-results";
 // transitional modules; browser auth uses users/user_sessions above.
 export * from "./user-auth";
 export * from "./user-activity";
+export * from "./mrp-controls";
