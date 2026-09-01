@@ -12,6 +12,7 @@ import {
 import { AppLayout } from "@/components/layout/app-layout";
 import { categorySlug } from "@/lib/category-slug";
 import { useSegment } from "@/contexts/segment-context";
+import { useMonth } from "@workspace/month-filter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,12 +24,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { currentMonth, formatMonthLabel } from "@/lib/month";
+import { formatMonthLabel } from "@/lib/month";
 import { cn } from "@/lib/utils";
 import { FileSpreadsheet, Settings2 } from "lucide-react";
 import { exportXlsx } from "@/lib/excel";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { MonthEmptyState } from "@/components/month-empty-state";
 
 const WEEK_ROW_CLS: Record<number, string> = {
   1: "bg-orange-50",
@@ -150,7 +152,7 @@ function BandEditor({ band, category, onClose }: BandEditorProps) {
 export default function CategoryPage() {
   const { slug } = useParams<{ slug: string }>();
   const { segment } = useSegment();
-  const month = currentMonth();
+  const { month, isMonthAvailable, isAvailableMonthsLoading } = useMonth();
   const [weeklyView, setWeeklyView] = useState(false);
   const [editingBands, setEditingBands] = useState(false);
 
@@ -187,6 +189,7 @@ export default function CategoryPage() {
   const scheduledCount = items.filter((i) => i.week !== null && i.maxProduction > 0).length;
   const unscheduledCount = items.filter((i) => i.week === null && i.maxProduction > 0 && i.cover !== "OS").length;
   const osCount = items.filter((i) => i.cover === "OS" && i.maxProduction > 0).length;
+  const showMonthEmpty = !isAvailableMonthsLoading && !isMonthAvailable;
 
   const handleExport = () => {
     if (weeklyView) {
@@ -252,7 +255,7 @@ export default function CategoryPage() {
             >
               Weekly Release
             </Button>
-            {!isLoading && !isError && items.length > 0 && (
+            {!showMonthEmpty && !isLoading && !isError && items.length > 0 && (
               <Button variant="outline" size="sm" onClick={handleExport}>
                 <FileSpreadsheet className="h-4 w-4 mr-2" /> Export Excel
               </Button>
@@ -260,7 +263,9 @@ export default function CategoryPage() {
           </div>
         </div>
 
-        {!isLoading && !isError && (
+        {showMonthEmpty ? (
+          <MonthEmptyState segment={segment} />
+        ) : !isLoading && !isError && (
           <div className="flex flex-wrap gap-2 text-sm">
             {weeklyView ? (
               <>
@@ -313,7 +318,7 @@ export default function CategoryPage() {
           </p>
         )}
 
-        {!isLoading && !isError && (
+        {!showMonthEmpty && !isLoading && !isError && (
           <>
             <Card>
               <CardContent className="pt-6 overflow-x-auto">

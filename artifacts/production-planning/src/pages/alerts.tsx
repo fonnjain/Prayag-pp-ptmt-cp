@@ -13,7 +13,9 @@ import {
 } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { useSegment } from "@/contexts/segment-context";
-import { currentMonth, formatMonthLabel } from "@/lib/month";
+import { useMonth } from "@workspace/month-filter";
+import { formatMonthLabel } from "@/lib/month";
+import { MonthEmptyState } from "@/components/month-empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -106,7 +108,7 @@ function EmptyState({ label, suppressed = false }: { label: string; suppressed?:
 
 export default function AlertsPage() {
   const { segment } = useSegment();
-  const month = currentMonth();
+  const { month, isMonthAvailable, isAvailableMonthsLoading } = useMonth();
   const { toast } = useToast();
   const alertsQuery = useGetAlerts({ month, segment }, { query: { staleTime: 30_000 } as any });
   const historyQuery = useGetAlertsHistory({ segment, limit: 100 }, { query: { staleTime: 30_000 } as any });
@@ -127,6 +129,7 @@ export default function AlertsPage() {
   const active = useMemo(() => alerts.filter((alert) => alert.state === "fired"), [alerts]);
   const muted = useMemo(() => alerts.filter((alert) => alert.state === "muted"), [alerts]);
   const suppressed = useMemo(() => alerts.filter((alert) => alert.state === "suppressed"), [alerts]);
+  const showMonthEmpty = !isAvailableMonthsLoading && !isMonthAvailable;
 
   function refresh() {
     void alertsQuery.refetch();
@@ -175,7 +178,9 @@ export default function AlertsPage() {
           <Button variant="outline" onClick={refresh} disabled={alertsQuery.isFetching}><RotateCcw className={cn("mr-2 h-4 w-4", alertsQuery.isFetching && "animate-spin")} />Refresh evaluation</Button>
         </div>
 
-        {alertsQuery.isError ? (
+        {showMonthEmpty ? (
+          <MonthEmptyState segment={segment} />
+        ) : alertsQuery.isError ? (
           <Card><CardContent className="flex items-center gap-3 p-6 text-sm text-destructive"><AlertCircle className="h-5 w-5" />The alert evaluation could not be loaded. Check the source status and try again.</CardContent></Card>
         ) : alertsQuery.isLoading ? (
           <Card><CardContent className="flex items-center gap-3 p-8 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />Evaluating source quality and production rules…</CardContent></Card>

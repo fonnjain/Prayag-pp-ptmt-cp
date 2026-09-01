@@ -14,6 +14,7 @@ import {
 import { ApiError } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { useSegment } from "@/contexts/segment-context";
+import { useMonth, formatMonthLabel } from "@workspace/month-filter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1045,10 +1046,9 @@ function RunHistory({ month, segment, selectedRunId, onSelect }: { month: string
 
 export default function CorrectivePage() {
   const now = new Date();
-  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
   const { segment } = useSegment();
-  const [month, setMonth] = useState(defaultMonth);
+  const { month, setMonth, availableMonths, currentMonth, isAvailableMonthsLoading } = useMonth();
   const [mode, setMode] = useState<"weekClosed" | "asOfDate">("weekClosed");
   const [weekClosed, setWeekClosed] = useState(1);
   const [asOfDate, setAsOfDate] = useState(() => now.toISOString().slice(0, 10));
@@ -1122,12 +1122,22 @@ export default function CorrectivePage() {
             <div className="flex flex-wrap items-end gap-4">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Month</label>
-                <Input
-                  type="month"
+                <select
                   value={month}
+                  aria-label="Plan month"
                   onChange={e => setMonth(e.target.value)}
-                  className="w-36 h-8 text-sm"
-                />
+                  className="w-44 h-8 rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  {!availableMonths.includes(currentMonth) && (
+                    <option value={currentMonth}>{formatMonthLabel(currentMonth)} (current)</option>
+                  )}
+                  {availableMonths.map((availableMonth) => (
+                    <option key={availableMonth} value={availableMonth}>{formatMonthLabel(availableMonth)}</option>
+                  ))}
+                  {!isAvailableMonthsLoading && !availableMonths.includes(month) && (
+                    <option value={month}>{formatMonthLabel(month)} (selected)</option>
+                  )}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Mode</label>

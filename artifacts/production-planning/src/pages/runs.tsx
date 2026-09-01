@@ -23,7 +23,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { currentMonth, formatMonthLabel } from "@/lib/month";
+import { formatMonthLabel } from "@/lib/month";
 import { cn, fmtDateTime } from "@/lib/utils";
 import { DateInput } from "@/components/date-input";
 import {
@@ -39,9 +39,31 @@ import {
   type PlanRunDrift,
 } from "@workspace/api-client-react";
 import { useSegment } from "@/contexts/segment-context";
+import { useMonth } from "@workspace/month-filter";
+import { MonthEmptyState } from "@/components/month-empty-state";
 import { Trash2, GitCompare, Activity, Download } from "lucide-react";
 
 const HIGH_MONTHLY_P90_CV_PCT = 25;
+
+function planRunErrorDetails(error: unknown): { title: string; description: string } {
+  const data = error && typeof error === "object" && "data" in error
+    ? (error as { data?: unknown }).data
+    : null;
+  const body = data && typeof data === "object"
+    ? data as { error?: unknown; message?: unknown }
+    : null;
+  const message = typeof body?.message === "string" ? body.message : null;
+  if (body?.error === "PTMT_MRP_APPROVAL_REQUIRED") {
+    return {
+      title: "Production Plan held for MRP approval",
+      description: message ?? "Authoritative MRP category and capacity approval is required before a PTMT Production Plan can be created.",
+    };
+  }
+  return {
+    title: "Failed to freeze plan",
+    description: message ?? (error instanceof Error ? error.message : "Check that all data sources are available."),
+  };
+}
 
 function statusColor(status: string) {
   return status === "finalized"
@@ -570,7 +592,7 @@ function Pass2AuditView({ runId, onClose }: { runId: number; onClose: () => void
 }
 
 export default function RunsPage() {
-  const month = currentMonth();
+  const { month, isMonthAvailable, isAvailableMonthsLoading } = useMonth();
   const { segment } = useSegment();
   const { toast } = useToast();
   const { data, isLoading, refetch } = useListPlanRuns({ month, segment });
@@ -592,6 +614,7 @@ export default function RunsPage() {
 
   const runs = (data as unknown as PlanRunSummary[] | undefined) ?? [];
   const temporaryRuns = runs.filter((run) => run.planType === "temporary" && run.status === "finalized");
+  const showMonthEmpty = !isAvailableMonthsLoading && !isMonthAvailable;
 
   useEffect(() => {
     if (planType === "production" && segment === "PTMT" && !temporaryRunId && temporaryRuns[0]) {
@@ -638,8 +661,10 @@ export default function RunsPage() {
           });
           refetch();
         },
-        onError: () =>
-          toast({ title: "Failed to freeze plan", description: "Check that all data sources are available.", variant: "destructive" }),
+        onError: (error) => {
+          const details = planRunErrorDetails(error);
+          toast({ ...details, variant: "destructive" });
+        },
         onSettled: () => setCreatingPlan(false),
       },
     );
@@ -800,6 +825,8 @@ export default function RunsPage() {
         {auditRunId !== null && (
           <Pass2AuditView runId={auditRunId} onClose={() => setAuditRunId(null)} />
         )}
+
+        {showMonthEmpty && <MonthEmptyState segment={segment} />}
 
         <Card>
           <CardHeader>

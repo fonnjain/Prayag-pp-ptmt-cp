@@ -2,6 +2,7 @@ import { useGetPlanSummary, useListPlanItems, type PlanSummary, type PlanItem, u
 import { AppLayout } from "@/components/layout/app-layout";
 import { categorySlug } from "@/lib/category-slug";
 import { useSegment } from "@/contexts/segment-context";
+import { useMonth } from "@workspace/month-filter";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,11 +14,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { currentMonth, formatMonthLabel } from "@/lib/month";
+import { formatMonthLabel } from "@/lib/month";
 import { cn } from "@/lib/utils";
 import { FileSpreadsheet, RefreshCw } from "lucide-react";
 import { exportXlsx } from "@/lib/excel";
 import { useToast } from "@/hooks/use-toast";
+import { MonthEmptyState } from "@/components/month-empty-state";
 
 function ragBadge(pct: number | null | undefined): string {
   if (pct === null || pct === undefined) return "";
@@ -90,7 +92,7 @@ function WeekCell({
 }
 
 export default function SummaryPage() {
-  const month = currentMonth();
+  const { month, isMonthAvailable, isAvailableMonthsLoading } = useMonth();
   const { segment } = useSegment();
   const { data, isLoading, isError } = useGetPlanSummary({ month, segment });
   const createRun = useCreatePlanRun();
@@ -123,6 +125,7 @@ export default function SummaryPage() {
   const grandDemand = (summary as any)?.grandDemandTotal ?? grandMax;
   const grandFitted = (summary as any)?.grandFittedTotal ?? null;
   const fittedBasis = grandFitted == null ? "not scheduled" : "executable";
+  const showMonthEmpty = !isAvailableMonthsLoading && !isMonthAvailable;
 
   const allItems = (itemsData as unknown as PlanItem[] | undefined) ?? [];
   const weeklyTotals = computeWeeklyTotals(allItems);
@@ -169,7 +172,7 @@ export default function SummaryPage() {
               <RefreshCw className={cn("h-4 w-4 mr-2", createRun.isPending && "animate-spin")} />
               {createRun.isPending ? "Running plan…" : "Run Plan now"}
             </Button>
-            {!isLoading && !isError && (
+            {!showMonthEmpty && !isLoading && !isError && (
               <Button variant="outline" size="sm" onClick={() => exportXlsx(`plan-summary-${month}`, [
                 { name: "Summary", rows: categories.map((cat) => {
                   const wt = weeklyTotals.find((t) => t.category === cat.category);
@@ -199,13 +202,15 @@ export default function SummaryPage() {
         </div>
 
         {isLoading && <p className="text-sm text-gray-500">Loading summary...</p>}
-        {isError && (
+        {isError && !showMonthEmpty && (
           <p className="text-sm text-red-600">
             Could not load the summary. Make sure the required data sources are uploaded/synced.
           </p>
         )}
 
-        {!isLoading && !isError && (
+        {showMonthEmpty ? (
+          <MonthEmptyState segment={segment} />
+        ) : !isLoading && !isError && (
           <Card>
             <CardContent className="pt-4 overflow-x-auto">
               <Table>

@@ -17,7 +17,9 @@ import {
   type CategoryCapacity,
 } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/app-layout";
+import { PlanningReadiness, uploadMatchesMonth } from "@/components/planning-readiness";
 import { useSegment } from "@/contexts/segment-context";
+import { useMonth } from "@workspace/month-filter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -86,17 +88,21 @@ function statusColor(status: SyncSource["status"]): string {
 
 function UploadRow({ kind, label, hint, required }: UploadKindDef) {
   const { toast } = useToast();
+  const { month } = useMonth();
   const { data: uploads, refetch } = useListUploads();
   const createUpload = useCreateUpload();
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const latest = ((uploads as unknown as UploadedFile[] | undefined) ?? [])
+  const kindUploads = ((uploads as unknown as UploadedFile[] | undefined) ?? [])
     .filter((u) => u.kind === kind)
-    .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime())[0];
+    .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+  // Prefer the selected month's source in the row. If it is absent, retain
+  // the newest other-period upload so the operator sees exactly what is stale.
+  const latest = kindUploads.find((upload) => uploadMatchesMonth(upload, month)) ?? kindUploads[0];
 
   const handleFile = (file: File) => {
     createUpload.mutate(
-      { kind, data: { file } },
+      { kind, data: { file, period: month } },
       {
         onSuccess: () => {
           toast({ title: "Upload complete", description: `${file.name} processed successfully.` });
@@ -124,8 +130,9 @@ function UploadRow({ kind, label, hint, required }: UploadKindDef) {
         </div>
         <p className="text-xs text-gray-500 mt-0.5">{hint}</p>
         {latest ? (
-          <p className="text-xs text-green-700 mt-1">
-            ✓ {latest.filename} — {latest.rowCount} rows — {fmtDateTime(latest.uploadedAt)}
+          <p className={`text-xs mt-1 ${!required || uploadMatchesMonth(latest, month) ? "text-green-700" : "text-amber-700"}`}>
+            {!required || uploadMatchesMonth(latest, month) ? "✓" : "⚠"} {latest.filename} — {latest.rowCount} rows — {fmtDateTime(latest.uploadedAt)}
+            {required && !uploadMatchesMonth(latest, month) && ` — not a ${month} input`}
           </p>
         ) : (
           <p className="text-xs text-amber-600 mt-1">⚠ No file uploaded yet — plan cannot run without this file</p>
@@ -1858,6 +1865,8 @@ export default function DataPage() {
               : "One global upload (DATA.xlsx, shared with Plumbing) + two local PTMT uploads. Avg 3-Month Sale comes live from the Sale 26-27 Google Sheets connection."}
           </p>
         </div>
+
+        <PlanningReadiness />
 
         {/* ── Global uploads — shared by both PTMT and Plumbing ── */}
         <Card>

@@ -3,11 +3,13 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { currentMonth, formatMonthLabel } from "@/lib/month";
+import { formatMonthLabel } from "@/lib/month";
 import { useCreatePlanRun } from "@workspace/api-client-react";
 import { RefreshCw, FileSpreadsheet, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSegment } from "@/contexts/segment-context";
+import { useMonth } from "@workspace/month-filter";
+import { MonthEmptyState } from "@/components/month-empty-state";
 
 async function downloadFile(url: string, filename: string) {
   const response = await fetch(url);
@@ -92,7 +94,7 @@ function DownloadPair({
 }
 
 export default function ExportPage() {
-  const month = currentMonth();
+  const { month, isMonthAvailable, isAvailableMonthsLoading } = useMonth();
   const { segment } = useSegment();
   const { toast } = useToast();
   const [downloading, setDownloading] = useState<ExportKind | null>(null);
@@ -114,6 +116,10 @@ export default function ExportPage() {
   const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
 
   const handleExport = async (kind: ExportKind) => {
+    if (!isMonthAvailable) {
+      toast({ title: "No plan data", description: `There is no recorded plan for ${formatMonthLabel(month)} yet.`, variant: "destructive" });
+      return;
+    }
     setDownloading(kind);
     try {
       let path: string;
@@ -175,6 +181,8 @@ export default function ExportPage() {
             {createRun.isPending ? "Running plan…" : "Run Plan now"}
           </Button>
         </div>
+
+        {!isAvailableMonthsLoading && !isMonthAvailable && <MonthEmptyState segment={segment} />}
 
         {/* Production Plan row */}
         <div>
