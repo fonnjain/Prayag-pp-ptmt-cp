@@ -1,6 +1,16 @@
 import { db, plantIngestionCacheTable, plantSourceConfigsTable, itemMasterTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
-import { fetchPlumbingSheet3Production, getTabValues, getWorkbookIdForMonth, listTabs, SHEET_IDS, itemKey, normalizeCode } from "./sheets";
+import {
+  fetchMonitoringPlumbingSheet3Production,
+  fetchPlumbingSheet3Production,
+  getTabValues,
+  getWorkbookIdForMonth,
+  listTabs,
+  resolveMonitoringWorkbookForMonth,
+  SHEET_IDS,
+  itemKey,
+  normalizeCode,
+} from "./sheets";
 import { logger } from "./logger";
 import { buildPlanItems } from "../routes/plan";
 import { getPlanVersionTimeline, type PlanVersion } from "./plant-plan-timeline";
@@ -86,8 +96,12 @@ export async function refreshPlumbingActualsCache(month: string): Promise<{
   actuals: DailyActualRow[];
   snapshotDate: string | null;
   cachedAt: Date;
+  sourceMonth: string;
+  usedFallback: boolean;
+  warning: string | null;
 }> {
-  const rows = await fetchPlumbingSheet3Production(month);
+  const source = await fetchMonitoringPlumbingSheet3Production(month);
+  const rows = source.rows;
   const actuals = rows.map((row) => ({
     date: row.dateStr,
     itemCode: row.rawCode,
@@ -111,8 +125,18 @@ export async function refreshPlumbingActualsCache(month: string): Promise<{
     set: { snapshotDate: snapshotDate ?? "", rawActualsJson: actuals, cachedAt },
   });
 
-  logger.info({ month, rowCount: actuals.length, snapshotDate }, "plant-ingestion: cached Plumbing Sheet3 actuals");
-  return { actuals, snapshotDate, cachedAt };
+  logger.info(
+    { month, sourceMonth: source.sourceMonth, usedFallback: source.usedFallback, rowCount: actuals.length, snapshotDate },
+    "plant-ingestion: cached Plumbing Sheet3 actuals",
+  );
+  return {
+    actuals,
+    snapshotDate,
+    cachedAt,
+    sourceMonth: source.sourceMonth,
+    usedFallback: source.usedFallback,
+    warning: source.warning,
+  };
 }
 
 export async function fetchDailyActuals(
@@ -241,6 +265,31 @@ export async function fetchDailyActuals(
 
   logger.info({ month, segment, workbookId, sourceTab, rowCount: result.length, lastDate }, "plant-ingestion: fetched monthly production actuals");
   return result;
+}
+
+export async function fetchMonitoringDailyActuals(
+  month: string,
+  options: { forceRefresh?: boolean; requireFresh?: boolean } = {},
+): Promise<{
+  actuals: DailyActualRow[];
+  requestedMonth: string;
+  sourceMonth: string;
+  workbookId: string;
+  usedFallback: boolean;
+  warning: string | null;
+}> {
+  const resolution = await resolveMonitoringWorkbookForMonth("PTMT", month);
+  // Reuse the strict parser/cache for the actual source month. The fallback
+  // resolver only chooses the source; it never changes the strict reader.
+  const actuals = await fetchDailyActuals(resolution.sourceMonth, options, "PTMT");
+  return {
+    actuals,
+    requestedMonth: month,
+    sourceMonth: resolution.sourceMonth,
+    workbookId: resolution.workbookId,
+    usedFallback: resolution.usedFallback,
+    warning: resolution.warning,
+  };
 }
 
 export async function fetchMonthlyTargets(month: string): Promise<PlantTargetRow[]> {

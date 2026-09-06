@@ -91,6 +91,7 @@ export const PLANNING_SHEET_READ_ALLOWLIST = [
   "fetchPlumbingPlanData",
   "fetchPlumbingBomWeights",
   "fetchLivePendingOrderTotals",
+  "fetchRateList",
 ] as const;
 
 function runInAllowedReadScope<T>(fetcher: string, fn: () => Promise<T>): Promise<T> {
@@ -202,6 +203,7 @@ export class WorkbookResolutionError extends Error {
   readonly division: string;
   readonly month: string;
   readonly pattern: string;
+  readonly detail: string | null;
   constructor(division: string, month: string, pattern: string, detail?: string) {
     super(
       `No ${division} workbook found for ${month} — searched Drive for title pattern "${pattern}"` +
@@ -212,6 +214,7 @@ export class WorkbookResolutionError extends Error {
     this.division = division;
     this.month = month;
     this.pattern = pattern;
+    this.detail = detail ?? null;
   }
 }
 
@@ -225,7 +228,78 @@ const WORKBOOK_TITLE_PATTERNS: Record<WorkbookDivision, { contains: string; patt
   Plumbing: { contains: "Daily Production PLUMBING", pattern: "Daily Production PLUMBING <MON> ' <YYYY>" },
 };
 
+function workbookTitleMatchesDivision(division: WorkbookDivision, title: string): boolean {
+  if (division !== "PTMT-Machine") return true;
+  // The plant has used several prefixes and punctuation variants for this
+  // workbook. Match the stable semantic family, not one exact title string.
+  return /PTMT/i.test(title) && /(DATE\s*SHEET|MONTHLY\s*REPORT)/i.test(title);
+}
+
 export type WorkbookDivision = "PTMT" | "PTMT-Machine" | "Plumbing";
+
+export interface MonitoringWorkbookResolution {
+  division: WorkbookDivision;
+  requestedMonth: string;
+  sourceMonth: string;
+  workbookId: string;
+  title: string | null;
+  modifiedTime: string | null;
+  source: "pinned" | "static" | "auto";
+  titleMonthMatch: boolean;
+  usedFallback: boolean;
+  warning: string | null;
+}
+
+function previousMonth(month: string, offset: number): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, monthNumber - 1 - offset, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Monitoring-only resolver. A missing requested-month workbook is safe to
+ * display with the latest available prior workbook, but plan inputs and
+ * corrective reads must continue using resolveWorkbookForMonth/getWorkbookIdForMonth.
+ */
+export async function resolveMonitoringWorkbookForMonth(
+  division: WorkbookDivision,
+  requestedMonth: string,
+): Promise<MonitoringWorkbookResolution> {
+  try {
+    const resolved = await resolveWorkbookForMonth(division, requestedMonth);
+    return {
+      ...resolved,
+      division,
+      requestedMonth,
+      sourceMonth: requestedMonth,
+      usedFallback: false,
+      warning: null,
+    };
+  } catch (err) {
+    if (!(err instanceof WorkbookResolutionError) || err.detail) throw err;
+    for (let offset = 1; offset <= 36; offset++) {
+      const sourceMonth = previousMonth(requestedMonth, offset);
+      try {
+        const resolved = await resolveWorkbookForMonth(division, sourceMonth);
+        const warning =
+          `No ${division} monitoring workbook was found for ${requestedMonth}. ` +
+          `Showing the latest available source month, ${sourceMonth}.`;
+        logger.warn({ division, requestedMonth, sourceMonth }, "Monitoring workbook fallback selected");
+        return {
+          ...resolved,
+          division,
+          requestedMonth,
+          sourceMonth,
+          usedFallback: true,
+          warning,
+        };
+      } catch (candidateErr) {
+        if (!(candidateErr instanceof WorkbookResolutionError) || candidateErr.detail) throw candidateErr;
+      }
+    }
+    throw err;
+  }
+}
 
 // ── IST calendar helpers (plant timezone) ──────────────────────────────────
 // All operational month/day math must use IST so a UTC-hosted server doesn't
@@ -353,8 +427,9 @@ export async function resolveWorkbookForMonth(
   // 3. Drive auto-discovery — title pattern + month/year required; most recent modifiedTime wins.
   let files: Array<{ id: string; name: string; modifiedTime: string }>;
   try {
+    const driveNameQuery = division === "PTMT-Machine" ? "PTMT" : contains;
     const q = encodeURIComponent(
-      `name contains '${contains}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`,
+      `name contains '${driveNameQuery}' and mimeType != 'application/vnd.google-apps.folder' and trashed=false`,
     );
     const data = await driveProxyJson(
       `/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime%20desc&pageSize=30`,
@@ -366,7 +441,7 @@ export async function resolveWorkbookForMonth(
   }
 
   const matches = files
-    .filter((f) => titleMatchesMonth(f.name, month))
+    .filter((f) => workbookTitleMatchesDivision(division, f.name) && titleMatchesMonth(f.name, month))
     .sort((a, b) => (b.modifiedTime > a.modifiedTime ? 1 : -1));
 
   if (matches.length === 0) {
@@ -574,7 +649,7 @@ async function findPlumbingWorkbookIds(month: string): Promise<string[]> {
  *                     the Drive name-contains search — used for manual user-supplied queries.
  */
 export async function searchWorkbookCandidates(
-  division: "PTMT" | "Plumbing",
+  division: "PTMT" | "PTMT-Machine" | "Plumbing",
   month: string,
   customQuery?: string,
 ): Promise<Array<{ fileId: string; fileName: string; modifiedTime: string }>> {
@@ -583,7 +658,9 @@ export async function searchWorkbookCandidates(
     const abbrevs = _MONTH_ABBREVS[mo] ?? [];
     const yearShort = year.slice(2); // e.g. "26"
 
-    const keyword = division === "PTMT" ? "PTMT" : "PLUMBING";
+    const keyword = division === "PTMT-Machine"
+      ? "PTMT Date Sheet & Monthly Report"
+      : division === "PTMT" ? "PTMT" : "PLUMBING";
     const nameQ = customQuery ?? keyword;
     const q = encodeURIComponent(
       `name contains '${nameQ}' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false`,
@@ -640,6 +717,63 @@ export async function getTabValues(sheetId: string, tab: string, range = "A1:Z20
 export async function throttledGetTabValues(sheetId: string, tab: string, range?: string): Promise<string[][]> {
   await sleep(1100);
   return getTabValues(sheetId, tab, range);
+}
+
+let _rateListCache: { rows: Record<string, unknown>[]; expires: number } | null = null;
+
+/**
+ * Read the governed PTMT rate list from the live Google Sheet. The sheet is
+ * allowed during plan builds because it is reference data, not a stock/pending
+ * input. A short cache prevents a plan page refresh from consuming the Sheets
+ * quota repeatedly; callers keep their DB/CSV source as an explicit fallback.
+ */
+export async function fetchRateListSheetRows(): Promise<Record<string, unknown>[]> {
+  return runInAllowedReadScope("fetchRateList", async () => {
+    if (_rateListCache && _rateListCache.expires > Date.now()) return _rateListCache.rows;
+    const tabs = await listTabs(SHEET_IDS.rateList);
+    // SOURCE TAB is provenance already encoded by the worksheet name. Do not
+    // require Prayag to duplicate that value as a column in every tab.
+    const required = new Set(["code", "name", "range", "rangename"]);
+    const rows: Record<string, unknown>[] = [];
+
+    for (const tab of tabs) {
+      const values = await getTabValues(SHEET_IDS.rateList, tab, "A1:Z50000");
+      let headerIndex = -1;
+      let headers: string[] = [];
+      for (let i = 0; i < Math.min(values.length, 15); i++) {
+        const candidate = (values[i] ?? []).map((value) => String(value ?? "").trim());
+        const normalized = new Set(candidate.map((value) => value.toLowerCase().replace(/[^a-z0-9]/g, "")));
+        if ([...required].every((header) => normalized.has(header))) {
+          headerIndex = i;
+          headers = candidate;
+          break;
+        }
+      }
+      if (headerIndex < 0) continue;
+
+      for (const valuesRow of values.slice(headerIndex + 1)) {
+        if (!valuesRow?.some((value) => String(value ?? "").trim() !== "")) continue;
+        const row: Record<string, unknown> = {};
+        headers.forEach((header, index) => {
+          if (header) row[header] = valuesRow[index] ?? null;
+        });
+        const sourceTabKey = headers.find((header) => header.toLowerCase().replace(/[^a-z0-9]/g, "") === "sourcetab");
+        if (sourceTabKey && String(row[sourceTabKey] ?? "").trim()) {
+          row.source_tab = row[sourceTabKey];
+        } else {
+          row.source_tab = tab;
+        }
+        rows.push(row);
+      }
+    }
+
+    if (rows.length === 0) {
+      throw new Error(`Rate-list Google Sheet ${SHEET_IDS.rateList} has no worksheet with the required columns`);
+    }
+    _rateListCache = { rows, expires: Date.now() + 10 * 60 * 1000 };
+    logger.info({ tabs, rows: rows.length }, "Live PTMT rate list loaded from Google Sheets");
+    return rows;
+  });
 }
 
 const MONTH_NAMES = [
@@ -1103,16 +1237,14 @@ const _sheet3Cache = new Map<string, { rows: PlumbingSheet3Row[]; expires: numbe
  *
  * Cached 15 min in-process.
  */
-export async function fetchPlumbingSheet3Production(month: string): Promise<PlumbingSheet3Row[]> {
-  guardPlanningRead("fetchPlumbingSheet3Production"); // monitoring/corrective actuals — never in plan build
+async function readPlumbingSheet3Production(
+  month: string,
+  workbookId: string,
+  cacheKey: string,
+): Promise<PlumbingSheet3Row[]> {
   const now = Date.now();
-  const cached = _sheet3Cache.get(month);
+  const cached = _sheet3Cache.get(cacheKey);
   if (cached && cached.expires > now) return cached.rows;
-
-  // Throws WorkbookResolutionError when no August-titled (etc.) workbook exists —
-  // a missing month's sheet must be an error, never "zero production".
-  const workbookId = await getWorkbookIdForMonth("Plumbing", month);
-
   const [year, mon] = month.split("-").map(Number);
 
   await sleep(1100); // throttle: Sheets API ~60 req/min
@@ -1154,14 +1286,49 @@ export async function fetchPlumbingSheet3Production(month: string): Promise<Plum
     );
   }
 
-  _sheet3Cache.set(month, { rows, expires: now + 15 * 60 * 1000 });
+  _sheet3Cache.set(cacheKey, { rows, expires: now + 15 * 60 * 1000 });
   logger.info({ month, workbookId, rowCount: rows.length, candidateRows, unparseableDates }, "fetchPlumbingSheet3Production: loaded");
   return rows;
+}
+
+export async function fetchPlumbingSheet3Production(month: string): Promise<PlumbingSheet3Row[]> {
+  guardPlanningRead("fetchPlumbingSheet3Production"); // monitoring/corrective actuals — never in plan build
+  // Strict by design: corrective replans and validation must never use stale actuals.
+  const workbookId = await getWorkbookIdForMonth("Plumbing", month);
+  return readPlumbingSheet3Production(month, workbookId, month);
+}
+
+export async function fetchMonitoringPlumbingSheet3Production(month: string): Promise<{
+  rows: PlumbingSheet3Row[];
+  requestedMonth: string;
+  sourceMonth: string;
+  workbookId: string;
+  workbookTitle: string | null;
+  usedFallback: boolean;
+  warning: string | null;
+}> {
+  guardPlanningRead("fetchMonitoringPlumbingSheet3Production");
+  const resolution = await resolveMonitoringWorkbookForMonth("Plumbing", month);
+  const rows = await readPlumbingSheet3Production(
+    resolution.sourceMonth,
+    resolution.workbookId,
+    `monitoring:${month}`,
+  );
+  return {
+    rows,
+    requestedMonth: resolution.requestedMonth,
+    sourceMonth: resolution.sourceMonth,
+    workbookId: resolution.workbookId,
+    workbookTitle: resolution.title,
+    usedFallback: resolution.usedFallback,
+    warning: resolution.warning,
+  };
 }
 
 /** Invalidate the Sheet3 in-process cache for a given month (e.g. after workbook config update). */
 export function invalidatePlumbingSheet3Cache(month: string): void {
   _sheet3Cache.delete(month);
+  _sheet3Cache.delete(`monitoring:${month}`);
 }
 
 /**

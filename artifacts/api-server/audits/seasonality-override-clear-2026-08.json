@@ -1,0 +1,672 @@
+{
+  "generatedAt": "2026-09-02T08:04:50.432Z",
+  "month": "2026-08",
+  "basis": "Temporary Plan demand formula with per-item max(…,0) clamping; Pass 2 not involved",
+  "ptmt": {
+    "currentTotal": 651767,
+    "autoTotal": 576766,
+    "currentByCategory": {
+      "Accessorise": {
+        "items": 284,
+        "temporaryPlan": 34732,
+        "minProduction": 17912
+      },
+      "Ball Cock": {
+        "items": 78,
+        "temporaryPlan": 65849,
+        "minProduction": 35925
+      },
+      "Cabinet": {
+        "items": 54,
+        "temporaryPlan": 2581,
+        "minProduction": 1171
+      },
+      "Cistern & Seat Cover": {
+        "items": 226,
+        "temporaryPlan": 47076,
+        "minProduction": 28046
+      },
+      "Cocks Premium": {
+        "items": 656,
+        "temporaryPlan": 6787,
+        "minProduction": 4694
+      },
+      "Cocks Standard": {
+        "items": 1834,
+        "temporaryPlan": 313602,
+        "minProduction": 163930
+      },
+      "Collapsible Waste Pipes": {
+        "items": 9,
+        "temporaryPlan": 1369,
+        "minProduction": 1369
+      },
+      "Faucets & Jetsprays & Shower": {
+        "items": 175,
+        "temporaryPlan": 48764,
+        "minProduction": 28216
+      },
+      "P.V.C. Connections": {
+        "items": 33,
+        "temporaryPlan": 111125,
+        "minProduction": 77188
+      },
+      "Showers Sets": {
+        "items": 33,
+        "temporaryPlan": 6698,
+        "minProduction": 6698
+      },
+      "Special Cock": {
+        "items": 60,
+        "temporaryPlan": 3855,
+        "minProduction": 3855
+      },
+      "Unclassified": {
+        "items": 3111,
+        "temporaryPlan": 4885,
+        "minProduction": 4885
+      },
+      "Waste Pipes": {
+        "items": 15,
+        "temporaryPlan": 4443,
+        "minProduction": 3280
+      }
+    },
+    "autoByCategory": {
+      "Accessorise": {
+        "items": 284,
+        "temporaryPlan": 28076,
+        "minProduction": 17912
+      },
+      "Ball Cock": {
+        "items": 78,
+        "temporaryPlan": 59652,
+        "minProduction": 35925
+      },
+      "Cabinet": {
+        "items": 54,
+        "temporaryPlan": 2595,
+        "minProduction": 1171
+      },
+      "Cistern & Seat Cover": {
+        "items": 226,
+        "temporaryPlan": 54066,
+        "minProduction": 28046
+      },
+      "Cocks Premium": {
+        "items": 656,
+        "temporaryPlan": 8661,
+        "minProduction": 4694
+      },
+      "Cocks Standard": {
+        "items": 1834,
+        "temporaryPlan": 251045,
+        "minProduction": 163930
+      },
+      "Collapsible Waste Pipes": {
+        "items": 9,
+        "temporaryPlan": 1369,
+        "minProduction": 1369
+      },
+      "Faucets & Jetsprays & Shower": {
+        "items": 175,
+        "temporaryPlan": 40297,
+        "minProduction": 28216
+      },
+      "P.V.C. Connections": {
+        "items": 33,
+        "temporaryPlan": 111125,
+        "minProduction": 77188
+      },
+      "Showers Sets": {
+        "items": 33,
+        "temporaryPlan": 6698,
+        "minProduction": 6698
+      },
+      "Special Cock": {
+        "items": 60,
+        "temporaryPlan": 3855,
+        "minProduction": 3855
+      },
+      "Unclassified": {
+        "items": 3111,
+        "temporaryPlan": 4885,
+        "minProduction": 4885
+      },
+      "Waste Pipes": {
+        "items": 15,
+        "temporaryPlan": 4443,
+        "minProduction": 3280
+      }
+    },
+    "suggestions": {
+      "Cocks Standard": {
+        "suggestedMultiplier": 1.21,
+        "dataQuality": "ok",
+        "cv": 0.12,
+        "sourceObservations": 3
+      },
+      "Cocks Premium": {
+        "suggestedMultiplier": 1.43,
+        "dataQuality": "ok",
+        "cv": 0.26,
+        "sourceObservations": 3
+      },
+      "Faucets & Jetsprays & Shower": {
+        "suggestedMultiplier": 1.23,
+        "dataQuality": "ok",
+        "cv": 0.14,
+        "sourceObservations": 3
+      },
+      "Accessorise": {
+        "suggestedMultiplier": 1.21,
+        "dataQuality": "ok",
+        "cv": 0.13,
+        "sourceObservations": 3
+      },
+      "Cistern & Seat Cover": {
+        "suggestedMultiplier": 1.44,
+        "dataQuality": "ok",
+        "cv": 0.27,
+        "sourceObservations": 3
+      },
+      "Cabinet": {
+        "suggestedMultiplier": 1.21,
+        "dataQuality": "ok",
+        "cv": 0.13,
+        "sourceObservations": 3
+      },
+      "Ball Cock": {
+        "suggestedMultiplier": 1.33,
+        "dataQuality": "ok",
+        "cv": 0.2,
+        "sourceObservations": 3
+      },
+      "P.V.C. Connections": {
+        "suggestedMultiplier": null,
+        "dataQuality": "insufficient",
+        "cv": null,
+        "sourceObservations": 0
+      },
+      "Waste Pipes": {
+        "suggestedMultiplier": null,
+        "dataQuality": "insufficient",
+        "cv": null,
+        "sourceObservations": 0
+      }
+    }
+  },
+  "plumbing": {
+    "currentTotal": 2065928,
+    "autoTotal": 2065928,
+    "currentByCategory": {
+      "AGRI Fitting": {
+        "items": 82,
+        "temporaryPlan": 43542,
+        "minProduction": 26978
+      },
+      "AGRI Pipe": {
+        "items": 123,
+        "temporaryPlan": 15197,
+        "minProduction": 8309
+      },
+      "AGRI Solvent": {
+        "items": 1,
+        "temporaryPlan": 0,
+        "minProduction": 0
+      },
+      "CPVC Fitting": {
+        "items": 244,
+        "temporaryPlan": 692883,
+        "minProduction": 452564
+      },
+      "CPVC Pipe": {
+        "items": 40,
+        "temporaryPlan": 141035,
+        "minProduction": 87571
+      },
+      "CPVC Solvent": {
+        "items": 9,
+        "temporaryPlan": 17291,
+        "minProduction": 10067
+      },
+      "SWR Fitting": {
+        "items": 134,
+        "temporaryPlan": 273716,
+        "minProduction": 145515
+      },
+      "SWR Pipe": {
+        "items": 160,
+        "temporaryPlan": 89502,
+        "minProduction": 43790
+      },
+      "SWR Solvent": {
+        "items": 3,
+        "temporaryPlan": 1086,
+        "minProduction": 1086
+      },
+      "UPVC Fitting": {
+        "items": 242,
+        "temporaryPlan": 706327,
+        "minProduction": 404890
+      },
+      "UPVC Pipe": {
+        "items": 52,
+        "temporaryPlan": 85025,
+        "minProduction": 51353
+      },
+      "UPVC Solvent": {
+        "items": 30,
+        "temporaryPlan": 325,
+        "minProduction": 325
+      }
+    },
+    "autoByCategory": {
+      "AGRI Fitting": {
+        "items": 82,
+        "temporaryPlan": 43542,
+        "minProduction": 26978
+      },
+      "AGRI Pipe": {
+        "items": 123,
+        "temporaryPlan": 15197,
+        "minProduction": 8309
+      },
+      "AGRI Solvent": {
+        "items": 1,
+        "temporaryPlan": 0,
+        "minProduction": 0
+      },
+      "CPVC Fitting": {
+        "items": 244,
+        "temporaryPlan": 692883,
+        "minProduction": 452564
+      },
+      "CPVC Pipe": {
+        "items": 40,
+        "temporaryPlan": 141035,
+        "minProduction": 87571
+      },
+      "CPVC Solvent": {
+        "items": 9,
+        "temporaryPlan": 17291,
+        "minProduction": 10067
+      },
+      "SWR Fitting": {
+        "items": 134,
+        "temporaryPlan": 273716,
+        "minProduction": 145515
+      },
+      "SWR Pipe": {
+        "items": 160,
+        "temporaryPlan": 89502,
+        "minProduction": 43790
+      },
+      "SWR Solvent": {
+        "items": 3,
+        "temporaryPlan": 1086,
+        "minProduction": 1086
+      },
+      "UPVC Fitting": {
+        "items": 242,
+        "temporaryPlan": 706327,
+        "minProduction": 404890
+      },
+      "UPVC Pipe": {
+        "items": 52,
+        "temporaryPlan": 85025,
+        "minProduction": 51353
+      },
+      "UPVC Solvent": {
+        "items": 30,
+        "temporaryPlan": 325,
+        "minProduction": 325
+      }
+    },
+    "suggestions": {
+      "CPVC Pipe": {
+        "suggestedMultiplier": 1.28,
+        "dataQuality": "ok",
+        "dataQualityReason": null,
+        "cv": 0.17
+      },
+      "CPVC Fitting": {
+        "suggestedMultiplier": 1.24,
+        "dataQuality": "ok",
+        "dataQualityReason": null,
+        "cv": 0.15
+      },
+      "CPVC Solvent": {
+        "suggestedMultiplier": 1.3,
+        "dataQuality": "ok",
+        "dataQualityReason": null,
+        "cv": 0.18
+      },
+      "UPVC Pipe": {
+        "suggestedMultiplier": 1.33,
+        "dataQuality": "ok",
+        "dataQualityReason": null,
+        "cv": 0.2
+      },
+      "UPVC Fitting": {
+        "suggestedMultiplier": 1.23,
+        "dataQuality": "ok",
+        "dataQualityReason": null,
+        "cv": 0.14
+      },
+      "UPVC Solvent": {
+        "suggestedMultiplier": 1.59,
+        "dataQuality": "thin",
+        "dataQualityReason": "thin history — low average monthly demand",
+        "cv": 0.36
+      },
+      "SWR Pipe": {
+        "suggestedMultiplier": 1.31,
+        "dataQuality": "ok",
+        "dataQualityReason": null,
+        "cv": 0.19
+      },
+      "SWR Fitting": {
+        "suggestedMultiplier": 1.43,
+        "dataQuality": "ok",
+        "dataQualityReason": null,
+        "cv": 0.26
+      },
+      "SWR Solvent": {
+        "suggestedMultiplier": null,
+        "dataQuality": "insufficient",
+        "dataQualityReason": "missing history — fewer than four usable observations",
+        "cv": null
+      },
+      "AGRI Pipe": {
+        "suggestedMultiplier": 1.38,
+        "dataQuality": "ok",
+        "dataQualityReason": null,
+        "cv": 0.23
+      },
+      "AGRI Fitting": {
+        "suggestedMultiplier": 1.27,
+        "dataQuality": "ok",
+        "dataQualityReason": null,
+        "cv": 0.17
+      },
+      "AGRI Solvent": {
+        "suggestedMultiplier": 1.6,
+        "dataQuality": "thin",
+        "dataQualityReason": "thin history — low average monthly demand",
+        "cv": 0.36
+      }
+    }
+  },
+  "preClearBufferCategories": [
+    {
+      "segment": "CP",
+      "name": "Unclassified",
+      "multiplier": 1,
+      "suggestedMultiplier": null,
+      "overrideMultiplier": null,
+      "cvValue": null,
+      "dataQuality": null,
+      "reliabilityFlag": null,
+      "lastComputedAt": null
+    },
+    {
+      "segment": "Plumbing",
+      "name": "AGRI Fitting",
+      "multiplier": 1.27,
+      "suggestedMultiplier": 1.27,
+      "overrideMultiplier": null,
+      "cvValue": 0.17,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:59:39.771Z"
+    },
+    {
+      "segment": "Plumbing",
+      "name": "AGRI Pipe",
+      "multiplier": 1.38,
+      "suggestedMultiplier": 1.38,
+      "overrideMultiplier": null,
+      "cvValue": 0.23,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:59:39.771Z"
+    },
+    {
+      "segment": "Plumbing",
+      "name": "AGRI Solvent",
+      "multiplier": 1.6,
+      "suggestedMultiplier": 1.6,
+      "overrideMultiplier": null,
+      "cvValue": 0.36,
+      "dataQuality": "thin",
+      "reliabilityFlag": "thin data — review",
+      "lastComputedAt": "2026-09-02T07:59:39.771Z"
+    },
+    {
+      "segment": "Plumbing",
+      "name": "CPVC Fitting",
+      "multiplier": 1.24,
+      "suggestedMultiplier": 1.24,
+      "overrideMultiplier": null,
+      "cvValue": 0.15,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:59:39.771Z"
+    },
+    {
+      "segment": "Plumbing",
+      "name": "CPVC Pipe",
+      "multiplier": 1.28,
+      "suggestedMultiplier": 1.28,
+      "overrideMultiplier": null,
+      "cvValue": 0.17,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:59:39.771Z"
+    },
+    {
+      "segment": "Plumbing",
+      "name": "CPVC Solvent",
+      "multiplier": 1.3,
+      "suggestedMultiplier": 1.3,
+      "overrideMultiplier": null,
+      "cvValue": 0.18,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:59:39.771Z"
+    },
+    {
+      "segment": "Plumbing",
+      "name": "SWR Fitting",
+      "multiplier": 1.43,
+      "suggestedMultiplier": 1.43,
+      "overrideMultiplier": null,
+      "cvValue": 0.26,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:59:39.771Z"
+    },
+    {
+      "segment": "Plumbing",
+      "name": "SWR Pipe",
+      "multiplier": 1.31,
+      "suggestedMultiplier": 1.31,
+      "overrideMultiplier": null,
+      "cvValue": 0.19,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:59:39.771Z"
+    },
+    {
+      "segment": "Plumbing",
+      "name": "SWR Solvent",
+      "multiplier": 1,
+      "suggestedMultiplier": null,
+      "overrideMultiplier": null,
+      "cvValue": null,
+      "dataQuality": "insufficient",
+      "reliabilityFlag": "missing history — fewer than four usable observations — override required",
+      "lastComputedAt": "2026-09-02T07:59:39.771Z"
+    },
+    {
+      "segment": "Plumbing",
+      "name": "Unclassified",
+      "multiplier": 1,
+      "suggestedMultiplier": null,
+      "overrideMultiplier": null,
+      "cvValue": null,
+      "dataQuality": null,
+      "reliabilityFlag": null,
+      "lastComputedAt": null
+    },
+    {
+      "segment": "Plumbing",
+      "name": "UPVC Fitting",
+      "multiplier": 1.23,
+      "suggestedMultiplier": 1.23,
+      "overrideMultiplier": null,
+      "cvValue": 0.14,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:59:39.771Z"
+    },
+    {
+      "segment": "Plumbing",
+      "name": "UPVC Pipe",
+      "multiplier": 1.33,
+      "suggestedMultiplier": 1.33,
+      "overrideMultiplier": null,
+      "cvValue": 0.2,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:59:39.771Z"
+    },
+    {
+      "segment": "Plumbing",
+      "name": "UPVC Solvent",
+      "multiplier": 1.59,
+      "suggestedMultiplier": 1.59,
+      "overrideMultiplier": null,
+      "cvValue": 0.36,
+      "dataQuality": "thin",
+      "reliabilityFlag": "thin data — review",
+      "lastComputedAt": "2026-09-02T07:59:39.771Z"
+    },
+    {
+      "segment": "PTMT",
+      "name": "Accessorise",
+      "multiplier": 1.5,
+      "suggestedMultiplier": 1.14,
+      "overrideMultiplier": 1.5,
+      "cvValue": 0.09,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:56:16.961Z"
+    },
+    {
+      "segment": "PTMT",
+      "name": "Ball Cock",
+      "multiplier": 1.5,
+      "suggestedMultiplier": 1.28,
+      "overrideMultiplier": 1.5,
+      "cvValue": 0.17,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:56:16.961Z"
+    },
+    {
+      "segment": "PTMT",
+      "name": "Cabinet",
+      "multiplier": 1.2,
+      "suggestedMultiplier": 1.28,
+      "overrideMultiplier": 1.2,
+      "cvValue": 0.17,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:56:16.961Z"
+    },
+    {
+      "segment": "PTMT",
+      "name": "Cistern & Seat Cover",
+      "multiplier": 1.2,
+      "suggestedMultiplier": 1.37,
+      "overrideMultiplier": 1.2,
+      "cvValue": 0.22,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:56:16.961Z"
+    },
+    {
+      "segment": "PTMT",
+      "name": "Cocks Premium",
+      "multiplier": 1.2,
+      "suggestedMultiplier": 1.13,
+      "overrideMultiplier": 1.2,
+      "cvValue": 0.08,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:56:16.961Z"
+    },
+    {
+      "segment": "PTMT",
+      "name": "Cocks Standard",
+      "multiplier": 1.5,
+      "suggestedMultiplier": 1.15,
+      "overrideMultiplier": 1.5,
+      "cvValue": 0.09,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:56:16.961Z"
+    },
+    {
+      "segment": "PTMT",
+      "name": "Faucets & Jetsprays & Shower",
+      "multiplier": 1.5,
+      "suggestedMultiplier": 1.18,
+      "overrideMultiplier": 1.5,
+      "cvValue": 0.11,
+      "dataQuality": "ok",
+      "reliabilityFlag": null,
+      "lastComputedAt": "2026-09-02T07:56:16.961Z"
+    },
+    {
+      "segment": "PTMT",
+      "name": "P.V.C. Connections",
+      "multiplier": 1.5,
+      "suggestedMultiplier": null,
+      "overrideMultiplier": 1.5,
+      "cvValue": null,
+      "dataQuality": "insufficient",
+      "reliabilityFlag": "missing history — fewer than four usable observations — override required",
+      "lastComputedAt": "2026-09-02T07:56:16.961Z"
+    },
+    {
+      "segment": "PTMT",
+      "name": "Unclassified",
+      "multiplier": 1,
+      "suggestedMultiplier": null,
+      "overrideMultiplier": null,
+      "cvValue": null,
+      "dataQuality": null,
+      "reliabilityFlag": null,
+      "lastComputedAt": null
+    },
+    {
+      "segment": "PTMT",
+      "name": "Waste Pipes",
+      "multiplier": 1.5,
+      "suggestedMultiplier": null,
+      "overrideMultiplier": null,
+      "cvValue": null,
+      "dataQuality": "insufficient",
+      "reliabilityFlag": "missing history — fewer than four usable observations — override required",
+      "lastComputedAt": "2026-09-02T07:56:16.961Z"
+    }
+  ],
+  "auditNotes": [
+    "PTMT uses verified August month-scoped suggestions; P.V.C. Connections and Waste Pipes remain null/insufficient and retain their current multiplier.",
+    "Plumbing suggestions were measured from a complete sequential read with zero source-read failures; SWR Solvent is insufficient and solvent thin-history flags are retained.",
+    "The PTMT audit build used auditAllowPendingJoinDrift because the August last-month-pending source had a reviewed unmatched-row boundary but a changed fingerprint. Normal planning remains strict."
+  ]
+}

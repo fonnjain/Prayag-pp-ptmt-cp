@@ -13,6 +13,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { buildPlantBundle, type PlantBundle } from "./plant-engine";
 import {
   fetchDailyActuals,
+  fetchMonitoringDailyActuals,
   fetchMonitoringPlanTimeline,
   loadStoredDailyActualsForSegment,
   refreshPlumbingActualsCache,
@@ -20,6 +21,7 @@ import {
   type PlantTargetRow,
 } from "./plant-ingestion";
 import type { PlanVersion, VersionTarget } from "./plant-plan-timeline";
+import { fetchMonitoringPlumbingSheet3Production, fetchPlumbingSheet3Production } from "./sheets";
 import {
   lastProductionDay,
   resolvePlantMonthLifecycle,
@@ -538,7 +540,20 @@ async function fetchSegmentActuals(
   segment: MonitoringSegment,
   options: { forceRefresh?: boolean; requireFresh?: boolean } = {},
 ): Promise<DailyActualRow[]> {
-  if (segment === "PTMT") return fetchDailyActuals(month, options, segment);
+  if (segment === "PTMT") {
+    if (options.requireFresh) return fetchDailyActuals(month, options, segment);
+    return (await fetchMonitoringDailyActuals(month, options)).actuals;
+  }
+  if (options.requireFresh) {
+    const rows = await fetchPlumbingSheet3Production(month);
+    return rows.map((row) => ({
+      date: row.dateStr,
+      itemCode: row.rawCode,
+      colour: "",
+      qty: row.qty,
+      group: "PLUMBING",
+    }));
+  }
   return (await refreshPlumbingActualsCache(month)).actuals;
 }
 
@@ -980,6 +995,8 @@ export async function computeLifecyclePlantMonitoring(
   let sourceInfo: Record<string, unknown> | null = null;
   let versionTimeline: PlanVersion[] = [];
   let actuals: DailyActualRow[];
+  let actualSourceMonth = month;
+  let actualSourceWarning: string | null = null;
   if (lifecycle.state === "grace") {
     const finalized = await loadFinalizedTargets(month, segment);
     if (!finalized) {
@@ -1017,10 +1034,33 @@ export async function computeLifecyclePlantMonitoring(
       })),
     };
   } else {
-    actuals = await fetchActuals(month, {});
-    const liveItems = await buildPlanItems(month, segment);
+    // The newer bundle API is also a monitoring read. Use the monitoring
+    // resolver for its default open-month actuals so the fallback source is
+    // not filtered against the missing requested month. Injected test readers
+    // remain untouched and corrective/grace paths stay strict.
+    if (!dependencies.fetchActuals && segment === "PTMT") {
+      const source = await fetchMonitoringDailyActuals(month, {});
+      actuals = source.actuals;
+      actualSourceMonth = source.sourceMonth;
+      actualSourceWarning = source.warning;
+    } else if (!dependencies.fetchActuals && segment === "Plumbing") {
+      const source = await fetchMonitoringPlumbingSheet3Production(month);
+      actuals = source.rows.map((row) => ({
+        date: row.dateStr,
+        itemCode: row.rawCode,
+        colour: "",
+        qty: row.qty,
+        group: "PLUMBING",
+      }));
+      actualSourceMonth = source.sourceMonth;
+      actualSourceWarning = source.warning;
+    } else {
+      actuals = await fetchActuals(month, {});
+    }
+    const effectiveMonth = actualSourceMonth;
+    const liveItems = await buildPlanItems(effectiveMonth, segment);
     alertPlanItems = liveItems;
-    versionTimeline = await fetchMonitoringPlanTimeline(month, segment);
+    versionTimeline = await fetchMonitoringPlanTimeline(effectiveMonth, segment);
     const latestVersion = versionTimeline.at(-1);
     targets = latestVersion ? latestVersion.targets.map((item) => ({
       itemCode: item.itemCode,
@@ -1038,6 +1078,8 @@ export async function computeLifecyclePlantMonitoring(
     planItems = liveItems;
     sourceInfo = {
       targetSource: versionTimeline.length ? "issued_plan_timeline" : "live_plan",
+      actualSourceMonth,
+      actualSourceWarning,
       planVersions: versionTimeline.map((version) => ({
         kind: version.kind,
         sourceId: version.sourceId,
@@ -1054,23 +1096,27 @@ export async function computeLifecyclePlantMonitoring(
     const bundle = emptyBundle(month, lifecycle, config, "unavailable", "Targets unavailable — no plan targets were found for this month.");
     return { bundle, weekly: buildWeekly(month, actuals, [], [], config.snapshotDate, lifecycle) };
   }
+  const effectiveMonth = actualSourceMonth;
+  const effectiveLifecycle = actualSourceMonth === month
+    ? lifecycle
+    : resolvePlantMonthLifecycle(effectiveMonth, now);
   const { bundle, snapshotDate } = await buildReadyBundle(
-    month,
+    effectiveMonth,
     actuals,
     targets,
-    lifecycle,
+    effectiveLifecycle,
     sourceInfo,
     null,
     versionTimeline,
     segment,
   );
   const weekly = buildWeekly(
-    month,
+    effectiveMonth,
     actuals,
     planItems,
     targets,
     snapshotDate,
-    lifecycle,
+    effectiveLifecycle,
     versionTimeline,
   );
   bundle.warnings = [...bundle.warnings, ...buildPlantWeeklyWarnings(weekly)];

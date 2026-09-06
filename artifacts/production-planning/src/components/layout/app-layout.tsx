@@ -21,6 +21,8 @@ import { useListBufferCategories, type BufferCategory } from "@workspace/api-cli
 import { useAuth } from "@/contexts/auth-context";
 import { ChangePasswordDialog } from "@/components/change-password-dialog";
 import { formatMonthLabel, preserveMonthInUrl, useMonth } from "@workspace/month-filter";
+import { useToast } from "@/hooks/use-toast";
+import { useCreateTemporaryPlan } from "@/hooks/use-create-temporary-plan";
 
 import { categorySlug } from "@/lib/category-slug";
 
@@ -217,12 +219,36 @@ function CrossAppNav() {
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const { segment } = useSegment();
   const monthState = useMonth();
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
+  const { toast } = useToast();
+  const { createTemporaryPlan, isPending: isCreatingTemporaryPlan } = useCreateTemporaryPlan();
   const isDataPage = location === "/" || location === "/data";
   const { data: catData } = useListBufferCategories({ segment } as any);
   const categories = (catData as unknown as BufferCategory[] | undefined) ?? [];
+  const showHeldWastePipes = segment === "PTMT" && !categories.some((c) => c.name === "Waste Pipes");
   const actionLinks = segment === "Plumbing" ? PLUMBING_ACTION_LINKS : PTMT_ACTION_LINKS;
   const accentColor = segment === "Plumbing" ? "hsl(221 83% 53%)" : "hsl(38 90% 48%)";
+  const handleCreateTemporaryPlan = () => {
+    createTemporaryPlan(
+      { month: monthState.month, segment },
+      {
+        onSuccess: (run) => {
+          toast({
+            title: "Temporary Plan frozen",
+            description: `Run #${run.id} is a demand-true, downloadable snapshot for ${formatMonthLabel(monthState.month)}.`,
+          });
+          setLocation(`/runs?month=${encodeURIComponent(monthState.month)}`);
+        },
+        onError: () => {
+          toast({
+            title: "Failed to create Temporary Plan",
+            description: "Check the uploaded inputs and try again.",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
 
   useEffect(() => {
     preserveMonthInUrl(
@@ -315,6 +341,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   />
                 ))
               )}
+              {showHeldWastePipes && (
+                <SidebarLink
+                  href={`/category/${categorySlug("Waste Pipes")}`}
+                  label="Waste Pipes"
+                  icon={<Wrench size={13} />}
+                />
+              )}
             </SidebarGroup>
 
             <SidebarGroup label="Actions">
@@ -333,7 +366,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             {monthState.isAvailableMonthsLoading ? (
               <div className="flex h-64 items-center justify-center text-sm text-muted-foreground">Loading available months…</div>
             ) : !monthState.isMonthAvailable && !isDataPage ? (
-              <MonthEmptyState segment={segment} />
+              <MonthEmptyState
+                segment={segment}
+                onCreateTemporaryPlan={handleCreateTemporaryPlan}
+                isCreatingTemporaryPlan={isCreatingTemporaryPlan}
+              />
             ) : children}
           </div>
         </main>

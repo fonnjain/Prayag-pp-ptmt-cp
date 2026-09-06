@@ -359,6 +359,8 @@ const PTMT_CATEGORY_ORDER = [
   "Cistern & Seat Cover",
   "Cabinet",
   "Ball Cock",
+  "P.V.C. Connections",
+  "Waste Pipes",
 ];
 
 const PLUMBING_CATEGORY_ORDER = [
@@ -391,7 +393,10 @@ function RevisedReleaseTable({
 
   const CATEGORY_ORDER = segment === "Plumbing" ? PLUMBING_CATEGORY_ORDER : PTMT_CATEGORY_ORDER;
   const allStatuses = [...new Set(items.map(i => i.status))].sort();
-  const allCategories = [...new Set(items.map(i => i.category))].sort((a, b) => {
+  const categoryCandidates = segment === "Plumbing"
+    ? items.map(i => i.category)
+    : [...PTMT_CATEGORY_ORDER, ...items.map(i => i.category)];
+  const allCategories = [...new Set(categoryCandidates)].sort((a, b) => {
     const ai = CATEGORY_ORDER.indexOf(a);
     const bi = CATEGORY_ORDER.indexOf(b);
     if (ai >= 0 && bi >= 0) return ai - bi;
@@ -442,6 +447,11 @@ function RevisedReleaseTable({
         </select>
         <span className="text-xs text-gray-400">{filtered.length} items</span>
       </div>
+      {segment !== "Plumbing" && filterCategory === "Waste Pipes" && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+          Waste Pipes is visible for review but remains held until an approved multiplier and capacity treatment are confirmed.
+        </p>
+      )}
 
       <div className="overflow-x-auto rounded-md border">
         <table className="w-full text-xs min-w-[1100px]">

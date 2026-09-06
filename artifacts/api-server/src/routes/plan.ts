@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { exportTimestamp } from "../lib/export-filename";
-import { db, itemMasterTable, bufferCategoriesTable, uploadedFilesTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, planRunsTable, planRunResultsTable, plantMonthSnapshotsTable } from "@workspace/db";
+import { db, itemMasterTable, bufferCategoriesTable, ptmtBufferMultipliersTable, uploadedFilesTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, planRunsTable, planRunResultsTable, plantMonthSnapshotsTable } from "@workspace/db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   computeItemPlan,
@@ -18,6 +18,7 @@ import {
   fetchLiveOrderTotals,
   fetchPlumbingBomWeights,
   fetchPlumbingPlanData,
+  fetchMonitoringPlumbingSheet3Production,
   fetchPlumbingSheet3Production,
   pendingCoverageFromParsedRows,
   pendingOrderTotalsFromRows,
@@ -200,11 +201,13 @@ export type PlanningInputDiagnostics = {
 /** Thrown when a planning input is present but fails a sanity check. */
 export class PlanningInputError extends Error {
   public inputDiagnostics?: PlanningInputDiagnostics;
+  public readonly code?: string;
 
-  constructor(message: string, inputDiagnostics?: PlanningInputDiagnostics) {
+  constructor(message: string, inputDiagnostics?: PlanningInputDiagnostics, code?: string) {
     super(message);
     this.name = "PlanningInputError";
     this.inputDiagnostics = inputDiagnostics;
+    this.code = code;
   }
 }
 
@@ -258,7 +261,8 @@ export function handlePlanError(res: Response, err: unknown): void {
   }
   if (err instanceof MissingUploadError || err instanceof PlanningInputError || err instanceof PlanningIsolationError) {
     res.status(422).json(withCaptureId({
-      error: err.message,
+      error: err instanceof PlanningInputError && err.code ? err.code : err.message,
+      ...(err instanceof PlanningInputError && err.code ? { message: err.message } : {}),
       kind: err.name,
       ...(err instanceof PlanningInputError && err.inputDiagnostics
         ? { inputDiagnostics: err.inputDiagnostics }
@@ -503,16 +507,16 @@ type ReviewedPendingExclusionPolicy = {
  */
 const REVIEWED_PENDING_EXCLUSION_POLICY: Record<string, ReviewedPendingExclusionPolicy> = {
   "PTMT:pending_current": {
-    maxUnmatchedQuantity: 2_549,
+    maxUnmatchedQuantity: 868,
     maxResolutionLossQuantity: 0,
-    reviewedFingerprint: "9a03dfe32e9e18705495f79a4e4c6285f10e6edca900a63e28e7cfd45606efec",
-    rationale: "Approved 2026-08-27 after catalogue sync and canonicalisation. predecessor upload #12: source=4590, joined=2041, excluded=2549, predecessorFingerprint=be24296cfc8b260ee7c7830d33d98a653308d4874385b96c2340eb2632c61038; approved upload #14: source=6075, joined=5321, excluded=754, currentFingerprint=9a03dfe32e9e18705495f79a4e4c6285f10e6edca900a63e28e7cfd45606efec; joined delta=+3280, excluded delta=-1795. Approved current exclusion ledger by code (all NO_ROSTER_MATCH, 754 pieces): 122-L=33, 124-QP=66, 124-QR=66, 1322-NR=30, 136-L=50, 1375-NG=1, 147-NR=30, 147-U=30, PTA-26=18, QD-20=210, QD-24=30, QD-34=30, QD-35=30, SNPT-89HF=50, SNPTC-1=20, SNPTC-9=20, SNPTCSL-1=20, SNPTCSL-9=20; 39 additional unmatched code keys carry zero balance. The changed exclusion set is fully accounted for by the catalogue sync/canonicalisation boundary and is the documented predecessor for the approved fingerprint.",
+    reviewedFingerprint: "abf1b477919c5da28cf49951d7a938028d87a79cd90a739d95329b9f05bcd9fa",
+    rationale: "Approved for the September 2026 current-pending upload after the Luxor/Glory MRP crosswalk and explicit MRP-only roster bridge: source=7198, joined=6330, unmatched=868, resolutionLoss=0, unexplainedResidual=0, fingerprint=abf1b477919c5da28cf49951d7a938028d87a79cd90a739d95329b9f05bcd9fa. The positive-balance exclusion ledger is stable and consists of 17 NO_ROSTER_MATCH rows; zero-balance diagnostic keys remain retained in the evidence snapshot.",
   },
   "PTMT:pending_last_month": {
-    maxUnmatchedQuantity: 73_104,
-    maxResolutionLossQuantity: 0,
-    reviewedFingerprint: "bdad1b1ad5833cc49536404e4e7989719c7f47068c20cfc5f5879cf4f13396e2",
-    rationale: "August 2026 last-month pending roster boundary after category-scoped duplicate-code matching",
+    maxUnmatchedQuantity: 1_250,
+    maxResolutionLossQuantity: 42,
+    reviewedFingerprint: "6fb0c6118b7af93a9ff78e6fafab38d156632d70f91dd31e2673239e05d00b82",
+    rationale: "Approved for September 2026 after the Luxor/Glory MRP crosswalk and explicit MRP-only roster bridge. Predecessor: source=191659, joined=179933, excluded=11726, fingerprint=165f244579033416a6657c8e716ca8bcdca67885a41785b35ab7b7d8bd358f27. Current reviewed ledger: source=191659, joined=190367, unmatched=1250, resolutionLoss=42, unexplainedResidual=0, fingerprint=6fb0c6118b7af93a9ff78e6fafab38d156632d70f91dd31e2673239e05d00b82. Luxor/Glory contributed 10434 pieces to the prior exclusion and are now roster-joined; the attached reduced ledger retains the 16 remaining positive-balance rows. The remaining 42 resolution-loss pieces are explicitly retained as AMBIGUOUS_ROSTER_MATCH / COLOUR_MISMATCH rather than silently assigned.",
   },
   "Plumbing:pending_current": {
     maxUnmatchedQuantity: 234,
@@ -708,6 +712,18 @@ type PlanBuildOptions = {
    * captured live read before inspecting the independent uploaded source.
    */
   pendingTotalsOverride?: DualTotals;
+  /**
+   * Audit-only multiplier projection. When present, the selected value wins
+   * over normal DB/workbook precedence for the named category. A null value
+   * deliberately falls back to the normal current multiplier.
+   */
+  multiplierOverridesByCategory?: ReadonlyMap<string, number | null>;
+  /**
+   * Internal audit projection only. It permits a comparison to proceed when
+   * a previously reviewed pending exclusion fingerprint has drifted, while
+   * leaving all real plan/corrective validation paths strict.
+   */
+  auditAllowPendingJoinDrift?: boolean;
 };
 
 type PlumbingValidationEvidencePersistence = {
@@ -1016,12 +1032,17 @@ async function buildPlumbingPlanItemsInner(
     }
   }
 
-  // Two maps for the three-tier multiplier priority:
-  //   1. overrideMultiplier (user-set in UI)  — always wins
-  //   2. row.sheetMultiplier (per-item cell)  — default source
-  //   3. bufferRow.multiplier (DB default)    — fallback when sheet cell is blank
+  // Multiplier priority for Temporary Plans:
+  //   1. explicit audit projection (when supplied)
+  //   2. overrideMultiplier (user-set in UI)
+  //   3. engine suggestion (category-level auto value)
+  //   4. row.sheetMultiplier (per-item workbook value)
+  //   5. bufferRow.multiplier (DB fallback)
   const bufferOverrideMap = new Map<string, number | null>(
     bufferRows.map((b) => [b.name, b.overrideMultiplier]),
+  );
+  const bufferSuggestedMap = new Map<string, number | null>(
+    bufferRows.map((b) => [b.name, b.suggestedMultiplier]),
   );
   const bufferDefaultMap = new Map<string, number>(
     bufferRows.map((b) => [b.name, b.multiplier]),
@@ -1064,14 +1085,23 @@ async function buildPlumbingPlanItemsInner(
         order:                 0,
       };
 
-      // Three-tier multiplier priority:
-      //   1. User override (set in UI) — always wins, ignores sheet
-      //   2. Per-item sheet value — the sheet's own multiplier cell per row
-      //   3. DB default (AI-suggested or seed) — fallback for blank sheet cells
+      // Auto-calculated category suggestions are the default Temporary Plan
+      // multiplier. A user override remains the explicit escape hatch; when
+      // the engine is insufficient, preserve the workbook/DB value instead of
+      // fabricating a recommendation.
       const override = bufferOverrideMap.get(resolvedCategory) ?? null;
-      const multiplier = override !== null
-        ? override
-        : (row.sheetMultiplier ?? bufferDefaultMap.get(resolvedCategory) ?? 1);
+      const suggested = bufferSuggestedMap.get(resolvedCategory) ?? null;
+      const projection = options.multiplierOverridesByCategory?.has(resolvedCategory)
+        ? options.multiplierOverridesByCategory.get(resolvedCategory) ?? null
+        : undefined;
+      const currentMultiplier = override
+        ?? suggested
+        ?? row.sheetMultiplier
+        ?? bufferDefaultMap.get(resolvedCategory)
+        ?? 1;
+      const multiplier = projection === undefined
+        ? currentMultiplier
+        : projection ?? (override ?? row.sheetMultiplier ?? bufferDefaultMap.get(resolvedCategory) ?? 1);
 
       // One formula for all 12 Plumbing categories: max((Buffer − Stock) + PendingLM + Pending, 0).
       // AGRI: columns located by header name — the AGRI tab's own cell formula transposes Stock
@@ -1133,7 +1163,7 @@ async function buildPtmtPlanItemsInner(
   options: PlanBuildOptions = {},
 ): Promise<PlanItemWithBom[]> {
   // ── 1. UPLOADS + DB FIRST — fail fast (loudly, naming the file) before any sheet read ──
-  const [itemRows, bufferRows, bandRows, currentStockRows, pendingLastMoRows, pendingOrderRows] =
+  const [itemRows, bufferRows, bandRows, currentStockRows, pendingLastMoRows, pendingOrderRows, monthlyMultiplierRows] =
     await Promise.all([
       getEffectivePtmtRoster(),
       db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
@@ -1143,12 +1173,25 @@ async function buildPtmtPlanItemsInner(
       PLAN_PENDING_SOURCE === "live"
         ? Promise.resolve(null)
         : requireUploadRows("pending_orders", "Current Pending Orders", month),
+      segment === "PTMT"
+        ? db
+          .select({
+            category: ptmtBufferMultipliersTable.category,
+            suggestedMultiplier: ptmtBufferMultipliersTable.suggestedMultiplier,
+          })
+          .from(ptmtBufferMultipliersTable)
+          .where(eq(ptmtBufferMultipliersTable.month, month))
+        : Promise.resolve([]),
     ]);
 
   if (!options.allowUnapprovedMrp) {
     const mrpGate = await getMrpPlanningGate();
     if (mrpGate.held) {
-      throw new PlanningInputError(`PTMT planning is held by authoritative MRP controls (source ${mrpGate.sourceId ?? "latest"}): ${mrpGate.reason}`);
+      throw new PlanningInputError(
+        `PTMT planning is held by authoritative MRP controls (source ${mrpGate.sourceId ?? "latest"}): ${mrpGate.reason}`,
+        undefined,
+        "PTMT_MRP_APPROVAL_REQUIRED",
+      );
     }
   }
 
@@ -1172,7 +1215,18 @@ async function buildPtmtPlanItemsInner(
     );
   }
 
-  const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
+  const monthlyAutoByCategory = new Map(
+    monthlyMultiplierRows.map((row) => [row.category, row.suggestedMultiplier]),
+  );
+  const bufferByCategory = new Map<string, number>(bufferRows.map((b) => {
+    const projection = options.multiplierOverridesByCategory?.has(b.name)
+      ? options.multiplierOverridesByCategory.get(b.name) ?? null
+      : undefined;
+    const currentMultiplier = b.overrideMultiplier
+      ?? (segment === "PTMT" ? monthlyAutoByCategory.get(b.name) : b.suggestedMultiplier)
+      ?? b.multiplier;
+    return [b.name, projection === undefined ? currentMultiplier : projection ?? (b.overrideMultiplier ?? b.multiplier)];
+  }));
   const bandsByCategory = new Map<string, WeeklyBandConfig>(
     bandRows.map((b) => [b.categoryName, { w1Upper: b.w1Upper, w2Upper: b.w2Upper, w3Upper: b.w3Upper, w4Upper: b.w4Upper }]),
   );
@@ -1196,7 +1250,9 @@ async function buildPtmtPlanItemsInner(
     "PTMT last-month pending",
     ptmtLastMonthPendingDiagnostics,
     totalByCode(pendingLastMoTotals),
-    reviewedPendingExclusionPolicy("PTMT", "pending_last_month", month),
+    options.auditAllowPendingJoinDrift
+      ? undefined
+      : reviewedPendingExclusionPolicy("PTMT", "pending_last_month", month),
   );
   const ptmtCurrentPendingDiagnostics = pendingPlanDiagnosticsFromParsedRows(
     pendingOrderTotals.pendingRows ?? [],
@@ -1207,7 +1263,9 @@ async function buildPtmtPlanItemsInner(
     "PTMT current pending",
     ptmtCurrentPendingDiagnostics,
     totalByCode(pendingOrderTotals),
-    reviewedPendingExclusionPolicy("PTMT", "pending_current", month),
+    options.auditAllowPendingJoinDrift
+      ? undefined
+      : reviewedPendingExclusionPolicy("PTMT", "pending_current", month),
   );
 
   // Stock: F.G Sheet — try every item-code column variant the FG Stock upload may carry.
@@ -3308,10 +3366,10 @@ router.get("/plan/validate", async (req, res): Promise<void> => {
  * Exported so monitoring/dashboard can dispatch to it when segment=PLUMBING.
  */
 export async function computePlumbingMonitoringPayload(month: string) {
-  const [planItems, sheet3Rows] = await Promise.all([
-    buildPlanItems(month, "Plumbing", { allowUnreviewedCurrentPending: true }),
-    fetchPlumbingSheet3Production(month),
-  ]);
+  const sheet3Source = await fetchMonitoringPlumbingSheet3Production(month);
+  const dataMonth = sheet3Source.sourceMonth;
+  const planItems = await buildPlanItems(dataMonth, "Plumbing", { allowUnreviewedCurrentPending: true });
+  const sheet3Rows = sheet3Source.rows;
 
   // Code → category map (strict normalization: "A465" matches "A-465")
   const codeToCategory = new Map<string, string>();
@@ -3356,7 +3414,7 @@ export async function computePlumbingMonitoringPayload(month: string) {
   }
 
   // Week calendar
-  const [yr, mo] = month.split("-").map(Number);
+  const [yr, mo] = dataMonth.split("-").map(Number);
   const lastDayOfMonth = new Date(yr, mo, 0).getDate();
   function p2(n: number) { return String(n).padStart(2, "0"); }
   const calendar = [
@@ -3377,14 +3435,14 @@ export async function computePlumbingMonitoringPayload(month: string) {
   // as PTMT monitoring: calendar non-Sundays plus worked Sundays, with future
   // calendar non-Sundays projected for an open month.
   const lastDataDate = sheet3Rows.length > 0 ? [...sheet3Rows].map((r) => r.dateStr).sort().pop()! : null;
-  const lifecycle = resolvePlantMonthLifecycle(month).state;
+  const lifecycle = resolvePlantMonthLifecycle(dataMonth).state;
   const dailyByDate = new Map<string, number>();
   for (const row of sheet3Rows) dailyByDate.set(row.dateStr, (dailyByDate.get(row.dateStr) ?? 0) + row.qty);
   const elapsedDays = sheet3Rows.length > 0
-    ? buildElapsedProductionDays(month, dailyByDate, lastDataDate)
+    ? buildElapsedProductionDays(dataMonth, dailyByDate, lastDataDate)
     : [];
   const workingDaysResolution = resolveWorkingDays(
-    month,
+    dataMonth,
     null,
     sheet3Rows.filter((row) => row.qty > 0).map((row) => row.dateStr),
     lastDataDate,
@@ -3397,8 +3455,8 @@ export async function computePlumbingMonitoringPayload(month: string) {
     (date) => new Date(`${date}T00:00:00Z`).getUTCDay() === 0 && (dailyByDate.get(date) ?? 0) > 0,
   );
   const idleWeekdayDates = lastDataDate
-    ? [...Array(parseInt((lifecycle === "closed" || lifecycle === "grace" ? `${month}-${p2(lastDayOfMonth)}` : lastDataDate).slice(8), 10))]
-      .map((_, index) => `${month}-${p2(index + 1)}`)
+    ? [...Array(parseInt((lifecycle === "closed" || lifecycle === "grace" ? `${dataMonth}-${p2(lastDayOfMonth)}` : lastDataDate).slice(8), 10))]
+      .map((_, index) => `${dataMonth}-${p2(index + 1)}`)
       .filter((date) => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0 && (dailyByDate.get(date) ?? 0) <= 0)
     : [];
 
@@ -3413,7 +3471,7 @@ export async function computePlumbingMonitoringPayload(month: string) {
     cumRelease += release;
     cumMapped  += mapped;
     cumTotal   += actual;
-    const wkStarted = today.slice(0, 7) === month && today >= wk.startDate;
+    const wkStarted = today.slice(0, 7) === dataMonth && today >= wk.startDate;
     const cumAttPct  = cumRelease > 0 && wkStarted ? Math.round((cumMapped  / cumRelease) * 1000) / 10 : null;
     const wkAttPct   = release   > 0 && wkStarted ? Math.round((mapped     / release)    * 1000) / 10 : null;
     return { week: wk.week, label: wk.label, startDate: wk.startDate, endDate: wk.endDate,
@@ -3509,6 +3567,11 @@ export async function computePlumbingMonitoringPayload(month: string) {
 
   return {
     month, lastDataDate, workingDaysElapsed,
+    sourceMonth: sheet3Source.sourceMonth,
+    sourceWorkbookId: sheet3Source.workbookId,
+    sourceWorkbookTitle: sheet3Source.workbookTitle,
+    sourceFallback: sheet3Source.usedFallback,
+    sourceWarning: sheet3Source.warning,
     workingDays: workingDaysResolution.workingDays,
     workingDaysSource: workingDaysResolution.workingDaysSource,
     positiveProductionDates: sheet3Rows.filter((row) => row.qty > 0).map((row) => row.dateStr),

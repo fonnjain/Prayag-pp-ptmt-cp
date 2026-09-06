@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Response } from "express";
 import { launchBrowser } from "../lib/browser";
 import { exportTimestamp } from "../lib/export-filename";
 import { db, plantConfigsTable, plantSourceConfigsTable, plantIngestionCacheTable, plantMonthSnapshotsTable } from "@workspace/db";
@@ -13,6 +13,7 @@ import { resolvePlantMonthLifecycle, resolveWorkingDays } from "../lib/plant-lif
 import { logger } from "../lib/logger";
 import type { MonitoringSegment } from "../lib/plant-monitoring";
 import { normalizePlantSegment } from "../lib/plant-segments";
+import { MissingUploadError, PlanningInputError } from "./plan";
 const router: IRouter = Router();
 
 // The dashboard asks for the bundle and weekly summary together. Cache the full
@@ -126,6 +127,24 @@ export async function computePlantBundle(month: string, segment: MonitoringSegme
   return (await getPlantMonitoringCached(month, segment)).bundle;
 }
 
+function respondToPlantPlanningInputError(
+  res: Response,
+  err: unknown,
+  month: string,
+  segment: MonitoringSegment,
+): boolean {
+  if (!(err instanceof MissingUploadError) && !(err instanceof PlanningInputError)) return false;
+  const hasCode = err instanceof PlanningInputError && Boolean(err.code);
+  res.status(422).json({
+    error: hasCode ? err.code : err instanceof PlanningInputError ? err.message : err.message,
+    ...(hasCode ? { message: err.message } : {}),
+    kind: err.name,
+    month,
+    segment,
+  });
+  return true;
+}
+
 // --- GET /plant/bundle ---
 router.get("/plant/bundle", async (req, res) => {
   const month = String(req.query.month ?? "");
@@ -142,6 +161,7 @@ router.get("/plant/bundle", async (req, res) => {
     const { bundle } = await getPlantMonitoringCached(month, segment);
     res.set("Cache-Control", "private, max-age=300").json(bundle);
   } catch (err) {
+    if (respondToPlantPlanningInputError(res, err, month, segment ?? "PTMT")) return;
     logger.error({ err, month }, "plant/bundle failed");
     res.status(500).json({ error: "Failed to compute plant bundle" });
   }
@@ -534,6 +554,7 @@ router.get("/plant/weekly-summary", async (req, res) => {
     const { weekly } = await getPlantMonitoringCached(month, segment);
     res.set("Cache-Control", "private, max-age=300").json(weekly);
   } catch (err) {
+    if (respondToPlantPlanningInputError(res, err, month, segment ?? "PTMT")) return;
     logger.error({ err, month }, "plant/weekly-summary failed");
     res.status(500).json({ error: "Failed to compute weekly summary" });
   }

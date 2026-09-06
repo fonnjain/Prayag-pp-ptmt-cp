@@ -2347,45 +2347,27 @@ async function main(): Promise<void> {
       pass: ptmtReconOk, tolerance: "mapped>0, exact recon",
     });
 
-    // NC13: Cross-source reconciliation — monitoring producedToDate ≈ corrective producedToDate
-    // Both read the ANUJ Production sheet via fetchDailyActuals.
-    // Small divergence (≤2%) is expected: the corrective engine extends the plan with new-order
-    // items (deltaNewOrders), so it matches production against a slightly larger code set than
-    // monitoring's static base plan.  A divergence > 2% would signal a real bug (e.g., monitoring
-    // silently reading 0 while corrective reads 530K).
-    // ptmtReplan was already fetched in NC7 (weekClosed=0, asOfDate=today).
-    // Both sources read live Sheets data; on a first-pass failure, refetch BOTH
-    // at the same moment and re-evaluate once (rules out mid-suite drift and
-    // transient partial reads — the historical flake in this section).
-    let nc13Replan = ptmtReplan;
-    let nc13MonProd = ptmtMappedDash;
-    let nc13Refetched = false;
-    newChecks.push(await evaluateWithRetry("NC13", async () => {
-      if (nc13Refetched) {
-        const [freshDash, freshReplan] = await Promise.all([
-          fetchJson<Record<string, unknown>>(`${API_BASE}/api/monitoring/dashboard?month=${PLUMBING_MONTH}&segment=PTMT`, undefined, {
-            acceptError: acceptStructuredPtmtInputError,
-          }),
-          fetchJson<Record<string, unknown>>(`${API_BASE}/api/corrective/replan`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ month: PTMT_MONTH, segment: "PTMT", weekClosed: 0, dryRun: true }),
-          }),
-        ]);
-        nc13Replan  = freshReplan;
-        nc13MonProd = (((freshDash?.plant as Record<string, unknown>) ?? {}).mapped as number) ?? 0;
-      }
-      nc13Refetched = true; // any subsequent evaluation refetches both sources together
-      const corrProd = (nc13Replan?.producedToDate as number) ?? -1;
-      const monProd  = nc13MonProd;
-      const pctDiff  = corrProd > 0 ? Math.abs(monProd - corrProd) / corrProd : 1;
-      const crossSourceOk = corrProd >= 0 && pctDiff <= 0.02;
-      return {
-        name: `NC13 · Cross-source · monitoring (${Math.round(monProd)}) vs corrective (${corrProd}) ±2% (diff=${(pctDiff*100).toFixed(2)}%)`,
-        expected: corrProd, actual: Math.round(monProd),
-        pass: crossSourceOk, tolerance: "±2% (architectural: corrective adds new-order items)",
-      };
-    }));
+    // NC13: Cross-source reconciliation — monitoring producedToDate ≈ corrective producedToDate.
+    // Both values were already read during the preceding dashboard/replan checks.  Do not
+    // blindly refetch after a mismatch: the previous 20-second retry could then enter the
+    // endpoint helper's own 502/503/429 backoff and stall the entire verifier without naming
+    // whether NC13 was a data mismatch or a slow/unavailable endpoint.
+    //
+    // Small divergence (≤2%) is expected because corrective planning extends the plan with
+    // new-order items.  A larger divergence is a single, timed NC13 result and must be fixed
+    // or explicitly explained before the suite can pass.
+    const nc13StartedAt = Date.now();
+    const corrProd = (ptmtReplan?.producedToDate as number) ?? -1;
+    const monProd  = ptmtMappedDash;
+    const pctDiff  = corrProd > 0 ? Math.abs(monProd - corrProd) / corrProd : 1;
+    const crossSourceOk = corrProd >= 0 && pctDiff <= 0.02;
+    newChecks.push({
+      name: `NC13 · Cross-source · monitoring (${Math.round(monProd)}) vs corrective (${corrProd}) ±2% (diff=${(pctDiff * 100).toFixed(2)}%; evaluated in ${Date.now() - nc13StartedAt}ms)`,
+      expected: corrProd,
+      actual: Math.round(monProd),
+      pass: crossSourceOk,
+      tolerance: "±2% (architectural: corrective adds new-order items; no automatic retry)",
+    });
 
     // NC9: PTMT plan run save + retrieve (infrastructure parity with Plumbing).
     // PTMT Production Plans require a finalized Temporary Plan lineage. This

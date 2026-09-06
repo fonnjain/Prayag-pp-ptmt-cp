@@ -1,24 +1,21 @@
 import {
   useListUploads,
   useGetMasterProductMrpReport,
-  UploadKind,
   type UploadedFile,
 } from "@workspace/api-client-react";
 import { useMonth, formatMonthLabel } from "@workspace/month-filter";
 import { Card, CardContent } from "@/components/ui/card";
 import { useSegment } from "@/contexts/segment-context";
 import { AlertTriangle, CheckCircle2, Upload } from "lucide-react";
+import {
+  PLUMBING_INPUT_KINDS,
+  PTMT_INPUT_KINDS,
+  countUploadedKinds,
+  segmentInputStatus,
+  uploadMatchesMonth,
+} from "@/lib/planning-readiness";
 
-const PTMT_INPUT_KINDS = [
-  UploadKind.pending_orders,
-  UploadKind.current_stock,
-  UploadKind.last_month_pending,
-] as const;
-
-const PLUMBING_INPUT_KINDS = [
-  UploadKind.pending_orders,
-  UploadKind.plumbing_fg_stock,
-] as const;
+export { uploadMatchesMonth };
 
 type MrpReportLike = {
   source?: {
@@ -35,16 +32,6 @@ type MrpReportLike = {
     };
   } | null;
 };
-
-export function uploadMatchesMonth(upload: UploadedFile, month: string) {
-  return upload.period === month;
-}
-
-function countUploadedKinds(uploads: UploadedFile[] | undefined, kinds: readonly string[], month: string) {
-  return kinds.filter((kind) =>
-    (uploads ?? []).some((upload) => upload.kind === kind && uploadMatchesMonth(upload, month)),
-  ).length;
-}
 
 function shortHash(hash: string | undefined) {
   if (!hash) return "hash unavailable";
@@ -70,15 +57,11 @@ export function PlanningReadiness() {
   const mrpReport = rawMrpReport as unknown as MrpReportLike | undefined;
   const uploads = rawUploads as unknown as UploadedFile[] | undefined;
   const source = mrpReport?.source;
-  const planningApproved = source?.planningApproved === true;
-  const ptmtUploaded = countUploadedKinds(uploads, PTMT_INPUT_KINDS, month);
-  const plumbingUploaded = countUploadedKinds(uploads, PLUMBING_INPUT_KINDS, month);
+  const ptmtStatus = segmentInputStatus(uploads, "PTMT", month);
+  const plumbingStatus = segmentInputStatus(uploads, "Plumbing", month);
+  const activeStatus = segment === "PTMT" ? ptmtStatus : plumbingStatus;
   const inputsLoading = uploadsLoading || !rawUploads;
   const latestMonth = latestCompleteMonth(uploads, month);
-  // The business hold covers the 11 reviewed ranges plus P.V.C. Connections.
-  // The raw crosswalk arrays include many source-level rows and are not the
-  // same denominator as the approval decision.
-  const approvalRanges = 11;
   const monthLabel = formatMonthLabel(month);
 
   return (
@@ -117,28 +100,11 @@ export function PlanningReadiness() {
 
           <div className="border-t border-slate-200 pt-3">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-slate-900">
-                  {planningApproved ? "Category approval complete" : "Category approval"}
-                </div>
-                <p className="mt-1 text-xs text-slate-600">
-                  {planningApproved
-                    ? "The MRP-derived category and capacity treatment has been approved."
-                    : <>P.V.C. Connections and {approvalRanges} ranges await Prayag.</>}
-                </p>
-                <p className="mt-1 text-xs font-medium text-amber-800">
-                  {planningApproved
-                    ? "PTMT Production Plans can proceed past the MRP approval gate."
-                    : "→ PTMT Production Plans held — approve the category and capacity treatment to lift this hold."}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div className="border-t border-slate-200 pt-3">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
+              {inputsLoading || !activeStatus.complete ? (
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" aria-hidden="true" />
+              ) : (
+                <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" aria-hidden="true" />
+              )}
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-semibold text-slate-900">{monthLabel} inputs</div>
                 {inputsLoading ? (
@@ -146,18 +112,22 @@ export function PlanningReadiness() {
                 ) : (
                   <>
                     <p className="mt-1 text-xs text-slate-600">
-                      {ptmtUploaded} of 3 PTMT files · {plumbingUploaded} of 2 Plumbing files
+                      {activeStatus.complete
+                        ? `✓ ${activeStatus.uploaded} of ${activeStatus.required} ${segment} files ready`
+                        : `${activeStatus.uploaded} of ${activeStatus.required} ${segment} files`}
                     </p>
-                    <p className="mt-1 text-xs font-medium text-amber-800">
-                      → {ptmtUploaded === 3 && plumbingUploaded === 2
-                        ? "All required inputs are present."
-                        : <>
-                            Upload the missing files from <a href="/data" className="underline hover:text-amber-950">Data</a> to build the {monthLabel} plan.
-                            {latestMonth && (
-                              <> Latest available: {formatMonthLabel(latestMonth)} ({countUploadedKinds(uploads, PTMT_INPUT_KINDS, latestMonth)} of 3 · {countUploadedKinds(uploads, PLUMBING_INPUT_KINDS, latestMonth)} of 2).</>
-                            )}
-                          </>}
-                    </p>
+                    {activeStatus.complete ? (
+                      <p className="mt-1 text-xs font-medium text-emerald-800">
+                        All required {segment} inputs are present.
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs font-medium text-amber-800">
+                        → Upload the missing {segment} files from <a href="/data" className="underline hover:text-amber-950">Data</a> to build the {monthLabel} plan.
+                        {latestMonth && (
+                          <> Latest available: {formatMonthLabel(latestMonth)} ({countUploadedKinds(uploads, segment === "PTMT" ? PTMT_INPUT_KINDS : PLUMBING_INPUT_KINDS, latestMonth)} of {segment === "PTMT" ? 3 : 2}).</>
+                        )}
+                      </p>
+                    )}
                   </>
                 )}
               </div>

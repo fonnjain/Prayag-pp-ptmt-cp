@@ -174,6 +174,14 @@ export function AppLayout({
   const monthState = useMonth();
   const isPlantPage    = PLANT_PATHS.has(location);
   const isPlumbingPage = PLUMBING_PATHS.has(location) || location.startsWith("/plumbing");
+  // Monitoring sources may intentionally fall back to the latest available
+  // workbook when the selected month has no source. Do not replace those
+  // pages with the plan-run availability empty state before they can show the
+  // source month and amber fallback warning.
+  const isMonitoringPage =
+    isPlantPage
+    || isPlumbingPage
+    || window.location.pathname.startsWith("/monitoring");
 
   const { data: bundleRaw } = useGetPlantBundle(
     { month },
@@ -438,7 +446,7 @@ export function AppLayout({
           )}
           {monthState.isAvailableMonthsLoading
             ? <div className="flex items-center justify-center h-64 text-sm text-muted-foreground">Loading available months…</div>
-            : !monthState.isMonthAvailable
+          : !monthState.isMonthAvailable && !isMonitoringPage
             ? <UnavailableMonthState />
             : children}
         </main>

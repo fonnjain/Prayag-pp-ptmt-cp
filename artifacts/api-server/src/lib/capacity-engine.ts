@@ -27,6 +27,11 @@ const PTMT_SEED_VALUES: SeedRow[] = [
   { category: "Cistern & Seat Cover",        meanPerDay:   831, p90PerDay:  1050, bestDay:  1320, daysObserved: 30, planNeedsPerDay:   970 },
   { category: "Cabinet",                     meanPerDay:    77, p90PerDay:   147, bestDay:   219, daysObserved:  5, planNeedsPerDay:    37 },
   { category: "Ball Cock",                   meanPerDay:  3900, p90PerDay:  6567, bestDay: 17592, daysObserved: 30, planNeedsPerDay:  1808 },
+  // These categories are seeded with no synthetic production. Recompute
+  // derives their p90 from the Jan-August daily history when source rows are
+  // available, and keeps the thin-data flag otherwise.
+  { category: "P.V.C. Connections",         meanPerDay:    0, p90PerDay:    0, bestDay:    0, daysObserved:  0, planNeedsPerDay:    0 },
+  { category: "Waste Pipes",                 meanPerDay:    0, p90PerDay:    0, bestDay:    0, daysObserved:  0, planNeedsPerDay:    0 },
 ];
 
 /**
@@ -107,6 +112,13 @@ function monthEnd(month: string): string {
   const [year, monthNumber] = month.split("-").map(Number);
   const day = new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
   return `${month}-${String(day).padStart(2, "0")}`;
+}
+
+function specialPtmtCategory(group: string): string | null {
+  const normalized = group.trim().toUpperCase().replace(/\s+/g, " ");
+  if (normalized.includes("CONNECTION")) return "P.V.C. Connections";
+  if (normalized.includes("WASTE PIPE")) return "Waste Pipes";
+  return null;
 }
 
 export function deriveMonthlyCapacitySignals(monthly: CapacityMonthlyStats[]): Pick<
@@ -270,7 +282,9 @@ export async function computeCategoryCapacity(trailingDays = 90, segment = "PTMT
 
   for (const actuals of actualsArrays) {
     for (const row of actuals) {
+      const workbookCategory = segment === "PTMT" ? specialPtmtCategory(row.group) : null;
       const category =
+        workbookCategory ??
         catByKey.get(`${row.itemCode}::${row.colour}`) ??
         catByCode.get(row.itemCode) ??
         row.group;

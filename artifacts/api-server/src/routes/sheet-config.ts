@@ -6,7 +6,7 @@ import {
   invalidateWorkbookCache,
   invalidateAllWorkbookCaches,
   invalidatePlumbingSheet3Cache,
-  resolveWorkbookForMonth,
+  resolveMonitoringWorkbookForMonth,
   searchWorkbookCandidates,
   WorkbookResolutionError,
   istPlanningMonth,
@@ -14,24 +14,35 @@ import {
 
 const router: IRouter = Router();
 
-/** Resolve both divisions' workbooks for a month, returning per-feed results (never throws). */
+/** Resolve monitoring workbooks for a month, returning per-feed results (never throws). */
 async function resolveAllFeeds(month: string) {
   const divisions = ["PTMT", "PTMT-Machine", "Plumbing"] as const;
   return Promise.all(
     divisions.map(async (division) => {
       try {
-        const r = await resolveWorkbookForMonth(division, month);
-        return { ...r, division, error: null as string | null, pattern: null as string | null };
+        const r = await resolveMonitoringWorkbookForMonth(division, month);
+        return {
+          ...r,
+          division,
+          purpose: "monitoring" as const,
+          error: null as string | null,
+          pattern: null as string | null,
+        };
       } catch (err) {
         const isRes = err instanceof WorkbookResolutionError;
         return {
           division,
           month,
+          requestedMonth: month,
+          sourceMonth: null,
+          purpose: "monitoring" as const,
           workbookId: null,
           title: null,
           modifiedTime: null,
           source: null,
           titleMonthMatch: null,
+          usedFallback: false,
+          warning: null,
           error: err instanceof Error ? err.message : String(err),
           pattern: isRes ? (err as WorkbookResolutionError).pattern : null,
         };
@@ -42,8 +53,8 @@ async function resolveAllFeeds(month: string) {
 
 /**
  * GET /workbook-config/resolved?month=YYYY-MM
- * Shows exactly which workbook each feed reads: ID, title, modified date, source
- * (pinned / static / auto) — or a loud error naming the searched title pattern.
+ * Shows exactly which monitoring workbook each feed reads. A prior-month
+ * fallback is returned as a warning instead of a planning blocker.
  */
 router.get("/workbook-config/resolved", async (req, res) => {
   const month = String(req.query.month ?? "") || istPlanningMonth();
@@ -57,7 +68,7 @@ router.get("/workbook-config/resolved", async (req, res) => {
 
 /**
  * POST /workbook-config/refresh { month? } — the "Refresh sources" action.
- * Drops all resolution caches and re-resolves both feeds from Drive.
+ * Drops all resolution caches and re-resolves monitoring feeds from Drive.
  */
 router.post("/workbook-config/refresh", async (req, res) => {
   const month = String(req.body?.month ?? "") || istPlanningMonth();
@@ -80,13 +91,17 @@ router.get("/workbook-config/suggest", async (req, res) => {
     res.status(400).json({ error: "division and month are required" });
     return;
   }
-  if (division !== "PTMT" && division !== "Plumbing") {
-    res.status(400).json({ error: "division must be PTMT or Plumbing" });
+  if (division !== "PTMT" && division !== "PTMT-Machine" && division !== "Plumbing") {
+    res.status(400).json({ error: "division must be PTMT, PTMT-Machine, or Plumbing" });
     return;
   }
 
   try {
-    const candidates = await searchWorkbookCandidates(division as "PTMT" | "Plumbing", month, query);
+    const candidates = await searchWorkbookCandidates(
+      division as "PTMT" | "PTMT-Machine" | "Plumbing",
+      month,
+      query,
+    );
     res.json({ candidates });
   } catch (err) {
     logger.error({ err, division, month }, "GET /workbook-config/suggest failed");

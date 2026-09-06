@@ -15,4 +15,5 @@ export interface UploadedFile {
   period: UploadedFilePeriod;
   uploadedAt: string;
   rowCount: number;
+  sourceMetadata: Record<string, unknown> | null;
 }

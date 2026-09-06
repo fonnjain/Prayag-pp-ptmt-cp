@@ -468,7 +468,7 @@ export default function ProductsPage() {
                   </span>
                 </summary>
                 <p className="mt-2 text-xs text-muted-foreground">
-                   MRP series is terminal when present: it wins when executable, while a new/unconfigured series remains held and never falls through to RANGE NAME. The rate list is fallback-only for missing series.
+                   MRP wins when its series maps to an executable category, and explicit held categories remain held. An unresolved MRP series falls back to the rate list, except for the eleven premium proposals that still require Prayag's decision; Unclassified means neither source resolved a category.
                 </p>
                 <div className="mt-3 overflow-x-auto rounded-md border">
                   <Table>
@@ -712,7 +712,7 @@ export default function ProductsPage() {
                   <span className="text-muted-foreground font-normal hidden group-open:inline">Hide crosswalk</span>
                 </summary>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Exact reviewed series matches receive the existing planning category. Premium-cock proposals remain Unclassified until Prayag confirms their treatment. Existing governing rules are shown separately from the new crosswalk, and no category is inferred just to fill a gap.
+                  MRP remains authoritative for product identity and discontinuation. Finish labels such as Helix and Quadra are not categories: each product uses its governed RANGE NAME category. Products without executable range evidence remain Unclassified and visible for Prayag review.
                 </p>
                 <div className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                   <div className="rounded border bg-background px-3 py-2">
@@ -728,15 +728,14 @@ export default function ProductsPage() {
                   <div className="rounded border bg-background px-3 py-2">
                     <div className="text-muted-foreground">Pending-review demand</div>
                     <div className="font-semibold">
-                      {Number(mrpReport.summary.seriesCrosswalk.pendingReview?.reduce((sum: number, row: any) => sum + Number(row.julyDemandQuantity ?? 0), 0) ?? 0).toLocaleString()} pcs
+                      {Number(mrpReport.summary.seriesCrosswalk.pendingReview?.reduce((sum: number, row: any) => sum + Number(row.heldJulyDemandQuantity ?? 0), 0) ?? 0).toLocaleString()} pcs
                     </div>
                   </div>
                   <div className="rounded border bg-background px-3 py-2">
                   <div className="text-muted-foreground">Held / Unclassified demand</div>
                     <div className="font-semibold">
                       {Number((mrpReport.summary.seriesCrosswalk.all ?? [])
-                        .filter((row: any) => row.effectiveStatus !== "classified")
-                        .reduce((sum: number, row: any) => sum + Number(row.julyDemandQuantity ?? 0), 0)).toLocaleString()} pcs
+                        .reduce((sum: number, row: any) => sum + Number(row.heldJulyDemandQuantity ?? 0), 0)).toLocaleString()} pcs
                     </div>
                   </div>
                 </div>

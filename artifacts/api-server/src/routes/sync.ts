@@ -16,6 +16,7 @@ import {
 } from "../lib/sheets";
 
 import { invalidatePlumbingMonitoringCache, getPlumbingMonitoringPayloadCached } from "./plan";
+import { recomputeSeasonalityForPlanningCycle } from "../lib/seasonality-service";
 
 const router: IRouter = Router();
 
@@ -264,7 +265,8 @@ export function startSyncScheduler(): void {
     getPlumbingMonitoringPayloadCached(warmMonth).catch((err) =>
       logger.warn({ err, month: warmMonth }, "Plumbing monitoring startup pre-warm failed"),
     );
-    runFullSync()
+    runFullSync(warmMonth)
+      .then(() => recomputeSeasonalityForPlanningCycle(warmMonth))
       .catch((err) => logger.error({ err }, "Startup sync failed"))
       .finally(() => capturePendingClosedMonths().catch((err) =>
         logger.error({ err }, "Startup closed-month capture failed"),
@@ -275,7 +277,9 @@ export function startSyncScheduler(): void {
   setInterval(() => {
     if (isISTWorkHour()) {
       logger.info("Auto-sync: hourly scheduled run");
-      runFullSync()
+      const month = currentPlanningMonth();
+      runFullSync(month)
+        .then(() => recomputeSeasonalityForPlanningCycle(month))
         .catch((err) => logger.error({ err }, "Scheduled sync failed"))
         .finally(() => capturePendingClosedMonths().catch((err) =>
           logger.error({ err }, "Scheduled closed-month capture failed"),
@@ -289,6 +293,7 @@ export function startSyncScheduler(): void {
 router.post("/sync/sheets", async (req, res): Promise<void> => {
   const month = req.body?.month ? String(req.body.month) : currentPlanningMonth();
   await runFullSync(month);
+  await recomputeSeasonalityForPlanningCycle(month);
   await capturePendingClosedMonths();
   const results = await db.select().from(syncSourcesTable).orderBy(syncSourcesTable.name);
   res.json(results);

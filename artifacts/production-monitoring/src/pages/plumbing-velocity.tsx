@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { RefreshCw, TrendingUp, Activity, AlertTriangle } from "lucide-react";
 import { classifyPlantLiveError } from "@/lib/plant-live-error";
 import { fmtDate } from "@/lib/utils";
+import { MonitoringSourceBanner } from "@/components/monitoring-source-banner";
 
 function fmt(n: number | null | undefined, dec = 0): string {
   if (n == null) return "–";
@@ -41,6 +42,8 @@ interface PlumbingMonitoringCategory {
 }
 
 interface PlumbingMonitoringData {
+  sourceMonth?: string | null;
+  sourceWarning?: string | null;
   lastDataDate: string | null;
   workingDaysElapsed: number;
   weeks: PlumbingMonitoringWeek[];
@@ -314,6 +317,12 @@ export default function PlumbingVelocity({ month }: { month: string }) {
           {isRefetching || monitoringLoading ? "Refreshing…" : "Refresh"}
         </Button>
       </header>
+
+      <MonitoringSourceBanner
+        warning={monitoring?.sourceWarning}
+        sourceMonth={monitoring?.sourceMonth}
+        requestedMonth={month}
+      />
 
       {isError && (() => {
         const { heading, detail, hint } = classifyPlantLiveError(

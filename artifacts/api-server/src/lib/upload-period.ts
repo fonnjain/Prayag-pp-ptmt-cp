@@ -40,9 +40,18 @@ export function monthInUploadFilename(filename: string): string | null {
   for (let i = 0; i < tokens.length; i++) {
     const month = MONTH_NAMES[tokens[i]!];
     if (!month) continue;
-    const neighbours = [tokens[i - 1], tokens[i + 1]];
-    const yearToken = neighbours.find((token) => /^20\d{2}$/.test(token ?? ""));
-    if (yearToken) return formatMonth(Number(yearToken), month);
+    // Source filenames use all of these forms in practice:
+    // "September 2026", "SEP 01 2026", "Aug-26", and "July-2026".
+    // Looking two tokens either side handles the day in "SEP 01 2026"
+    // without making the parser depend on a particular separator.
+    const neighbours = [tokens[i - 2], tokens[i - 1], tokens[i + 1], tokens[i + 2]];
+    const yearToken =
+      neighbours.find((token) => /^20\d{2}$/.test(token ?? "")) ??
+      neighbours.find((token) => /^\d{2}$/.test(token ?? ""));
+    if (yearToken) {
+      const yearNumber = Number(yearToken);
+      return formatMonth(yearNumber < 100 ? 2000 + yearNumber : yearNumber, month);
+    }
   }
   return null;
 }
@@ -67,10 +76,18 @@ export function inferUploadPlanningMonth(
   filename: string,
   uploadedAt: Date | string | null | undefined,
   explicitPeriod?: string | null,
+  detectedSourcePeriod?: string | null,
 ): string | null {
   if (explicitPeriod && /^\d{4}-(0[1-9]|1[0-2])$/.test(explicitPeriod)) return explicitPeriod;
-  const sourceMonth = monthInUploadFilename(filename);
+  // Workbook content (especially the Pending Order tab) is more authoritative
+  // than a generic export filename such as DATA.xlsx.
+  const sourceMonth = detectedSourcePeriod ?? monthInUploadFilename(filename);
   if (sourceMonth && (kind === "last_month_pending" || kind === "plumbing_fg_stock")) {
+    return shiftMonth(sourceMonth, 1);
+  }
+  if (sourceMonth && kind === "pending_orders") {
+    // The SAP pending-order tab names the period being reported (for example
+    // "Pending Order Aug-26"), while the upload feeds the following plan month.
     return shiftMonth(sourceMonth, 1);
   }
   return sourceMonth ?? monthFromDate(uploadedAt);

@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { fmtDate } from "@/lib/utils";
+import { MonitoringSourceBanner } from "@/components/monitoring-source-banner";
 
 type Mode = "actions" | "backlog" | "ai" | "settings";
 
@@ -17,6 +18,8 @@ interface PlumbingCategory {
 
 interface PlumbingDashboard {
   month: string;
+  sourceMonth?: string | null;
+  sourceWarning?: string | null;
   lastDataDate: string | null;
   dataAvailable: boolean;
   plant?: { produced?: number; mapped?: number; unmapped?: number; runRatePerDay?: number };
@@ -102,6 +105,12 @@ export default function PlumbingOperations({ month, mode }: { month: string; mod
           {loading ? "Loading…" : "Refresh"}
         </Button>
       </header>
+
+      <MonitoringSourceBanner
+        warning={data?.sourceWarning}
+        sourceMonth={data?.sourceMonth}
+        requestedMonth={month}
+      />
 
       {error && (
         <Card className="border-red-500/30">

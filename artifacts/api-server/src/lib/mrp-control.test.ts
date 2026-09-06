@@ -75,16 +75,17 @@ test("MRP parser preserves blank colour prices and excludes invalid reference ro
   });
 });
 
-test("MRP precedence is terminal for present series and rate-list fallback requires absence", () => {
+test("MRP wins when mapped and unresolved series falls back to the rate list", () => {
   const modelCategories = new Set([
     "Cocks Standard",
     "Accessorise",
+    "P.V.C. Connections",
     "Unclassified",
   ]);
   assert.deepEqual(
     resolveMrpClassification(
       { itemCode: "324", division: "PTMT & Plastic Fittings", series: "P.V.C. Connections (Plain Nut Round)" },
-      "Accessorise",
+      "P.V.C. Connections",
       modelCategories,
     ),
     {
@@ -100,7 +101,7 @@ test("MRP precedence is terminal for present series and rate-list fallback requi
       "Accessorise",
       modelCategories,
     ).category,
-    "Unclassified",
+    "Accessorise",
   );
   assert.equal(
     resolveMrpClassification(
@@ -112,10 +113,12 @@ test("MRP precedence is terminal for present series and rate-list fallback requi
   );
 });
 
-test("the reviewed MRP series crosswalk applies only the nine high-confidence rows", () => {
+test("the reviewed MRP series crosswalk applies approved product-family rows", () => {
   const applied: Array<[string, string]> = [
     ["Standard (New Handle)", "Cocks Standard"],
     ["Standard (Old Handle)", "Cocks Standard"],
+    ["Luxor", "Cocks Standard"],
+    ["Glory", "Cocks Standard"],
     ["Cistern", "Cistern & Seat Cover"],
     ["Cistern's & Seat Cover's Accessories", "Cistern & Seat Cover"],
     ["Toilet Seat Covers", "Cistern & Seat Cover"],
@@ -155,11 +158,8 @@ test("reviewed series take precedence over mixed-division fallback", () => {
   );
 });
 
-test("premium-cock proposals remain held and near-matches do not infer a category", () => {
-  const pending = [
-    "Erosa (Black)", "Cobra", "Helix", "Luxor", "Quadra (Royal)",
-    "Crystal", "Glory", "Astra", "Roman", "Diamond", "Flora (Royal)",
-  ];
+test("unresolved finish series remain held and near-matches do not infer a category", () => {
+  const pending = ["Erosa", "Erosa (Black)", "Crystal", "Astra"];
   for (const series of pending) {
     assert.deepEqual(
       getMrpSeriesCrosswalkDecision(series),
@@ -178,6 +178,22 @@ test("premium-cock proposals remain held and near-matches do not infer a categor
       "Unclassified",
     );
   }
+  for (const series of ["Cobra", "Helix", "Quadra (Royal)", "Roman", "Diamond", "Flora (Royal)"]) {
+    assert.deepEqual(
+      getMrpSeriesCrosswalkDecision(series),
+      { category: null, status: "unmapped" },
+    );
+  }
+  for (const series of ["Luxor", "Glory"]) {
+    assert.deepEqual(
+      getMrpSeriesCrosswalkDecision(series),
+      { category: "Cocks Standard", status: "applied" },
+    );
+    assert.deepEqual(
+      deriveMrpPlanningCategory("TEST", "PTMT & Plastic Fittings", series),
+      { category: "Cocks Standard", status: "resolved" },
+    );
+  }
   assert.deepEqual(
     getMrpSeriesCrosswalkDecision("Standard  (New Handle)"),
     { category: "Cocks Standard", status: "applied" },
@@ -185,6 +201,55 @@ test("premium-cock proposals remain held and near-matches do not infer a categor
   assert.deepEqual(
     getMrpSeriesCrosswalkDecision("Standard (New Handle) Extended"),
     { category: null, status: "unmapped" },
+  );
+});
+
+test("an unresolved MRP series falls back to an executable rate-list category", () => {
+  assert.deepEqual(
+    resolveMrpClassification(
+      { itemCode: "LEGACY-1", division: "PTMT & Plastic Fittings", series: "Apex Legacy" },
+      "Accessorise",
+      new Set(["Cocks Standard", "Cocks Premium", "Accessorise", "Unclassified"]),
+    ),
+    {
+      category: "Accessorise",
+      status: "classified",
+      source: "rate-list",
+      note: "MRP series: Apex Legacy has no approved category; rate-list fallback: Accessorise.",
+    },
+  );
+});
+
+test("premium finish series stays held without range evidence and resolves with it", () => {
+  assert.equal(
+    resolveMrpClassification(
+      { itemCode: "PREMIUM-1", division: "PTMT & Plastic Fittings", series: "Cobra" },
+      "Cocks Standard",
+      new Set(["Cocks Standard", "Cocks Premium", "Unclassified"]),
+    ).category,
+    "Unclassified",
+  );
+  assert.equal(
+    resolveMrpClassification(
+      { itemCode: "PREMIUM-1", division: "PTMT & Plastic Fittings", series: "Cobra" },
+      "Cocks Standard",
+      new Set(["Cocks Standard", "Cocks Premium", "Unclassified"]),
+    ).status,
+    "unclassified",
+  );
+  assert.deepEqual(
+    resolveMrpClassification(
+      { itemCode: "PREMIUM-1", division: "PTMT & Plastic Fittings", series: "Cobra" },
+      "Unclassified",
+      new Set(["Cocks Standard", "Cocks Premium", "Unclassified"]),
+      "Cocks Standard",
+    ),
+    {
+      category: "Cocks Standard",
+      status: "classified",
+      source: "rate-list",
+      note: "MRP series: Cobra is a finish; RANGE NAME category: Cocks Standard.",
+    },
   );
 });
 
@@ -228,7 +293,7 @@ test("MRP series review separates existing resolver classifications from truly h
       },
       {
         series: "Helix",
-        status: "pending_review",
+        status: "held",
         effectiveStatus: "unclassified",
         effectiveCategories: ["Unclassified"],
         julyDemandQuantity: 30,

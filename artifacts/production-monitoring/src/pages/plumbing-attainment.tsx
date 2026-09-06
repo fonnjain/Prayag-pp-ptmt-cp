@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, Layers, TrendingUp, TrendingDown, ChevronDown, ChevronRight } from "lucide-react";
+import { MonitoringSourceBanner } from "@/components/monitoring-source-banner";
 
 const CATEGORY_ORDER = [
   "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
@@ -93,6 +94,12 @@ export default function PlumbingAttainment({ month }: { month: string }) {
           {refreshing ? "Refreshing…" : "Refresh"}
         </Button>
       </header>
+
+      <MonitoringSourceBanner
+        warning={data?.sourceWarning}
+        sourceMonth={data?.sourceMonth}
+        requestedMonth={month}
+      />
 
       {error && (
         <div className="text-sm text-red-500 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3">

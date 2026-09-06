@@ -44,9 +44,17 @@ test("rate-list parser canonicalises codes and rejects empty recognised files", 
 
 test("rate-list category promotion is conservative", () => {
   assert.equal(rateListPlanningCategory({ ...parseRateListRows([rate("1", "Ball Cock")])[0]! }), "Ball Cock");
-  assert.equal(rateListPlanningCategory(parseRateListRows([rate("2", "Unfamiliar Family")])[0]!), "Unclassified");
-  assert.equal(rateListPlanningCategory(parseRateListRows([rate("3", "ACCESSORIES")])[0]!), "Unclassified");
-  assert.equal(rateListPlanningCategory(parseRateListRows([rate("4", "SPARE PART")])[0]!), "Unclassified");
+  assert.equal(
+    rateListPlanningCategory(parseRateListRows([rate("2", "Connection")])[0]!),
+    "P.V.C. Connections",
+  );
+  assert.equal(
+    rateListPlanningCategory(parseRateListRows([rate("3", "Waste Pipe")])[0]!),
+    "Waste Pipes",
+  );
+  assert.equal(rateListPlanningCategory(parseRateListRows([rate("4", "Unfamiliar Family")])[0]!), "Unclassified");
+  assert.equal(rateListPlanningCategory(parseRateListRows([rate("5", "ACCESSORIES")])[0]!), "Unclassified");
+  assert.equal(rateListPlanningCategory(parseRateListRows([rate("6", "SPARE PART")])[0]!), "Unclassified");
 });
 
 test("rate-list categories use RANGE NAME alone", () => {
@@ -138,6 +146,28 @@ test("effective PTMT roster preserves workbook variants and adds rate-list ident
     [["101", "WHITE", "rate-list"], ["324-K", "", "rate-list"]],
   );
   assert.equal(roster.find((row) => row.itemCode === "324-K")?.classificationStatus, "unclassified");
+});
+
+test("effective PTMT roster bridges only approved Luxor and Glory MRP-only identities", () => {
+  const roster = buildEffectivePtmtRoster(
+    [],
+    [],
+    [],
+    [
+      { itemCode: "P-121", division: "PTMT & Plastic Fittings", series: "Luxor" },
+      { itemCode: "PS-144", division: "PTMT & Plastic Fittings", series: "Glory" },
+      { itemCode: "121-OSF", division: "PTMT & Plastic Fittings", series: "Standard (New Handle)" },
+      { itemCode: "122-L", division: "PTMT & Plastic Fittings", series: "Lagoona" },
+    ],
+    new Set(["Cocks Standard", "Unclassified"]),
+  );
+  assert.deepEqual(
+    roster.map((row) => [row.itemCode, row.category, row.rosterSource]),
+    [
+      ["P-121", "Cocks Standard", "mrp"],
+      ["PS-144", "Cocks Standard", "mrp"],
+    ],
+  );
 });
 
 test("category split counts effective codes, July quantities, and reviewed multipliers", () => {

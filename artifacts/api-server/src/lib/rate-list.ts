@@ -10,7 +10,9 @@ import {
   type ItemMaster,
   type MasterProduct,
 } from "@workspace/db";
-import { resolveMrpClassification, type MrpClassificationRow } from "./mrp-classification";
+import { normalizeMrpSeries, resolveMrpClassification, type MrpClassificationRow } from "./mrp-classification";
+import { fetchRateListSheetRows } from "./sheets";
+import { logger } from "./logger";
 
 export const RATE_LIST_UPLOAD_KIND = "rate_list";
 export const RATE_LIST_REQUIRED_HEADERS = ["source_tab", "code", "name", "range", "range_name"] as const;
@@ -24,7 +26,7 @@ export type RateListRow = {
 };
 
 export type EffectivePtmtRosterItem = ItemMaster & {
-  rosterSource: "workbook" | "rate-list" | "catalogue";
+  rosterSource: "workbook" | "rate-list" | "catalogue" | "mrp";
   rateListName?: string | null;
   rateListRange?: string | null;
 };
@@ -78,6 +80,8 @@ const PTMT_CATEGORY_ORDER = [
   "Ball Cock",
   "Cistern & Seat Cover",
   "Cabinet",
+  "P.V.C. Connections",
+  "Waste Pipes",
   "Unclassified",
 ] as const;
 
@@ -138,8 +142,10 @@ const PTMT_RANGE_CATEGORY_OVERRIDES: Readonly<Record<string, string>> = {
   "HAND SHOWER": "Faucets & Jetsprays & Shower",
   "HEALTH FAUCET": "Faucets & Jetsprays & Shower",
   "FLUSH VALVE": "Faucets & Jetsprays & Shower",
-  "WASTE PIPE": "Accessorise",
-  "CONNECTION": "Accessorise",
+  // These range names have dedicated PTMT categories in the authoritative
+  // workbook/report taxonomy; rate-list fallback must resolve the same way.
+  "WASTE PIPE": "Waste Pipes",
+  "CONNECTION": "P.V.C. Connections",
   "GRATING": "Accessorise",
   "LIQUID SOAP CONTAINER": "Accessorise",
   "WASTE COUPLING": "Accessorise",
@@ -217,6 +223,29 @@ export function parseRateListRows(rows: Record<string, unknown>[]): RateListRow[
   return parsed;
 }
 
+/**
+ * The live governed sheet is authoritative. The uploaded CSV remains a
+ * deliberate recovery path for connector outages or a temporarily malformed
+ * live sheet, so a planning run does not silently lose its roster.
+ */
+export async function loadRateListRows(): Promise<RateListRow[]> {
+  try {
+    const liveRows = await fetchRateListSheetRows();
+    const parsed = parseRateListRows(liveRows);
+    if (parsed.length > 0) return parsed;
+  } catch (err) {
+    logger.warn({ err: String(err) }, "Live PTMT rate list unavailable; falling back to uploaded CSV/source");
+  }
+
+  const [latest] = await db
+    .select({ rows: uploadedFilesTable.rows })
+    .from(uploadedFilesTable)
+    .where(eq(uploadedFilesTable.kind, RATE_LIST_UPLOAD_KIND))
+    .orderBy(desc(uploadedFilesTable.uploadedAt))
+    .limit(1);
+  return latest ? parseRateListRows(latest.rows as Record<string, unknown>[]) : [];
+}
+
 function rateListByCode(rows: RateListRow[]): Map<string, RateListRow> {
   const byCode = new Map<string, RateListRow>();
   for (const row of rows) {
@@ -288,9 +317,10 @@ function buildEffectivePtmtRosterWithClassifier(
     const fallbackCategory = row.classificationStatus === "classified" && row.category !== "Unclassified"
       ? row.category
       : rate ? classifyRateRow(rate) : row.category;
+    const rangeCategory = rate ? classifyRateRow(rate) : null;
     const mrp = mrpByCode.get(code);
     const mrpClassification = mrp
-      ? resolveMrpClassification(mrp, fallbackCategory, modelCategories)
+      ? resolveMrpClassification(mrp, fallbackCategory, modelCategories, rangeCategory)
       : null;
     const category = mrpClassification?.category ?? fallbackCategory;
     const status = mrpClassification?.status ?? (row.classificationStatus === "classified" && row.category !== "Unclassified"
@@ -325,6 +355,7 @@ function buildEffectivePtmtRosterWithClassifier(
         mrpByCode.get(code),
         row.planningCategory!.trim(),
         modelCategories,
+        null,
       ).category,
       itemCode: code,
       colour: "",
@@ -332,18 +363,53 @@ function buildEffectivePtmtRosterWithClassifier(
         mrpByCode.get(code),
         row.planningCategory!.trim(),
         modelCategories,
+        null,
       ).status,
       classificationSource: resolveMrpClassification(
         mrpByCode.get(code),
         row.planningCategory!.trim(),
         modelCategories,
+        null,
       ).source === "mrp" ? "mrp" : "catalogue",
       classificationNote: resolveMrpClassification(
         mrpByCode.get(code),
         row.planningCategory!.trim(),
         modelCategories,
+        null,
       ).note ?? "Reviewed catalogue product promoted into the governed PTMT roster.",
       rosterSource: "catalogue",
+      rateListName: null,
+      rateListRange: null,
+    });
+    represented.add(code);
+  }
+
+  // A small, explicit MRP-only bridge is required for the approved Luxor and
+  // Glory exception. These identities are present in the authoritative MRP
+  // and pending source but are absent from both item_master and the governed
+  // rate list. Do not generalise this to every MRP-only product: unresolved
+  // MRP rows must remain out of the executable roster until their product
+  // family has been reviewed.
+  for (const row of mrpRows) {
+    const code = normalizeRateListCode(row.itemCode);
+    if (represented.has(code) || !["LUXOR", "GLORY"].includes(normalizeMrpSeries(row.series))) continue;
+    const classification = resolveMrpClassification(
+      row,
+      "Unclassified",
+      modelCategories,
+      null,
+    );
+    if (classification.status !== "classified" || !classification.category) continue;
+    result.push({
+      id: -1 * (result.length + 1),
+      segment: "PTMT",
+      category: classification.category,
+      itemCode: code,
+      colour: "",
+      classificationStatus: classification.status,
+      classificationSource: "mrp",
+      classificationNote: classification.note ?? `MRP-only approved identity: ${row.series}.`,
+      rosterSource: "mrp",
       rateListName: null,
       rateListRange: null,
     });
@@ -358,6 +424,7 @@ function buildEffectivePtmtRosterWithClassifier(
       mrpByCode.get(row.code),
       classifyRateRow(row),
       modelCategories,
+      classifyRateRow(row),
     );
     result.push({
       id: -1 * (result.length + 1),
@@ -383,8 +450,17 @@ export function buildEffectivePtmtRoster(
   itemRows: ItemMaster[],
   rateRows: RateListRow[],
   catalogueRows: MasterProduct[] = [],
+  mrpRows: MrpClassificationRow[] = [],
+  modelCategories: ReadonlySet<string> = new Set<string>(),
 ): EffectivePtmtRosterItem[] {
-  return buildEffectivePtmtRosterWithClassifier(itemRows, rateRows, catalogueRows, rateListPlanningCategory);
+  return buildEffectivePtmtRosterWithClassifier(
+    itemRows,
+    rateRows,
+    catalogueRows,
+    rateListPlanningCategory,
+    mrpRows,
+    modelCategories,
+  );
 }
 
 function buildCodeReconciliation(
@@ -487,11 +563,9 @@ export function buildRateListCategorySplit(
 }
 
 export async function getEffectivePtmtRoster(): Promise<EffectivePtmtRosterItem[]> {
-  const [itemRows, rateUpload, catalogueRows, mrpSource, bufferRows] = await Promise.all([
+  const [itemRows, rateRows, catalogueRows, mrpSource, bufferRows] = await Promise.all([
     db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, "PTMT")),
-    db.select({ rows: uploadedFilesTable.rows }).from(uploadedFilesTable)
-      .where(eq(uploadedFilesTable.kind, RATE_LIST_UPLOAD_KIND))
-      .orderBy(desc(uploadedFilesTable.uploadedAt)).limit(1),
+    loadRateListRows(),
     db.select().from(masterProductsTable).where(and(
       eq(masterProductsTable.segment, "PTMT"),
       eq(masterProductsTable.isActive, true),
@@ -501,8 +575,6 @@ export async function getEffectivePtmtRoster(): Promise<EffectivePtmtRosterItem[
     db.select({ name: bufferCategoriesTable.name }).from(bufferCategoriesTable)
       .where(eq(bufferCategoriesTable.segment, "PTMT")),
   ]);
-  const rawRateRows = (rateUpload[0]?.rows ?? []) as Record<string, unknown>[];
-  const rateRows = rawRateRows.length > 0 ? parseRateListRows(rawRateRows) : [];
   const mrpRows = mrpSource[0]
     ? await db.select({
       itemCode: mrpControlRowsTable.itemCode,
@@ -526,13 +598,13 @@ export async function getEffectivePtmtRoster(): Promise<EffectivePtmtRosterItem[
 }
 
 export async function getRateListReport() {
-  const [rateUpload, pendingUploads, itemRows, catalogueRows, bufferRows, mrpSource] = await Promise.all([
+  const [rateRows, rateUpload, pendingUploads, itemRows, catalogueRows, bufferRows, mrpSource] = await Promise.all([
+    loadRateListRows(),
     db.select({
       id: uploadedFilesTable.id,
       filename: uploadedFilesTable.filename,
       rowCount: uploadedFilesTable.rowCount,
       uploadedAt: uploadedFilesTable.uploadedAt,
-      rows: uploadedFilesTable.rows,
     }).from(uploadedFilesTable)
       .where(eq(uploadedFilesTable.kind, RATE_LIST_UPLOAD_KIND))
       .orderBy(desc(uploadedFilesTable.uploadedAt)).limit(1),
@@ -557,8 +629,9 @@ export async function getRateListReport() {
     db.select({ id: mrpControlSourcesTable.id }).from(mrpControlSourcesTable)
       .orderBy(desc(mrpControlSourcesTable.importedAt)).limit(1),
   ]);
+  // The DB row identifies the CSV recovery source; the actual rows above may
+  // come from the live governed sheet.
   const latestRate = rateUpload[0];
-  const rateRows = latestRate ? parseRateListRows(latestRate.rows as Record<string, unknown>[]) : [];
   const julyPending = pendingUploads.find((upload) => /july/i.test(upload.filename));
   const sourceRows = julyPending ? julyPending.rows as Record<string, unknown>[] : [];
   const sourceQuantities = sourceQuantitiesByCode(sourceRows);

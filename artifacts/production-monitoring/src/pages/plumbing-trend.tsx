@@ -6,6 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, Legend,
 } from "recharts";
+import { MonitoringSourceBanner } from "@/components/monitoring-source-banner";
 
 const CATEGORY_ORDER = [
   "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
@@ -62,6 +63,13 @@ export default function PlumbingTrend({ month }: { month: string }) {
   );
 
   const cats: any[] = data?.categories ?? [];
+  const sourceBanner = (
+    <MonitoringSourceBanner
+      warning={data?.sourceWarning}
+      sourceMonth={data?.sourceMonth}
+      requestedMonth={month}
+    />
+  );
   // API returns { plant, categories, weeks } — no weeklyRows field; the array is data.weeks
   const weeklyRows: any[] = data?.weeks ?? [];
 
@@ -86,6 +94,7 @@ export default function PlumbingTrend({ month }: { month: string }) {
 
   return (
     <div className="space-y-6 max-w-[1200px] mx-auto pb-10">
+      {sourceBanner}
       <header className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2 mb-1">

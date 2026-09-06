@@ -160,6 +160,7 @@ export const PTMT_MULTIPLIER_GOLDEN: Array<{ cat: string; multiplier: number }> 
   { cat: "Cistern & Seat Cover",         multiplier: 1.2 },
   { cat: "Cabinet",                      multiplier: 1.2 },
   { cat: "Ball Cock",                    multiplier: 1.5 },
+  { cat: "P.V.C. Connections",           multiplier: 1.5 },
 ];
 
 /** PTMT grand-total benchmarks.  Tolerance ±0.1% — tight enough to catch a single dropped item. */

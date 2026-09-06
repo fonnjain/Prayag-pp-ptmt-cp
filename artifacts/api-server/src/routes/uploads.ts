@@ -7,7 +7,7 @@ import {
   parseRateListRows,
   RATE_LIST_UPLOAD_KIND,
 } from "../lib/rate-list";
-import { inferUploadPlanningMonth } from "../lib/upload-period";
+import { inferUploadPlanningMonth, monthInUploadFilename } from "../lib/upload-period";
 
 const router: IRouter = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
@@ -23,12 +23,14 @@ const VALID_KINDS = new Set([
 const PENDING_BALANCE_HEADERS = ["Balance_Qty", "Balance Qty", "Bal.Qty", "Bal. Qty"];
 const CURRENT_STOCK_HEADERS = ["C/Stock", "C Stock", "Closing Stock"];
 const ITEM_CODE_HEADERS = ["Item Code", "ItemCode", "Item No.", "Old Item Code"];
-const PENDING_QTY_HEADERS = ["Qty", "Qty.", ...PENDING_BALANCE_HEADERS];
+const PENDING_QTY_HEADERS = ["Qty", "Qty.", ...PENDING_BALANCE_HEADERS, ...CURRENT_STOCK_HEADERS];
 
 export interface SheetSelectionDiagnostic {
   name: string;
   headerRowIndex: number;
   headers: string[];
+  dataRowCount?: number;
+  selectionRule?: string;
 }
 
 export type PendingSheetDiagnostic = SheetSelectionDiagnostic;
@@ -56,6 +58,7 @@ router.get("/uploads", async (_req, res): Promise<void> => {
       filename: uploadedFilesTable.filename,
       period: uploadedFilesTable.period,
       rowCount: uploadedFilesTable.rowCount,
+      sourceMetadata: uploadedFilesTable.sourceMetadata,
       uploadedAt: uploadedFilesTable.uploadedAt,
     })
     .from(uploadedFilesTable)
@@ -83,13 +86,13 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
     res.status(400).json({ error: "Invalid upload period", message: "period must use YYYY-MM format" });
     return;
   }
-  const period = inferUploadPlanningMonth(raw, req.file.originalname, new Date(), requestedPeriod || null);
-
   let workbook: XLSX.WorkBook;
   let rows: Record<string, unknown>[];
+  let selectedSheet: SheetSelectionDiagnostic;
   try {
     workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     rows = extractRows(workbook, raw);
+    selectedSheet = selectedSheetForUpload(workbook, raw);
   } catch (err) {
     req.log.warn({ err }, "Failed to parse uploaded workbook");
     if (err instanceof SheetSelectionError) {
@@ -104,6 +107,37 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
     res.status(400).json({ error: "Could not parse the uploaded Excel file" });
     return;
   }
+  const sourcePeriod = raw === "pending_orders"
+    ? monthInUploadFilename(selectedSheet.name)
+    : monthInUploadFilename(req.file.originalname);
+  const period = inferUploadPlanningMonth(
+    raw,
+    req.file.originalname,
+    new Date(),
+    requestedPeriod || null,
+    sourcePeriod,
+  );
+  const quantityTotals: Record<string, number> = {};
+  for (const row of rows) {
+    const rawSegment = String(row.Segment ?? "").trim().toUpperCase();
+    const segment = rawSegment === "PT" || rawSegment === "PTMT"
+      ? "PTMT"
+      : rawSegment === "PL" || rawSegment === "PLUMBING" || rawSegment === "AGRI"
+        ? "Plumbing"
+        : rawSegment || "total";
+    const rawQuantity = row.Balance_Qty ?? row["Balance Qty"] ?? row["Bal. Qty"] ?? row.Qty ?? row["Net Stock"];
+    const quantity = Number(rawQuantity);
+    if (Number.isFinite(quantity)) quantityTotals[segment] = (quantityTotals[segment] ?? 0) + quantity;
+  }
+  const sourceMetadata: Record<string, unknown> = {
+    worksheet: selectedSheet.name,
+    selectionRule: selectedSheet.selectionRule ?? "content-based selection",
+    sourceDataRowCount: selectedSheet.dataRowCount ?? rows.length,
+    detectedSourcePeriod: sourcePeriod,
+    detectedPlanningPeriod: inferUploadPlanningMonth(raw, req.file.originalname, new Date(), null, sourcePeriod),
+    periodBasis: requestedPeriod ? "explicit-upload-period" : sourcePeriod ? "workbook-or-filename-period" : "upload-date",
+    quantityTotals,
+  };
 
   // For Plumbing stock uploads: also upsert item_master (segment='Plumbing').
   // This is the mechanism that seeds Plumbing items into the planning catalogue.
@@ -125,6 +159,7 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
       period,
       rowCount: rows.length,
       rows,
+      sourceMetadata,
     })
     .returning({
       id: uploadedFilesTable.id,
@@ -132,12 +167,14 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
       filename: uploadedFilesTable.filename,
       period: uploadedFilesTable.period,
       rowCount: uploadedFilesTable.rowCount,
+      sourceMetadata: uploadedFilesTable.sourceMetadata,
       uploadedAt: uploadedFilesTable.uploadedAt,
     });
 
   res.status(201).json({
     ...record,
     period: inferUploadPlanningMonth(record!.kind, record!.filename, record!.uploadedAt, record!.period),
+    sourceMetadata: record!.sourceMetadata,
     ...(itemMasterUpsert ? { itemMasterUpsert } : {}),
   });
 });
@@ -168,7 +205,11 @@ function inspectSheet(sheet: XLSX.WorkSheet, name: string): PendingSheetDiagnost
   const headers = (raw[headerRowIndex] ?? [])
     .map((h) => String(h ?? "").trim())
     .filter(Boolean);
-  return { name, headerRowIndex, headers };
+  const dataRowCount = raw
+    .slice(headerRowIndex + 1)
+    .filter((row) => (row ?? []).some((cell) => cell !== null && cell !== undefined && cell !== ""))
+    .length;
+  return { name, headerRowIndex, headers, dataRowCount };
 }
 
 function sheetToObjects(sheet: XLSX.WorkSheet): Record<string, unknown>[] {
@@ -194,7 +235,11 @@ function hasAnyHeader(headers: string[], acceptedHeaders: string[]): boolean {
 }
 
 function hasCurrentStockHeader(headers: string[]): boolean {
-  return hasAnyHeader(headers, CURRENT_STOCK_HEADERS);
+  return (
+    hasAnyHeader(headers, ITEM_CODE_HEADERS) &&
+    hasAnyHeader(headers, ["Colour", "Color"]) &&
+    hasAnyHeader(headers, CURRENT_STOCK_HEADERS)
+  );
 }
 
 function hasPtmtSheetHeader(headers: string[]): boolean {
@@ -222,15 +267,30 @@ type SheetSelectionSpec = {
   expected: string;
   hasRequiredHeaders: (headers: string[]) => boolean;
   isAcceptedName: (name: string) => boolean;
+  preference?: "largest" | "smallest";
+  selectionRule?: string;
 };
 
 function selectSheet(workbook: XLSX.WorkBook, spec: SheetSelectionSpec): SheetSelectionDiagnostic {
   const diagnostics = workbook.SheetNames.map((name) => inspectSheet(workbook.Sheets[name]!, name));
-  const contentSheet = diagnostics.find((sheet) => spec.hasRequiredHeaders(sheet.headers));
-  if (contentSheet) return contentSheet;
+  const contentSheets = diagnostics.filter((sheet) => spec.hasRequiredHeaders(sheet.headers));
+  if (contentSheets.length > 0) {
+    const candidates = [...contentSheets];
+    if (spec.preference === "largest") {
+      candidates.sort((a, b) => (b.dataRowCount ?? 0) - (a.dataRowCount ?? 0));
+    } else if (spec.preference === "smallest") {
+      candidates.sort((a, b) => (a.dataRowCount ?? 0) - (b.dataRowCount ?? 0));
+    }
+    const selected = candidates[0]!;
+    selected.selectionRule = spec.selectionRule ?? "required headers";
+    return selected;
+  }
 
   const namedSheet = diagnostics.find((sheet) => spec.isAcceptedName(sheet.name));
-  if (namedSheet) return namedSheet;
+  if (namedSheet) {
+    namedSheet.selectionRule = "accepted worksheet name fallback";
+    return namedSheet;
+  }
 
   throw new SheetSelectionError(spec.code, diagnostics, spec.expected);
 }
@@ -241,6 +301,8 @@ export function selectPendingSheet(workbook: XLSX.WorkBook): PendingSheetDiagnos
     expected: "pending-order",
     hasRequiredHeaders: (headers) => hasAnyHeader(headers, PENDING_BALANCE_HEADERS),
     isAcceptedName: isNamedPendingSheet,
+    preference: "largest",
+    selectionRule: "required balance headers; largest matching data sheet",
   });
 }
 
@@ -375,6 +437,8 @@ export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<strin
       hasRequiredHeaders: hasCurrentStockHeader,
       isAcceptedName: (name) =>
         /f\.g\.?\s*sheet/i.test(name) || /f\.g/i.test(name) || /stock/i.test(name),
+      preference: "largest",
+      selectionRule: "Item Code + Colour + C/Stock headers; largest matching data sheet",
     });
     const fgSheet = workbook.Sheets[fgSheetSelection.name]!;
     const rows = sheetToObjects(fgSheet);
@@ -404,9 +468,21 @@ export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<strin
         /ptmt/i.test(name) ||
         /last.month.pending/i.test(name) ||
         /pending/i.test(name),
+      preference: "smallest",
+      selectionRule: "Item Code + Colour + Qty headers; smallest matching data sheet",
     });
     const sheet = workbook.Sheets[sheetSelection.name]!;
-    return sheetToObjects(sheet);
+    return sheetToObjects(sheet).map((row) => {
+      const normalized: Record<string, unknown> = { ...row };
+      const quantityKey = Object.keys(normalized).find(
+        (key) => /^qty\.?$/i.test(key) || /balance|c[\s/\\]?stock|closing\s*stock/i.test(key),
+      );
+      if (quantityKey && quantityKey !== "Qty") {
+        normalized.Qty = normalized[quantityKey];
+        delete normalized[quantityKey];
+      }
+      return normalized;
+    });
   }
 
   if (kind === "plumbing_fg_stock") {
@@ -485,6 +561,50 @@ export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<strin
   });
   const sheet = workbook.Sheets[sheetSelection.name]!;
   return sheetToObjects(sheet);
+}
+
+/**
+ * Returns the same deterministic worksheet choice used by extractRows. This
+ * is intentionally exported so the upload route can persist provenance
+ * without duplicating the selection heuristic.
+ */
+export function selectedSheetForUpload(
+  workbook: XLSX.WorkBook,
+  kind: string,
+): SheetSelectionDiagnostic {
+  if (kind === "pending_orders") return selectPendingSheet(workbook);
+  if (kind === "current_stock") {
+    return selectSheet(workbook, {
+      code: "CURRENT_STOCK_SHEET_NOT_FOUND",
+      expected: "current-stock",
+      hasRequiredHeaders: hasCurrentStockHeader,
+      isAcceptedName: (name) => /f\.g\.?\s*sheet/i.test(name) || /f\.g/i.test(name) || /stock/i.test(name),
+      preference: "largest",
+      selectionRule: "Item Code + Colour + C/Stock headers; largest matching data sheet",
+    });
+  }
+  if (kind === "last_month_pending") {
+    return selectSheet(workbook, {
+      code: "LAST_MONTH_PENDING_SHEET_NOT_FOUND",
+      expected: "last-month-pending",
+      hasRequiredHeaders: hasLastMonthPendingHeader,
+      isAcceptedName: (name) => /^ptmt$/i.test(name) || /ptmt/i.test(name) || /last.month.pending/i.test(name) || /pending/i.test(name),
+      preference: "smallest",
+      selectionRule: "Item Code + Colour + Qty headers; smallest matching data sheet",
+    });
+  }
+  if (kind === "plumbing_fg_stock") {
+    return selectSheet(workbook, {
+      code: "PLUMBING_FG_STOCK_SHEET_NOT_FOUND",
+      expected: "Plumbing FG stock",
+      hasRequiredHeaders: hasPlumbingStockHeader,
+      isAcceptedName: (name) => /^fg\s*stock$/i.test(name) || /fg.stock/i.test(name) || /stock/i.test(name),
+      selectionRule: "Item Code + Net Stock headers",
+    });
+  }
+  const firstName = workbook.SheetNames[0];
+  if (!firstName) throw new SheetSelectionError("RATE_LIST_SHEET_NOT_FOUND", [], "rate-list");
+  return { name: firstName, headerRowIndex: 0, headers: [], selectionRule: "first worksheet (CSV/rate-list import)" };
 }
 
 export function extractRateListRows(workbook: XLSX.WorkBook): Record<string, unknown>[] {

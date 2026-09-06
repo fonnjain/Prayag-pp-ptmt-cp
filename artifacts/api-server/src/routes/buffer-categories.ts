@@ -1,7 +1,13 @@
 import { Router, type IRouter } from "express";
-import { and, eq } from "drizzle-orm";
-import { db, bufferCategoriesTable } from "@workspace/db";
-import { runSeasonalityEngine, runPlumbingSeasonalityEngine, computeReliabilityFlag, Z_VALUES } from "../lib/seasonality-engine";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { db, bufferCategoriesTable, ptmtBufferMultipliersTable, seasonalityRunsTable } from "@workspace/db";
+import {
+  runSeasonalityEngine,
+  runPlumbingSeasonalityEngine,
+  runPtmtMonthlySeasonalityEngine,
+  computeReliabilityFlag,
+  Z_VALUES,
+} from "../lib/seasonality-engine";
 import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
@@ -14,6 +20,48 @@ router.get("/buffer-categories", async (req, res): Promise<void> => {
     ? await db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)).orderBy(bufferCategoriesTable.name)
     : await db.select().from(bufferCategoriesTable).orderBy(bufferCategoriesTable.name);
   res.json(categories);
+});
+
+// ─── GET /buffer-categories/monthly ───────────────────────────────────────────
+// Month-scoped PTMT output feeds Temporary Plans. Explicit overrides remain
+// available through the buffer category controls.
+
+router.get("/buffer-categories/monthly", async (req, res): Promise<void> => {
+  const month = req.query.month ? String(req.query.month) : undefined;
+  const rows = month
+    ? await db.select().from(ptmtBufferMultipliersTable)
+      .where(eq(ptmtBufferMultipliersTable.month, month))
+      .orderBy(asc(ptmtBufferMultipliersTable.category))
+    : await db.select().from(ptmtBufferMultipliersTable)
+      .orderBy(asc(ptmtBufferMultipliersTable.month), asc(ptmtBufferMultipliersTable.category));
+  res.json({ rows, segment: "PTMT" });
+});
+
+// ─── GET /buffer-categories/seasonality-status ────────────────────────────────
+// Compact operational view used by the Data page and audit tooling. The
+// multiplier column is the current applied default; an explicit override is
+// returned separately so automatic-vs-user decisions remain visible.
+router.get("/buffer-categories/seasonality-status", async (req, res): Promise<void> => {
+  const requestedSegment = req.query.segment ? String(req.query.segment) : undefined;
+  const categories = requestedSegment
+    ? await db.select().from(bufferCategoriesTable)
+      .where(eq(bufferCategoriesTable.segment, requestedSegment))
+      .orderBy(asc(bufferCategoriesTable.name))
+    : await db.select().from(bufferCategoriesTable).orderBy(asc(bufferCategoriesTable.segment), asc(bufferCategoriesTable.name));
+  const runs = await db
+    .select()
+    .from(seasonalityRunsTable)
+    .orderBy(desc(seasonalityRunsTable.startedAt))
+    .limit(12);
+
+  res.json({
+    categories: categories.map((category) => ({
+      ...category,
+      appliedMultiplier: category.overrideMultiplier ?? category.multiplier,
+      applicationMode: category.overrideMultiplier === null ? "automatic" : "override",
+    })),
+    runs,
+  });
 });
 
 // ─── PATCH /buffer-categories/:id ────────────────────────────────────────────
@@ -80,7 +128,84 @@ router.patch("/buffer-categories/:id", async (req, res): Promise<void> => {
 // ─── POST /buffer-categories/recompute ───────────────────────────────────────
 
 let _ptmtRecomputeInFlight: Promise<void> | null = null;
+let _ptmtMonthlyRecomputeInFlight: ReturnType<typeof runPtmtMonthlySeasonalityEngine> | null = null;
 let _plumbingRecomputeInFlight: Promise<void> | null = null;
+
+router.post("/buffer-categories/recompute-monthly", async (req, res): Promise<void> => {
+  const rawZ = req.query.z ?? req.body?.z;
+  const zInput = rawZ !== undefined ? Number(rawZ) : 1.65;
+  const validZValues = Object.values(Z_VALUES);
+  const zScore = validZValues.includes(zInput as typeof validZValues[number]) ? zInput : 1.65;
+
+  if (_ptmtMonthlyRecomputeInFlight) {
+    res.status(202).json({ message: "PTMT monthly recompute already in progress — please wait" });
+    return;
+  }
+
+  const run = async () => {
+    const result = await runPtmtMonthlySeasonalityEngine(zScore);
+    const existing = await db
+      .select({
+        month: ptmtBufferMultipliersTable.month,
+        category: ptmtBufferMultipliersTable.category,
+        overrideMultiplier: ptmtBufferMultipliersTable.overrideMultiplier,
+      })
+      .from(ptmtBufferMultipliersTable);
+    const overrides = new Map(
+      existing.map((row) => [`${row.month}:${row.category}`, row.overrideMultiplier]),
+    );
+
+    const values = result.rows.map((row) => {
+      const overrideMultiplier = overrides.get(`${row.month}:${row.category}`) ?? null;
+      return {
+        month: row.month,
+        category: row.category,
+        multiplier: overrideMultiplier ?? row.suggestedMultiplier,
+        suggestedMultiplier: row.suggestedMultiplier,
+        overrideMultiplier,
+        zScore: row.zScore,
+        cvValue: row.cvValue,
+        dataQuality: row.dataQuality,
+        sourceObservations: row.sourceObservations,
+        lastComputedAt: result.computedAt,
+      };
+    });
+
+    await db
+      .insert(ptmtBufferMultipliersTable)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [ptmtBufferMultipliersTable.month, ptmtBufferMultipliersTable.category],
+        set: {
+          multiplier: sql`excluded.multiplier`,
+          suggestedMultiplier: sql`excluded.suggested_multiplier`,
+          zScore: sql`excluded.z_score`,
+          cvValue: sql`excluded.cv_value`,
+          dataQuality: sql`excluded.data_quality`,
+          sourceObservations: sql`excluded.source_observations`,
+          lastComputedAt: sql`excluded.last_computed_at`,
+          updatedAt: new Date(),
+        },
+      });
+
+    return result;
+  };
+
+  _ptmtMonthlyRecomputeInFlight = run();
+  try {
+    const result = await _ptmtMonthlyRecomputeInFlight;
+    const rows = await db
+      .select()
+      .from(ptmtBufferMultipliersTable)
+      .orderBy(asc(ptmtBufferMultipliersTable.month), asc(ptmtBufferMultipliersTable.category));
+    res.json({ rows, computedAt: result.computedAt.toISOString(), zScore, segment: "PTMT" });
+  } catch (err) {
+    logger.error({ err, zScore }, "ptmt-monthly-seasonality: recompute failed");
+    res.status(500).json({ error: "PTMT monthly seasonality recompute failed" });
+  } finally {
+    _ptmtMonthlyRecomputeInFlight = null;
+  }
+});
 
 router.post("/buffer-categories/recompute", async (req, res): Promise<void> => {
   const rawZ = req.query.z ?? req.body?.z;
@@ -109,9 +234,13 @@ router.post("/buffer-categories/recompute", async (req, res): Promise<void> => {
             .from(bufferCategoriesTable)
             .where(and(eq(bufferCategoriesTable.name, cat.category), eq(bufferCategoriesTable.segment, "Plumbing")));
 
-          // Applied = Override when set; otherwise keep the existing DB multiplier (sheet-derived default).
-          // suggestedMultiplier is ADVISORY ONLY — never auto-applied.
-          const appliedMultiplier = row?.overrideMultiplier ?? row?.multiplier ?? 1.5;
+          // Applied = explicit override when set; otherwise use the
+          // non-null auto suggestion. Insufficient categories retain their
+          // existing sheet/DB multiplier rather than receiving a guess.
+          const appliedMultiplier = row?.overrideMultiplier
+            ?? cat.suggestedMultiplier
+            ?? row?.multiplier
+            ?? 1.5;
 
           await db
             .update(bufferCategoriesTable)
@@ -167,9 +296,13 @@ router.post("/buffer-categories/recompute", async (req, res): Promise<void> => {
             .select({ overrideMultiplier: bufferCategoriesTable.overrideMultiplier, multiplier: bufferCategoriesTable.multiplier })
             .from(bufferCategoriesTable)
             .where(eq(bufferCategoriesTable.name, cat.category));
-          // Applied = Override when set; otherwise keep the existing business multiplier.
-          // suggestedMultiplier is ADVISORY ONLY — it must never silently replace the plan value.
-          const appliedMultiplier = row?.overrideMultiplier ?? row?.multiplier ?? 1;
+          // Applied = explicit override when set; otherwise use the
+          // non-null auto suggestion. Insufficient categories retain their
+          // existing multiplier.
+          const appliedMultiplier = row?.overrideMultiplier
+            ?? cat.suggestedMultiplier
+            ?? row?.multiplier
+            ?? 1;
 
           await db
             .update(bufferCategoriesTable)

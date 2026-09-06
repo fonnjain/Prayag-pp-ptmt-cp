@@ -631,8 +631,8 @@ export default function RunsPage() {
     });
   };
 
-  const handleCreate = () => {
-    if (planType === "production" && segment === "PTMT" && !temporaryRunId) {
+  const handleCreate = (requestedPlanType: "temporary" | "production" = planType) => {
+    if (requestedPlanType === "production" && segment === "PTMT" && !temporaryRunId) {
       toast({
         title: "Select a finalized Temporary Plan",
         description: "PTMT Production Plans are fitted only from a frozen Temporary Plan.",
@@ -647,15 +647,15 @@ export default function RunsPage() {
           month,
           segment,
           effectiveFrom,
-          planType,
-          temporaryRunId: planType === "production" && temporaryRunId ? Number(temporaryRunId) : null,
+          planType: requestedPlanType,
+          temporaryRunId: requestedPlanType === "production" && temporaryRunId ? Number(temporaryRunId) : null,
         },
       },
       {
         onSuccess: () => {
           toast({
-            title: planType === "temporary" ? "Temporary Plan frozen" : "Production Plan frozen",
-            description: planType === "temporary"
+            title: requestedPlanType === "temporary" ? "Temporary Plan frozen" : "Production Plan frozen",
+            description: requestedPlanType === "temporary"
               ? `Demand-true snapshot for ${formatMonthLabel(month)} saved.`
               : `Machine-feasible snapshot for ${formatMonthLabel(month)} saved.`,
           });
@@ -803,7 +803,7 @@ export default function RunsPage() {
               </Button>
             )}
             <Button
-              onClick={handleCreate}
+              onClick={() => handleCreate()}
               disabled={createRun.isPending || (planType === "production" && segment === "PTMT" && !temporaryRunId)}
             >
               {creatingPlan ? "Freezing…" : `Freeze ${planType === "temporary" ? "Temporary" : "Production"} Plan`}
@@ -826,7 +826,13 @@ export default function RunsPage() {
           <Pass2AuditView runId={auditRunId} onClose={() => setAuditRunId(null)} />
         )}
 
-        {showMonthEmpty && <MonthEmptyState segment={segment} />}
+        {showMonthEmpty && (
+          <MonthEmptyState
+            segment={segment}
+            onCreateTemporaryPlan={() => handleCreate("temporary")}
+            isCreatingTemporaryPlan={creatingPlan || createRun.isPending}
+          />
+        )}
 
         <Card>
           <CardHeader>

@@ -12,6 +12,7 @@ import {
   Unlink,
 } from "lucide-react";
 import { fmtDate } from "@/lib/utils";
+import { MonitoringSourceBanner } from "@/components/monitoring-source-banner";
 
 const CATEGORY_ORDER = [
   "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
@@ -72,6 +73,8 @@ interface ItemRow {
 
 interface MonitoringData {
   month: string;
+  sourceMonth?: string | null;
+  sourceWarning?: string | null;
   lastDataDate: string | null;
   workingDaysElapsed: number;
   weeks: WeekRow[];
@@ -187,6 +190,11 @@ export default function PlumbingMonitoring({ month, selectedCategory }: { month:
 
       {data && (
         <>
+          <MonitoringSourceBanner
+            warning={data.sourceWarning}
+            sourceMonth={data.sourceMonth}
+            requestedMonth={month}
+          />
           {/* Feasibility banner — W1 release is a priority ranking, not an achievable weekly target */}
           {w1Release > 200_000 && demonstratedWeeklyCapacity > 0 && (
             <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">

@@ -159,16 +159,18 @@ export default function CategoryPage() {
   // Resolve category name dynamically from the API (supports PTMT + Plumbing)
   const { data: catData } = useListBufferCategories({ segment } as any);
   const allCategories = (catData as unknown as BufferCategory[] | undefined) ?? [];
-  const category = allCategories.find((c) => categorySlug(c.name) === slug)?.name;
+  const isHeldWastePipes = segment === "PTMT" && slug === categorySlug("Waste Pipes");
+  const category = allCategories.find((c) => categorySlug(c.name) === slug)?.name
+    ?? (isHeldWastePipes ? "Waste Pipes" : undefined);
 
   const { data, isLoading, isError } = useListPlanItems(
     { month, segment, category: category ?? "" },
-    { query: { enabled: Boolean(category) } as any },
+    { query: { enabled: Boolean(category) && !isHeldWastePipes } as any },
   );
 
   const { data: bandsData } = useListWeeklyReleaseBands(
     { segment, ...(({} as any)) },
-    { query: { enabled: Boolean(category) } as any },
+    { query: { enabled: Boolean(category) && !isHeldWastePipes } as any },
   );
   const bands = (bandsData as unknown as WeeklyReleaseBand[] | undefined) ?? [];
   const categoryBand = bands.find((b) => b.categoryName === category);
@@ -235,6 +237,28 @@ export default function CategoryPage() {
     return (
       <AppLayout>
         <p className="text-sm text-red-600">Unknown category.</p>
+      </AppLayout>
+    );
+  }
+
+  if (isHeldWastePipes) {
+    return (
+      <AppLayout>
+        <div className="max-w-2xl space-y-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-amber-700">PTMT category</p>
+            <h1 className="mt-1 text-2xl font-semibold text-gray-900">Waste Pipes</h1>
+          </div>
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="p-5">
+              <p className="text-sm font-medium text-amber-900">Held pending capacity approval</p>
+              <p className="mt-1 text-sm leading-6 text-amber-800">
+                This category is visible for review, but it is not included in executable planning until an approved
+                multiplier and capacity treatment are confirmed from the production evidence.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
       </AppLayout>
     );
   }

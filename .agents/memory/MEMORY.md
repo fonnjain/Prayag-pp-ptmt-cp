@@ -40,12 +40,14 @@
 - [Order Sheet TYPE classification](order-sheet-type-classification.md) — TYPE is authoritative exact membership; C P and HDPE PIPE remain excluded from both planning segments.
 - [Sheet tab name normalisation](tab-normalisation.md) — order sheets use "July" not "Jul"; buildTabMap()+normTab() in seasonality-engine.ts maps full names→FiscalMonth; fixes missing Jul data (10→12 months per FY).
 - [Plumbing buffer CV methodology](plumbing-buffer-cv.md) — our engine uses category-aggregate monthly CV; golden values use item-level weighted-average CV (per-SKU); category CV is always lower; SWR Pipe gap ~-1.0.
+- [Plumbing historical multiplier matrix](plumbing-historical-multiplier-matrix.md) — June is mixed: SWR Fitting is 1.2×, while CPVC/UPVC are 1.5× Pipe/Fitting and Solvents are 2.0×.
 - [PTMT buffer multiplier locks](ptmt-multiplier-locks.md) — AI engine drifts PTMT multipliers; lock with overrideMultiplier via PATCH; PTMT_TOLERANCE=0.001; 76/76 regression suite includes per-category Max/Min.
 - [Plumbing workbook tab structure](plumbing-workbook-tab-structure.md) — CPVC/SWR/UPVC/AGRI TOP ITEM tabs have NO type column and NO section headers; all items listed sequentially; type resolved via FG stock Category col or MATERIAL_TYPE_DEFAULT fallback.
 - [Workbook ID config](workbook-id-config.md) — workbook_config DB table (migration 012) stores IDs per division+month; getWorkbookIdForMonth() checks DB first then hardcoded maps; WorkbookConfigPanel on Data page allows UI edits.
 - [Replan invariant rounding](replan-invariant-rounding.md) — round planTotal before storing in c.plan; derive remaining = planTotal − producedCapped (never round independently); update point-in-time goldens each time Sheet3 advances significantly.
 - [Upload column aliases](upload-column-aliases.md) — Aug uploads renamed qty/code headers; alias lists in sumByKey calls must cover every layout or stock/pending silently zero.
 - [Upload period semantics](upload-period-semantics.md) — explicit YYYY-MM wins; legacy previous-month source filenames shift forward and monthless DATA falls back to upload date.
+- [Pending source vintage](pending-source-vintage.md) — align pending snapshot months before interpreting manual/app variance as missing data or over-counting.
 - [Pending open-balance source](pending-open-balance-source.md) — current pending is unfulfilled `Bal. Qty`; invoice `Quantity` is never a substitute and invoice-only layouts remain explicit structural zero.
 - [Planning uploads-only isolation](planning-isolation.md) — plan build reads stock/pending from uploads only (loud named 422 when missing); sheet reads gated by allow-list guard in sheets.ts; Order column display-only.
 - [Plan-run baseline citation](plan-run-baseline.md) — corrective replans cite frozen plan runs; engine stays live unless route passes planRunId; cited runs undeletable; drift keys need category.
@@ -74,6 +76,7 @@
 - [Corrective capacity basis](corrective-capacity-basis.md) — weekday-only Cap/Day aligns with calendar Mon–Sat remaining days; p90 rank effects can still raise capacity.
 - [Live pending failure boundary](live-pending-failure-boundary.md) — corrective replans must fail on unavailable live pending reads, while valid zero/empty reads remain diagnostic results.
 - [Regression verifier authentication](regression-verifier-auth.md) — the CLI needs a valid existing admin account; bootstrap credentials may not match seeded accounts.
+- [Regression root-cause gating](regression-root-cause-gating.md) — cross-source comparisons must distinguish a structured source-input failure from a valid zero metric before diagnosing data drift.
 - [Pending reconciliation drift](pending-reconciliation-drift.md) — hard-gate the item identity and residual; treat historical movement/clamp totals as warnings when live inputs drift.
 - [Pending alias parity](pending-alias-parity.md) — apply pending identity aliases before both diagnostics and plan aggregation, or a reported match can still contribute zero.
 - [Manual plan parity boundary](manual-plan-parity.md) — aligning current pending does not prove parity; compare stock, pending-last-month, and buffer inputs before changing formulas or goldens.
@@ -97,7 +100,14 @@
 - [Legacy corrective provenance](legacy-corrective-provenance.md) — old corrective targets may lack frozen input snapshots, so later Temporary Plans need explicit source-state reconciliation.
 - [PTMT rate-list roster](rate-list-roster.md) — the supplied rate list is governed PTMT identity evidence, with workbook precedence and conservative category classification.
 - [PTMT mapping business hold](ptmt-mapping-business-hold.md) — CONNECTION is 63,230 July pieces alone; hold planning until Prayag resolves its category/capacity treatment.
-- [Authoritative MRP controls](authoritative-mrp-controls.md) — MRP series outrank inferred mappings; disputed families stay held until category and capacity treatment are approved.
+- [Waste Pipes historical multiplier](waste-pipes-historical-multiplier.md) — workbook ratios are ~1.5× in Mar–May/Jul but ~1.2× in Jun; no single multiplier is safe to infer.
+- [Authoritative MRP controls](authoritative-mrp-controls.md) — MRP governs identity/series/discontinuation; mapped series win, unresolved series can fall back to the rate list, premium proposals stay held.
 - [MRP API discontinued boundary](mrp-api-discontinued-boundary.md) — only 18 of 233 discontinued rows have API dates; the MRP file remains the authoritative withdrawal source.
 - [Month selection semantics](month-selection-semantics.md) — no-query current month may fall back; any month present in the URL is explicit and must show a neutral empty state.
 - [Historical reporting fallback](historical-reporting-fallback.md) — finalized runs are the historical source of truth; legacy Plumbing reporting may use raw frozen rows when scheduler evidence is absent.
+- [Monitoring workbook fallback](monitoring-workbook-fallback.md) — monitoring may use the latest prior workbook with source-month provenance; planning and corrective reads stay strict.
+- [PTMT monthly workbook structure](ptmt-monthly-workbook-structure.md) — REPORT 1–9 repeat across monthly files, but mixed views and uncovered DUMMY rows block taxonomy adoption without full-month access.
+- [PTMT monthly multiplier matrix](ptmt-monthly-multiplier-matrix.md) — most categories move in monthly bands (1.5/2.0/2.5, then 1.2); Cocks Standard is mixed in May/Jun.
+- [Seasonality engine operational status](seasonality-engine-operational-status.md) — one historical CV suggestion per seven categories; manual recompute only, with seeded overrides still governing plans.
+- [PTMT shared capacity pools](ptmt-shared-capacity-pools.md) — Special Cock, Collapsible Waste Pipes, and Showers Sets consume approved existing pools; never create duplicate capacity rows.
+- [MRP monitoring error contract](mrp-monitoring-error-contract.md) — held PTMT MRP approval is a named 422, not a generic monitoring 500.

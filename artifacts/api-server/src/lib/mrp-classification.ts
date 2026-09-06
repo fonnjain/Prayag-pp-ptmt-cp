@@ -34,6 +34,10 @@ const EXPLICIT_HELD_CATEGORIES = new Set([
 export const REVIEWED_MRP_SERIES_CROSSWALK: Readonly<Record<string, string>> = {
   "STANDARD (NEW HANDLE)": "Cocks Standard",
   "STANDARD (OLD HANDLE)": "Cocks Standard",
+  // Prayag MRP product descriptions identify these finish series as the same
+  // standard cock families already governed by 121/124/144 range mappings.
+  LUXOR: "Cocks Standard",
+  GLORY: "Cocks Standard",
   "CISTERN": "Cistern & Seat Cover",
   "CISTERN'S & SEAT COVER'S ACCESSORIES": "Cistern & Seat Cover",
   "TOILET SEAT COVERS": "Cistern & Seat Cover",
@@ -44,32 +48,42 @@ export const REVIEWED_MRP_SERIES_CROSSWALK: Readonly<Record<string, string>> = {
 };
 
 /**
- * These exact series were proposed as Cocks Premium, but premium-versus-
- * standard is a business decision and must not receive a buffer yet.
+ * These exact series have no matching product-level RANGE NAME evidence in the
+ * working sheet and therefore still need Prayag review.
  */
 export const PENDING_REVIEW_MRP_SERIES: ReadonlySet<string> = new Set([
-  "EROSA (BLACK)",
+  "EROSA",
+  "CRYSTAL",
+  "ASTRA",
+]);
+
+const RANGE_DRIVEN_FINISH_SERIES = new Set([
   "COBRA",
   "HELIX",
-  "LUXOR",
-  "QUADRA (ROYAL)",
-  "CRYSTAL",
-  "GLORY",
-  "ASTRA",
+  "QUADRA",
   "ROMAN",
   "DIAMOND",
-  "FLORA (ROYAL)",
+  "FLORA",
 ]);
 
 export function normalizeMrpSeries(value: unknown): string {
   return String(value ?? "").trim().toUpperCase().replace(/\s+/g, " ");
 }
 
+function normalizeFinishSeries(value: unknown): string {
+  return normalizeMrpSeries(value).replace(
+    /\s+\((?:BLACK|BLUE|GOLD|PEACH|ROYAL|WINE|DARK BLUE)\)$/,
+    "",
+  );
+}
+
 export function getMrpSeriesCrosswalkDecision(series: unknown): MrpSeriesCrosswalkDecision {
   const normalized = normalizeMrpSeries(series);
   const category = REVIEWED_MRP_SERIES_CROSSWALK[normalized];
   if (category) return { category, status: "applied" };
-  if (PENDING_REVIEW_MRP_SERIES.has(normalized)) return { category: null, status: "pending_review" };
+  if (PENDING_REVIEW_MRP_SERIES.has(normalizeFinishSeries(normalized))) {
+    return { category: null, status: "pending_review" };
+  }
   return { category: null, status: "unmapped" };
 }
 
@@ -102,6 +116,9 @@ export function deriveMrpPlanningCategory(
   const reviewed = getMrpSeriesCrosswalkDecision(value);
   if (reviewed.status === "applied") return { category: reviewed.category, status: "resolved" };
   if (reviewed.status === "pending_review") return { category: null, status: "hold" };
+  if (RANGE_DRIVEN_FINISH_SERIES.has(normalizeFinishSeries(value))) {
+    return { category: null, status: "hold" };
+  }
   if (itemCode.toUpperCase() === "DB-02L") return { category: "Cistern & Seat Cover", status: "resolved" };
   if (division === "Pipes & Fittings") {
     const material = materialPrefix(value);
@@ -135,15 +152,22 @@ export type EffectiveMrpClassification = {
 };
 
 /**
- * Apply the terminal MRP precedence rule. A non-empty series is never allowed
- * to fall through to the rate list: it either maps to a configured planning
- * category or remains visible as an unclassified/held series. Only an absent
- * series may use the rate-list fallback.
+ * Apply the source precedence rule:
+ * - an executable MRP series wins;
+ * - an explicitly held MRP category remains held;
+ * - a pending finish series may resolve from its product RANGE NAME;
+ * - an unresolved MRP series falls back to the rate list;
+ * - unresolved data stays Unclassified and held.
+ *
+ * MRP series values such as Helix and Quadra are finish labels, not planning
+ * categories. Their product-level range category must therefore be supplied
+ * separately rather than guessing one category for the whole series.
  */
 export function resolveMrpClassification(
   mrp: MrpClassificationRow | undefined,
   fallbackCategory: string,
   modelCategories: ReadonlySet<string>,
+  rangeCategory?: string | null,
 ): EffectiveMrpClassification {
   const series = mrp?.series.trim() ?? "";
   if (!mrp || !series) {
@@ -156,18 +180,73 @@ export function resolveMrpClassification(
   }
 
   const derived = deriveMrpPlanningCategory(mrp.itemCode, mrp.division, series);
-  const derivedCategory = derived.category?.trim() || "Unclassified";
-  const category = derivedCategory === "Unclassified"
-    || (derived.status === "hold" && !EXPLICIT_HELD_CATEGORIES.has(derivedCategory))
-    ? "Unclassified"
-    : derivedCategory;
-  const executable = derived.status === "resolved" && modelCategories.has(category);
+  const derivedCategory = derived.category?.trim() || null;
+  const pendingFinishReview = getMrpSeriesCrosswalkDecision(series).status === "pending_review";
+  const rangeDrivenFinish = RANGE_DRIVEN_FINISH_SERIES.has(normalizeFinishSeries(series));
+
+  if (pendingFinishReview) {
+    return {
+      category: "Unclassified",
+      status: "unclassified",
+      source: "mrp",
+      note: `MRP series: ${series} has no working-sheet RANGE NAME evidence; Prayag review is required.`,
+    };
+  }
+
+  if (rangeDrivenFinish) {
+    const resolvedRangeCategory = rangeCategory?.trim() || "";
+    const rangeExecutable = resolvedRangeCategory !== "Unclassified" &&
+      modelCategories.has(resolvedRangeCategory);
+    if (rangeExecutable) {
+      return {
+        category: resolvedRangeCategory,
+        status: "classified",
+        source: "rate-list",
+        note: `MRP series: ${series} is a finish; RANGE NAME category: ${resolvedRangeCategory}.`,
+      };
+    }
+    return {
+      category: "Unclassified",
+      status: "unclassified",
+      source: "mrp",
+      note: `MRP series: ${series} is a finish; an executable RANGE NAME category is required.`,
+    };
+  }
+
+  // MRP-derived categories remain authoritative, including explicit held
+  // categories such as P.V.C. Connections that do not yet have a capacity line.
+  if (derivedCategory && (
+    derived.status === "resolved" ||
+    EXPLICIT_HELD_CATEGORIES.has(derivedCategory)
+  )) {
+    const executable = derived.status === "resolved" && modelCategories.has(derivedCategory);
+    return {
+      category: derivedCategory,
+      status: executable ? "classified" : "unclassified",
+      source: "mrp",
+      note: executable
+        ? `MRP series: ${series}.`
+        : `MRP series: ${series}; held until an executable planning category and capacity line are approved.`,
+    };
+  }
+
+  // A present but unrecognised MRP series does not override a resolvable rate
+  // list category. The rate list represents what the plant actually makes.
+  const rateCategory = fallbackCategory?.trim() || "Unclassified";
+  const rateExecutable = rateCategory !== "Unclassified" && modelCategories.has(rateCategory);
+  if (rateExecutable) {
+    return {
+      category: rateCategory,
+      status: "classified",
+      source: "rate-list",
+      note: `MRP series: ${series} has no approved category; rate-list fallback: ${rateCategory}.`,
+    };
+  }
+
   return {
-    category,
-    status: executable ? "classified" : "unclassified",
-    source: "mrp",
-    note: executable
-      ? `MRP series: ${series}.`
-      : `MRP series: ${series}; held until an executable planning category and capacity line are approved.`,
+    category: "Unclassified",
+    status: "unclassified",
+    source: "rate-list",
+    note: `MRP series: ${series} has no approved category and the rate list is also unresolved.`,
   };
 }

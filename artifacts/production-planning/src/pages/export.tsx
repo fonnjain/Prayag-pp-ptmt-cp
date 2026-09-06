@@ -4,12 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { formatMonthLabel } from "@/lib/month";
-import { useCreatePlanRun } from "@workspace/api-client-react";
 import { RefreshCw, FileSpreadsheet, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSegment } from "@/contexts/segment-context";
 import { useMonth } from "@workspace/month-filter";
 import { MonthEmptyState } from "@/components/month-empty-state";
+import { useCreateTemporaryPlan } from "@/hooks/use-create-temporary-plan";
 
 async function downloadFile(url: string, filename: string) {
   const response = await fetch(url);
@@ -98,14 +98,14 @@ export default function ExportPage() {
   const { segment } = useSegment();
   const { toast } = useToast();
   const [downloading, setDownloading] = useState<ExportKind | null>(null);
-  const createRun = useCreatePlanRun();
+  const { createTemporaryPlan, isPending: isCreatingTemporaryPlan } = useCreateTemporaryPlan();
 
   function handleRunPlan() {
-    createRun.mutate(
-      { data: { month, segment } },
+    createTemporaryPlan(
+      { month, segment },
       {
-        onSuccess: () =>
-          toast({ title: "Plan run created", description: `Snapshot for ${formatMonthLabel(month)} saved to Plan Runs.` }),
+        onSuccess: (run) =>
+          toast({ title: "Temporary Plan frozen", description: `Run #${run.id} is a demand-true snapshot for ${formatMonthLabel(month)}.` }),
         onError: () =>
           toast({ title: "Failed to create run", description: "Check that all data sources are available.", variant: "destructive" }),
       },
@@ -175,14 +175,20 @@ export default function ExportPage() {
           </div>
           <Button
             onClick={handleRunPlan}
-            disabled={createRun.isPending}
+            disabled={isCreatingTemporaryPlan}
           >
-            <RefreshCw className={cn("h-4 w-4 mr-2", createRun.isPending && "animate-spin")} />
-            {createRun.isPending ? "Running plan…" : "Run Plan now"}
+            <RefreshCw className={cn("h-4 w-4 mr-2", isCreatingTemporaryPlan && "animate-spin")} />
+            {isCreatingTemporaryPlan ? "Creating Temporary Plan…" : "Run Plan now"}
           </Button>
         </div>
 
-        {!isAvailableMonthsLoading && !isMonthAvailable && <MonthEmptyState segment={segment} />}
+        {!isAvailableMonthsLoading && !isMonthAvailable && (
+          <MonthEmptyState
+            segment={segment}
+            onCreateTemporaryPlan={handleRunPlan}
+            isCreatingTemporaryPlan={isCreatingTemporaryPlan}
+          />
+        )}
 
         {/* Production Plan row */}
         <div>

@@ -131,6 +131,8 @@ const REPORT_TAB_CATEGORIES: Record<string, string> = {
   "REPORT 5": "Cistern & Seat Cover",
   "REPORT 6": "Cabinet",
   "REPORT 7": "Ball Cock",
+  "REPORT 8": "P.V.C. Connections",
+  "REPORT 9": "Waste Pipes",
 };
 
 // ─── Sales Sheet IDs ─────────────────────────────────────────────────────────
@@ -347,7 +349,7 @@ router.get("/ops/production", async (_req, res): Promise<void> => {
   for (const entry of recentMonths) {
     try {
       const tabs = await listTabs(entry.id);
-      const reportTabs = tabs.filter((t) => /^REPORT\s+[1-7]$/i.test(t.trim()));
+      const reportTabs = tabs.filter((t) => /^REPORT\s+[1-9]$/i.test(t.trim()));
       const byCategory: Record<string, number> = {};
       let total = 0;
 

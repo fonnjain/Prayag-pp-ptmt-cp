@@ -13,8 +13,9 @@ import {
   PendingSheetSelectionError,
   SheetSelectionError,
   selectPendingSheet,
+  selectedSheetForUpload,
 } from "./uploads.js";
-import { inferUploadPlanningMonth } from "../lib/upload-period.js";
+import { inferUploadPlanningMonth, monthInUploadFilename } from "../lib/upload-period.js";
 
 function segmentTotal(rows: Record<string, unknown>[], segment: string): number {
   return rows
@@ -173,5 +174,73 @@ test("non-pending selectors fail with diagnostics instead of using the first she
       assert.deepEqual(error.sheets.map((sheet) => sheet.name), ["Invoice Register", "Renamed export"]);
       return true;
     },
+  );
+});
+
+test("renamed two-tab stock workbooks choose the largest content match", () => {
+  const workbook = workbookWithSheets([
+    {
+      name: "F.G Sheet",
+      rows: [
+        ["Item Code", "Colour", "C/Stock"],
+        ["STOCK-1", "WHITE", 10],
+        ["STOCK-2", "BLUE", 20],
+      ],
+    },
+    {
+      name: "Last moth pending items",
+      rows: [
+        ["Item Code", "Colour", "C/Stock"],
+        ["PENDING-1", "WHITE", 3],
+      ],
+    },
+  ]);
+  const selected = selectedSheetForUpload(workbook, "current_stock");
+  assert.equal(selected.name, "F.G Sheet");
+  assert.equal(selected.dataRowCount, 2);
+  assert.match(selected.selectionRule ?? "", /largest/);
+  assert.deepEqual(extractRows(workbook, "current_stock"), [
+    { "Item Code": "STOCK-1", Colour: "WHITE", Qty: 10 },
+    { "Item Code": "STOCK-2", Colour: "BLUE", Qty: 20 },
+  ]);
+});
+
+test("renamed two-tab pending workbooks choose the smallest content match", () => {
+  const workbook = workbookWithSheets([
+    {
+      name: "F.G Sheet",
+      rows: [
+        ["Item Code", "Colour", "C/Stock"],
+        ["PENDING-1", "WHITE", 3],
+        ["PENDING-2", "BLUE", 4],
+      ],
+    },
+    {
+      name: "Last moth pending items",
+      rows: [
+        ["Item Code", "Colour", "C/Stock"],
+        ["PENDING-1", "WHITE", 3],
+      ],
+    },
+  ]);
+  const selected = selectedSheetForUpload(workbook, "last_month_pending");
+  assert.equal(selected.name, "Last moth pending items");
+  assert.equal(selected.dataRowCount, 1);
+  assert.match(selected.selectionRule ?? "", /smallest/);
+  assert.deepEqual(extractRows(workbook, "last_month_pending"), [
+    { "Item Code": "PENDING-1", Colour: "WHITE", Qty: 3 },
+  ]);
+});
+
+test("period detection handles day-stamped filenames and SAP tab periods", () => {
+  assert.equal(monthInUploadFilename("FG Stock SEP 01 2026.xlsx"), "2026-09");
+  assert.equal(monthInUploadFilename("Pending Order Aug-26"), "2026-08");
+  assert.equal(
+    inferUploadPlanningMonth("pending_orders", "SAP_Data_Aug-26.xlsx", new Date("2026-09-05T00:00:00Z"), null, "2026-08"),
+    "2026-09",
+  );
+  assert.equal(
+    inferUploadPlanningMonth("last_month_pending", "F.G. Stock SEP 01 2026.xlsx", new Date("2026-09-05T00:00:00Z")),
+    "2026-10",
   );
 });

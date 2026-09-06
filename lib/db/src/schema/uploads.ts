@@ -9,6 +9,7 @@ export const uploadedFilesTable = pgTable("uploaded_files", {
   period: text("period"),
   rowCount: integer("row_count").notNull().default(0),
   rows: jsonb("rows").notNull().$type<Record<string, unknown>[]>(),
+  sourceMetadata: jsonb("source_metadata").$type<Record<string, unknown> | null>(),
   uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

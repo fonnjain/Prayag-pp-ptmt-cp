@@ -16,6 +16,10 @@ const DEFAULT_BUFFER_CATEGORIES: { name: string; multiplier: number }[] = [
   { name: "Cistern & Seat Cover", multiplier: 1.2 },
   { name: "Cabinet", multiplier: 1.2 },
   { name: "Ball Cock", multiplier: 1.5 },
+  // The workbook has a distinct CONNECTION report. Keep its business
+  // multiplier explicit rather than inheriting Accessorise.
+  { name: "P.V.C. Connections", multiplier: 1.5 },
+  { name: "Waste Pipes", multiplier: 1.5 },
 ];
 
 function findSeedCsvPath(): string {
@@ -95,10 +99,14 @@ async function seedRateList(): Promise<void> {
 }
 
 async function seedBufferCategories(): Promise<void> {
-  const existing = await db.select({ id: bufferCategoriesTable.id }).from(bufferCategoriesTable).limit(1);
-  if (existing.length > 0) return;
-  await db.insert(bufferCategoriesTable).values(DEFAULT_BUFFER_CATEGORIES);
-  logger.info({ count: DEFAULT_BUFFER_CATEGORIES.length }, "Seeded buffer categories");
+  const existing = await db
+    .select({ segment: bufferCategoriesTable.segment, name: bufferCategoriesTable.name })
+    .from(bufferCategoriesTable);
+  const existingKeys = new Set(existing.map((row) => `${row.segment}:${row.name}`));
+  const missing = DEFAULT_BUFFER_CATEGORIES.filter((category) => !existingKeys.has(`PTMT:${category.name}`));
+  if (missing.length === 0) return;
+  await db.insert(bufferCategoriesTable).values(missing);
+  logger.info({ count: missing.length }, "Seeded missing buffer categories");
 }
 
 async function seedItemMaster(): Promise<void> {
@@ -182,6 +190,7 @@ const DEFAULT_WEEKLY_RELEASE_BANDS: {
   { categoryName: "Cistern & Seat Cover",       w1Upper: 0.3, w2Upper: 0.5, w3Upper: 0.8, w4Upper: 1.5 },
   { categoryName: "Cabinet",                   w1Upper: 0.1, w2Upper: 0.3, w3Upper: 0.8, w4Upper: 5.9 },
   { categoryName: "Ball Cock",                 w1Upper: 0.1, w2Upper: 0.3, w3Upper: 0.8, w4Upper: 5.9 },
+  { categoryName: "P.V.C. Connections",        w1Upper: 0.3, w2Upper: 0.5, w3Upper: 0.8, w4Upper: 1.5 },
 ];
 
 // Plumbing weekly release bands: W1 < 0.3 ≤ W2 < 0.5 ≤ W3 < 0.8 ≤ W4 < 99.
@@ -225,35 +234,6 @@ async function seedWeeklyReleaseBands(): Promise<void> {
     { ptmt: DEFAULT_WEEKLY_RELEASE_BANDS.length, plumbing: PLUMBING_WEEKLY_RELEASE_BANDS.length },
     "Seeded weekly release bands",
   );
-}
-
-/**
- * Idempotent upsert of overrideMultiplier for all 7 PTMT categories.
- * Runs every boot so the business-specified values are always locked in,
- * even after a DB reset or fresh deployment.
- *
- * IMPORTANT: these are the ONLY multipliers that may enter the plan.
- * suggestedMultiplier (from the seasonality engine) is advisory only
- * and must never auto-apply — it is displayed for human review and acceptance.
- */
-const PTMT_BUSINESS_OVERRIDES: { name: string; multiplier: number }[] = [
-  { name: "Cocks Standard",               multiplier: 1.5 },
-  { name: "Cocks Premium",                multiplier: 1.2 },
-  { name: "Faucets & Jetsprays & Shower", multiplier: 1.5 },
-  { name: "Accessorise",                  multiplier: 1.5 },
-  { name: "Cistern & Seat Cover",         multiplier: 1.2 },
-  { name: "Cabinet",                      multiplier: 1.2 },
-  { name: "Ball Cock",                    multiplier: 1.5 },
-];
-
-async function seedPtmtOverrides(): Promise<void> {
-  for (const { name, multiplier } of PTMT_BUSINESS_OVERRIDES) {
-    await db
-      .update(bufferCategoriesTable)
-      .set({ overrideMultiplier: multiplier, multiplier })
-      .where(eq(bufferCategoriesTable.name, name));
-  }
-  logger.info({ count: PTMT_BUSINESS_OVERRIDES.length }, "Seeded PTMT business overrides");
 }
 
 type MachineRow = {
@@ -345,7 +325,6 @@ export async function ensureSeedData(): Promise<void> {
   await seedPlantSourceConfigs();
   await seedPlantConfigs();
   await seedWeeklyReleaseBands();
-  await seedPtmtOverrides();
   const { seedCategoryCapacity } = await import("./capacity-engine");
   await seedCategoryCapacity();
   await seedPlumbingMachines();

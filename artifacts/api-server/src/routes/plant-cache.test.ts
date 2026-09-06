@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import express from "express";
+import http from "node:http";
 import {
   _setPlantMonitoringComputeForTest,
   getPlantMonitoringCached,
   invalidatePlantBundleCache,
 } from "./plant.js";
+import plantRouter from "./plant.js";
 import { isPlantSegment, normalizePlantSegment, PLANT_SEGMENTS, plantSegmentProfile } from "../lib/plant-segments.js";
+import { PlanningInputError } from "./plan.js";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -101,4 +105,36 @@ test("the segment registry contains only the supported plant profiles", () => {
   assert.equal(isPlantSegment("NOT_A_SEGMENT"), false);
   assert.equal(plantSegmentProfile("PTMT").orderGroup, "PTMT");
   assert.equal(plantSegmentProfile("Plumbing").orderGroup, "PLUMBING");
+});
+
+test("weekly plant summary maps the held MRP gate to a named 422", async () => {
+  invalidatePlantBundleCache();
+  const restore = _setPlantMonitoringComputeForTest(async () => {
+    throw new PlanningInputError(
+      "PTMT planning is held by authoritative MRP controls (source 1): approval required",
+      undefined,
+      "PTMT_MRP_APPROVAL_REQUIRED",
+    );
+  });
+  const app = express();
+  app.use("/api", plantRouter);
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/plant/weekly-summary?month=2026-09&segment=PTMT`);
+    assert.equal(response.status, 422);
+    assert.deepEqual(await response.json(), {
+      error: "PTMT_MRP_APPROVAL_REQUIRED",
+      message: "PTMT planning is held by authoritative MRP controls (source 1): approval required",
+      kind: "PlanningInputError",
+      month: "2026-09",
+      segment: "PTMT",
+    });
+  } finally {
+    server.close();
+    restore();
+    invalidatePlantBundleCache();
+  }
 });

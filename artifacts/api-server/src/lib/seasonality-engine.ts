@@ -31,7 +31,7 @@ function buildTabMap(tabs: string[]): Map<FiscalMonth, string> {
   return m;
 }
 
-/** Engine inputs: FY2024-25 + FY2025-26 only — FY2023-24 excluded (old ERP layout); FY2026-27 excluded (part-year) */
+/** Closed-year inputs used by the legacy category-level benchmark. */
 const ENGINE_ORDER_SHEETS: Record<string, string> = {
   "2024-25": "1cT6lWRPJ3oSeYhab-cqeVjJidGitFQsr0DOq-vNn6cI",
   "2025-26": "1Xzq-gmB6K7iuMcE6gb-O7OpvGgSDU33DzEVyK60LK6E",
@@ -40,6 +40,20 @@ const ENGINE_ORDER_SHEETS: Record<string, string> = {
 /** FY2026-27 order sheet for drift monitoring only */
 export const CURRENT_FY_ORDER_SHEET = "1HFBAtvbAskejVkjuO8zHoEsE-pBAFij2ERMKFEvt64A";
 export const CURRENT_FY = "2026-27";
+const CLOSED_FYS = ["2024-25", "2025-26"] as const;
+
+/** All governed PTMT report categories, including held categories. */
+export const ALL_PTMT_CATEGORIES = [
+  "Cocks Standard",
+  "Cocks Premium",
+  "Faucets & Jetsprays & Shower",
+  "Accessorise",
+  "Cistern & Seat Cover",
+  "Cabinet",
+  "Ball Cock",
+  "P.V.C. Connections",
+  "Waste Pipes",
+] as const;
 
 export const Z_VALUES = { 90: 1.28, 95: 1.65, 98: 2.05 } as const;
 export type ServiceLevel = keyof typeof Z_VALUES;
@@ -63,6 +77,7 @@ export const ALL_PLUMBING_CATEGORIES = [
 export interface SeasonalityCategoryResult {
   category: string;
   dataQuality: "ok" | "insufficient" | "thin";
+  dataQualityReason?: string | null;
   avgMonth: number | null;
   cv: number | null;
   volatilityClass: "Low" | "Medium" | "High" | null;
@@ -86,6 +101,7 @@ export interface SeasonalityEngineOutput {
   totalOrderQty: number;
   computedAt: Date;
   zScore: number;
+  sourceReadFailures?: number;
 }
 
 // ─── Reliability flag ─────────────────────────────────────────────────────────
@@ -96,7 +112,11 @@ export interface SeasonalityEngineOutput {
  * Returns null for clean categories that need no special treatment.
  */
 export function computeReliabilityFlag(cat: SeasonalityCategoryResult): string | null {
-  if (cat.dataQuality === "insufficient") return "insufficient data — override required";
+  if (cat.dataQuality === "insufficient") {
+    return cat.dataQualityReason
+      ? `${cat.dataQualityReason} — override required`
+      : "insufficient data — override required";
+  }
   if (cat.cv !== null && cat.cv > 0.40) return "unreliable — structural growth/launch, override recommended";
   if (cat.yoy !== null && Math.abs(cat.yoy) > 0.60) return "unreliable — structural growth/launch, override recommended";
   if (cat.dataQuality === "thin") return "thin data — review";
@@ -193,12 +213,15 @@ function mapRowToCategory(
   row: Record<string, string>,
   codeMap: Map<string, string>,
 ): string | null {
-  const itemCode = (
-    row["Item Code"] || row["ITEM CODE"] || row["Code"] || row["CODE"] ||
-    row["Item.Code"] || row["Description.Code"] || ""
-  ).trim().toUpperCase();
+  const itemCodes = [
+    row["Item Code"], row["ITEM CODE"], row["Code"], row["CODE"],
+    row["Item.Code"], row["Description.Code"],
+    row["Old ERP Code"], row["OLD ERP CODE"], row["Old.ERP.Code"],
+  ];
 
-  if (itemCode) {
+  for (const rawCode of itemCodes) {
+    const itemCode = String(rawCode ?? "").trim().toUpperCase();
+    if (!itemCode) continue;
     const fromMaster = codeMap.get(itemCode);
     if (fromMaster) return fromMaster;
   }
@@ -322,6 +345,59 @@ function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
+export interface PtmtMonthlyMultiplierResult {
+  month: string;
+  fiscalMonth: FiscalMonth;
+  category: string;
+  suggestedMultiplier: number | null;
+  cvValue: number | null;
+  dataQuality: "ok" | "insufficient" | "thin";
+  sourceObservations: number;
+  currentFyQuantity: number;
+  zScore: number;
+}
+
+/**
+ * Calculate one seasonality suggestion for one category/month.
+ *
+ * A monthly row compares the same fiscal month across the two closed years
+ * and the current fiscal year. It is intentionally separate from
+ * runAlgorithm(), whose single category result is a whole-history benchmark.
+ */
+function runMonthlyAlgorithm(
+  observations: number[],
+  zScore: number,
+): Pick<PtmtMonthlyMultiplierResult, "suggestedMultiplier" | "cvValue" | "dataQuality" | "sourceObservations"> {
+  const positive = observations.filter((value) => value > 0);
+  if (positive.length < 2) {
+    return {
+      suggestedMultiplier: null,
+      cvValue: null,
+      dataQuality: "insufficient",
+      sourceObservations: positive.length,
+    };
+  }
+
+  const mean = positive.reduce((sum, value) => sum + value, 0) / positive.length;
+  const variance = positive.reduce((sum, value) => sum + (value - mean) ** 2, 0) / positive.length;
+  const cv = mean > 0 ? Math.sqrt(variance) / mean : 0;
+
+  return {
+    suggestedMultiplier: round2(1 + zScore * cv),
+    cvValue: round2(cv),
+    dataQuality: mean < THIN_THRESHOLD ? "thin" : "ok",
+    sourceObservations: positive.length,
+  };
+}
+
+function fiscalMonthToIsoMonth(fiscalYear: string, fiscalMonth: FiscalMonth): string {
+  const startYear = Number(fiscalYear.slice(0, 4));
+  const monthIndex = FISCAL_MONTHS.indexOf(fiscalMonth);
+  const calendarYear = monthIndex <= 8 ? startYear : startYear + 1;
+  const calendarMonth = monthIndex <= 8 ? monthIndex + 4 : monthIndex - 8;
+  return `${calendarYear}-${String(calendarMonth).padStart(2, "0")}`;
+}
+
 // ─── Shared sheet reader ──────────────────────────────────────────────────────
 
 /**
@@ -333,36 +409,49 @@ async function readOrderSheets(
   categorySet: Set<string>,
   codeMap: Map<string, string>,
   logPrefix: string,
+  includeCurrentFy = false,
 ): Promise<{
   monthly2425: Record<string, number[]>;
   monthly2526: Record<string, number[]>;
+  monthly2627: Record<string, number[]>;
   totalMonthly2425: number[];
   totalMonthly2526: number[];
   totalOrderQty: number;
   unmappedQty: number;
   perCategoryTotal: Record<string, number>;
+  perCategoryUnmapped: Record<string, number>;
+  sourceReadFailures: number;
 }> {
   const categories = [...categorySet];
   const monthly2425: Record<string, number[]> = {};
   const monthly2526: Record<string, number[]> = {};
+  const monthly2627: Record<string, number[]> = {};
   for (const cat of categories) {
     monthly2425[cat] = Array(12).fill(0);
     monthly2526[cat] = Array(12).fill(0);
+    monthly2627[cat] = Array(12).fill(0);
   }
 
   let totalOrderQty = 0;
   let unmappedQty = 0;
   const perCategoryTotal: Record<string, number> = Object.fromEntries(categories.map((c) => [c, 0]));
+  const perCategoryUnmapped: Record<string, number> = Object.fromEntries(categories.map((c) => [c, 0]));
+  let sourceReadFailures = 0;
   const totalMonthly2425 = Array(12).fill(0);
   const totalMonthly2526 = Array(12).fill(0);
 
-  for (const fy of ["2024-25", "2025-26"] as const) {
-    const sheetId = ENGINE_ORDER_SHEETS[fy];
+  const fiscalYears = includeCurrentFy
+    ? [...CLOSED_FYS, CURRENT_FY] as const
+    : CLOSED_FYS;
+
+  for (const fy of fiscalYears) {
+    const sheetId = fy === CURRENT_FY ? CURRENT_FY_ORDER_SHEET : ENGINE_ORDER_SHEETS[fy];
     let tabs: string[];
     try {
       tabs = await listTabs(sheetId);
     } catch (err) {
       logger.warn({ err, fy }, `${logPrefix}: could not list tabs for FY`);
+      sourceReadFailures += 12;
       continue;
     }
 
@@ -384,9 +473,12 @@ async function readOrderSheets(
           if (qty <= 0) continue;
 
           const cat = mapRowToCategory(row, codeMap);
-          if (!cat || !categorySet.has(cat)) {
+            if (!cat || !categorySet.has(cat)) {
             // Only count as unmapped if it could plausibly belong to this segment
             unmappedQty += qty;
+              if (cat && perCategoryUnmapped[cat] !== undefined) {
+                perCategoryUnmapped[cat] += qty;
+              }
             continue;
           }
 
@@ -396,20 +488,51 @@ async function readOrderSheets(
           if (fy === "2024-25") {
             monthly2425[cat][mIdx] += qty;
             totalMonthly2425[mIdx] += qty;
-          } else {
+          } else if (fy === "2025-26") {
             monthly2526[cat][mIdx] += qty;
             totalMonthly2526[mIdx] += qty;
+          } else {
+            monthly2627[cat][mIdx] += qty;
           }
         }
 
         await delay(350);
       } catch (err) {
         logger.warn({ err, fy, tab }, `${logPrefix}: failed to read tab`);
+        sourceReadFailures++;
       }
     }
   }
 
-  return { monthly2425, monthly2526, totalMonthly2425, totalMonthly2526, totalOrderQty, unmappedQty, perCategoryTotal };
+  return {
+    monthly2425,
+    monthly2526,
+    monthly2627,
+    totalMonthly2425,
+    totalMonthly2526,
+    totalOrderQty,
+    unmappedQty,
+    perCategoryTotal,
+    perCategoryUnmapped,
+    sourceReadFailures,
+  };
+}
+
+function qualityReason(
+  dataQuality: "ok" | "insufficient" | "thin",
+  totalOrderQty: number,
+  unmappedQty: number,
+  sourceReadFailures: number,
+): string | null {
+  if (dataQuality === "ok") return null;
+  if (dataQuality === "thin") return "thin history — low average monthly demand";
+  if (sourceReadFailures > 0 && totalOrderQty === 0) {
+    return `source data-quality failure — ${sourceReadFailures} order-sheet tab read failure(s)`;
+  }
+  if (unmappedQty > 0 && totalOrderQty === 0) {
+    return "unmapped sales — no recognised item codes";
+  }
+  return "missing history — fewer than four usable observations";
 }
 
 // ─── PTMT engine ─────────────────────────────────────────────────────────────
@@ -419,30 +542,93 @@ export async function runSeasonalityEngine(
 ): Promise<SeasonalityEngineOutput> {
   const codeMap = await buildCodeToCategoryMap();
 
-  const ALL_CATEGORIES = [
-    "Cocks Standard",
-    "Cocks Premium",
-    "Faucets & Jetsprays & Shower",
-    "Accessorise",
-    "Cistern & Seat Cover",
-    "Cabinet",
-    "Ball Cock",
-  ];
+  const { monthly2425, monthly2526, totalMonthly2425, totalMonthly2526, totalOrderQty, unmappedQty, perCategoryTotal, perCategoryUnmapped, sourceReadFailures } =
+    await readOrderSheets(new Set(ALL_PTMT_CATEGORIES), codeMap, "seasonality");
 
-  const { monthly2425, monthly2526, totalMonthly2425, totalMonthly2526, totalOrderQty, unmappedQty, perCategoryTotal } =
-    await readOrderSheets(new Set(ALL_CATEGORIES), codeMap, "seasonality");
-
-  const categories: SeasonalityCategoryResult[] = ALL_CATEGORIES.map((cat) => {
+  const categories: SeasonalityCategoryResult[] = ALL_PTMT_CATEGORIES.map((cat) => {
     const algo = runAlgorithm(monthly2425[cat], monthly2526[cat], zScore, cat);
-    return { category: cat, ...algo, unmappedQty: 0, totalOrderQty: perCategoryTotal[cat] ?? 0, zScore, fy2425monthly: monthly2425[cat], fy2526monthly: monthly2526[cat] };
+    const total = perCategoryTotal[cat] ?? 0;
+    return {
+      category: cat,
+      ...algo,
+      dataQualityReason: qualityReason(algo.dataQuality, total, perCategoryUnmapped[cat] ?? 0, sourceReadFailures),
+      unmappedQty: perCategoryUnmapped[cat] ?? 0,
+      totalOrderQty: total,
+      zScore,
+      fy2425monthly: monthly2425[cat],
+      fy2526monthly: monthly2526[cat],
+    };
   });
 
   const segAlgo = runAlgorithm(totalMonthly2425, totalMonthly2526, zScore, "PTMT Total");
-  const segmentBenchmark = { category: "PTMT Total", ...segAlgo, unmappedQty, totalOrderQty, zScore, fy2425monthly: totalMonthly2425, fy2526monthly: totalMonthly2526 };
+  const segmentBenchmark = {
+    category: "PTMT Total",
+    ...segAlgo,
+    dataQualityReason: qualityReason(segAlgo.dataQuality, totalOrderQty, unmappedQty, sourceReadFailures),
+    unmappedQty,
+    totalOrderQty,
+    zScore,
+    fy2425monthly: totalMonthly2425,
+    fy2526monthly: totalMonthly2526,
+  };
 
   logger.info({ categories: categories.length, totalOrderQty, unmappedQty, segmentCV: segmentBenchmark.cv, segmentSuggested: segmentBenchmark.suggestedMultiplier }, "seasonality: engine complete");
 
-  return { categories, segmentBenchmark, totalUnmappedQty: unmappedQty, totalOrderQty, computedAt: new Date(), zScore };
+  return { categories, segmentBenchmark, totalUnmappedQty: unmappedQty, totalOrderQty, computedAt: new Date(), zScore, sourceReadFailures };
+}
+
+/**
+ * Produce the PTMT recommendation matrix for the current fiscal year.
+ *
+ * The same fiscal month is compared across FY2024-25, FY2025-26, and the
+ * current FY2026-27 sheet. Persistence and plan application are handled by
+ * the seasonality service; explicit user overrides remain separate.
+ */
+export async function runPtmtMonthlySeasonalityEngine(
+  zScore: number = Z_VALUES[95],
+): Promise<{ rows: PtmtMonthlyMultiplierResult[]; computedAt: Date; zScore: number; sourceReadFailures: number }> {
+  const codeMap = await buildCodeToCategoryMap();
+  const { monthly2425, monthly2526, monthly2627, sourceReadFailures } = await readOrderSheets(
+    new Set(ALL_PTMT_CATEGORIES),
+    codeMap,
+    "ptmt-monthly-seasonality",
+    true,
+  );
+  const computedAt = new Date();
+  const rows: PtmtMonthlyMultiplierResult[] = [];
+
+  for (const category of ALL_PTMT_CATEGORIES) {
+    for (let monthIndex = 0; monthIndex < FISCAL_MONTHS.length; monthIndex++) {
+      const fiscalMonth = FISCAL_MONTHS[monthIndex];
+      const algorithm = runMonthlyAlgorithm([
+        monthly2425[category][monthIndex],
+        monthly2526[category][monthIndex],
+        monthly2627[category][monthIndex],
+      ], zScore);
+      const safeAlgorithm = sourceReadFailures > 0
+        ? { ...algorithm, suggestedMultiplier: null, dataQuality: "insufficient" as const }
+        : algorithm;
+
+      rows.push({
+        month: fiscalMonthToIsoMonth(CURRENT_FY, fiscalMonth),
+        fiscalMonth,
+        category,
+        ...safeAlgorithm,
+        currentFyQuantity: monthly2627[category][monthIndex],
+        zScore,
+      });
+    }
+  }
+
+  logger.info({
+    categories: ALL_PTMT_CATEGORIES.length,
+    rows: rows.length,
+    computedAt,
+    zScore,
+    currentFy: CURRENT_FY,
+  }, "ptmt-monthly-seasonality: engine complete");
+
+  return { rows, computedAt, zScore, sourceReadFailures };
 }
 
 // ─── Plumbing engine ──────────────────────────────────────────────────────────
@@ -453,17 +639,36 @@ export async function runPlumbingSeasonalityEngine(
   const codeMap = await buildCodeToCategoryMap();
   const plumbingCatSet = new Set<string>(ALL_PLUMBING_CATEGORIES);
 
-  const { monthly2425, monthly2526, totalMonthly2425, totalMonthly2526, totalOrderQty, unmappedQty, perCategoryTotal } =
+  const { monthly2425, monthly2526, totalMonthly2425, totalMonthly2526, totalOrderQty, unmappedQty, perCategoryTotal, perCategoryUnmapped, sourceReadFailures } =
     await readOrderSheets(plumbingCatSet, codeMap, "plumbing-seasonality");
 
   const categories: SeasonalityCategoryResult[] = [...ALL_PLUMBING_CATEGORIES].map((cat) => {
     const algo = runAlgorithm(monthly2425[cat], monthly2526[cat], zScore, cat, PLUMBING_THIN_THRESHOLD);
-    return { category: cat, ...algo, unmappedQty: 0, totalOrderQty: perCategoryTotal[cat] ?? 0, zScore, fy2425monthly: monthly2425[cat], fy2526monthly: monthly2526[cat] };
+    const total = perCategoryTotal[cat] ?? 0;
+    return {
+      category: cat,
+      ...algo,
+      dataQualityReason: qualityReason(algo.dataQuality, total, perCategoryUnmapped[cat] ?? 0, sourceReadFailures),
+      unmappedQty: perCategoryUnmapped[cat] ?? 0,
+      totalOrderQty: total,
+      zScore,
+      fy2425monthly: monthly2425[cat],
+      fy2526monthly: monthly2526[cat],
+    };
   });
 
   // Segment benchmark: all Plumbing orders combined
   const segAlgo = runAlgorithm(totalMonthly2425, totalMonthly2526, zScore, "Plumbing Total");
-  const segmentBenchmark = { category: "Plumbing Total", ...segAlgo, unmappedQty, totalOrderQty, zScore, fy2425monthly: totalMonthly2425, fy2526monthly: totalMonthly2526 };
+  const segmentBenchmark = {
+    category: "Plumbing Total",
+    ...segAlgo,
+    dataQualityReason: qualityReason(segAlgo.dataQuality, totalOrderQty, unmappedQty, sourceReadFailures),
+    unmappedQty,
+    totalOrderQty,
+    zScore,
+    fy2425monthly: totalMonthly2425,
+    fy2526monthly: totalMonthly2526,
+  };
 
   logger.info({
     categories: categories.length,
@@ -473,7 +678,7 @@ export async function runPlumbingSeasonalityEngine(
     peakMonth: segmentBenchmark.peakMonth,
   }, "plumbing-seasonality: engine complete");
 
-  return { categories, segmentBenchmark, totalUnmappedQty: unmappedQty, totalOrderQty, computedAt: new Date(), zScore };
+  return { categories, segmentBenchmark, totalUnmappedQty: unmappedQty, totalOrderQty, computedAt: new Date(), zScore, sourceReadFailures };
 }
 
 // ─── Drift monitor ───────────────────────────────────────────────────────────

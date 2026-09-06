@@ -26,6 +26,8 @@ export interface PtmtPass2InputItem {
 }
 
 export interface PtmtPass2ItemResult extends PtmtPass2InputItem {
+  /** The physical capacity pool consumed by this planning category. */
+  capacityPool: string | null;
   dummy: number;
   orders: number;
   buffer: number;
@@ -40,6 +42,8 @@ export interface PtmtPass2ItemResult extends PtmtPass2InputItem {
 
 export interface PtmtPass2CategoryResult {
   category: string;
+  /** Categories sharing this physical pool; their demand is aggregated here. */
+  sharedCategories: string[];
   fullP90: number;
   recent90dP90: number;
   driftPct: number | null;
@@ -78,6 +82,23 @@ export interface PtmtPass2Result {
   workingDays: number;
   workedSundayDates: string[];
   invariants: PtmtPass2Invariants;
+}
+
+/**
+ * Planning categories which are not independent physical production lines.
+ *
+ * These are relationships, not copied capacity values: all demand in a
+ * relationship consumes the single capacity row named by the value.
+ */
+export const PTMT_SHARED_CAPACITY_POOLS: Record<string, string> = {
+  "Special Cock": "Cocks Standard",
+  "Collapsible Waste Pipes": "Waste Pipes",
+  "Showers Sets": "Faucets & Jetsprays & Shower",
+};
+
+export function resolvePtmtCapacityPool(category: string): string | null {
+  if (category === "Unclassified") return null;
+  return PTMT_SHARED_CAPACITY_POOLS[category] ?? category;
 }
 
 export class PtmtPass2InputError extends Error {
@@ -198,7 +219,10 @@ function componentDemand(item: PtmtPass2InputItem): { dummy: number; orders: num
   return {
     dummy,
     orders,
-    buffer: Math.max(total - dummy - orders, 0),
+    // Unclassified is deliberately a holding state. Keep its demand visible
+    // in the result, but never treat the unresolved remainder as executable
+    // buffer demand until a planning category and capacity are approved.
+    buffer: item.category === "Unclassified" ? 0 : Math.max(total - dummy - orders, 0),
   };
 }
 
@@ -224,8 +248,13 @@ export function runPtmtPass2(
   const positiveCategories = new Set(inputItems.filter((item) => roundQuantity(item.temporaryPlan) > 0).map((item) => item.category));
 
   for (const category of positiveCategories) {
-    if (!capacities.has(category)) {
-      throw new PtmtPass2InputError(`PTMT category capacity is missing for "${category}"; recompute capacity before fitting the plan.`);
+    // Unclassified demand is retained as an explicit non-executable holding
+    // state. It must not require a fabricated capacity row or block fitting
+    // for the rest of the PTMT plan.
+    const capacityPool = resolvePtmtCapacityPool(category);
+    if (!capacityPool) continue;
+    if (!capacities.has(capacityPool)) {
+      throw new PtmtPass2InputError(`PTMT category capacity is missing for "${category}" (capacity pool "${capacityPool}"); recompute capacity before fitting the plan.`);
     }
   }
 
@@ -245,6 +274,11 @@ export function runPtmtPass2(
     weeklyRemaining.set(category, [...weeklyCapacity] as [number, number, number, number]);
     categoryResults.set(category, {
       category,
+      sharedCategories: [...new Set(
+        inputItems
+          .filter((item) => item.category !== category && resolvePtmtCapacityPool(item.category) === category)
+          .map((item) => item.category),
+      )],
       fullP90: capacity.fullP90,
       recent90dP90: capacity.recent90dP90,
       driftPct: capacity.driftPct,
@@ -270,10 +304,12 @@ export function runPtmtPass2(
   const items: PtmtPass2ItemResult[] = inputItems.map((item) => {
     const total = roundQuantity(item.temporaryPlan);
     const components = componentDemand(item);
-    const category = categoryResults.get(item.category);
+    const capacityPool = resolvePtmtCapacityPool(item.category);
+    const category = capacityPool ? categoryResults.get(capacityPool) : undefined;
     if (category) category.temporaryPlan += total;
     return {
       ...item,
+      capacityPool,
       temporaryPlan: total,
       dummy: components.dummy,
       orders: components.orders,
@@ -290,11 +326,12 @@ export function runPtmtPass2(
 
   const byKey = new Map(items.map((item) => [key(item), item]));
   const lines = items.flatMap((item) => {
+    if (!item.capacityPool) return [];
     const components = componentDemand(item);
     return [
-      { itemKey: key(item), category: item.category, priority: 0, quantity: components.dummy },
-      { itemKey: key(item), category: item.category, priority: 1, quantity: components.orders },
-      { itemKey: key(item), category: item.category, priority: 2, quantity: components.buffer },
+      { itemKey: key(item), category: item.capacityPool, priority: 0, quantity: components.dummy },
+      { itemKey: key(item), category: item.capacityPool, priority: 1, quantity: components.orders },
+      { itemKey: key(item), category: item.capacityPool, priority: 2, quantity: components.buffer },
     ].filter((line) => line.quantity > 0);
   }).sort((a, b) => {
     if (a.priority !== b.priority) return a.priority - b.priority;
@@ -330,9 +367,11 @@ export function runPtmtPass2(
   for (const item of items) {
     item.productionPlan = sumWeeks(item);
     item.cannotBeMade = item.temporaryPlan - item.productionPlan;
-    const category = categoryResults.get(item.category)!;
-    category.productionPlan += item.productionPlan;
-    category.cannotBeMade += item.cannotBeMade;
+    const category = item.capacityPool ? categoryResults.get(item.capacityPool) : undefined;
+    if (category) {
+      category.productionPlan += item.productionPlan;
+      category.cannotBeMade += item.cannotBeMade;
+    }
   }
 
   const categories = [...categoryResults.values()].map((category) => ({

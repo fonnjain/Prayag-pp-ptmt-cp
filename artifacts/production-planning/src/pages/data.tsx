@@ -47,19 +47,19 @@ const PTMT_LOCAL_UPLOAD_KINDS: UploadKindDef[] = [
   {
     kind: UploadKind.rate_list,
     label: "PTMT rate list — governed roster source",
-    hint: "CSV with source_tab, code, name, range, and range_name. Adds new PTMT identities without replacing legacy workbook-only items; unmapped categories stay explicitly unclassified.",
+  hint: "Read live from the governed Google Sheet (code, name, range, range_name); SOURCE TAB is derived from each worksheet name. The CSV upload remains an outage fallback; unmapped categories stay explicitly unclassified.",
     required: false,
   },
   {
     kind: UploadKind.current_stock,
     label: "1 · F.G. STOCK Factory Excel",
-    hint: "F.G. STOCK <month>.xlsx — reads F.G Sheet only: col A = Item Code, col B = Colour, col C = C/Stock. Provides current stock figures.",
+    hint: "F.G. STOCK <month>.xlsx — chooses the largest sheet with Item Code + Colour + C/Stock headers, including renamed tabs such as F.G Sheet.",
     required: true,
   },
   {
     kind: UploadKind.last_month_pending,
     label: "2 · LAST_MONTH_PENDING_ORDERS file",
-    hint: "LAST_MONTH_PENDING_ORDERS_<month>.xlsx — reads the PTMT tab: Item Code + Colour + Qty. Provides last-month Pending Order for the plan.",
+    hint: "Chooses the smallest sheet with Item Code + Colour + Qty headers, including renamed tabs such as Last moth pending items. Provides last-month Pending Order.",
     required: true,
   },
 ];
@@ -99,6 +99,9 @@ function UploadRow({ kind, label, hint, required }: UploadKindDef) {
   // Prefer the selected month's source in the row. If it is absent, retain
   // the newest other-period upload so the operator sees exactly what is stale.
   const latest = kindUploads.find((upload) => uploadMatchesMonth(upload, month)) ?? kindUploads[0];
+  const metadata = latest?.sourceMetadata as Record<string, unknown> | null | undefined;
+  const worksheet = typeof metadata?.worksheet === "string" ? metadata.worksheet : null;
+  const detectedPeriod = typeof metadata?.detectedPlanningPeriod === "string" ? metadata.detectedPlanningPeriod : null;
 
   const handleFile = (file: File) => {
     createUpload.mutate(
@@ -133,6 +136,8 @@ function UploadRow({ kind, label, hint, required }: UploadKindDef) {
           <p className={`text-xs mt-1 ${!required || uploadMatchesMonth(latest, month) ? "text-green-700" : "text-amber-700"}`}>
             {!required || uploadMatchesMonth(latest, month) ? "✓" : "⚠"} {latest.filename} — {latest.rowCount} rows — {fmtDateTime(latest.uploadedAt)}
             {required && !uploadMatchesMonth(latest, month) && ` — not a ${month} input`}
+            {worksheet && <> · tab: <span className="font-medium">{worksheet}</span></>}
+            {detectedPeriod && detectedPeriod !== latest.period && <> · detected: {detectedPeriod}</>}
           </p>
         ) : (
           <p className="text-xs text-amber-600 mt-1">⚠ No file uploaded yet — plan cannot run without this file</p>
@@ -539,8 +544,8 @@ function SeasonalityTable({ segment }: { segment: string }) {
   const hasEngineData = categories.some((c) => c.lastComputedAt != null);
 
   function getApplied(cat: BufferCategory): number {
-    // Applied = Override when set; otherwise the DB multiplier (business default).
-    // suggestedMultiplier is ADVISORY ONLY — it never enters the plan automatically.
+    // The API keeps multiplier equal to the current automatic value unless an
+    // explicit user override is present.
     return cat.overrideMultiplier ?? cat.multiplier;
   }
 
@@ -639,11 +644,11 @@ function SeasonalityTable({ segment }: { segment: string }) {
         </Button>
       </div>
 
-      {/* Advisory note */}
-      <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-        ⚠ <strong>Suggested values are advisory</strong> — click to accept before they affect the plan.
-        The plan always uses <strong>Applied ×</strong> (Override if set, otherwise the business default).
-        Suggested is shown for review only and never auto-applied.
+      {/* Auto-application note */}
+      <div className="rounded-md bg-blue-50 border border-blue-200 px-3 py-2 text-xs text-blue-800">
+        <strong>Auto-calculated values apply to Temporary Plans</strong> after a complete source read.
+        An explicit <strong>Override ×</strong> still wins. Insufficient categories keep their last reviewed
+        multiplier and are flagged instead of receiving an invented value.
       </div>
 
       {/* Data window label */}
@@ -703,7 +708,9 @@ function SeasonalityTable({ segment }: { segment: string }) {
                   <td className="px-3 py-2.5">
                     <div className="font-medium">{cat.name}</div>
                     {isInsufficient && cat.lastComputedAt && (
-                      <div className="text-xs text-amber-700 mt-0.5">⚠ No order data — override required</div>
+                      <div className="text-xs text-amber-700 mt-0.5">
+                        ⚠ {cat.reliabilityFlag ?? "Insufficient data — override required"}
+                      </div>
                     )}
                     {isThin && (
                       <div className="text-xs text-amber-700 mt-0.5">⚠ Thin data — verify manually</div>
@@ -890,6 +897,8 @@ function fmtDriveDate(iso: string) {
 type ResolvedFeed = {
   division: string;
   month: string;
+  requestedMonth?: string;
+  sourceMonth?: string | null;
   workbookId: string | null;
   title: string | null;
   modifiedTime: string | null;
@@ -897,6 +906,9 @@ type ResolvedFeed = {
   titleMonthMatch: boolean | null;
   error: string | null;
   pattern: string | null;
+  purpose?: "monitoring";
+  usedFallback?: boolean;
+  warning?: string | null;
 };
 
 function WorkbookConfigPanel() {
@@ -908,6 +920,7 @@ function WorkbookConfigPanel() {
   const [refreshing, setRefreshing] = useState(false);
   const [divState, setDivState] = useState<Record<string, DivisionSuggestState>>({
     PTMT: initDivState(),
+    "PTMT-Machine": initDivState(),
     Plumbing: initDivState(),
   });
 
@@ -979,7 +992,7 @@ function WorkbookConfigPanel() {
       fetchNextMonthMissing();
       const bad = (data.feeds ?? []).filter((f: ResolvedFeed) => f.error);
       toast(bad.length
-        ? { title: "Some sources failed to resolve", description: bad.map((f: ResolvedFeed) => f.division).join(", "), variant: "destructive" }
+        ? { title: "Some monitoring sources are unavailable", description: `${bad.map((f: ResolvedFeed) => f.division).join(", ")} — planning uploads are unaffected.` }
         : { title: "Sources refreshed", description: `Workbooks re-resolved for ${month}.` });
     } catch {
       toast({ title: "Refresh failed", variant: "destructive" });
@@ -994,7 +1007,7 @@ function WorkbookConfigPanel() {
   const getActive = (division: string, month: string): { id: string; source: "DB" | "built-in" } | null => {
     const db = dbRows.find(r => r.division === division && r.month === month);
     if (db) return { id: db.workbookId, source: "DB" };
-    const fb = (division === "PTMT" ? PTMT_FALLBACK : PLUMBING_FALLBACK)[month];
+    const fb = (division === "Plumbing" ? PLUMBING_FALLBACK : PTMT_FALLBACK)[month];
     if (fb) return { id: fb, source: "built-in" };
     return null;
   };
@@ -1053,11 +1066,13 @@ function WorkbookConfigPanel() {
     }
   };
 
-  const renderDivision = (division: "PTMT" | "Plumbing") => {
+  const renderDivision = (division: "PTMT" | "PTMT-Machine" | "Plumbing") => {
     const ds = divState[division];
     const current  = getActive(division, currentMonth);
     const nextDbRow = dbRows.find(r => r.division === division && r.month === nextMonth);
-    const keyword  = division === "PTMT" ? "'PTMT'" : "'PLUMBING'";
+    const keyword = division === "PTMT-Machine"
+      ? "'PTMT Date Sheet & Monthly Report'"
+      : division === "PTMT" ? "'PTMT'" : "'PLUMBING'";
 
     return (
       <div className="space-y-3">
@@ -1068,20 +1083,24 @@ function WorkbookConfigPanel() {
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-gray-600">Current month</span>
             <span className="text-xs text-gray-400">({currentMonth})</span>
-            <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-medium text-green-700">● Active</span>
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">● Monitoring source</span>
           </div>
           {(() => {
             const feed = resolved.find(f => f.division === division);
             if (feed?.error) {
               return (
-                <p className="text-xs text-red-600 font-medium">
-                  ⚠ No workbook resolved: {feed.error}
+                <p className="text-xs text-amber-700 font-medium">
+                  ⚠ Monitoring source unavailable: {feed.error}
+                  <span className="font-normal"> Planning uploads are unaffected.</span>
                 </p>
               );
             }
             if (feed?.workbookId) {
               return (
                 <div className="space-y-1">
+                  {feed.warning && (
+                    <p className="text-xs text-amber-700 font-medium">⚠ {feed.warning}</p>
+                  )}
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs font-medium text-gray-800 truncate max-w-[280px]" title={feed.title ?? undefined}>
                       {feed.title ?? "(title unavailable)"}
@@ -1094,8 +1113,13 @@ function WorkbookConfigPanel() {
                       {feed.source === "pinned" ? "📌 Pinned" : feed.source === "auto" ? "Auto-discovered" : "Built-in"}
                     </span>
                     {feed.titleMonthMatch === false && (
-                      <span className="inline-flex items-center rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">
-                        ⚠ Title month ≠ {currentMonth}
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                        ⚠ Source month ≠ {currentMonth}
+                      </span>
+                    )}
+                    {feed.usedFallback && feed.sourceMonth && (
+                      <span className="inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                        Showing {feed.sourceMonth}
                       </span>
                     )}
                   </div>
@@ -1270,7 +1294,7 @@ function WorkbookConfigPanel() {
       {nextMonthMissing.length > 0 && (
         <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 space-y-1">
           <p className="text-xs font-semibold text-amber-800">
-            ⚠ Next month's workbooks ({nextMonth}) not found yet
+             ⚠ Next month's monitoring sources ({nextMonth}) not found yet
           </p>
           <ul className="space-y-0.5">
             {nextMonthMissing.map(f => (
@@ -1280,13 +1304,15 @@ function WorkbookConfigPanel() {
             ))}
           </ul>
           <p className="text-[11px] text-amber-600">
-            Ask the plant to create the file, or pin a workbook ID below — otherwise the feed fails on the 1st.
+             Ask the plant to create the file, or pin a workbook ID below. Until then, Monitoring will
+             show the latest available prior month; planning uploads are unaffected.
           </p>
         </div>
       )}
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-gray-500">
-          Sources auto-resolve from Google Drive by title pattern each month. A pinned ID always wins until unpinned.
+       <p className="text-xs text-gray-500">
+         These Google Sheets are read-only monitoring sources, not planning inputs. They auto-resolve
+         from Google Drive by title pattern; a prior available month may be shown with an amber warning.
         </p>
         <Button
           size="sm" variant="outline" className="h-7 text-xs shrink-0"
@@ -1300,7 +1326,7 @@ function WorkbookConfigPanel() {
         Each division's daily-production workbook is a Google Spreadsheet. Use{" "}
         <strong>Search Drive</strong> to auto-suggest next month's file — the app will rank candidates
         by name match and recency. Accept a suggestion, or fall back to a manual search / paste.
-        Changes to next month's workbook <strong>take effect at month-end</strong>.
+         Changes to next month's workbook <strong>take effect at month-end</strong>.
         DB-configured IDs always override built-in fallbacks.
       </p>
 
@@ -1310,6 +1336,8 @@ function WorkbookConfigPanel() {
         <div className="space-y-6">
           {renderDivision("PTMT")}
           <div className="border-t" />
+           {renderDivision("PTMT-Machine")}
+           <div className="border-t" />
           {renderDivision("Plumbing")}
         </div>
       )}
@@ -1925,11 +1953,12 @@ export default function DataPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Workbook ID Configuration</CardTitle>
+            <CardTitle className="text-base">Monitoring source workbooks (read-only)</CardTitle>
             <p className="text-xs text-gray-500 mt-1">
-              Configure the Google Spreadsheet IDs for PTMT and Plumbing daily-production workbooks.
-              DB entries take priority over built-in fallbacks. Paste the spreadsheet ID from the URL
-              (the long string after <code>/d/</code>).
+              These Google Sheets provide production actuals for Monitoring and Plan vs Actual views.
+              They are separate from the five planning uploads above and never participate in plan
+              creation. If the requested month is missing, Monitoring uses the latest available prior
+              month and labels it clearly.
             </p>
           </CardHeader>
           <CardContent>

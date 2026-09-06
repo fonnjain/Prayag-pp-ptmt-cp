@@ -12,6 +12,7 @@ import { WeeklyPlanVersionProvenance } from "@/components/weekly-plan-version-pr
 import { PlanVersionHistory, type MonitoringPlanVersion } from "@/components/plan-version-history";
 import { classifyPlantLiveError } from "@/lib/plant-live-error";
 import { PlantLiveGatedBanner } from "@/components/plant-live-gated-banner";
+import { MonitoringSourceBanner } from "@/components/monitoring-source-banner";
 
 async function downloadPdf(month: string, section: string, onUnavailable: () => void) {
   const base = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "");
@@ -211,6 +212,12 @@ export default function PlantDashboard({ month, selectedCategory, setSelectedCat
           </div>
         </div>
       </header>
+
+      <MonitoringSourceBanner
+        warning={sourceInfo?.actualSourceWarning}
+        sourceMonth={sourceInfo?.actualSourceMonth}
+        requestedMonth={month}
+      />
 
       {pdfUnavailable && (
         <Card className="border-amber-500/30 bg-amber-500/5">

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { CapacityMonthlyStats, CategoryCapacity } from "@workspace/db";
 import { canonicalSuggestedCapacity, deriveMonthlyCapacitySignals, normalizeCapacityComparison } from "./capacity-engine";
 import { countWorkingDaysInWeek } from "./working-days";
-import { runPtmtPass2, selectPtmtCapacityWindow } from "./ptmt-pass2-engine";
+import { resolvePtmtCapacityPool, runPtmtPass2, selectPtmtCapacityWindow } from "./ptmt-pass2-engine";
 
 function capacity(category: string, fullP90: number, recentP90: number, driftPct: number): CategoryCapacity {
   return {
@@ -183,4 +183,143 @@ test("worked Sundays increase only the relevant weekly capacity", () => {
   }], [capacity("Cabinet", 1, 1, 0)], ["2026-08-02"]);
   assert.deepEqual(result.categories[0]?.workingDays, [7, 6, 6, 8]);
   assert.equal(result.workingDays, 27);
+});
+
+test("Unclassified demand stays visible without requiring capacity or buffer fitting", () => {
+  const result = runPtmtPass2("2026-08", [{
+    itemCode: "UNRESOLVED-1",
+    colour: "WHITE",
+    category: "Unclassified",
+    avg3MoSale: 100,
+    stock: 0,
+    pendingCurrent: 3,
+    pendingLastMonth: 2,
+    bufferReq: null,
+    minProduction: 10,
+    temporaryPlan: 10,
+  }], []);
+
+  assert.deepEqual(result.items[0] && {
+    temporaryPlan: result.items[0].temporaryPlan,
+    dummy: result.items[0].dummy,
+    orders: result.items[0].orders,
+    buffer: result.items[0].buffer,
+    productionPlan: result.items[0].productionPlan,
+    cannotBeMade: result.items[0].cannotBeMade,
+  }, {
+    temporaryPlan: 10,
+    dummy: 2,
+    orders: 3,
+    buffer: 0,
+    productionPlan: 0,
+    cannotBeMade: 10,
+  });
+  assert.deepEqual(result.categories, []);
+  assert.equal(result.invariants.conservation, true);
+  assert.equal(result.invariants.weeklyCapacity, true);
+  assert.equal(result.invariants.weeklySum, true);
+  assert.equal(result.invariants.temporaryPlanUnchanged, true);
+});
+
+test("shared PTMT categories consume one physical capacity pool", () => {
+  assert.equal(resolvePtmtCapacityPool("Special Cock"), "Cocks Standard");
+  assert.equal(resolvePtmtCapacityPool("Collapsible Waste Pipes"), "Waste Pipes");
+  assert.equal(resolvePtmtCapacityPool("Showers Sets"), "Faucets & Jetsprays & Shower");
+  assert.equal(resolvePtmtCapacityPool("Unclassified"), null);
+
+  const result = runPtmtPass2("2026-08", [
+    {
+      itemCode: "SPECIAL",
+      colour: "WHITE",
+      category: "Special Cock",
+      avg3MoSale: 0,
+      stock: 0,
+      pendingCurrent: 10,
+      pendingLastMonth: 0,
+      bufferReq: null,
+      minProduction: 10,
+      temporaryPlan: 10,
+    },
+    {
+      itemCode: "STANDARD",
+      colour: "WHITE",
+      category: "Cocks Standard",
+      avg3MoSale: 0,
+      stock: 0,
+      pendingCurrent: 10,
+      pendingLastMonth: 0,
+      bufferReq: null,
+      minProduction: 10,
+      temporaryPlan: 10,
+    },
+    {
+      itemCode: "COLLAPSIBLE",
+      colour: "WHITE",
+      category: "Collapsible Waste Pipes",
+      avg3MoSale: 0,
+      stock: 0,
+      pendingCurrent: 10,
+      pendingLastMonth: 0,
+      bufferReq: null,
+      minProduction: 10,
+      temporaryPlan: 10,
+    },
+    {
+      itemCode: "WASTE",
+      colour: "WHITE",
+      category: "Waste Pipes",
+      avg3MoSale: 0,
+      stock: 0,
+      pendingCurrent: 10,
+      pendingLastMonth: 0,
+      bufferReq: null,
+      minProduction: 10,
+      temporaryPlan: 10,
+    },
+    {
+      itemCode: "SHOWER-SET",
+      colour: "WHITE",
+      category: "Showers Sets",
+      avg3MoSale: 0,
+      stock: 0,
+      pendingCurrent: 10,
+      pendingLastMonth: 0,
+      bufferReq: null,
+      minProduction: 10,
+      temporaryPlan: 10,
+    },
+    {
+      itemCode: "FAUCET",
+      colour: "WHITE",
+      category: "Faucets & Jetsprays & Shower",
+      avg3MoSale: 0,
+      stock: 0,
+      pendingCurrent: 10,
+      pendingLastMonth: 0,
+      bufferReq: null,
+      minProduction: 10,
+      temporaryPlan: 10,
+    },
+  ], [
+    capacity("Cocks Standard", 1, 1, 0),
+    capacity("Waste Pipes", 1, 1, 0),
+    capacity("Faucets & Jetsprays & Shower", 1, 1, 0),
+  ]);
+
+  assert.deepEqual(result.items.map((item) => [item.category, item.capacityPool, item.productionPlan]), [
+    ["Special Cock", "Cocks Standard", 10],
+    ["Cocks Standard", "Cocks Standard", 10],
+    ["Collapsible Waste Pipes", "Waste Pipes", 10],
+    ["Waste Pipes", "Waste Pipes", 10],
+    ["Showers Sets", "Faucets & Jetsprays & Shower", 10],
+    ["Faucets & Jetsprays & Shower", "Faucets & Jetsprays & Shower", 10],
+  ]);
+  assert.deepEqual(result.categories.map((category) => [category.category, category.temporaryPlan, category.sharedCategories]), [
+    ["Cocks Standard", 20, ["Special Cock"]],
+    ["Waste Pipes", 20, ["Collapsible Waste Pipes"]],
+    ["Faucets & Jetsprays & Shower", 20, ["Showers Sets"]],
+  ]);
+  assert.equal(result.invariants.conservation, true);
+  assert.equal(result.invariants.weeklyCapacity, true);
+  assert.equal(result.invariants.weeklySum, true);
 });

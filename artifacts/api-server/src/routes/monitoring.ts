@@ -10,8 +10,8 @@ import {
 import { eq, and } from "drizzle-orm";
 import { buildPlanItems, getPlumbingMonitoringPayloadCached, handlePlanError } from "./plan";
 import { parseReport5 } from "../lib/report5";
-import { getWorkbookIdForMonth, normalizeCodeStrict } from "../lib/sheets";
-import { fetchDailyActuals, type DailyActualRow } from "../lib/plant-ingestion";
+import { normalizeCodeStrict, resolveMonitoringWorkbookForMonth } from "../lib/sheets";
+import { fetchMonitoringDailyActuals, type DailyActualRow } from "../lib/plant-ingestion";
 import {
   buildCalendarModel,
   convertTargetsToPcs,
@@ -173,6 +173,9 @@ export interface MonitoringBundle {
   dataAvailable: boolean;
   /** Set when the PTMT monthly workbook could not be resolved (machine kg feed). */
   sourceError: string | null;
+  /** Non-blocking notice when monitoring is using an earlier available workbook. */
+  sourceWarning: string | null;
+  sourceMonth: string;
   /** Plan target expressed in pieces. */
   plantTargetPcs: number;
   /** Produced pieces matched to plan items (from ANUJ Production sheet). */
@@ -208,24 +211,39 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
   // mirror sheet — machine kg is a separate KPI.
   let sheetId: string | null = null;
   let workbookResolutionError: string | null = null;
+  let machineSourceMonth = month;
+  let sourceWarning: string | null = null;
   try {
-    sheetId = await getWorkbookIdForMonth("PTMT-Machine", month);
+    const resolution = await resolveMonitoringWorkbookForMonth("PTMT-Machine", month);
+    sheetId = resolution.workbookId;
+    machineSourceMonth = resolution.sourceMonth;
+    sourceWarning = resolution.warning;
   } catch (err) {
     workbookResolutionError = err instanceof Error ? err.message : String(err);
     logger.error({ month, err: workbookResolutionError }, "monitoring: PTMT workbook resolution failed");
   }
-  const [planItems, config, thresholds, overrides, actuals] = await Promise.all([
-    buildPlanItems(month),
-    loadConfig(month),
+  // Resolve the actuals first so a fallback read uses the matching prior
+  // month's plan context rather than failing on the missing requested-month
+  // upload before the monitoring source can be displayed.
+  const actualsResult = await fetchMonitoringDailyActuals(month).catch((err) => {
+    logger.warn({ err, month }, "monitoring: failed to fetch PTMT daily actuals");
+    return {
+      actuals: [] as DailyActualRow[],
+      sourceMonth: month,
+      warning: null,
+    };
+  });
+  const dataMonth = actualsResult.sourceMonth;
+  const [planItems, config, thresholds, overrides] = await Promise.all([
+    buildPlanItems(dataMonth),
+    loadConfig(dataMonth),
     loadThresholds(),
-    loadOverridesForMonth(month),
-    // PTMT piece-level actuals: same Google Sheet the corrective engine reads,
-    // so monitoring producedToDate will agree with corrective producedToDate.
-    fetchDailyActuals(month).catch((err) => {
-      logger.warn({ err, month }, "monitoring: failed to fetch PTMT daily actuals");
-      return [] as DailyActualRow[];
-    }),
+    loadOverridesForMonth(dataMonth),
   ]);
+  const actuals = actualsResult.actuals;
+  if (actualsResult.warning) sourceWarning = sourceWarning
+    ? `${sourceWarning} ${actualsResult.warning}`
+    : actualsResult.warning;
 
   // Plan targets in pieces (no BOM weights stored for PTMT items).
   const pcConversion = convertTargetsToPcs(planItems);
@@ -241,7 +259,7 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
     logger.warn({ month }, "monitoring: no PTMT daily workbook resolved for month — machine kg unavailable");
   } else {
     try {
-      const result = await parseReport5(sheetId, month);
+      const result = await parseReport5(sheetId, machineSourceMonth);
       report5Machines = result.machines;
       report5LastDate = result.lastDataDate;
     } catch (err) {
@@ -256,13 +274,13 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
   // Data is available when either the piece actuals or the machine report have rows.
   const dataAvailable = machineDataAvailable || lastDataDate !== null;
 
-  const lifecycle = resolvePlantMonthLifecycle(month).state;
+  const lifecycle = resolvePlantMonthLifecycle(dataMonth).state;
   const snapshotDate = config.snapshotDate ?? lastDataDate;
   const positiveDates = actuals
     .filter((row) => row.qty > 0)
     .map((row) => row.date);
   const workingDaysResolution = resolveWorkingDays(
-    month,
+    dataMonth,
     config.workingDaysSource === "configured" ? config.workingDays : null,
     positiveDates,
     snapshotDate,
@@ -271,7 +289,7 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
   const dailyByDate = new Map<string, number>();
   for (const row of actuals) dailyByDate.set(row.date, (dailyByDate.get(row.date) ?? 0) + row.qty);
   const elapsedDays = actuals.length > 0
-    ? buildElapsedProductionDays(month, dailyByDate, snapshotDate)
+    ? buildElapsedProductionDays(dataMonth, dailyByDate, snapshotDate)
     : [];
   const elapsed = lifecycle === "closed" || lifecycle === "grace"
     ? workingDaysResolution.workingDays
@@ -304,7 +322,7 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
     }));
 
   // ── W1–W4 weekly summary rows (same shape as Plumbing weeks) ─────────────
-  const [yr, mo] = month.split("-").map(Number);
+  const [yr, mo] = dataMonth.split("-").map(Number);
   const lastDayOfMonth = new Date(yr, mo, 0).getDate();
   const p2 = ptmtActuals.p2;
   const weekCalendar = [
@@ -326,8 +344,8 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
     (date) => new Date(`${date}T00:00:00Z`).getUTCDay() === 0 && (dailyByDate.get(date) ?? 0) > 0,
   );
   const idleWeekdayDates = lastDataDate
-    ? [...Array(parseInt((lifecycle === "closed" || lifecycle === "grace" ? `${month}-${p2(lastDayOfMonth)}` : snapshotDate ?? lastDataDate).slice(8), 10))]
-      .map((_, index) => `${month}-${p2(index + 1)}`)
+    ? [...Array(parseInt((lifecycle === "closed" || lifecycle === "grace" ? `${dataMonth}-${p2(lastDayOfMonth)}` : snapshotDate ?? lastDataDate).slice(8), 10))]
+      .map((_, index) => `${dataMonth}-${p2(index + 1)}`)
       .filter((date) => new Date(`${date}T00:00:00Z`).getUTCDay() !== 0 && (dailyByDate.get(date) ?? 0) <= 0)
     : [];
 
@@ -341,7 +359,7 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
     cumRelease += release;
     cumMapped  += mapped;
     cumTotal   += actual;
-    const wkStarted = today.slice(0, 7) === month && today >= wk.startDate;
+    const wkStarted = today.slice(0, 7) === dataMonth && today >= wk.startDate;
     const cumAttPct = cumRelease > 0 && wkStarted ? Math.round((cumMapped / cumRelease) * 1000) / 10 : null;
     const wkAttPct  = release   > 0 && wkStarted ? Math.round((mapped    / release)    * 1000) / 10 : null;
     return { week: wk.week, label: wk.label, startDate: wk.startDate, endDate: wk.endDate,
@@ -363,6 +381,8 @@ export async function buildMonitoringBundle(month: string): Promise<MonitoringBu
     thresholds,
     dataAvailable,
     sourceError: workbookResolutionError,
+    sourceWarning,
+    sourceMonth: dataMonth,
     plantTargetPcs: pcConversion.plantTargetPcs,
     producedToDatePcs: ptmtActuals.totalMapped,
     totalProducedPcs: ptmtActuals.totalProduced,
@@ -409,6 +429,8 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
       month,
       segment: "PLUMBING",
       dataAvailable: !!data.lastDataDate,
+      sourceMonth: data.sourceMonth ?? month,
+      sourceWarning: data.sourceWarning ?? null,
       lastDataDate: data.lastDataDate,
        workingDaysElapsed: data.workingDaysElapsed,
        workingDays: data.workingDays,
@@ -445,6 +467,8 @@ router.get("/monitoring/dashboard", async (req, res): Promise<void> => {
     segment: "PTMT",
     dataAvailable: bundle.dataAvailable,
     sourceError: bundle.sourceError,
+    sourceMonth: bundle.sourceMonth,
+    sourceWarning: bundle.sourceWarning,
     lastDataDate: bundle.lastDataDate,
     workingDaysElapsed: bundle.workingDaysElapsed,
     workingDays: bundle.workingDays,

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { RefreshCw, ListChecks, AlertTriangle, CheckCircle2, TrendingUp } from "lucide-react";
 import { Link } from "wouter";
+import { MonitoringSourceBanner } from "@/components/monitoring-source-banner";
 
 export default function PlumbingRecommendations({ month }: { month: string }) {
   const [data, setData]       = useState<any>(null);
@@ -48,6 +49,13 @@ export default function PlumbingRecommendations({ month }: { month: string }) {
   );
 
   const cats: any[] = data?.categories ?? [];
+  const sourceBanner = (
+    <MonitoringSourceBanner
+      warning={data?.sourceWarning}
+      sourceMonth={data?.sourceMonth}
+      requestedMonth={month}
+    />
+  );
   // API returns { plant: { produced, mapped, unmapped, runRatePerDay }, categories, weeks }
   // cumPct must use mappedActual (summed from categories) for both numerator and denominator —
   // plant.produced = mapped + unmapped and would inflate the ratio by the unmapped quantity.
@@ -107,6 +115,7 @@ export default function PlumbingRecommendations({ month }: { month: string }) {
 
   return (
     <div className="space-y-6 max-w-[1000px] mx-auto pb-10">
+      {sourceBanner}
       <header className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2 mb-1">

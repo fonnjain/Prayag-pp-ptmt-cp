@@ -11,7 +11,11 @@ import {
   bufferCategoriesTable,
 } from "@workspace/db";
 import { normalizeCatalogueCode, mapCatalogueDivision } from "./master-products";
-import { parseRateListRows, rateListPlanningCategory, RATE_LIST_UPLOAD_KIND } from "./rate-list";
+import {
+  normalizeRateListCode,
+  loadRateListRows,
+  rateListPlanningCategory,
+} from "./rate-list";
 import {
   deriveMrpPlanningCategory,
   getMrpSeriesCrosswalkDecision,
@@ -78,6 +82,8 @@ export type MrpSeriesReviewRow = {
   effectiveCategories: string[];
   codeCount: number;
   julyDemandQuantity: number;
+  classifiedJulyDemandQuantity: number;
+  heldJulyDemandQuantity: number;
   sampleCodes: string | null;
 };
 
@@ -328,6 +334,7 @@ export function buildMrpSeriesReview(
   mrpProductRows: Array<Pick<MrpClassificationRow, "itemCode" | "division" | "series">>,
   july: ReadonlyMap<string, number>,
   modelCategories: ReadonlySet<string>,
+  fallbackCategoryByCode: ReadonlyMap<string, string> = new Map(),
 ): MrpSeriesReviewRow[] {
   const rowsBySeries = new Map<string, typeof mrpProductRows>();
   for (const row of mrpProductRows) {
@@ -340,11 +347,17 @@ export function buildMrpSeriesReview(
     const decision = getMrpSeriesCrosswalkDecision(seriesValue.series);
     const seriesRows = rowsBySeries.get(normalizeMrpSeries(seriesValue.series)) ?? [];
     const rowsByCode = new Map(seriesRows.map((row) => [row.itemCode, row]));
-    const effective = [...rowsByCode.values()].map((row) =>
-      resolveMrpClassification(row, "Unclassified", modelCategories),
-    );
-    const effectiveCategories = [...new Set(effective.map((row) => row.category))].sort();
-    const classifiedCount = effective.filter((row) => row.status === "classified").length;
+    const effective = [...rowsByCode.values()].map((row) => ({
+      code: row.itemCode,
+      classification: resolveMrpClassification(
+        row,
+        fallbackCategoryByCode.get(normalizeRateListCode(row.itemCode)) ?? "Unclassified",
+        modelCategories,
+        fallbackCategoryByCode.get(normalizeRateListCode(row.itemCode)) ?? null,
+      ),
+    }));
+    const effectiveCategories = [...new Set(effective.map(({ classification }) => classification.category))].sort();
+    const classifiedCount = effective.filter(({ classification }) => classification.status === "classified").length;
     const effectiveStatus = effective.length > 0 && classifiedCount === effective.length
       ? "classified"
       : classifiedCount === 0
@@ -352,15 +365,18 @@ export function buildMrpSeriesReview(
         : "mixed";
     const status = decision.status === "applied"
       ? "applied"
-      : decision.status === "pending_review"
-        ? "pending_review"
-        : effectiveStatus === "classified"
-          ? "existing_rule"
+      : effectiveStatus === "classified"
+        ? "existing_rule"
+        : decision.status === "pending_review"
+          ? "pending_review"
           : "held";
     const julyDemandQuantity = [...rowsByCode.keys()].reduce(
       (sum, code) => sum + (july.get(code) ?? 0),
       0,
     );
+    const classifiedJulyDemandQuantity = effective
+      .filter(({ classification }) => classification.status === "classified")
+      .reduce((sum, { code }) => sum + (july.get(code) ?? 0), 0);
     return {
       series: seriesValue.series,
       category: decision.category ?? (effectiveCategories.length === 1 ? effectiveCategories[0] : null),
@@ -370,6 +386,8 @@ export function buildMrpSeriesReview(
       effectiveCategories,
       codeCount: seriesValue.codeCount || rowsByCode.size,
       julyDemandQuantity: Math.round(julyDemandQuantity),
+      classifiedJulyDemandQuantity: Math.round(classifiedJulyDemandQuantity),
+      heldJulyDemandQuantity: Math.round(julyDemandQuantity - classifiedJulyDemandQuantity),
       sampleCodes: seriesValue.sampleCodes,
     };
   });
@@ -378,10 +396,10 @@ export function buildMrpSeriesReview(
 export async function getMrpReport() {
   const [source] = await db.select().from(mrpControlSourcesTable).orderBy(desc(mrpControlSourcesTable.importedAt)).limit(1);
   if (!source) return { source: null, summary: null };
-  const [rows, seriesValues, rateUploads, pendingUploads, itemMasterRows, bufferRows] = await Promise.all([
+  const [rows, seriesValues, rateRows, pendingUploads, itemMasterRows, bufferRows] = await Promise.all([
     db.select().from(mrpControlRowsTable).where(eq(mrpControlRowsTable.sourceId, source.id)),
     db.select().from(mrpSeriesValuesTable).where(eq(mrpSeriesValuesTable.sourceId, source.id)),
-    db.select({ rows: uploadedFilesTable.rows }).from(uploadedFilesTable).where(eq(uploadedFilesTable.kind, RATE_LIST_UPLOAD_KIND)).orderBy(desc(uploadedFilesTable.uploadedAt)).limit(1),
+    loadRateListRows(),
     db.select({ filename: uploadedFilesTable.filename, rows: uploadedFilesTable.rows }).from(uploadedFilesTable).where(eq(uploadedFilesTable.kind, "last_month_pending")).orderBy(desc(uploadedFilesTable.uploadedAt)),
     db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, "PTMT")),
     db.select({
@@ -399,7 +417,6 @@ export async function getMrpReport() {
       heldClassifications: segmentRows.filter((row) => row.classificationStatus === "hold").length,
     };
   });
-  const rateRows = rateUploads[0] ? parseRateListRows(rateUploads[0].rows as Record<string, unknown>[]) : [];
   const rateByCode = new Map(rateRows.map((row) => [row.code, rateListPlanningCategory(row)]));
   const disagreements = rows
     .filter((row) => row.segment === "PTMT" && row.rowType === "product" && row.planningCategory && rateByCode.has(row.itemCode))
@@ -427,20 +444,29 @@ export async function getMrpReport() {
   const mrpProductRows = rows.filter((row) =>
     row.segment === "PTMT" && row.rowType === "product" && row.isLoadable,
   );
-  const seriesReview = buildMrpSeriesReview(seriesValues, mrpProductRows, july, modelCategories);
+  const seriesReview = buildMrpSeriesReview(
+    seriesValues,
+    mrpProductRows,
+    july,
+    modelCategories,
+    rateByCode,
+  );
   const mrpByCode = new Map(
     mrpProductRows
       .map((row) => [row.itemCode, row]),
   );
   const rateCategoryByCode = new Map(rateRows.map((row) => [row.code, rateListPlanningCategory(row)]));
   const categoryByCode = new Map<string, string>();
+  const classificationStatusByCode = new Map<string, boolean>();
   for (const code of combinedCodes) {
     const classification = resolveMrpClassification(
       mrpByCode.get(code),
       rateCategoryByCode.get(code) ?? "Unclassified",
       modelCategories,
+      rateCategoryByCode.get(code) ?? null,
     );
     categoryByCode.set(code, classification.category);
+    classificationStatusByCode.set(code, classification.status === "classified");
   }
   const categoryCodes = new Map<string, Set<string>>();
   for (const [code, category] of categoryByCode) {
@@ -456,6 +482,8 @@ export async function getMrpReport() {
     "Ball Cock",
     "Cistern & Seat Cover",
     "Cabinet",
+    "P.V.C. Connections",
+    "Waste Pipes",
     "Unclassified",
     ...[...categoryCodes.keys()]
       .filter((category) => ![
@@ -466,6 +494,8 @@ export async function getMrpReport() {
         "Ball Cock",
         "Cistern & Seat Cover",
         "Cabinet",
+        "P.V.C. Connections",
+        "Waste Pipes",
         "Unclassified",
       ].includes(category))
       .sort(),
@@ -476,7 +506,11 @@ export async function getMrpReport() {
       category,
       codeCount: codes.size,
       julyDemandQuantity: Math.round([...codes].reduce((sum, code) => sum + (july.get(code) ?? 0), 0)),
-      capacityStatus: category !== "Unclassified" && modelCategories.has(category) ? "configured" : "held",
+      capacityStatus: category !== "Unclassified" &&
+        modelCategories.has(category) &&
+        [...codes].every((code) => classificationStatusByCode.get(code) === true)
+        ? "configured"
+        : "held",
       multiplier: category === "Unclassified" ? null : bufferRows.find((row) => row.name === category)?.multiplier ?? null,
     };
   });

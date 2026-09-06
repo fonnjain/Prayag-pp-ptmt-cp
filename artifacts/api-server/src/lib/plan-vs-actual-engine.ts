@@ -39,7 +39,7 @@ import {
 } from "./plant-plan-timeline";
 import { buildWeekCalendar } from "./plant-weekly-engine";
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "./plant-lifecycle";
-import { fetchDailyActuals, type DailyActualRow } from "./plant-ingestion";
+import { fetchMonitoringDailyActuals, type DailyActualRow } from "./plant-ingestion";
 import type { PlantSnapshotSourceInfo } from "./plant-monitoring";
 import type { PlantSegment } from "./plant-segments";
 import { backfillLegacyPlantMonitoringSnapshot, getPlantMonitoringSnapshotPayload } from "./plant-monitoring";
@@ -1556,7 +1556,7 @@ async function buildPtmtReport(month: string, now: Date): Promise<PlanVsActualRe
   } else {
     versionTimeline = await getPlanVersionTimeline(month, "PTMT");
     try {
-      actuals = await fetchDailyActuals(month, {});
+      actuals = (await fetchMonitoringDailyActuals(month, {})).actuals;
     } catch (err) {
       actuals = [];
       logger.warn({ month, err: String(err) }, "plan-vs-actual: PTMT actuals fetch failed, using empty");

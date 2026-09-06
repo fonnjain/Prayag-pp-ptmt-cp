@@ -2425,7 +2425,7 @@ components:
 
     UploadedFile:
       type: object
-      required: [id, kind, filename, uploadedAt, rowCount, period]
+      required: [id, kind, filename, uploadedAt, rowCount, period, sourceMetadata]
       properties:
         id: { type: integer }
         kind:
@@ -2434,6 +2434,9 @@ components:
         period: { type: ["string", "null"], pattern: '^\d{4}-(0[1-9]|1[0-2])$' }
         uploadedAt: { type: string, format: date-time }
         rowCount: { type: integer }
+        sourceMetadata:
+          type: ["object", "null"]
+          additionalProperties: true
 
     SyncSource:
       type: object

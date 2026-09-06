@@ -137,3 +137,87 @@ mtime_ms = 1788234230202
 storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/a7010f28-8618-4c49-8a75-c084bb2549a9/a1214695-0ec8-4bd3-9ce9-ab75ae292d36"
 storage_version_token = "1788234268874382"
 content_type = "application/pdf"
+
+[[outputs]]
+id = "VYLXaJ1oxGiYS5cKMnzDU"
+uri = "file://.agents/outputs/ptmt-series-range-distribution.csv"
+type = "table"
+title = "PTMT series and range distribution"
+description = "Complete PTMT-tab parse from the supplied Google Sheet. Includes every raw Series label, row count, governed planning categories, unmapped ranges, and RANGE NAME distribution."
+logical_id = "04217549-f2d3-4519-a2d4-6500d9e46d76"
+content_hash = "sha256:581884733384649aa513893ba6001316ace1eaafb5794583da952d8415ea80aa"
+size = 24676
+mtime_ms = 1788258801658
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/04217549-f2d3-4519-a2d4-6500d9e46d76/5d9a8d50-3d00-41e6-8525-ec76887a5a99"
+storage_version_token = "1788260554550783"
+content_type = "text/csv"
+
+[[outputs]]
+id = "sNfw27YBGxN2InUjesifg"
+uri = "file://attached_assets/september_ptmt_pending_exclusion_2026-09.csv"
+type = "table"
+title = "September PTMT pending exclusion ledger"
+description = "Complete 11,726-piece September last-month-pending exclusion ledger: code, colour, quantity, disposition, reason, and authoritative MRP description/source fields where available."
+logical_id = "18b4e0f4-e685-4aa9-ac74-36b9a323d6a5"
+content_hash = "sha256:8907a00b103bc8c4683b4f7ea39413b39600732451e82a59fe6769c609fcafca"
+size = 3854
+mtime_ms = 1788612011539
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/18b4e0f4-e685-4aa9-ac74-36b9a323d6a5/1fed6236-7b7d-4c04-87f3-bfbe75d99433"
+storage_version_token = "1788612041877378"
+content_type = "text/csv"
+
+[[outputs]]
+id = "X_10dyQg58F4NSQdY1i40"
+uri = "file://attached_assets/september_ptmt_pending_exclusion_2026-09_reduced.csv"
+type = "table"
+title = "September PTMT reduced pending exclusion ledger"
+description = "Reviewed September 2026 last-month pending ledger after the Luxor/Glory MRP roster bridge: 16 positive-balance rows totaling 1,292 pieces, with 1,250 unmatched, 42 resolution-loss, and zero unexplained residual."
+logical_id = "5a3818a0-e320-4b48-8182-9cd3c136b778"
+content_hash = "sha256:b747f6ce06b5c9cdf9861e792572267cb67693837f3dbc28a93f9cedf7d81ea8"
+size = 2573
+mtime_ms = 1788613626410
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/5a3818a0-e320-4b48-8182-9cd3c136b778/0f5d03f7-4cc1-4d12-97c8-797020d31f00"
+storage_version_token = "1788613913855890"
+content_type = "text/csv"
+
+[[outputs]]
+id = "VBzXEGkWlhJfKTsAHlfod"
+uri = "file://.agents/outputs/september_prayag_plan_itemised_differences.csv"
+type = "table"
+title = "Corrected September Prayag plan itemised differences"
+description = "Corrected read-only comparison using the app’s ordinal input/result pairing rule. Includes every difference, one-sided item, clamp row, input values, categories, and production totals."
+logical_id = "922abfb6-22a4-4d38-96ea-42a5242c5daf"
+content_hash = "sha256:d5316e4e3f77183009683d7d4676590ee4ad60de57cedb0d0e7201bbd78df7e8"
+size = 160564
+mtime_ms = 1788615036601
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/922abfb6-22a4-4d38-96ea-42a5242c5daf/890c0104-647a-434e-9303-b4c637d60821"
+storage_version_token = "1788615045724542"
+content_type = "text/csv"
+
+[[outputs]]
+id = "M3hcmjLNe0rxsFNkvvKrQ"
+uri = "file://.agents/outputs/september_prayag_plan_category_inputs.csv"
+type = "table"
+title = "Corrected September category input comparison"
+description = "Corrected per-category comparison using ordinal-paired app inputs, including average sales, stock, current pending, last-month pending, clamp effects, and production totals."
+logical_id = "9a7c0394-62af-46d4-8b05-0b0cfbf1eb97"
+content_hash = "sha256:4f4d41d14171c60c81b89ea877134ea210858e84f3a57ab37b5c9590b0de6d6f"
+size = 1693
+mtime_ms = 1788615037241
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/9a7c0394-62af-46d4-8b05-0b0cfbf1eb97/069de758-e435-44c6-b6e5-a8c8418442c5"
+storage_version_token = "1788615047375355"
+content_type = "text/csv"
+
+[[outputs]]
+id = "Td4_ycGWnPtyCNcAfAk5a"
+uri = "file://.local/outputs/september-prayag-variance-corrected-2026-09-06.pdf"
+type = "pdf"
+title = "September Prayag Variance — Corrected Source Explanation (PDF)"
+description = "Full shared-population verification: 99.91% strict July match, 100% of non-zero dummy values match July, and 0% of non-zero values match August. The outdated PVC completeness question has been removed."
+logical_id = "d9e5e216-a9f6-40f4-9d3e-14f659e71ea5"
+content_hash = "sha256:aee7d9f1f9230aa3b866ae4d7518a1360aa06e85372f890109520028c6158526"
+size = 49116
+mtime_ms = 1788674191632
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/d9e5e216-a9f6-40f4-9d3e-14f659e71ea5/732d2519-4458-40c3-bd62-0b0798304971"
+storage_version_token = "1788674200150660"
+content_type = "application/pdf"

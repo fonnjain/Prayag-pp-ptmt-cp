@@ -1,4 +1,4 @@
-import { useGetPlanSummary, useListPlanItems, type PlanSummary, type PlanItem, useGetPlantWeeklySummary, getGetPlantWeeklySummaryQueryKey, useCreatePlanRun } from "@workspace/api-client-react";
+import { useGetPlanSummary, useListPlanItems, type PlanSummary, type PlanItem, useGetPlantWeeklySummary, getGetPlantWeeklySummaryQueryKey } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/app-layout";
 import { categorySlug } from "@/lib/category-slug";
 import { useSegment } from "@/contexts/segment-context";
@@ -20,6 +20,7 @@ import { FileSpreadsheet, RefreshCw } from "lucide-react";
 import { exportXlsx } from "@/lib/excel";
 import { useToast } from "@/hooks/use-toast";
 import { MonthEmptyState } from "@/components/month-empty-state";
+import { useCreateTemporaryPlan } from "@/hooks/use-create-temporary-plan";
 
 function ragBadge(pct: number | null | undefined): string {
   if (pct === null || pct === undefined) return "";
@@ -95,15 +96,15 @@ export default function SummaryPage() {
   const { month, isMonthAvailable, isAvailableMonthsLoading } = useMonth();
   const { segment } = useSegment();
   const { data, isLoading, isError } = useGetPlanSummary({ month, segment });
-  const createRun = useCreatePlanRun();
+  const { createTemporaryPlan, isPending: isCreatingTemporaryPlan } = useCreateTemporaryPlan();
   const { toast } = useToast();
 
   function handleRunPlan() {
-    createRun.mutate(
-      { data: { month, segment } },
+    createTemporaryPlan(
+      { month, segment },
       {
-        onSuccess: () =>
-          toast({ title: "Plan run created", description: `Snapshot for ${formatMonthLabel(month)} saved to Plan Runs.` }),
+        onSuccess: (run) =>
+          toast({ title: "Temporary Plan frozen", description: `Run #${run.id} is a demand-true snapshot for ${formatMonthLabel(month)}.` }),
         onError: () =>
           toast({ title: "Failed to create run", description: "Check that all data sources are available.", variant: "destructive" }),
       },
@@ -167,10 +168,10 @@ export default function SummaryPage() {
             <Button
               size="sm"
               onClick={handleRunPlan}
-              disabled={createRun.isPending}
+               disabled={isCreatingTemporaryPlan}
             >
-              <RefreshCw className={cn("h-4 w-4 mr-2", createRun.isPending && "animate-spin")} />
-              {createRun.isPending ? "Running plan…" : "Run Plan now"}
+              <RefreshCw className={cn("h-4 w-4 mr-2", isCreatingTemporaryPlan && "animate-spin")} />
+               {isCreatingTemporaryPlan ? "Creating Temporary Plan…" : "Run Plan now"}
             </Button>
             {!showMonthEmpty && !isLoading && !isError && (
               <Button variant="outline" size="sm" onClick={() => exportXlsx(`plan-summary-${month}`, [
@@ -209,7 +210,11 @@ export default function SummaryPage() {
         )}
 
         {showMonthEmpty ? (
-          <MonthEmptyState segment={segment} />
+           <MonthEmptyState
+             segment={segment}
+             onCreateTemporaryPlan={handleRunPlan}
+             isCreatingTemporaryPlan={isCreatingTemporaryPlan}
+           />
         ) : !isLoading && !isError && (
           <Card>
             <CardContent className="pt-4 overflow-x-auto">
