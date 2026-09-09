@@ -125,6 +125,25 @@ export interface PlumbingCorrectiveAllocation {
   weeks: [number, number, number, number];
 }
 
+export interface PlumbingCorrectiveSubOnePieceExclusion {
+  kind: PlumbingScheduleKind;
+  item_code: string;
+  material: string;
+  remaining_pcs: number;
+  rounded_pcs: number;
+  reason: "SUB_ONE_PIECE_REMAINDER";
+}
+
+export interface PlumbingCorrectivePayloadAudit {
+  candidate_pipe_rows: number;
+  candidate_fitting_rows: number;
+  sent_pipe_rows: number;
+  sent_fitting_rows: number;
+  sub_one_piece_excluded_rows: number;
+  sub_one_piece_excluded_quantity: number;
+  sub_one_piece_excluded: PlumbingCorrectiveSubOnePieceExclusion[];
+}
+
 export interface PlumbingCorrectiveSchedule {
   batchId: string;
   month: string;
@@ -135,6 +154,7 @@ export interface PlumbingCorrectiveSchedule {
   weekOffset: number;
   /** The positive calendar values actually sent to the machine app. */
   weekDays: number[];
+  payloadAudit: PlumbingCorrectivePayloadAudit;
   results: PlumbingScheduleResult[];
   allocations: PlumbingCorrectiveAllocation[];
   unroutable: PlumbingScheduleBatch["unroutable"];
@@ -531,6 +551,40 @@ export async function runPlumbingCorrectiveSchedule(args: {
 }): Promise<PlumbingCorrectiveSchedule> {
   const originalWeeks = args.weeks.map((week) => week.originalWeek);
   const weekDays = args.weeks.map((week) => week.workingDays);
+  const subOnePieceExcluded: PlumbingCorrectiveSubOnePieceExclusion[] = [];
+  const candidatePipeRows = args.demandByKind.pipe.length;
+  const candidateFittingRows = args.demandByKind.fitting.length;
+  const normalizeDemand = (kind: PlumbingScheduleKind): PlumbingScheduleDemand[] =>
+    args.demandByKind[kind].flatMap((item) => {
+      const roundedPieces = Math.round(item.qty_pcs);
+      if (roundedPieces < 1) {
+        subOnePieceExcluded.push({
+          kind,
+          item_code: item.item_code,
+          material: item.material,
+          remaining_pcs: item.qty_pcs,
+          rounded_pcs: roundedPieces,
+          reason: "SUB_ONE_PIECE_REMAINDER",
+        });
+        return [];
+      }
+      return [{ ...item, qty_pcs: roundedPieces }];
+    });
+  const filteredDemandByKind: Record<PlumbingScheduleKind, PlumbingScheduleDemand[]> = {
+    pipe: normalizeDemand("pipe"),
+    fitting: normalizeDemand("fitting"),
+  };
+  const payloadAudit = (): PlumbingCorrectivePayloadAudit => ({
+    candidate_pipe_rows: candidatePipeRows,
+    candidate_fitting_rows: candidateFittingRows,
+    sent_pipe_rows: filteredDemandByKind.pipe.length,
+    sent_fitting_rows: filteredDemandByKind.fitting.length,
+    sub_one_piece_excluded_rows: subOnePieceExcluded.length,
+    sub_one_piece_excluded_quantity: Math.round(
+      subOnePieceExcluded.reduce((sum, item) => sum + item.remaining_pcs, 0) * 100,
+    ) / 100,
+    sub_one_piece_excluded: subOnePieceExcluded,
+  });
   if (originalWeeks.length === 0) {
     return {
       batchId: randomUUID(),
@@ -539,6 +593,7 @@ export async function runPlumbingCorrectiveSchedule(args: {
       originalWeeks,
       weekOffset: 0,
       weekDays,
+      payloadAudit: payloadAudit(),
       results: [],
       allocations: [],
       unroutable: [],
@@ -551,7 +606,7 @@ export async function runPlumbingCorrectiveSchedule(args: {
     throw new Error(`Corrective Plumbing weeks must be contiguous: ${originalWeeks.join(",")}`);
   }
 
-  const allDemand = PLUMBING_SCHEDULE_KINDS.flatMap((kind) => args.demandByKind[kind]);
+  const allDemand = PLUMBING_SCHEDULE_KINDS.flatMap((kind) => filteredDemandByKind[kind]);
   if (allDemand.length === 0) {
     return {
       batchId: randomUUID(),
@@ -560,6 +615,7 @@ export async function runPlumbingCorrectiveSchedule(args: {
       originalWeeks,
       weekOffset: originalWeeks[0]! - 1,
       weekDays,
+      payloadAudit: payloadAudit(),
       results: [],
       allocations: [],
       unroutable: [],
@@ -569,8 +625,8 @@ export async function runPlumbingCorrectiveSchedule(args: {
   void materials;
   const unroutable: PlumbingScheduleBatch["unroutable"] = [];
   const sentDemandByKind: Record<PlumbingScheduleKind, PlumbingScheduleDemand[]> = {
-    pipe: [...args.demandByKind.pipe],
-    fitting: [...args.demandByKind.fitting],
+    pipe: [...filteredDemandByKind.pipe],
+    fitting: [...filteredDemandByKind.fitting],
   };
   const results: PlumbingScheduleResult[] = [];
 
@@ -653,6 +709,7 @@ export async function runPlumbingCorrectiveSchedule(args: {
     originalWeeks,
     weekOffset: originalWeeks[0]! - 1,
     weekDays,
+    payloadAudit: payloadAudit(),
     results,
     allocations,
     unroutable,

@@ -10,6 +10,7 @@ import {
   type CorrectiveWeekStat,
   type CorrectiveWarning,
   type CorrectivePlanRunSummary,
+  type CorrectiveSchedulerAudit,
 } from "@workspace/api-client-react";
 import { ApiError } from "@workspace/api-client-react";
 import { AppLayout } from "@/components/layout/app-layout";
@@ -115,6 +116,48 @@ function WarningsCard({ warnings }: { warnings: CorrectiveWarning[] }) {
         );
       })}
     </div>
+  );
+}
+
+function SchedulerPayloadAuditCard({ audit }: { audit?: CorrectiveSchedulerAudit }) {
+  if (!audit) return null;
+
+  const excluded = audit.sub_one_piece_excluded ?? [];
+  const formatFraction = (value: number) => value.toLocaleString("en-IN", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+
+  return (
+    <Card className="border-amber-200 bg-amber-50/40">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm">Corrective scheduler payload</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        <p className="font-medium text-amber-900">
+          Corrective payload: {audit.candidate_fitting_rows} fitting rows ·{" "}
+          {audit.sub_one_piece_excluded_rows} excluded (sub-one-piece remainder)
+        </p>
+        <p className="text-xs text-amber-800">
+          {audit.candidate_pipe_rows} pipe rows and {audit.candidate_fitting_rows} fitting rows were evaluated;
+          {" "}{audit.sent_pipe_rows} pipe and {audit.sent_fitting_rows} fitting rows were sent to the machine scheduler.
+        </p>
+        {audit.sub_one_piece_excluded_rows > 0 && (
+          <div className="rounded border border-amber-200 bg-white/70 px-3 py-2 text-xs text-amber-900">
+            <p>
+              Excluded fractional remainder: {formatFraction(audit.sub_one_piece_excluded_quantity)} pcs total.
+            </p>
+            <ul className="mt-1 list-disc pl-4">
+              {excluded.map((item) => (
+                <li key={`${item.kind}-${item.item_code}`}>
+                  {item.item_code} ({item.material} {item.kind}): {formatFraction(item.remaining_pcs)} pcs → {item.rounded_pcs}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1270,6 +1313,10 @@ export default function CorrectivePage() {
                     <WarningsCard warnings={displayResult.warnings} />
                   </CardContent>
                 </Card>
+
+                {displayResult.segment === "Plumbing" && (
+                  <SchedulerPayloadAuditCard audit={displayResult.schedulerAudit} />
+                )}
 
                 {/* Variance attribution */}
                 <Card>

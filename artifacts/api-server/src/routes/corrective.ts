@@ -3,9 +3,17 @@ import { launchBrowser } from "../lib/browser";
 import { exportTimestamp } from "../lib/export-filename";
 import { db, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable, planRunsTable, planRunResultsTable } from "@workspace/db";
 import { eq, desc, and, sql, ne } from "drizzle-orm";
-import { runCorrectiveReplan, type CorrectiveItemResult } from "../lib/corrective-engine";
+import { runCorrectiveReplan, type CorrectiveItemResult, type CorrectiveSchedulerAudit } from "../lib/corrective-engine";
 import { LivePendingReadError } from "../lib/corrective-errors";
-import { exportPlanExcel, ITEM_COLUMNS, addLegendSheet, RED_FILL, GREEN_FILL } from "../lib/excel-export";
+import {
+  exportPlanExcel,
+  exportPrayagPlanExcel,
+  ITEM_COLUMNS,
+  addLegendSheet,
+  RED_FILL,
+  GREEN_FILL,
+  type FrozenPlanRow,
+} from "../lib/excel-export";
 import { summarizePlan, type CalcPlanItem } from "../lib/calc";
 import ExcelJS from "exceljs";
 import { logger } from "../lib/logger";
@@ -521,6 +529,7 @@ router.get("/corrective/runs", async (req, res): Promise<void> => {
     notScheduledTotal: r.notScheduledTotal,
     unfulfillableTotal: r.unfulfillableTotal,
     planRunId: r.planRunId ?? null,
+    supersedesProductionRunId: r.supersedesProductionRunId ?? null,
     pinned: r.pinned ?? false,
     warnings: r.warningsJson,
     createdAt: r.createdAt,
@@ -546,6 +555,7 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
   const feasibility = (run.feasibilityJson ?? {}) as {
     schedulerWeekOffset?: number | null;
     schedulerOriginalWeeks?: number[];
+    schedulerAudit?: CorrectiveSchedulerAudit;
     invariants?: {
       temporaryCorrectiveUnchanged: boolean;
       noClosedWeekRelease: boolean;
@@ -576,6 +586,7 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
     notScheduledTotal: run.notScheduledTotal,
     unfulfillableTotal: run.unfulfillableTotal,
     feasibility: run.feasibilityJson,
+    schedulerAudit: feasibility.schedulerAudit ?? null,
     schedulerWeekOffset: typeof feasibility.schedulerWeekOffset === "number" ? feasibility.schedulerWeekOffset : null,
     schedulerOriginalWeeks: feasibility.schedulerOriginalWeeks ?? [],
     invariants: feasibility.invariants ?? {
@@ -588,6 +599,7 @@ router.get("/corrective/runs/:id", async (req, res): Promise<void> => {
     },
     workingDaysRemaining: run.workingDaysRemaining ?? 0,
     planRunId: run.planRunId ?? null,
+    supersedesProductionRunId: run.supersedesProductionRunId ?? null,
     frozenPlanGrandMax: run.frozenPlanGrandMax ?? null,
     inputProvenance: buildCorrectiveInputProvenance(
       run.segment,
@@ -896,6 +908,87 @@ async function buildCorrectiveStandardExcel(
 
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
+}
+
+async function buildCorrectiveReferenceExcel(
+  run: CorrectiveRun,
+  items: CorrectiveItem[],
+  orderTotals: OrderTotalsForExport,
+  appendSheets?: (workbook: ExcelJS.Workbook) => void,
+): Promise<Buffer> {
+  const rows: FrozenPlanRow[] = items.map((item) => {
+    const temporaryPlan = Math.round(Math.max(0, Number(item.temporaryCorrective ?? 0)));
+    const productionPlan = Math.round(Math.max(0, Number(item.correctiveProduction ?? item.planRev ?? 0)));
+    const orderValue = orderValueForItem(item, items, orderTotals);
+    return {
+      itemCode: item.itemCode,
+      colour: item.colour,
+      category: item.category,
+      avg3MoSale: Number(item.avg3MoSale ?? 0),
+      stock: Number(item.stockNow ?? 0),
+      pendingCurrent: Number(item.pendingNow ?? 0),
+      pendingLastMonth: Number(item.pendingLastMonth ?? 0),
+      bufferReq: Number(item.bufferReqRev ?? 0),
+      minProduction: Number(item.originalPlan ?? 0),
+      productionPlan,
+      temporaryPlan,
+      cannotBeMade: Number(item.cannotBeMade ?? 0),
+      dummy: Math.max(Number(item.pendingLastMonth ?? 0), 0),
+      orders: typeof orderValue === "number" ? orderValue : 0,
+      buffer: Math.max(Number(item.bufferReqRev ?? 0) - Number(item.stockNow ?? 0), 0),
+      material: null,
+      weightKg: null,
+      urgencyRank: null,
+      releaseWeek: item.newWeek,
+      w1: Number(item.w1Rev ?? 0),
+      w2: Number(item.w2Rev ?? 0),
+      w3: Number(item.w3Rev ?? 0),
+      w4: Number(item.w4Rev ?? 0),
+    };
+  });
+  return exportPrayagPlanExcel(run.month, "production", rows, {}, appendSheets);
+}
+
+async function buildCorrectiveReferenceDetailExcel(
+  run: CorrectiveRun,
+  items: CorrectiveItem[],
+  orderTotals: OrderTotalsForExport,
+): Promise<Buffer> {
+  return buildCorrectiveReferenceExcel(run, items, orderTotals, (wb) => {
+    const sheet = wb.addWorksheet("Corrective Detail");
+    const headers = [
+      "S.NO", "ITEM CODE", "COLOUR", "CATEGORY", "PRODUCED TO DATE",
+      "REMAINING TO PRODUCE", "TEMPORARY CORRECTIVE", "FITTED PRODUCTION",
+      "CANNOT BE MADE", "CANNOT-BE-MADE REASON", "FEASIBILITY STATE",
+      "REVISED WEEK", "STATUS", "BUFFER STOCK REQ", "STOCK", "PENDING ORDER",
+    ];
+    headers.forEach((header, index) => { sheet.getCell(1, index + 1).value = header; });
+    sheet.getRow(1).font = { bold: true };
+    items.forEach((item, index) => {
+      const values = [
+        index + 1,
+        item.itemCode,
+        item.colour,
+        item.category,
+        item.producedToDate,
+        item.remainingToProduce,
+        item.temporaryCorrective,
+        item.correctiveProduction,
+        item.cannotBeMade,
+        item.cannotBeMadeReason ?? "",
+        item.feasibilityStatus,
+        item.newWeek ?? "",
+        item.status,
+        item.bufferReqRev,
+        item.stockNow,
+        item.pendingNow,
+      ];
+      values.forEach((value, column) => { sheet.getCell(2 + index, column + 1).value = value; });
+    });
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+    sheet.autoFilter = { from: "A1", to: `P${Math.max(1, items.length + 1)}` };
+    for (let column = 1; column <= headers.length; column++) sheet.getColumn(column).width = column === 10 ? 32 : 18;
+  });
 }
 
 // ─── Full-detail corrective Excel (standard + corrective columns appended) ───
@@ -1768,11 +1861,10 @@ router.get("/corrective/export/excel", async (req, res): Promise<void> => {
   let buffer: Buffer;
   let suffix: string;
   if (format === "standard") {
-    buffer = await buildCorrectiveStandardExcel(run, items, segment, orderTotals);
+    buffer = await buildCorrectiveReferenceExcel(run, items, orderTotals);
     suffix = "Standard";
   } else {
-    const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segment));
-    buffer = await buildCorrectiveDetailExcel(run, items, capRows, segment, orderTotals);
+    buffer = await buildCorrectiveReferenceDetailExcel(run, items, orderTotals);
     suffix = "Detail";
   }
 

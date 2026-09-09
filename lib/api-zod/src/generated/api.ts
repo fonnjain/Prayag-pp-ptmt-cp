@@ -381,7 +381,8 @@ export const listUploadsResponseItem = zod.object({
   "filename": zod.string(),
   "period": zod.string().regex(listUploadsResponsePeriodRegExp).nullable(),
   "uploadedAt": zod.string().datetime({}),
-  "rowCount": zod.number()
+  "rowCount": zod.number(),
+  "sourceMetadata": zod.record(zod.string(), zod.unknown()).nullable()
 })
 export const listUploadsResponse = zod.array(listUploadsResponseItem)
 
@@ -727,6 +728,7 @@ export const runCorrectiveReplanResponse = zod.object({
 })).optional().describe('Plumbing Sheet3 codes not matched to any plan item'),
   "baselinePlanRunId": zod.number().nullish().describe('Immutable plan run cited as the baseline (null = live rebuild)'),
   "baselineSource": zod.enum(['frozen-run', 'live']).optional().describe('Where the original plan baseline came from'),
+  "supersedesProductionRunId": zod.number().nullish().describe('Production Plan explicitly superseded by this corrective run.'),
   "unplannedTotal": zod.number().describe('Sum of unplannedProduction quantities'),
   "frozenPlanGrandMax": zod.number().nullish().describe('Grand total (pcs) from the cited baseline plan run\'s results rows; null when no frozen baseline or run predates drift tracking'),
   "inputProvenance": zod.record(zod.string(), zod.object({
@@ -738,6 +740,33 @@ export const runCorrectiveReplanResponse = zod.object({
 })).optional(),
   "schedulerWeekOffset": zod.number().nullable().describe('Persisted offset from scheduler-local weeks to original month weeks'),
   "schedulerOriginalWeeks": zod.array(zod.number()).describe('Original weeks represented by scheduler-local W1 onward'),
+  "schedulerAudit": zod.object({
+  "candidate_pipe_rows": zod.number().describe('Pipe rows considered before the sub-one-piece filter'),
+  "candidate_fitting_rows": zod.number().describe('Fitting rows considered before the sub-one-piece filter'),
+  "sent_pipe_rows": zod.number().describe('Pipe rows sent to the machine scheduler'),
+  "sent_fitting_rows": zod.number().describe('Fitting rows sent to the machine scheduler'),
+  "sub_one_piece_excluded_rows": zod.number().describe('Rows excluded because Math.round(remainingToProduce) was below one piece'),
+  "sub_one_piece_excluded_quantity": zod.number().describe('Sum of the fractional remaining quantities excluded at the scheduler boundary'),
+  "sub_one_piece_excluded": zod.array(zod.object({
+  "kind": zod.enum(['pipe', 'fitting']),
+  "item_code": zod.string(),
+  "material": zod.string(),
+  "remaining_pcs": zod.number(),
+  "rounded_pcs": zod.number(),
+  "reason": zod.enum(['SUB_ONE_PIECE_REMAINDER'])
+})),
+  "demandPieces": zod.number(),
+  "fittedPieces": zod.number(),
+  "cannotBeMadePieces": zod.number(),
+  "solventUnconstrainedPieces": zod.number(),
+  "machineScheduledPieces": zod.number(),
+  "machineUnfinishedPieces": zod.number(),
+  "machineCapacityHours": zod.number(),
+  "machineScheduledHours": zod.number(),
+  "machineIdleHours": zod.number(),
+  "machineUnallocatedHours": zod.number(),
+  "unroutablePieces": zod.number()
+}).optional(),
   "invariants": zod.object({
   "temporaryCorrectiveUnchanged": zod.boolean(),
   "noClosedWeekRelease": zod.boolean(),
@@ -770,6 +799,7 @@ export const listCorrectiveRunsResponseItem = zod.object({
   "notScheduledTotal": zod.number(),
   "unfulfillableTotal": zod.number(),
   "planRunId": zod.number().nullish().describe('Immutable plan run cited as the baseline (null = live rebuild)'),
+  "supersedesProductionRunId": zod.number().nullish().describe('Production Plan explicitly superseded by this corrective run; null when the relationship is not provable.'),
   "pinned": zod.boolean().describe('When true, deletion and frozen-baseline changes are blocked.'),
   "warnings": zod.array(zod.object({
   "code": zod.string(),
@@ -889,6 +919,7 @@ export const getCorrectiveRunResponse = zod.object({
 })).optional().describe('Plumbing Sheet3 codes not matched to any plan item'),
   "baselinePlanRunId": zod.number().nullish().describe('Immutable plan run cited as the baseline (null = live rebuild)'),
   "baselineSource": zod.enum(['frozen-run', 'live']).optional().describe('Where the original plan baseline came from'),
+  "supersedesProductionRunId": zod.number().nullish().describe('Production Plan explicitly superseded by this corrective run.'),
   "unplannedTotal": zod.number().describe('Sum of unplannedProduction quantities'),
   "frozenPlanGrandMax": zod.number().nullish().describe('Grand total (pcs) from the cited baseline plan run\'s results rows; null when no frozen baseline or run predates drift tracking'),
   "inputProvenance": zod.record(zod.string(), zod.object({
@@ -900,6 +931,33 @@ export const getCorrectiveRunResponse = zod.object({
 })).optional(),
   "schedulerWeekOffset": zod.number().nullable().describe('Persisted offset from scheduler-local weeks to original month weeks'),
   "schedulerOriginalWeeks": zod.array(zod.number()).describe('Original weeks represented by scheduler-local W1 onward'),
+  "schedulerAudit": zod.object({
+  "candidate_pipe_rows": zod.number().describe('Pipe rows considered before the sub-one-piece filter'),
+  "candidate_fitting_rows": zod.number().describe('Fitting rows considered before the sub-one-piece filter'),
+  "sent_pipe_rows": zod.number().describe('Pipe rows sent to the machine scheduler'),
+  "sent_fitting_rows": zod.number().describe('Fitting rows sent to the machine scheduler'),
+  "sub_one_piece_excluded_rows": zod.number().describe('Rows excluded because Math.round(remainingToProduce) was below one piece'),
+  "sub_one_piece_excluded_quantity": zod.number().describe('Sum of the fractional remaining quantities excluded at the scheduler boundary'),
+  "sub_one_piece_excluded": zod.array(zod.object({
+  "kind": zod.enum(['pipe', 'fitting']),
+  "item_code": zod.string(),
+  "material": zod.string(),
+  "remaining_pcs": zod.number(),
+  "rounded_pcs": zod.number(),
+  "reason": zod.enum(['SUB_ONE_PIECE_REMAINDER'])
+})),
+  "demandPieces": zod.number(),
+  "fittedPieces": zod.number(),
+  "cannotBeMadePieces": zod.number(),
+  "solventUnconstrainedPieces": zod.number(),
+  "machineScheduledPieces": zod.number(),
+  "machineUnfinishedPieces": zod.number(),
+  "machineCapacityHours": zod.number(),
+  "machineScheduledHours": zod.number(),
+  "machineIdleHours": zod.number(),
+  "machineUnallocatedHours": zod.number(),
+  "unroutablePieces": zod.number()
+}).optional(),
   "invariants": zod.object({
   "temporaryCorrectiveUnchanged": zod.boolean(),
   "noClosedWeekRelease": zod.boolean(),
@@ -1228,6 +1286,9 @@ export const listPlanItemsResponseItem = zod.object({
   "itemCode": zod.string(),
   "colour": zod.string(),
   "category": zod.string(),
+  "itemName": zod.string().nullish().describe('Source item description for an Unclassified pending row.'),
+  "sourceRole": zod.string().nullish().describe('Pending source role(s) that contributed this row.'),
+  "unmappedReason": zod.string().nullish().describe('Why the row was routed to Unclassified.'),
   "avg3MoSale": zod.number(),
   "stock": zod.number(),
   "bufferReq": zod.number().nullable(),
@@ -1278,6 +1339,14 @@ export const getPlanSummaryResponse = zod.object({
   "grandFittedTotal": zod.number().nullable().describe('Executable quantity from the finalized Production run; null when only a Temporary run exists.'),
   "demandBasis": zod.enum(['demand']),
   "fittedBasis": zod.union([zod.literal('executable'),zod.literal(null)]).nullable(),
+  "availability": zod.object({
+  "status": zod.enum(['production', 'temporary-unfitted', 'no-plan']),
+  "message": zod.string(),
+  "runId": zod.number().nullable(),
+  "planType": zod.union([zod.literal('temporary'),zod.literal('production'),zod.literal(null)]).nullable(),
+  "runStatus": zod.union([zod.literal('draft'),zod.literal('finalized'),zod.literal(null)]).nullable(),
+  "asOfAt": zod.string().datetime({}).nullable()
+}),
   "inputProvenance": zod.record(zod.string(), zod.object({
   "source": zod.string(),
   "mode": zod.enum(['upload', 'live', 'frozen', 'not-used']),
@@ -1414,6 +1483,7 @@ export const createPlanRunBody = zod.object({
   "segment": zod.string().optional(),
   "planType": zod.enum(['temporary', 'production']).default(createPlanRunBodyPlanTypeDefault).describe('Temporary is demand-true and never issued to the floor; production is the machine-feasible lineage.'),
   "temporaryRunId": zod.number().nullish().describe('Temporary Plan that this Production Plan was fitted from.'),
+  "supersedesRunId": zod.number().nullish().describe('Previous Temporary Plan superseded by this draft rerun.'),
   "note": zod.string().optional(),
   "effectiveFrom": zod.string().date().optional().describe('Date within the plan month when this issued version begins governing monitoring.')
 })
@@ -1443,6 +1513,7 @@ export const listPlanRunsResponseItem = zod.object({
   "segment": zod.string(),
   "planType": zod.enum(['temporary', 'production']),
   "temporaryRunId": zod.number().nullable(),
+  "supersedesRunId": zod.number().nullable(),
   "asOfAt": zod.string().datetime({}),
   "status": zod.enum(['draft', 'finalized']),
   "effectiveFrom": zod.string().date().nullable().describe('Date this issued plan version begins governing monitoring; null only for legacy runs.'),
@@ -1549,6 +1620,7 @@ export const getPlanRunResponse = zod.object({
   "segment": zod.string(),
   "planType": zod.enum(['temporary', 'production']),
   "temporaryRunId": zod.number().nullable(),
+  "supersedesRunId": zod.number().nullable(),
   "asOfAt": zod.string().datetime({}),
   "status": zod.enum(['draft', 'finalized']),
   "effectiveFrom": zod.string().date().nullable().describe('Date this issued plan version begins governing monitoring; null only for legacy runs.'),
@@ -1612,6 +1684,9 @@ export const getPlanRunResponse = zod.object({
   "itemCode": zod.string(),
   "colour": zod.string(),
   "category": zod.string(),
+  "itemName": zod.string().nullish().describe('Source item description for an Unclassified pending row.'),
+  "sourceRole": zod.string().nullish().describe('Pending source role(s) that contributed this row.'),
+  "unmappedReason": zod.string().nullish().describe('Why the row was routed to Unclassified.'),
   "avg3MoSale": zod.number(),
   "stock": zod.number(),
   "pendingCurrent": zod.number(),
@@ -1839,6 +1914,7 @@ export const finalizePlanRunResponse = zod.object({
   "segment": zod.string(),
   "planType": zod.enum(['temporary', 'production']),
   "temporaryRunId": zod.number().nullable(),
+  "supersedesRunId": zod.number().nullable(),
   "asOfAt": zod.string().datetime({}),
   "status": zod.enum(['draft', 'finalized']),
   "effectiveFrom": zod.string().date().nullable().describe('Date this issued plan version begins governing monitoring; null only for legacy runs.'),

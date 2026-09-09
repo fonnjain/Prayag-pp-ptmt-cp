@@ -136,3 +136,62 @@ test("corrective scheduler persists and applies the original-week offset", async
     else process.env.PRAYAG_PLANT_API_KEY = originalKey;
   }
 });
+
+test("corrective scheduler floors payload quantities and reports sub-one-piece exclusions", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.PRAYAG_PLANT_API_KEY;
+  const requests: Array<Record<string, unknown>> = [];
+  process.env.PRAYAG_PLANT_API_KEY = "test-key";
+  globalThis.fetch = (async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    requests.push(body);
+    return new Response(JSON.stringify({
+      kind: body.kind,
+      week_days: body.week_days,
+      blocks: [{ item_code: "P-1", week: 1, planned_hours: 1 }],
+      weekly_fill: [],
+      unfinished: [],
+      total_capacity_hrs: 1,
+      total_scheduled_hrs: 1,
+      total_idle_hrs: 0,
+      downtime_hours_lost: 0,
+      downtime_machine_days: 0,
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+
+  try {
+    const result = await runPlumbingCorrectiveSchedule({
+      month: "2026-08",
+      weeks: [{ originalWeek: 3, workingDays: 4 }],
+      demandByKind: {
+        pipe: [{ item_code: "P-1", material: "CPVC", qty_pcs: 1.49 }],
+        fitting: [{ item_code: "F-1", material: "AGRI", qty_pcs: 0.35 }],
+      },
+      weightByCode: new Map([["P-1", 0.4]]),
+    });
+
+    assert.deepEqual(requests[0]!.demand, [{
+      item_code: "P-1",
+      material: "CPVC",
+      qty_pcs: 1,
+    }]);
+    assert.equal(result.payloadAudit.candidate_pipe_rows, 1);
+    assert.equal(result.payloadAudit.candidate_fitting_rows, 1);
+    assert.equal(result.payloadAudit.sent_pipe_rows, 1);
+    assert.equal(result.payloadAudit.sent_fitting_rows, 0);
+    assert.equal(result.payloadAudit.sub_one_piece_excluded_rows, 1);
+    assert.equal(result.payloadAudit.sub_one_piece_excluded_quantity, 0.35);
+    assert.deepEqual(result.payloadAudit.sub_one_piece_excluded[0], {
+      kind: "fitting",
+      item_code: "F-1",
+      material: "AGRI",
+      remaining_pcs: 0.35,
+      rounded_pcs: 0,
+      reason: "SUB_ONE_PIECE_REMAINDER",
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.PRAYAG_PLANT_API_KEY;
+    else process.env.PRAYAG_PLANT_API_KEY = originalKey;
+  }
+});

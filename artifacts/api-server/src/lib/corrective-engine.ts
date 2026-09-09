@@ -25,6 +25,7 @@ import { diagnoseInputRows, type InputReadDiagnostics } from "./input-diagnostic
 import { LivePendingReadError } from "./corrective-errors";
 import {
   runPlumbingCorrectiveSchedule,
+  type PlumbingCorrectivePayloadAudit,
   type PlumbingCorrectiveSchedule,
 } from "./plumbing-scheduler";
 import {
@@ -251,6 +252,7 @@ export interface CorrectiveReplanResult {
   unplannedTotal: number;
   schedulerWeekOffset: number | null;
   schedulerOriginalWeeks: number[];
+  schedulerAudit?: CorrectiveSchedulerAudit;
   invariants: {
     temporaryCorrectiveUnchanged: boolean;
     noClosedWeekRelease: boolean;
@@ -267,11 +269,13 @@ export interface CorrectiveReplanResult {
     schedulerWeekOffset?: number | null;
     schedulerOriginalWeeks?: number[];
     schedulerWeekDays?: number[];
-    schedulerAudit?: Record<string, number | boolean>;
+    schedulerAudit?: CorrectiveSchedulerAudit;
     invariants?: CorrectiveReplanResult["invariants"];
   };
   /** Plan run cited as the baseline (null = live rebuild, no frozen run used). */
   baselinePlanRunId: number | null;
+  /** Production Plan explicitly superseded by this corrective run. */
+  supersedesProductionRunId: number | null;
   /** "frozen-run" when the baseline came from an immutable plan run snapshot. */
   baselineSource: "frozen-run" | "live";
   /**
@@ -284,6 +288,20 @@ export interface CorrectiveReplanResult {
     pendingAtPlan: InputReadDiagnostics;
     livePending: InputReadDiagnostics;
   };
+}
+
+export interface CorrectiveSchedulerAudit extends PlumbingCorrectivePayloadAudit {
+  demandPieces: number;
+  fittedPieces: number;
+  cannotBeMadePieces: number;
+  solventUnconstrainedPieces: number;
+  machineScheduledPieces: number;
+  machineUnfinishedPieces: number;
+  machineCapacityHours: number;
+  machineScheduledHours: number;
+  machineIdleHours: number;
+  machineUnallocatedHours: number;
+  unroutablePieces: number;
 }
 
 const LIVE_PENDING_ALIASES = {
@@ -1004,7 +1022,9 @@ async function runCorrectiveReplanInternal(
       const demand = {
         item_code: item.itemCode,
         material: item.category.split(" ")[0]!,
-        qty_pcs: Math.round(item.remainingToProduce),
+        // Preserve fractional plan quantities until the scheduler adapter
+        // applies the integer piece boundary and records exclusions.
+        qty_pcs: item.remainingToProduce,
         weight_kg_per_piece: weight,
       };
       demandByKind[kind].push(demand);
@@ -1303,7 +1323,16 @@ async function runCorrectiveReplanInternal(
   const pass2Conservation = segment === "PTMT" ? (pass2Invariants?.conservation ?? false) : true;
   const pass2WeeklySum = segment === "PTMT" ? (pass2Invariants?.weeklySum ?? false) : true;
   const pass2DummyPriority = segment === "PTMT" ? (pass2Invariants?.dummyPriority ?? false) : true;
-  const schedulerAudit = segment === "Plumbing" ? {
+  const schedulerAudit: CorrectiveSchedulerAudit | undefined = segment === "Plumbing" ? {
+    ...(plumbingSchedule?.payloadAudit ?? {
+      candidate_pipe_rows: 0,
+      candidate_fitting_rows: 0,
+      sent_pipe_rows: 0,
+      sent_fitting_rows: 0,
+      sub_one_piece_excluded_rows: 0,
+      sub_one_piece_excluded_quantity: 0,
+      sub_one_piece_excluded: [],
+    }),
     demandPieces: items.reduce((sum, item) => sum + item.temporaryCorrective, 0),
     fittedPieces: items.reduce((sum, item) => sum + item.correctiveProduction, 0),
     cannotBeMadePieces: items.reduce((sum, item) => sum + item.cannotBeMade, 0),
@@ -1548,6 +1577,7 @@ async function runCorrectiveReplanInternal(
       workingDaysRemaining,
       asOfDate: effectiveAsOfDate ?? null,
       planRunId: input.planRunId ?? null,
+       supersedesProductionRunId: input.planRunId ?? null,
       // Persist the frozen plan run's grand-max so exports can compare it
       // against grandOrigComputed without re-querying plan_run_results.
       frozenPlanGrandMax: input.planRunGrandMax ?? null,
@@ -1663,6 +1693,7 @@ async function runCorrectiveReplanInternal(
     unplannedTotal,
     schedulerWeekOffset: plumbingSchedule?.weekOffset ?? null,
     schedulerOriginalWeeks: plumbingSchedule?.originalWeeks ?? [],
+    schedulerAudit,
     invariants,
     feasibility: {
       schedulerWeekOffset: plumbingSchedule?.weekOffset ?? null,
@@ -1672,6 +1703,7 @@ async function runCorrectiveReplanInternal(
       invariants,
     },
     baselinePlanRunId: input.planRunId ?? null,
+    supersedesProductionRunId: input.planRunId ?? null,
     baselineSource: input.planRunId != null ? "frozen-run" : "live",
     frozenPlanGrandMax: input.planRunGrandMax != null ? Math.round(input.planRunGrandMax) : null,
     inputDiagnostics: {

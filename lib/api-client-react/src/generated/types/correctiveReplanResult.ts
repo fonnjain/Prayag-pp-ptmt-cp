@@ -13,9 +13,11 @@ import type { CorrectiveCategoryResult } from './correctiveCategoryResult';
 import type { CorrectiveReplanResultUnplannedProductionItem } from './correctiveReplanResultUnplannedProductionItem';
 import type { CorrectiveReplanResultBaselinePlanRunId } from './correctiveReplanResultBaselinePlanRunId';
 import type { CorrectiveReplanResultBaselineSource } from './correctiveReplanResultBaselineSource';
+import type { CorrectiveReplanResultSupersedesProductionRunId } from './correctiveReplanResultSupersedesProductionRunId';
 import type { CorrectiveReplanResultFrozenPlanGrandMax } from './correctiveReplanResultFrozenPlanGrandMax';
 import type { PlanInputProvenance } from './planInputProvenance';
 import type { CorrectiveReplanResultSchedulerWeekOffset } from './correctiveReplanResultSchedulerWeekOffset';
+import type { CorrectiveSchedulerAudit } from './correctiveSchedulerAudit';
 import type { CorrectiveReplanResultInvariants } from './correctiveReplanResultInvariants';
 
 export interface CorrectiveReplanResult {
@@ -54,6 +56,8 @@ export interface CorrectiveReplanResult {
   baselinePlanRunId?: CorrectiveReplanResultBaselinePlanRunId;
   /** Where the original plan baseline came from */
   baselineSource?: CorrectiveReplanResultBaselineSource;
+  /** Production Plan explicitly superseded by this corrective run. */
+  supersedesProductionRunId?: CorrectiveReplanResultSupersedesProductionRunId;
   /** Sum of unplannedProduction quantities */
   unplannedTotal: number;
   /** Grand total (pcs) from the cited baseline plan run's results rows; null when no frozen baseline or run predates drift tracking */
@@ -63,5 +67,6 @@ export interface CorrectiveReplanResult {
   schedulerWeekOffset: CorrectiveReplanResultSchedulerWeekOffset;
   /** Original weeks represented by scheduler-local W1 onward */
   schedulerOriginalWeeks: number[];
+  schedulerAudit?: CorrectiveSchedulerAudit;
   invariants: CorrectiveReplanResultInvariants;
 }

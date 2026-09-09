@@ -2475,6 +2475,9 @@ components:
         itemCode: { type: string }
         colour: { type: string }
         category: { type: string }
+        itemName: { type: ["string", "null"], description: "Source item description for an Unclassified pending row." }
+        sourceRole: { type: ["string", "null"], description: "Pending source role(s) that contributed this row." }
+        unmappedReason: { type: ["string", "null"], description: "Why the row was routed to Unclassified." }
         avg3MoSale: { type: number }
         stock: { type: number }
         bufferReq: { type: ["number", "null"] }
@@ -2516,7 +2519,7 @@ components:
 
     PlanSummary:
       type: object
-      required: [month, categories, grandMinTotal, grandMaxTotal, grandDemandTotal, grandFittedTotal, demandBasis, fittedBasis]
+      required: [month, categories, grandMinTotal, grandMaxTotal, grandDemandTotal, grandFittedTotal, demandBasis, fittedBasis, availability]
       properties:
         month: { type: string }
         categories:
@@ -2529,6 +2532,16 @@ components:
         grandFittedTotal: { type: ["number", "null"], description: "Executable quantity from the finalized Production run; null when only a Temporary run exists." }
         demandBasis: { type: string, enum: [demand] }
         fittedBasis: { type: ["string", "null"], enum: [executable, null] }
+        availability:
+          type: object
+          required: [status, message, runId, planType, runStatus, asOfAt]
+          properties:
+            status: { type: string, enum: [production, temporary-unfitted, no-plan] }
+            message: { type: string }
+            runId: { type: ["integer", "null"] }
+            planType: { type: ["string", "null"], enum: [temporary, production, null] }
+            runStatus: { type: ["string", "null"], enum: [draft, finalized, null] }
+            asOfAt: { type: ["string", "null"], format: date-time }
         inputProvenance:
           $ref: "#/components/schemas/PlanInputProvenance"
 
@@ -2572,6 +2585,9 @@ components:
         temporaryRunId:
           type: ["integer", "null"]
           description: Temporary Plan that this Production Plan was fitted from.
+        supersedesRunId:
+          type: ["integer", "null"]
+          description: Previous Temporary Plan superseded by this draft rerun.
         note: { type: string }
         effectiveFrom:
           type: string
@@ -2588,13 +2604,14 @@ components:
 
     PlanRunSummary:
       type: object
-      required: [id, month, segment, planType, temporaryRunId, asOfAt, status, effectiveFrom, note, planStatusReason, pass2, itemCount, grandMinTotal, grandMaxTotal, grandDemandTotal, grandFittedTotal, demandBasis, fittedBasis, createdAt]
+      required: [id, month, segment, planType, temporaryRunId, supersedesRunId, asOfAt, status, effectiveFrom, note, planStatusReason, pass2, itemCount, grandMinTotal, grandMaxTotal, grandDemandTotal, grandFittedTotal, demandBasis, fittedBasis, createdAt]
       properties:
         id: { type: integer }
         month: { type: string }
         segment: { type: string }
         planType: { type: string, enum: [temporary, production] }
         temporaryRunId: { type: ["integer", "null"] }
+        supersedesRunId: { type: ["integer", "null"] }
         asOfAt: { type: string, format: date-time }
         status: { type: string, enum: [draft, finalized] }
         effectiveFrom:
@@ -2625,6 +2642,9 @@ components:
         itemCode: { type: string }
         colour: { type: string }
         category: { type: string }
+        itemName: { type: ["string", "null"], description: "Source item description for an Unclassified pending row." }
+        sourceRole: { type: ["string", "null"], description: "Pending source role(s) that contributed this row." }
+        unmappedReason: { type: ["string", "null"], description: "Why the row was routed to Unclassified." }
         avg3MoSale: { type: number }
         stock: { type: number }
         pendingCurrent: { type: number }
@@ -3912,6 +3932,7 @@ components:
           description: "Plumbing Sheet3 codes not matched to any plan item"
         baselinePlanRunId: { type: ["integer", "null"], description: "Immutable plan run cited as the baseline (null = live rebuild)" }
         baselineSource: { type: string, enum: [frozen-run, live], description: "Where the original plan baseline came from" }
+        supersedesProductionRunId: { type: ["integer", "null"], description: "Production Plan explicitly superseded by this corrective run." }
         unplannedTotal: { type: integer, description: "Sum of unplannedProduction quantities" }
         frozenPlanGrandMax: { type: ["integer", "null"], description: "Grand total (pcs) from the cited baseline plan run's results rows; null when no frozen baseline or run predates drift tracking" }
         inputProvenance:
@@ -3921,6 +3942,8 @@ components:
           type: array
           items: { type: integer }
           description: "Original weeks represented by scheduler-local W1 onward"
+        schedulerAudit:
+          $ref: "#/components/schemas/CorrectiveSchedulerAudit"
         invariants:
           type: object
           required: [temporaryCorrectiveUnchanged, noClosedWeekRelease, weeklyCapacity, producedFloor, reconciliation, allPass]
@@ -3931,6 +3954,58 @@ components:
             producedFloor: { type: boolean }
             reconciliation: { type: boolean }
             allPass: { type: boolean }
+
+    CorrectiveSchedulerAudit:
+      type: object
+      required:
+        - candidate_pipe_rows
+        - candidate_fitting_rows
+        - sent_pipe_rows
+        - sent_fitting_rows
+        - sub_one_piece_excluded_rows
+        - sub_one_piece_excluded_quantity
+        - sub_one_piece_excluded
+        - demandPieces
+        - fittedPieces
+        - cannotBeMadePieces
+        - solventUnconstrainedPieces
+        - machineScheduledPieces
+        - machineUnfinishedPieces
+        - machineCapacityHours
+        - machineScheduledHours
+        - machineIdleHours
+        - machineUnallocatedHours
+        - unroutablePieces
+      properties:
+        candidate_pipe_rows: { type: integer, description: "Pipe rows considered before the sub-one-piece filter" }
+        candidate_fitting_rows: { type: integer, description: "Fitting rows considered before the sub-one-piece filter" }
+        sent_pipe_rows: { type: integer, description: "Pipe rows sent to the machine scheduler" }
+        sent_fitting_rows: { type: integer, description: "Fitting rows sent to the machine scheduler" }
+        sub_one_piece_excluded_rows: { type: integer, description: "Rows excluded because Math.round(remainingToProduce) was below one piece" }
+        sub_one_piece_excluded_quantity: { type: number, description: "Sum of the fractional remaining quantities excluded at the scheduler boundary" }
+        sub_one_piece_excluded:
+          type: array
+          items:
+            type: object
+            required: [kind, item_code, material, remaining_pcs, rounded_pcs, reason]
+            properties:
+              kind: { type: string, enum: [pipe, fitting] }
+              item_code: { type: string }
+              material: { type: string }
+              remaining_pcs: { type: number }
+              rounded_pcs: { type: integer }
+              reason: { type: string, enum: [SUB_ONE_PIECE_REMAINDER] }
+        demandPieces: { type: number }
+        fittedPieces: { type: number }
+        cannotBeMadePieces: { type: number }
+        solventUnconstrainedPieces: { type: number }
+        machineScheduledPieces: { type: number }
+        machineUnfinishedPieces: { type: number }
+        machineCapacityHours: { type: number }
+        machineScheduledHours: { type: number }
+        machineIdleHours: { type: number }
+        machineUnallocatedHours: { type: number }
+        unroutablePieces: { type: number }
 
     CategoryCapacity:
       type: object
@@ -4022,6 +4097,7 @@ components:
         notScheduledTotal: { type: number }
         unfulfillableTotal: { type: number }
         planRunId: { type: ["integer", "null"], description: "Immutable plan run cited as the baseline (null = live rebuild)" }
+        supersedesProductionRunId: { type: ["integer", "null"], description: "Production Plan explicitly superseded by this corrective run; null when the relationship is not provable." }
         pinned: { type: boolean, description: "When true, deletion and frozen-baseline changes are blocked." }
         warnings:
           type: array
