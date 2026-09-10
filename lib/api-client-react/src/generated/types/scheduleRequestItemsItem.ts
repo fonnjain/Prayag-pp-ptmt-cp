@@ -12,7 +12,7 @@ export type ScheduleRequestItemsItem = {
   colour: string;
   quantity: number;
   material: ScheduleRequestItemsItemMaterial;
-  weightKg: ScheduleRequestItemsItemWeightKg;
+  totalKg: ScheduleRequestItemsItemWeightKg;
   category: string;
   urgencyRank: number;
 };

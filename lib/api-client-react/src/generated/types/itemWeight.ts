@@ -10,5 +10,5 @@ export interface ItemWeight {
   id: number;
   itemCode: string;
   colour: string;
-  weightKg: ItemWeightWeightKg;
+  kgPerPiece: ItemWeightWeightKg;
 }

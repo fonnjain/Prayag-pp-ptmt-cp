@@ -28,7 +28,7 @@ export interface V1PlanItem {
   w3: number;
   w4: number;
   produced: number;
-  weightKgPerPiece: V1PlanItemWeightKgPerPiece;
+  kgPerPiece: V1PlanItemWeightKgPerPiece;
   machines: V1PlanItemMachines;
   machineHrs: V1PlanItemMachineHrs;
 }

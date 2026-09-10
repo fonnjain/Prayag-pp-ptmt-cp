@@ -2637,7 +2637,7 @@ components:
 
     PlanRunItem:
       type: object
-      required: [itemCode, colour, category, avg3MoSale, stock, pendingCurrent, pendingLastMonth, bufferReq, minProduction, demandPlan, productionPlan, temporaryPlan, cannotBeMade, feasibilityStatus, dummy, orders, buffer]
+      required: [itemCode, colour, category, avg3MoSale, stock, pendingCurrent, pendingLastMonth, bufferReq, minProduction, demandPlan, productionPlan, temporaryPlan, cannotBeMade, feasibilityStatus, dataLimited, dataLimitedReason, dummy, orders, buffer]
       properties:
         itemCode: { type: string }
         colour: { type: string }
@@ -2645,6 +2645,8 @@ components:
         itemName: { type: ["string", "null"], description: "Source item description for an Unclassified pending row." }
         sourceRole: { type: ["string", "null"], description: "Pending source role(s) that contributed this row." }
         unmappedReason: { type: ["string", "null"], description: "Why the row was routed to Unclassified." }
+        dataLimited: { type: boolean, description: "True when the external machine scheduler retained the row but could not model it from complete source data." }
+        dataLimitedReason: { type: ["string", "null"], description: "Machine scheduler source-data limitation reason." }
         avg3MoSale: { type: number }
         stock: { type: number }
         pendingCurrent: { type: number }
@@ -2655,7 +2657,7 @@ components:
         productionPlan: { type: number, description: "Executable quantity for a fitted Production Plan; demand quantity for a Temporary Plan." }
         temporaryPlan: { type: number, description: "Frozen Temporary Plan demand before PTMT capacity fitting." }
         cannotBeMade: { type: number, description: "Temporary demand remaining after all four weekly category capacities are consumed." }
-        feasibilityStatus: { type: string, enum: [fitted, not-scheduled, unfulfillable] }
+        feasibilityStatus: { type: string, enum: [fitted, not-scheduled, unfulfillable, data-limited] }
         dummy: { type: number }
         orders: { type: number }
         buffer: { type: number }
@@ -2779,7 +2781,7 @@ components:
 
     PlumbingScheduleResponse:
       type: object
-      required: [batchId, sourceRunId, month, segment, week_days, demand, scheduled, unfinished, capacity_hours, idle_hours, downtime_hours_lost, downtime_machine_days, unallocated_hours, results, merged]
+      required: [batchId, sourceRunId, month, segment, week_days, working_days_provenance, demand, scheduled, unfinished, data_limited, data_limited_pieces, capacity_hours, idle_hours, downtime_hours_lost, downtime_machine_days, unallocated_hours, results, merged]
       properties:
         batchId: { type: string, format: uuid }
         sourceRunId: { type: integer }
@@ -2793,6 +2795,20 @@ components:
         worked_sunday_dates:
           type: array
           items: { type: string, format: date }
+        working_days_provenance:
+          type: object
+          required: [total_days, week_days, worked_sunday_dates, source]
+          properties:
+            total_days: { type: integer }
+            week_days:
+              type: array
+              minItems: 4
+              maxItems: 4
+              items: { type: integer, minimum: 1 }
+            worked_sunday_dates:
+              type: array
+              items: { type: string, format: date }
+            source: { type: string, enum: [sunday-aware-calendar] }
         materials:
           type: array
           items: { type: string, enum: [CPVC, UPVC, SWR, AGRI] }
@@ -2817,6 +2833,18 @@ components:
             pieces: { type: number }
             kg: { type: number }
             hours: { type: number }
+        data_limited:
+          type: array
+          items:
+            type: object
+            required: [kind, item_code, material, qty_pcs, reason]
+            properties:
+              kind: { type: string, enum: [pipe, fitting] }
+              item_code: { type: string }
+              material: { type: string }
+              qty_pcs: { type: number }
+              reason: { type: string }
+        data_limited_pieces: { type: number }
         capacity_hours: { type: number }
         idle_hours: { type: number }
         downtime_hours_lost: { type: number }
@@ -2839,7 +2867,7 @@ components:
           maxItems: 2
           items:
             type: object
-            required: [kind, week_days, blocks, weekly_fill, unfinished]
+            required: [kind, week_days, blocks, weekly_fill, unfinished, coverage, data_limited, demand_reconciliation, params_used, total_data_limited_pcs, total_data_limited_kg]
             properties:
               kind: { type: string, enum: [pipe, fitting] }
               week_days:
@@ -2858,6 +2886,27 @@ components:
               total_unfinished_pcs: { type: number }
               total_unfinished_kg: { type: number }
               total_unfinished_hours: { type: number }
+              total_data_limited_pcs: { type: number }
+              total_data_limited_kg: { type: ["number", "null"] }
+              coverage:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { type: object } }
+              data_limited: { type: array, items: { type: object } }
+              demand_reconciliation:
+                type: object
+                required: [submitted_requested_pcs]
+                properties:
+                  submitted_requested_pcs: { type: number }
+                  schedulable_requested_pcs: { type: number }
+                  data_limited_requested_pcs: { type: number }
+              params_used:
+                type: object
+                properties:
+                  week_days:
+                    type: array
+                    items: { type: integer }
               total_downtime_hours_lost: { type: number }
               total_downtime_machine_days: { type: number }
               unfinished_capability:
@@ -3857,7 +3906,7 @@ components:
         correctiveProduction: { type: number, description: "Quantity fitted into open-week capacity or machine schedule" }
         cannotBeMade: { type: number, description: "Temporary corrective quantity not fitted in the open window" }
         cannotBeMadeReason: { type: ["string", "null"] }
-        feasibilityStatus: { type: string, enum: [fitted, not-scheduled, unfulfillable] }
+        feasibilityStatus: { type: string, enum: [fitted, not-scheduled, unfulfillable, data-limited] }
         status: { type: string }
         isNewItem: { type: boolean }
 

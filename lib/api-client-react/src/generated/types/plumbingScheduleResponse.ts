@@ -25,10 +25,24 @@ export interface PlumbingScheduleResponse {
    */
   week_days: number[];
   worked_sunday_dates?: string[];
+  working_days_provenance: {
+    total_days: number;
+    week_days: number[];
+    worked_sunday_dates: string[];
+    source: 'sunday-aware-calendar';
+  };
   materials?: PlumbingScheduleResponseMaterialsItem[];
   demand: PlumbingScheduleResponseDemand;
   scheduled: PlumbingScheduleResponseScheduled;
   unfinished: PlumbingScheduleResponseUnfinished;
+  data_limited: Array<{
+    kind: 'pipe' | 'fitting';
+    item_code: string;
+    material: string;
+    qty_pcs: number;
+    reason: string;
+  }>;
+  data_limited_pieces: number;
   capacity_hours: number;
   idle_hours: number;
   downtime_hours_lost: number;

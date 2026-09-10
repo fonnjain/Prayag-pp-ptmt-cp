@@ -4,6 +4,9 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { PlanItemItemName } from './planItemItemName';
+import type { PlanItemSourceRole } from './planItemSourceRole';
+import type { PlanItemUnmappedReason } from './planItemUnmappedReason';
 import type { PlanItemBufferReq } from './planItemBufferReq';
 import type { PlanItemAchievementPct } from './planItemAchievementPct';
 import type { PlanItemCover } from './planItemCover';
@@ -15,6 +18,12 @@ export interface PlanItem {
   itemCode: string;
   colour: string;
   category: string;
+  /** Source item description for an Unclassified pending row. */
+  itemName?: PlanItemItemName;
+  /** Pending source role(s) that contributed this row. */
+  sourceRole?: PlanItemSourceRole;
+  /** Why the row was routed to Unclassified. */
+  unmappedReason?: PlanItemUnmappedReason;
   avg3MoSale: number;
   stock: number;
   bufferReq: PlanItemBufferReq;
@@ -30,10 +39,10 @@ export interface PlanItem {
   w2: number;
   w3: number;
   w4: number;
-  /** Total kg for this item (Plumbing only). Computed as maxProduction × weight_per_pcs from BOM sheet. 0 when noBomWeight is true. Absent for PTMT items. */
-  weightKg?: number;
+  /** Total kg for this item (Plumbing only). Computed as maxProduction × kgPerPiece from BOM sheet. 0 when noBomKg is true. Absent for PTMT items. */
+  totalKg?: number;
   /** True when item has no BOM weight entry — must be flagged in UI, never silently dropped. Absent for PTMT items. */
-  noBomWeight?: boolean;
+  noBomKg?: boolean;
   /** Machine-feasible W1 quantity (Plumbing only; may differ from w1 due to capacity re-timing). */
   machineW1?: number;
   /** Machine-feasible W2 quantity. */

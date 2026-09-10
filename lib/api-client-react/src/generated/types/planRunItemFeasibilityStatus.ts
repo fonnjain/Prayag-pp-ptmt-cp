@@ -13,4 +13,5 @@ export const PlanRunItemFeasibilityStatus = {
   fitted: 'fitted',
   'not-scheduled': 'not-scheduled',
   unfulfillable: 'unfulfillable',
+  'data-limited': 'data-limited',
 } as const;

@@ -12,6 +12,7 @@ export * from "./plant-source-configs";
 export * from "./plant-ingestion-cache";
 export * from "./reports";
 export * from "./plan-runs";
+export * from "./plan-run-supersessions";
 export * from "./weekly-release-bands";
 export * from "./corrective-plan";
 export * from "./category-capacity";
@@ -26,6 +27,7 @@ export * from "./users";
 export * from "./sessions";
 export * from "./alerts";
 export * from "./plan-schedule-results";
+export * from "./plumbing-bom-overrides";
 // Legacy auth tables remain exported for compatibility with inactive
 // transitional modules; browser auth uses users/user_sessions above.
 export * from "./user-auth";

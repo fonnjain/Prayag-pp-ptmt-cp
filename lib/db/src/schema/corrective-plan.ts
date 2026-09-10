@@ -52,6 +52,9 @@ export const correctivePlanRunsTable = pgTable("corrective_plan_runs", {
   asOfDate: text("as_of_date"),
   // Immutable plan run this corrective run measured against (NULL = live rebuild baseline)
   planRunId: integer("plan_run_id"),
+  // Production Plan explicitly superseded by this corrective run.
+  // NULL is retained for legacy/live-baseline rows where the relationship is not provable.
+  supersedesProductionRunId: integer("supersedes_production_run_id"),
   note: text("note"),
   // SHA-256 of the full persisted run content (run fields + items + weekStats +
   // warnings). Used by the duplicate-run guard; NULL on legacy rows.

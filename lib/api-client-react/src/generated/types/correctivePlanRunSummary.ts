@@ -7,6 +7,7 @@
 import type { CorrectivePlanRunSummaryAsOfDate } from './correctivePlanRunSummaryAsOfDate';
 import type { CorrectivePlanRunSummaryNote } from './correctivePlanRunSummaryNote';
 import type { CorrectivePlanRunSummaryPlanRunId } from './correctivePlanRunSummaryPlanRunId';
+import type { CorrectivePlanRunSummarySupersedesProductionRunId } from './correctivePlanRunSummarySupersedesProductionRunId';
 import type { CorrectiveWarning } from './correctiveWarning';
 
 export interface CorrectivePlanRunSummary {
@@ -26,6 +27,8 @@ export interface CorrectivePlanRunSummary {
   unfulfillableTotal: number;
   /** Immutable plan run cited as the baseline (null = live rebuild) */
   planRunId?: CorrectivePlanRunSummaryPlanRunId;
+  /** Production Plan explicitly superseded by this corrective run; null when the relationship is not provable. */
+  supersedesProductionRunId?: CorrectivePlanRunSummarySupersedesProductionRunId;
   /** When true, deletion and frozen-baseline changes are blocked. */
   pinned: boolean;
   warnings: CorrectiveWarning[];

@@ -1,0 +1,3 @@
+ALTER TABLE plan_run_results
+  ADD COLUMN IF NOT EXISTS data_limited BOOLEAN NOT NULL DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS data_limited_reason TEXT;

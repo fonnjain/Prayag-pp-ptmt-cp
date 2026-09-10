@@ -1,4 +1,4 @@
-import { pgTable, serial, text, real, timestamp, jsonb, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, real, timestamp, jsonb, integer, boolean, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -8,6 +8,7 @@ export const planRunsTable = pgTable("plan_runs", {
   month: text("month").notNull(),
   planType: text("plan_type").notNull().default("production"),
   temporaryRunId: integer("temporary_run_id"),
+  supersedesRunId: integer("supersedes_run_id"),
   effectiveFrom: text("effective_from"),
   asOfAt: timestamp("as_of_at", { withTimezone: true }).notNull().defaultNow(),
   status: text("status").notNull().default("draft"),
@@ -40,6 +41,11 @@ export const planRunResultsTable = pgTable("plan_run_results", {
   itemCode: text("item_code").notNull(),
   colour: text("colour").notNull(),
   category: text("category").notNull(),
+  itemName: text("item_name"),
+  sourceRole: text("source_role"),
+  unmappedReason: text("unmapped_reason"),
+  dataLimited: boolean("data_limited").notNull().default(false),
+  dataLimitedReason: text("data_limited_reason"),
   bufferReq: real("buffer_req"),
   minProduction: real("min_production").notNull().default(0),
   // Demand remains frozen separately from the executable production plan.
@@ -51,7 +57,7 @@ export const planRunResultsTable = pgTable("plan_run_results", {
   cannotBeMade: real("cannot_be_made").notNull().default(0),
   feasibilityStatus: text("feasibility_status").notNull().default("not-scheduled"),
   material: text("material"),
-  weightKg: real("weight_kg"),
+  totalKg: real("weight_kg"),
   urgencyRank: integer("urgency_rank"),
   releaseWeek: integer("release_week"),
   w1: real("w1").notNull().default(0),

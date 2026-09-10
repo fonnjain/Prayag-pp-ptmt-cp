@@ -6,6 +6,7 @@
  */
 import type { UploadKind } from './uploadKind';
 import type { UploadedFilePeriod } from './uploadedFilePeriod';
+import type { UploadedFileSourceMetadata } from './uploadedFileSourceMetadata';
 
 export interface UploadedFile {
   id: number;
@@ -15,5 +16,5 @@ export interface UploadedFile {
   period: UploadedFilePeriod;
   uploadedAt: string;
   rowCount: number;
-  sourceMetadata: Record<string, unknown> | null;
+  sourceMetadata: UploadedFileSourceMetadata;
 }

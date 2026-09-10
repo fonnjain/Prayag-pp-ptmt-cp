@@ -1,0 +1,59 @@
+September Plumbing RN.3 report — draft run #2656
+
+Scope: Temporary Plan draft only; no finalization, publication, deployment, or reviewed-policy update.
+
+TEMPORARY PLAN
+Run status: draft
+Plan type: temporary
+Items: 1,387
+Roster items: 1,139
+Engine demand / plan total: 1,655,010 pieces (stored rounded total)
+Engine min production: 1,058,957 pieces
+
+GROUP VALUES — engine demand compared with Prayag September target
+Group | Engine demand | Prayag target | Difference (engine - target)
+CPVC Pipe | 109348.96 | 127924 | -18575.04
+CPVC Fitting | 444916.84 | 578244 | -133327.16
+CPVC Solvent | 15698.90 | 21874 | -6175.10
+UPVC Pipe | 76934.78 | 85328 | -8393.22
+UPVC Fitting | 594895.74 | 709370 | -114474.26
+UPVC Solvent | 77.03 | 476 | -398.97
+SWR Pipe | 74179.80 | 60263 | 13916.80
+SWR Fitting | 250164.20 | 215344 | 34820.20
+SWR Solvent | 1013.00 | 1013 | 0.00
+AGRI Pipe | 9429.36 | 10378 | -948.64
+AGRI Fitting | 47782.31 | 56217 | -8434.69
+AGRI Solvent | 0.00 | 0 | 0.00
+HDPE Pipe | 0.00 | 0 | 0.00
+Unclassified | 30569.00 | n/a | n/a
+Total | 1655009.92 | 1,866,432 | -211422.08
+
+PENDING PROVENANCE
+pending_current | upload #21 | roster 1139 | source 70180 | joined 36794 | unmatched 33386 | resolution loss 0 | fingerprint 8faa2fbd6a8b9d329fdf859b01c0a30ed3e09ceef507565bac0c2430a6a15f12 | captured 2026-09-09T17:03:21.565Z
+pending_last_month | upload #20 | roster 1139 | source 232214 | joined 224623 | unmatched 7591 | resolution loss 0 | fingerprint 0a9b424476c8a9b0040363fa630f56f12b9450f474fef0b01724c7448808cf0f | captured 2026-09-09T17:03:21.565Z
+
+MACHINE-FEASIBLE PLAN — in-memory cascade from frozen Temporary Plan
+Temporary demand: 1655009.92
+Achievable: 1522640.95
+Unfeasible: 132368.97
+Percent achieved: 92.00%
+Independent conservation: 1655009.92 = 1522640.95 + 132368.97 (difference -0.00)
+Unfeasible item rows: 200
+No-carry-over statement: unfeasible quantities do not carry forward to October.
+
+UNFEASIBLE BY REASON
+Reason | Rows | Pieces
+CAPACITY | 98 | 79881.54
+NO ROUTE | 0 | 0.00
+NO BOM WEIGHT | 102 | 52487.43
+DATA LIMITED | 0 | 0.00
+
+MACHINE LOAD: 31 active machines (7 pipe, 24 moulding)
+Hours available: 15500
+Hours used: 14133
+Utilisation: 91.18%
+CAPACITY rows with orders > 0: 0
+
+EXPORTS
+Temporary Plan: deliverables/September_Plumbing_Temporary_Plan_RN3_Run_2656.xlsx
+Machine-feasible: deliverables/September_Plumbing_Machine_Feasible_RN3_Run_2656.xlsx

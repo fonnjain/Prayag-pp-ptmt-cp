@@ -4,6 +4,9 @@
  * Api
  * OpenAPI spec version: 1.0.0
  */
+import type { PlanRunItemItemName } from './planRunItemItemName';
+import type { PlanRunItemSourceRole } from './planRunItemSourceRole';
+import type { PlanRunItemUnmappedReason } from './planRunItemUnmappedReason';
 import type { PlanRunItemBufferReq } from './planRunItemBufferReq';
 import type { PlanRunItemFeasibilityStatus } from './planRunItemFeasibilityStatus';
 import type { PlanRunItemMaterial } from './planRunItemMaterial';
@@ -15,6 +18,16 @@ export interface PlanRunItem {
   itemCode: string;
   colour: string;
   category: string;
+  /** Source item description for an Unclassified pending row. */
+  itemName?: PlanRunItemItemName;
+  /** Pending source role(s) that contributed this row. */
+  sourceRole?: PlanRunItemSourceRole;
+  /** Why the row was routed to Unclassified. */
+  unmappedReason?: PlanRunItemUnmappedReason;
+  /** True when the machine scheduler retained the row but lacked complete source data. */
+  dataLimited: boolean;
+  /** Machine scheduler source-data limitation reason. */
+  dataLimitedReason: string | null;
   avg3MoSale: number;
   stock: number;
   pendingCurrent: number;
@@ -34,7 +47,7 @@ export interface PlanRunItem {
   orders: number;
   buffer: number;
   material?: PlanRunItemMaterial;
-  weightKg?: PlanRunItemWeightKg;
+  totalKg?: PlanRunItemWeightKg;
   urgencyRank?: PlanRunItemUrgencyRank;
   releaseWeek?: PlanRunItemReleaseWeek;
   w1?: number;

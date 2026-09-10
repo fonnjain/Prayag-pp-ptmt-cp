@@ -6,6 +6,7 @@
  */
 import type { PlanRunSummaryPlanType } from './planRunSummaryPlanType';
 import type { PlanRunSummaryTemporaryRunId } from './planRunSummaryTemporaryRunId';
+import type { PlanRunSummarySupersedesRunId } from './planRunSummarySupersedesRunId';
 import type { PlanRunSummaryStatus } from './planRunSummaryStatus';
 import type { PlanRunSummaryEffectiveFrom } from './planRunSummaryEffectiveFrom';
 import type { PlanRunSummaryNote } from './planRunSummaryNote';
@@ -21,6 +22,7 @@ export interface PlanRunSummary {
   segment: string;
   planType: PlanRunSummaryPlanType;
   temporaryRunId: PlanRunSummaryTemporaryRunId;
+  supersedesRunId: PlanRunSummarySupersedesRunId;
   asOfAt: string;
   status: PlanRunSummaryStatus;
   /** Date this issued plan version begins governing monitoring; null only for legacy runs. */

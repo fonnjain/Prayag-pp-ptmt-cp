@@ -66,7 +66,7 @@ export const getV1PlanItemsResponse = zod.object({
   "w3": zod.number(),
   "w4": zod.number(),
   "produced": zod.number(),
-  "weightKgPerPiece": zod.number().nullable(),
+  "kgPerPiece": zod.number().nullable(),
   "machines": zod.array(zod.string()).nullable(),
   "machineHrs": zod.number().nullable()
 }))
@@ -698,7 +698,7 @@ export const runCorrectiveReplanResponse = zod.object({
   "correctiveProduction": zod.number().describe('Quantity fitted into open-week capacity or machine schedule'),
   "cannotBeMade": zod.number().describe('Temporary corrective quantity not fitted in the open window'),
   "cannotBeMadeReason": zod.string().nullish(),
-  "feasibilityStatus": zod.enum(['fitted', 'not-scheduled', 'unfulfillable']),
+  "feasibilityStatus": zod.enum(['fitted', 'not-scheduled', 'unfulfillable', 'data-limited']),
   "status": zod.string(),
   "isNewItem": zod.boolean()
 })),
@@ -889,7 +889,7 @@ export const getCorrectiveRunResponse = zod.object({
   "correctiveProduction": zod.number().describe('Quantity fitted into open-week capacity or machine schedule'),
   "cannotBeMade": zod.number().describe('Temporary corrective quantity not fitted in the open window'),
   "cannotBeMadeReason": zod.string().nullish(),
-  "feasibilityStatus": zod.enum(['fitted', 'not-scheduled', 'unfulfillable']),
+  "feasibilityStatus": zod.enum(['fitted', 'not-scheduled', 'unfulfillable', 'data-limited']),
   "status": zod.string(),
   "isNewItem": zod.boolean()
 })),
@@ -1289,6 +1289,8 @@ export const listPlanItemsResponseItem = zod.object({
   "itemName": zod.string().nullish().describe('Source item description for an Unclassified pending row.'),
   "sourceRole": zod.string().nullish().describe('Pending source role(s) that contributed this row.'),
   "unmappedReason": zod.string().nullish().describe('Why the row was routed to Unclassified.'),
+  "dataLimited": zod.boolean().describe('True when the external machine scheduler retained the row but could not model it from complete source data.'),
+  "dataLimitedReason": zod.string().nullable().describe('Machine scheduler source-data limitation reason.'),
   "avg3MoSale": zod.number(),
   "stock": zod.number(),
   "bufferReq": zod.number().nullable(),
@@ -1304,8 +1306,8 @@ export const listPlanItemsResponseItem = zod.object({
   "w2": zod.number(),
   "w3": zod.number(),
   "w4": zod.number(),
-  "weightKg": zod.number().optional().describe('Total kg for this item (Plumbing only). Computed as maxProduction × weight_per_pcs from BOM sheet. 0 when noBomWeight is true. Absent for PTMT items.'),
-  "noBomWeight": zod.boolean().optional().describe('True when item has no BOM weight entry — must be flagged in UI, never silently dropped. Absent for PTMT items.'),
+  "totalKg": zod.number().optional().describe('Total kg for this item (Plumbing only). Computed as maxProduction × kgPerPiece from BOM sheet. 0 when noBomKg is true. Absent for PTMT items.'),
+  "noBomKg": zod.boolean().optional().describe('True when item has no BOM kg/piece entry — must be flagged in UI, never silently dropped. Absent for PTMT items.'),
   "machineW1": zod.number().optional().describe('Machine-feasible W1 quantity (Plumbing only; may differ from w1 due to capacity re-timing).'),
   "machineW2": zod.number().optional().describe('Machine-feasible W2 quantity.'),
   "machineW3": zod.number().optional().describe('Machine-feasible W3 quantity.'),
@@ -1697,12 +1699,12 @@ export const getPlanRunResponse = zod.object({
   "productionPlan": zod.number().describe('Executable quantity for a fitted Production Plan; demand quantity for a Temporary Plan.'),
   "temporaryPlan": zod.number().describe('Frozen Temporary Plan demand before PTMT capacity fitting.'),
   "cannotBeMade": zod.number().describe('Temporary demand remaining after all four weekly category capacities are consumed.'),
-  "feasibilityStatus": zod.enum(['fitted', 'not-scheduled', 'unfulfillable']),
+  "feasibilityStatus": zod.enum(['fitted', 'not-scheduled', 'unfulfillable', 'data-limited']),
   "dummy": zod.number(),
   "orders": zod.number(),
   "buffer": zod.number(),
   "material": zod.string().nullish(),
-  "weightKg": zod.number().nullish(),
+  "totalKg": zod.number().nullish(),
   "urgencyRank": zod.number().nullish(),
   "releaseWeek": zod.number().nullish(),
   "w1": zod.number().optional(),
@@ -1739,7 +1741,7 @@ export const getPlanRunScheduleRequestResponse = zod.object({
   "colour": zod.string(),
   "quantity": zod.number(),
   "material": zod.string().nullable(),
-  "weightKg": zod.number().nullable(),
+  "totalKg": zod.number().nullable(),
   "category": zod.string(),
   "urgencyRank": zod.number()
 }))
@@ -2149,7 +2151,7 @@ export const listItemWeightsResponseItem = zod.object({
   "id": zod.number(),
   "itemCode": zod.string(),
   "colour": zod.string(),
-  "weightKg": zod.string().nullable()
+  "kgPerPiece": zod.string().nullable()
 })
 export const listItemWeightsResponse = zod.array(listItemWeightsResponseItem)
 
@@ -2157,7 +2159,7 @@ export const listItemWeightsResponse = zod.array(listItemWeightsResponseItem)
 export const upsertItemWeightBody = zod.object({
   "itemCode": zod.string(),
   "colour": zod.string().optional(),
-  "weightKg": zod.number().nullable()
+  "kgPerPiece": zod.number().nullable()
 })
 
 export const upsertItemWeightResponse = zod.object({

@@ -9,5 +9,5 @@ import type { ItemWeightUpsertWeightKg } from './itemWeightUpsertWeightKg';
 export interface ItemWeightUpsert {
   itemCode: string;
   colour?: string;
-  weightKg: ItemWeightUpsertWeightKg;
+  kgPerPiece: ItemWeightUpsertWeightKg;
 }

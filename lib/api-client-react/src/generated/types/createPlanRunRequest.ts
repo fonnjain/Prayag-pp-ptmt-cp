@@ -6,6 +6,7 @@
  */
 import type { CreatePlanRunRequestPlanType } from './createPlanRunRequestPlanType';
 import type { CreatePlanRunRequestTemporaryRunId } from './createPlanRunRequestTemporaryRunId';
+import type { CreatePlanRunRequestSupersedesRunId } from './createPlanRunRequestSupersedesRunId';
 
 export interface CreatePlanRunRequest {
   month: string;
@@ -14,6 +15,8 @@ export interface CreatePlanRunRequest {
   planType?: CreatePlanRunRequestPlanType;
   /** Temporary Plan that this Production Plan was fitted from. */
   temporaryRunId?: CreatePlanRunRequestTemporaryRunId;
+  /** Previous Temporary Plan superseded by this draft rerun. */
+  supersedesRunId?: CreatePlanRunRequestSupersedesRunId;
   note?: string;
   /** Date within the plan month when this issued version begins governing monitoring. */
   effectiveFrom?: string;

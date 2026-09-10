@@ -29,6 +29,21 @@ export type PlumbingScheduleResponseResultsItem = {
   total_unfinished_pcs?: number;
   total_unfinished_kg?: number;
   total_unfinished_hours?: number;
+  total_data_limited_pcs?: number;
+  total_data_limited_kg?: number | null;
+  coverage?: {
+    items: Array<Record<string, unknown>>;
+    [key: string]: unknown;
+  };
+  data_limited?: Array<Record<string, unknown>>;
+  demand_reconciliation?: {
+    submitted_requested_pcs: number;
+    [key: string]: unknown;
+  };
+  params_used?: {
+    week_days?: number[];
+    [key: string]: unknown;
+  };
   total_downtime_hours_lost?: number;
   total_downtime_machine_days?: number;
   unfinished_capability?: PlumbingScheduleResponseResultsItemUnfinishedCapabilityItem[];

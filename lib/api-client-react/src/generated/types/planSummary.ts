@@ -8,6 +8,7 @@ import type { CategorySummary } from './categorySummary';
 import type { PlanSummaryGrandFittedTotal } from './planSummaryGrandFittedTotal';
 import type { PlanSummaryDemandBasis } from './planSummaryDemandBasis';
 import type { PlanSummaryFittedBasis } from './planSummaryFittedBasis';
+import type { PlanSummaryAvailability } from './planSummaryAvailability';
 import type { PlanInputProvenance } from './planInputProvenance';
 
 export interface PlanSummary {
@@ -22,5 +23,6 @@ export interface PlanSummary {
   grandFittedTotal: PlanSummaryGrandFittedTotal;
   demandBasis: PlanSummaryDemandBasis;
   fittedBasis: PlanSummaryFittedBasis;
+  availability: PlanSummaryAvailability;
   inputProvenance?: PlanInputProvenance;
 }

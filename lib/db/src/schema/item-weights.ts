@@ -8,7 +8,7 @@ export const itemWeightsTable = pgTable(
     id: serial("id").primaryKey(),
     itemCode: text("item_code").notNull(),
     colour: text("colour").notNull().default(""),
-    weightKg: numeric("weight_kg", { precision: 12, scale: 4 }),
+    kgPerPiece: numeric("weight_kg", { precision: 12, scale: 4 }),
   },
   (table) => [unique().on(table.itemCode, table.colour)],
 );
