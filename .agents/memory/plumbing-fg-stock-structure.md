@@ -1,6 +1,6 @@
 ---
 name: Plumbing FG Stock file structure
-description: Actual column layout, category strings, and Solvent parsing quirks from the real June 2026 FG Stock upload file.
+description: Actual Plumbing FG Stock layout, source-category quirks, sign semantics, and month relationship used by the planner.
 ---
 
 ## File facts (June 2026 "FG Stock and Pending Production" file)
@@ -10,6 +10,14 @@ description: Actual column layout, category strings, and Solvent parsing quirks 
 - Header row: index 3 (row 4 in 1-based); rows 1-3 are blank/total/month-header.
 - Scan confirmed by "Item Code" + "Net Stock" header detection — no hard-coding needed.
 - Columns: A=Item Code, B=Item Name, C=Category, D=Packing, R=Net Stock (index 17)
+
+## Two-tab selection guard
+
+The generic worksheet scanner must treat `Net Stock` as a header hint. Otherwise it can fail to recognize the later-row `FG Stock` header and select the sibling `Pending Prod.` tab, which exposes the mirrored negative quantities as if they were the source.
+
+**Why:** The workbook can contain both tabs with `Item Code` and `Net Stock`; preferred worksheet names only work after both sheets are recognized as content candidates.
+
+**How to apply:** For future FG Stock uploads, verify the selected worksheet is `FG Stock`, never `Pending Prod.`, and confirm the positive/negative/net totals before any plan or policy check.
 
 ## Category strings that appear (actual values)
 
@@ -64,3 +72,23 @@ SWR Solvent plan value comes entirely from sales (avg × buffer) + pending order
 - Positive → opening stock on 1st of planning month
 - Negative → |value| = pending-LM (oversold / dummy stock)
 - Zero → skipped by extractRows (`if netStock === 0 continue`)
+
+## Dummy-stock provenance clarification
+- Plumbing has no separate dummy-stock upload; its negative `Net Stock` path is still consumed as `pendingOrderLastMonth`.
+- The plan provenance label `dummyStock: not-used` describes only the absent separate input and must not be read as a segment-wide gate disabling negative-Net-Stock consumption.
+
+**Why:** PB9.1 separated a misleading provenance label from the active negative-stock parser; conflating them would make every Plumbing plan appear to omit its pending-last-month term.
+
+**How to apply:** When auditing Plumbing dummy stock, inspect `pendingLmMap` and the roster join separately from the provenance metadata, and report source total versus joined plan total.
+
+## Durable source rules confirmed for the September 2026 audit
+
+- For Plumbing, the FG Stock source month is the month before the planning month. An August-named/source workbook feeds the September plan; this differs from PTMT.
+- The planning taxonomy is 15 material/type lines when including CPVC and UPVC `FITTINGS` separately from `FITTING`; the current app canonicalizes both source spellings into singular `Fitting`.
+- The live FG Stock source exposes 17 raw category values. Matching is case-insensitive. `TRADING` is not inherently Solvent: only named Solvent/Cement rows under a known material map to a Solvent category; other Trading rows are excluded.
+- Plumbing pending scope includes `PLUMBING`, `PL`, and `AGRI` source segments. `PT` is PTMT evidence, not Plumbing demand.
+- A real multiplier of 2.0 exists for CPVC Solvent; multiplier validation must not cap values at 1.5. HDPE has no effective FG Stock/planning tab in the September source.
+
+**Why:** Prayag’s source files use a month-lagged FG Stock filename, separate `FITTINGS`/`FITTING` lines, mixed raw category vocabulary, and three Plumbing pending segment labels. Treating these as PTMT-like conventions creates silent stale-input or category-zero errors.
+
+**How to apply:** Keep source-period interpretation segment-specific, preserve raw-category diagnostics, and compare Plumbing at the app’s canonical category grain only after documenting any source-level taxonomy collapse.

@@ -3,6 +3,7 @@
 - [Monitoring dashboard route separation](monitoring-dashboard-route-separation.md) — Plant landing `/` must stay separate from the PTMT machine dashboard route so visible nav links never redirect to the wrong dashboard.
 - [wouter catch-all](wouter-catchall.md) — a pathless `<Route component={...}/>` is the catch-all; `path="/:rest*"` silently fails to match `/`.
 - [Plumbing BOM dual-tab merge](plumbing-bom-dual-tab.md) — read NEW tab first (fixed cols A/B + J/K), then Combined (header-detected); Combined overwrites; 1,567 merged codes; never pick just one tab.
+- [Plumbing BOM supplement](plumbing-bom-supplement.md) — approved plant-app weights are additive, provenance-tagged reference data; live-sheet exact keys and held conflicts remain untouched.
 - [Ingestion source selection](ingestion-source-selection.md) — load ALL applicable sales workbooks (full history); scope per-source checks by sourceFileId; xmax=0 added/updated; no-change keeps hash.
 - [Sanity full-history semantics](sanity-full-history.md) — engine date-filters all; judge completeness on IN-WINDOW stats not whole-file; multi-workbook/optional-empty/out-of-window are not blockers.
 - [orval query options](orval-query-options.md) — generated react-query hooks require `queryKey` in the options type; pass `enabled` via an `any`-cast helper.
@@ -31,6 +32,8 @@
 - [Segment discriminator pattern](segment-discriminator.md) — `segment TEXT NOT NULL DEFAULT 'PTMT'` on all planning tables; Plumbing upload kinds prefixed `plumbing_`; ERP GROUP filter "PLUMBING"; SegmentContext + sidebar toggle; categories sidebar is dynamic from API, not static list.
 - [Publish schema bridge](publish-schema-bridge.md) — when Publish diffs old single-key production to composite-key dev, stage columns first and preserve legacy tables until app-start migrations transfer data.
 - [Capacity segment isolation fix](capacity-segment-fix.md) — GET /capacity/categories and recompute POST must pass ?segment=; seedCategoryCapacity is idempotent per-category (seeds 7 PTMT + 12 Plumbing); Plumbing actuals not yet wired so all Plumbing capacity starts thin-data.
+- [Approved capacity overrides](approved-capacity-overrides.md) — business-approved rates belong in override_capacity; zero seeded p90/suggested values must not be mistaken for missing category rows.
+- [PTMT Sunday-aware fitting](ptmt-sunday-calendar.md) — Pass 2 consumes observed positive-production Sundays from the PTMT cache; unobserved September Sundays must not be inferred.
 - [Plumbing golden values](plumbing-golden-values.md) — 12 categories; ONE formula for all (`max(buffer-stock+lm+pending,0)`); SWR multiplier=1.0× (NOT 1.5×); grand total 1,922,309.
 - [Plumbing workbook reader](plumbing-workbook-reader.md) — Plumbing plan reads ALL inputs from daily-production workbook by header-name; no item_master/uploads used; AGRI correction intentional.
 - [Plumbing upload structure](plumbing-upload-structure.md) — DATA.xlsx is GLOBAL (both segments); PTMT local = FG Stock + LM Pending; Plumbing local = NONE (plan reads from workbook directly).
@@ -64,6 +67,7 @@
  - [Bundle freshness CI check](bundle-freshness-ci.md) — verify-plumbing-plan.ts section 0a uses git log + statSync to assert dist/index.cjs ≥ last commit touching api-server/src; ESM requires import.meta.url not __dirname.
  - [Regression commit identity](regression-commit-identity.md) — a regression result is attributable only when the API healthz commit matches the feature under test; restart stale API processes before comparison.
 - [Corrective export totals](corrective-export-totals.md) — header "Revised Month Total" must derive from sum(Math.round(planRev) per item), not run.revisedMonthTotal (real float); gap can reach 100 pcs.
+- [Superseded Temporary lineage](superseded-temporary-lineage.md) — a deliberate baseline supersession must leave the frozen Temporary run eligible as the replacement's lineage source.
 - [Plumbing monitoring cache](plumbing-monitoring-cache.md) — always use the shared SWR-cached getter, never computePlumbingMonitoringPayload directly; sync invalidates+pre-warms; startup pre-warms in parallel with sync.
 - [Prod plan runs creation](prod-plan-runs-creation.md) — plan_run rows created in dev never reach production on publish; must POST to the prod API explicitly after any output-affecting fix.
 - [Plant monitoring version freeze](plant-monitoring-version-freeze.md) — completed months are immutable; versioned reporting must retain historical items and show each week’s governing plans.
@@ -74,8 +78,11 @@
 - [Build commit provenance](build-commit-provenance.md) — production bundles need the commit SHA injected at build time because stripped containers have no .git metadata.
 - [Divergent line and pending exposure](divergent-line-pending-exposure.md) — the preservation branch is a content snapshot, and production had zero plan runs after c3e7dfd on 2026-08-25.
 - [Corrective capacity basis](corrective-capacity-basis.md) — weekday-only Cap/Day aligns with calendar Mon–Sat remaining days; p90 rank effects can still raise capacity.
+- [Corrective scheduler positive-piece boundary](corrective-scheduler-positive-quantity.md) — fractional corrective demand can round to zero at the scheduler boundary; validators must stay strict and the sub-one-piece policy must be explicit.
 - [Live pending failure boundary](live-pending-failure-boundary.md) — corrective replans must fail on unavailable live pending reads, while valid zero/empty reads remain diagnostic results.
 - [Regression verifier authentication](regression-verifier-auth.md) — the CLI needs a valid existing admin account; bootstrap credentials may not match seeded accounts.
+- [H2r raw-spelling guard](h2r-raw-spelling-guard.md) — strict-key collisions with distinct raw spellings stay warning-only until live source drift and canonical-key policy are resolved.
+- [Shared production-code normalization](production-code-normalization.md) — Sheet3 and all plan-to-actual joins must reuse one punctuation-insensitive matcher while preserving raw identities.
 - [Regression root-cause gating](regression-root-cause-gating.md) — cross-source comparisons must distinguish a structured source-input failure from a valid zero metric before diagnosing data drift.
 - [Pending reconciliation drift](pending-reconciliation-drift.md) — hard-gate the item identity and residual; treat historical movement/clamp totals as warnings when live inputs drift.
 - [Pending alias parity](pending-alias-parity.md) — apply pending identity aliases before both diagnostics and plan aggregation, or a reported match can still contribute zero.
@@ -83,6 +90,7 @@
 - [CP Stage 0 source gate](cp-stage0-source-gate.md) — CP dummy stock stays blocked until the current 12-tab workbook is parsed item-detail-only with per-tab totals.
 - [Regression development drift](regression-development-drift.md) — warn only on documented live-baseline drift; keep structural and source-integrity checks strict.
 - [Plan-run input alignment](plan-run-input-alignment.md) — duplicate code/colour keys require ordinal input/result pairing; key-only joins inflate category totals.
+- [Manual-plan comparison grain](manual-plan-comparison-grain.md) — Prayag’s category tabs are code-level while frozen app runs are code+colour; aggregate app rows by code and report category mismatches separately.
 - [Golden invariant drift](golden-invariant-drift.md) — validate every golden's component sums and row identities before attributing live-input variance.
 - [GCE publish promotion failures](gce-publish-promotion.md) — a successful image build can still fail VM readiness; the prior successful deployment remains live when no runtime logs are emitted.
 - [Catalogue sync policy](catalogue-sync-policy.md) — exact clean divisions map to PTMT/Plumbing/CP; excluded and combined values stay visible but unmapped until reviewed.
@@ -93,6 +101,7 @@
 - [Monthly p90 variability](monthly-p90-variability.md) — CV is population SD/mean over positive monthly p90s; above 25% flags neither adaptive window as reliable alone.
 - [Residual confidence](residual-confidence.md) — Pass 2 residuals must be split by high-CV versus stable/unflagged category evidence, not shown as one undifferentiated shortfall.
 - [Plumbing scheduler adapter](plumbing-scheduler-adapter.md) — external schedule results echo kind/calendar; route and BOM gaps must remain explicit rather than failing or silently disappearing.
+- [September source roster](september-source-roster.md) — September uses MATERIAL/REPORT 1–9 rosters; historical four-material behavior stays intact and the Plumbing target has a visible one-piece discrepancy.
 - [Frozen export lineage](frozen-export-lineage.md) — exports must use finalized persisted runs; retained temporary fields can backfill legacy production runs without rebuilding live inputs.
 - [Live pending evidence boundary](live-pending-evidence-boundary.md) — validation reads live pending without persisting the rejected source rows, so later sheet pulls cannot reconstruct an earlier exclusion ledger.
 - [Database migration runner](db-migration-runner.md) — incremental schema changes use numbered SQL plus startup migration, not interactive schema push.
@@ -100,14 +109,30 @@
 - [Legacy corrective provenance](legacy-corrective-provenance.md) — old corrective targets may lack frozen input snapshots, so later Temporary Plans need explicit source-state reconciliation.
 - [PTMT rate-list roster](rate-list-roster.md) — the supplied rate list is governed PTMT identity evidence, with workbook precedence and conservative category classification.
 - [PTMT mapping business hold](ptmt-mapping-business-hold.md) — CONNECTION is 63,230 July pieces alone; hold planning until Prayag resolves its category/capacity treatment.
+- [Prayag planning-category authority](prayag-planning-category-authority.md) — shared PTMT planning categories follow Prayag’s tabs; retain MRP series and report unknown tabs/app-only series.
+- [Prayag category duplicate codes](prayag-category-duplicate-codes.md) — one code can appear in multiple Prayag categories; never use last-row-wins for live verification.
+- [Colour-level clamp aggregation](colour-level-clamp-aggregation.md) — app clamps each code-colour row before summing; compare to Prayag only after aggregating at code grain.
 - [Waste Pipes historical multiplier](waste-pipes-historical-multiplier.md) — workbook ratios are ~1.5× in Mar–May/Jul but ~1.2× in Jun; no single multiplier is safe to infer.
 - [Authoritative MRP controls](authoritative-mrp-controls.md) — MRP governs identity/series/discontinuation; mapped series win, unresolved series can fall back to the rate list, premium proposals stay held.
 - [MRP API discontinued boundary](mrp-api-discontinued-boundary.md) — only 18 of 233 discontinued rows have API dates; the MRP file remains the authoritative withdrawal source.
 - [Month selection semantics](month-selection-semantics.md) — no-query current month may fall back; any month present in the URL is explicit and must show a neutral empty state.
 - [Historical reporting fallback](historical-reporting-fallback.md) — finalized runs are the historical source of truth; legacy Plumbing reporting may use raw frozen rows when scheduler evidence is absent.
+- [Seasonality audit provenance](seasonality-audit-provenance.md) — monthly multiplier rows retain outputs and observation counts, not raw FY quantities; exact historical inputs may be unrecoverable.
+- [Audit multiplier projection](audit-multiplier-projection.md) — the plan builder accepts an in-memory audit-only category map; it is not persisted or populated by normal plan callers.
 - [Monitoring workbook fallback](monitoring-workbook-fallback.md) — monitoring may use the latest prior workbook with source-month provenance; planning and corrective reads stay strict.
 - [PTMT monthly workbook structure](ptmt-monthly-workbook-structure.md) — REPORT 1–9 repeat across monthly files, but mixed views and uncovered DUMMY rows block taxonomy adoption without full-month access.
 - [PTMT monthly multiplier matrix](ptmt-monthly-multiplier-matrix.md) — most categories move in monthly bands (1.5/2.0/2.5, then 1.2); Cocks Standard is mixed in May/Jun.
 - [Seasonality engine operational status](seasonality-engine-operational-status.md) — one historical CV suggestion per seven categories; manual recompute only, with seeded overrides still governing plans.
 - [PTMT shared capacity pools](ptmt-shared-capacity-pools.md) — Special Cock, Collapsible Waste Pipes, and Showers Sets consume approved existing pools; never create duplicate capacity rows.
 - [MRP monitoring error contract](mrp-monitoring-error-contract.md) — held PTMT MRP approval is a named 422, not a generic monitoring 500.
+- [Prayag export format](prayag-export-format.md) — plan Excel downloads share the reference workbook tabs and frozen-run source boundary.
+- [Plumbing Stage B source boundaries](plumbing-stage-b-source-boundaries.md) — raw FG uploads feed stock joins; timestamp fallback and SWR buffer provenance must stay explicit.
+- [Plumbing PB3 exclusion evidence](plumbing-pb3-exclusion-evidence.md) — reviewed join ceilings use quantity plus exclusion fingerprint; they do not classify business reasons for class-a versus class-c rows.
+- [Summary plan source fallback](summary-plan-source-fallback.md) — Summary prefers finalized Production, but currently falls back to Temporary and then live computation.
+- [Temporary rerun production boundary](temporary-rerun-production-boundary.md) — finalized Production closes same-month Temporary reruns at creation time; no bypass.
+- [External scheduler promotion boundary](external-scheduler-promotion-boundary.md) — scheduler outputs must not silently become frozen plan quantities; keep demand, executable, and data-limited bases explicit.
+- [Plumbing scheduler reality](plumbing-scheduler-reality.md) — Pass 2 reaches the live prayag-plant.com scheduler; local category capacity is not a fallback.
+- [Plumbing achievability export](plumbing-achievability-export.md) — Temporary Plan + in-memory cascade, independent conservation checks, and four separate unfeasible reasons; PTMT stays separately gated.
+- [Unit boundary guard](unit-boundary-guard.md) — catch per-piece-as-total substitutions at the cascade boundary without rejecting legitimate low-weight BOM rows.
+- [Pending trace roster boundary](pending-trace-roster-boundary.md) — exclusion fingerprints and join diagnostics must use the pre-Unclassified roster, not the final visible plan rows.
+- [PTMT report-roster fallback](ptmt-report-roster-fallback.md) — never treat a legacy effective-roster size difference as extra REPORT 1-9 rows when the authoritative report read failed.

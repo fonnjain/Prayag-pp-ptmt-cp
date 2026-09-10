@@ -1,0 +1,59 @@
+category,code,prayag_sheet_production_required,prayag_sheet_positive_demand,in_run
+Cocks Standard,123-FH,-31.0,0,False
+Cocks Standard,123-HN,0.0,0.0,False
+Cocks Standard,124-FH,-358.0,0,False
+Cocks Standard,124-T,0.0,0.0,False
+Cocks Standard,130-RN,-69.0,0,False
+Cocks Standard,1322-HN,40.0,40.0,False
+Cocks Standard,1375-SP,49.0,49.0,False
+Cocks Standard,146-B,-166.0,0,False
+Cocks Standard,146-BO,-63.0,0,False
+Cocks Standard,146-HB,0.0,0.0,False
+Cocks Standard,147-HQ,-4.0,0,False
+Cocks Standard,147-RQ,-95.0,0,False
+Cocks Standard,148-B,-148.0,0,False
+Cocks Standard,148-BO,-7.0,0,False
+Cocks Standard,148-HB,-5.0,0,False
+Cocks Standard,186,2660.0,2660.0,False
+Cocks Standard,1861,-482.0,0,False
+Cocks Premium,123-FH,-104.6,0,False
+Cocks Premium,123-HN,0.0,0.0,False
+Cocks Premium,124-FH,-454.6,0,False
+Cocks Premium,130-RN,-75.4,0,False
+Cocks Premium,1322-HN,16.0,16.0,False
+Cocks Premium,1375-SP,38.2,38.2,False
+Cocks Premium,146-HB,0.0,0.0,False
+Cocks Premium,147-HQ,-4.0,0,False
+Cocks Premium,147-RQ,-95.0,0,False
+Cocks Premium,148-HB,-5.0,0,False
+Faucets & Jetsprays & Shower,126-SQ,150.0,150.0,False
+Accessorise,126-SQ,150.0,150.0,False
+Accessorise,146-B,-166.0,0,False
+Accessorise,146-BO,-63.0,0,False
+Accessorise,146-D,0.0,0.0,False
+Accessorise,146-HB,0.0,0.0,False
+Accessorise,146-I,0.0,0.0,False
+Accessorise,146-R,0.0,0.0,False
+Accessorise,148-B,-148.0,0,False
+Accessorise,148-BO,-7.0,0,False
+Accessorise,148-D,0.0,0.0,False
+Accessorise,148-HB,-5.0,0,False
+Accessorise,148-I,0.0,0.0,False
+Accessorise,148-R,0.0,0.0,False
+Accessorise,186,2660.0,2660.0,False
+Accessorise,1861,-482.0,0,False
+Accessorise,202,-760.0,0,False
+Accessorise,SF-02,26.0,26.0,False
+P.V.C. Connections,322,-541.0,0,False
+P.V.C. Connections,323-H,-216.0,0,False
+P.V.C. Connections,324-H,4327.5,4327.5,False
+P.V.C. Connections,325-H,-1795.0,0,False
+P.V.C. Connections,326-H,250.0,250.0,False
+P.V.C. Connections,328-C,491.0,491.0,False
+P.V.C. Connections,348,2822.0,2822.0,False
+P.V.C. Connections,350,210.0,210.0,False
+Waste Pipes,3272-BC,6912.0,6912.0,False
+Waste Pipes,3274-B,-371.0,0,False
+Waste Pipes,3274-BC,-385.0,0,False
+Waste Pipes,3461,-245.0,0,False
+Waste Pipes,3727,-997.0,0,False

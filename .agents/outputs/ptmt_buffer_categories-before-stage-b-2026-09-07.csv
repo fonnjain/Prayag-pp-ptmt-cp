@@ -1,0 +1,12 @@
+id,name,segment,multiplier,suggested_multiplier,override_multiplier,cv_value,volatility_class,avg_month,peak_month,peak_index,yoy,signal,seasonal_indices,last_computed_at,data_quality,z_score,reliability_flag,updated_at
+1,Cocks Standard,PTMT,1.5,1.15,1.5,0.09,Low,391831,Mar,2.03,0.03,Stable,"[0.51,0.93,1.3,0.9,0.94,0.68,0.66,0.94,1.07,0.99,1.06,2.03]",2026-09-04 12:03:10.568+00,ok,1.65,,2026-09-04 12:06:23.458+00
+2,Cocks Premium,PTMT,1.2,1.13,1.2,0.08,Low,21797,Mar,1.4,-0.05,Stable,"[0.61,1.26,1.35,0.97,0.88,0.79,0.75,1.19,0.85,1.13,0.8,1.4]",2026-09-04 12:03:10.568+00,ok,1.65,,2026-09-04 12:06:23.467+00
+3,Faucets & Jetsprays & Shower,PTMT,1.5,1.18,1.5,0.11,Low,47738,Mar,1.9,0.05,Stable,"[0.65,0.88,1.6,0.94,0.97,0.67,0.64,0.88,0.93,0.86,1.08,1.9]",2026-09-04 12:03:10.568+00,ok,1.65,,2026-09-04 12:06:23.472+00
+4,Accessorise,PTMT,1.5,1.14,1.5,0.09,Low,63117,Mar,1.49,0,Stable,"[0.68,1.07,1,0.83,1.04,0.9,0.78,0.97,1.18,0.95,1.11,1.49]",2026-09-04 12:03:10.568+00,ok,1.65,,2026-09-04 12:06:23.477+00
+5,Cistern & Seat Cover,PTMT,1.2,1.37,1.2,0.22,Medium,23230,Feb,1.32,-0.05,Stable,"[0.7,1.05,1.11,0.94,0.74,1.12,0.96,1,1.01,1,1.32,1.06]",2026-09-04 12:03:10.568+00,ok,1.65,,2026-09-04 12:06:23.481+00
+6,Cabinet,PTMT,1.2,1.28,1.2,0.17,Medium,1214,Jul,1.31,0.03,Stable,"[1.12,1.12,1.23,1.31,1.04,0.8,0.97,0.92,0.84,1.08,0.73,0.85]",2026-09-04 12:03:10.568+00,ok,1.65,,2026-09-04 12:06:23.485+00
+7,Ball Cock,PTMT,1.5,1.28,1.5,0.17,Medium,35046,Mar,1.78,0.04,Stable,"[0.59,1.22,1.01,0.96,0.81,0.83,0.76,0.95,1.1,0.9,1.09,1.78]",2026-09-04 12:03:10.568+00,ok,1.65,,2026-09-04 12:06:23.489+00
+24,Unclassified,PTMT,1,,,,,,,,,,,,,,,2026-08-27 04:38:04.996073+00
+27,P.V.C. Connections,PTMT,1.5,,1.5,,,,,,,,,2026-09-04 12:03:10.568+00,insufficient,1.65,missing history — fewer than four usable observations — override required,2026-09-07 12:37:01.189+00
+28,Waste Pipes,PTMT,1.5,,1.5,,,,,,,,,2026-09-04 12:03:10.568+00,insufficient,1.65,missing history — fewer than four usable observations — override required,2026-09-07 12:37:01.195+00
+

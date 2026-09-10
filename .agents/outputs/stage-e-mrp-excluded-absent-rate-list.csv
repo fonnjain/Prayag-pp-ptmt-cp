@@ -1,0 +1,631 @@
+code,series,avg3_monthly,in_rate_list,in_effective_run_roster
+1178,Showers & Accessories,0,False,False
+1178-C,Showers Sets,0,False,False
+1179,Showers Sets,0,False,False
+1180,Showers & Accessories,0,False,False
+1180-C,Showers Sets,0,False,False
+1181,Showers Sets,0,False,False
+121-EF,Grand,0,False,False
+121-FBB,Erosa (Black),0,False,False
+121-FG,Erosa (Gold),0,False,False
+121-HF,Helix,0,False,False
+121-LSFBB,Erosa (Black),0,False,False
+121-LSFG,Erosa (Gold),0,False,False
+121-OF,Standard (Old Handle),0,False,False
+121-OSF,Standard (New Handle),0,False,False
+121-SF,Flora,0,False,False
+121-SFG,Flora (Gold),0,False,False
+121-SFP,Flora (Peach),0,False,False
+121-SFR,Flora (Royal),0,False,False
+121-SFW,Flora (Wine),0,False,False
+121-VF,Vitro,0,False,False
+121-VFG,Vitro (Gold),0,False,False
+121-VFP,Vitro (Peach),0,False,False
+121-VFR,Vitro (Royal),0,False,False
+121-VFW,Vitro (Wine),0,False,False
+1216,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1216-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1216-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1218-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1218-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+122-I,Ibix,0,False,False
+122-IG,Ibix (Gold),0,False,False
+122-IP,Ibix (Peach),0,False,False
+122-IR,Ibix Royal),0,False,False
+122-IW,Ibix (Wine),0,False,False
+122-L,Lagoona,0,False,False
+122-LG,Lagoona (Gold),0,False,False
+122-LP,Lagoona (Peach),0,False,False
+122-LR,Lagoona (Royal),0,False,False
+122-LW,Lagoona (Wine),0,False,False
+122-R,Ovian,0,False,False
+122-RG,Ovian (Gold),0,False,False
+122-RP,Ovian (Peach),0,False,False
+122-RR,Ovian (Royal),0,False,False
+122-RW,Ovian (Wine),0,False,False
+1220-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1220-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1222-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1222-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1223-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1223-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1224-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1224-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1224-SD,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1224-SDM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1224-XD,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1224-XDM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1225-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1225-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1226-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1226-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+123-LSBB,Erosa (Black),0,False,False
+123-LSFBB,Erosa (Black),0,False,False
+123-LSFG,Erosa (Gold),0,False,False
+123-LSG,Erosa (Gold),0,False,False
+123-LSNBB,Erosa (Black),0,False,False
+123-LSNG,Erosa (Gold),0,False,False
+123-NNBB,Novo (Black),0,False,False
+123-OF,Standard (Old Handle),0,False,False
+123-UB,Ultra (Black),0,False,False
+1230-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1230-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1232-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1232-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1239-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1239-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+124-LSBB,Erosa (Black),0,False,False
+124-LSFBB,Erosa (Black),0,False,False
+124-LSFG,Erosa (Gold),0,False,False
+124-LSG,Erosa (Gold),0,False,False
+124-NBB,Novo (Black),0,False,False
+124-OF,Standard (Old Handle),0,False,False
+124-Q,Quadra,0,False,False
+124-QAB,Quadra (Dark Blue),0,False,False
+124-QB,Quadra (Black),0,False,False
+124-QG,Quadra (Gold),0,False,False
+124-QP,Quadra (Peach),0,False,False
+124-QR,Quadra (Royal),0,False,False
+124-QW,Quadra (Wine),0,False,False
+124-SF,Flora,0,False,False
+124-SFG,Flora (Gold),0,False,False
+124-SFP,Flora (Peach),0,False,False
+124-SFR,Flora (Royal),0,False,False
+124-SFW,Flora (Wine),0,False,False
+124-T,Special Cock,0.0,False,False
+124-UB,Ultra (Black),0,False,False
+1240-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1240-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1242-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1242-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1244-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1244-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1250-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1250-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1250-SD,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1250-SDM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1250-XD,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1250-XDM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1252-D,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+1252-DM,1200 Series 304 Super Steel (1.00 Mm),0,False,False
+127-LSBB,Erosa (Black),0,False,False
+127-LSG,Erosa (Gold),0,False,False
+127-N,Novo,0,False,False
+127-NB,Novo (Dark Blue),0,False,False
+127-NBB,Novo (Black),0,False,False
+127-NG,Novo (Gold),0,False,False
+127-NP,Novo (Peach),0,False,False
+127-NR,Novo (Royal),0,False,False
+127-NW,Novo (Wine),0,False,False
+127-Q,Quadra,0,False,False
+127-QAB,Quadra (Dark Blue),0,False,False
+127-QB,Quadra (Black),0,False,False
+127-QG,Quadra (Gold),0,False,False
+127-QP,Quadra (Peach),0,False,False
+127-QR,Quadra (Royal),0,False,False
+127-QW,Quadra (Wine),0,False,False
+127-U,Ultra,0,False,False
+127-UB,Ultra (Black),0,False,False
+127-UG,Ultra (Gold),0,False,False
+127-UP,Ultra (Peach),0,False,False
+127-UR,Ultra (Royal),0,False,False
+127-UW,Ultra (Wine),0,False,False
+129-LSBB,Erosa (Black),0,False,False
+129-LSG,Erosa (Gold),0,False,False
+129-NBB,Novo (Black),0,False,False
+129-QB,Quadra (Black),0,False,False
+129-UB,Ultra (Black),0,False,False
+130-LSBB,Erosa (Black),0,False,False
+130-LSG,Erosa (Gold),0,False,False
+130-NBB,Novo (Black),0,False,False
+130-QB,Quadra (Black),0,False,False
+130-UB,Ultra (Black),0,False,False
+131-LSBB,Erosa (Black),0,False,False
+131-LSG,Erosa (Gold),0,False,False
+131-Q,Quadra,0,False,False
+131-QAB,Quadra (Dark Blue),0,False,False
+131-QB,Quadra (Black),0,False,False
+131-QG,Quadra (Gold),0,False,False
+131-QP,Quadra (Peach),0,False,False
+131-QR,Quadra (Royal),0,False,False
+131-QW,Quadra (Wine),0,False,False
+132-LSBB,Erosa (Black),0,False,False
+132-LSG,Erosa (Gold),0,False,False
+132-LSTBB,Erosa (Black),0,False,False
+132-LSTG,Erosa (Gold),0,False,False
+132-NBB,Novo (Black),0,False,False
+132-QB,Quadra (Black),0,False,False
+132-UB,Ultra (Black),0,False,False
+1322-I,Ibix,0,False,False
+1322-IG,Ibix (Gold),0,False,False
+1322-IP,Ibix (Peach),0,False,False
+1322-IR,Ibix Royal),0,False,False
+1322-IW,Ibix (Wine),0,False,False
+1322-L,Lagoona,0,False,False
+1322-LG,Lagoona (Gold),0,False,False
+1322-LP,Lagoona (Peach),0,False,False
+1322-LR,Lagoona (Royal),0,False,False
+1322-LW,Lagoona (Wine),0,False,False
+1322-N,Novo,0,False,False
+1322-NB,Novo (Dark Blue),0,False,False
+1322-NBB,Novo (Black),0,False,False
+1322-NG,Novo (Gold),0,False,False
+1322-NP,Novo (Peach),0,False,False
+1322-NR,Novo (Royal),0,False,False
+1322-NW,Novo (Wine),0,False,False
+1322-Q,Quadra,0,False,False
+1322-QB,Quadra (Black),0,False,False
+1322-QG,Quadra (Gold),0,False,False
+1322-QP,Quadra (Peach),0,False,False
+1322-QR,Quadra (Royal),0,False,False
+1322-QW,Quadra (Wine),0,False,False
+1322-R,Ovian,0,False,False
+1322-RG,Ovian (Gold),0,False,False
+1322-RP,Ovian (Peach),0,False,False
+1322-RR,Ovian (Royal),0,False,False
+1322-RW,Ovian (Wine),0,False,False
+1322-U,Ultra,0,False,False
+1322-UB,Ultra (Black),0,False,False
+1322-UG,Ultra (Gold),0,False,False
+1322-UP,Ultra (Peach),0,False,False
+1322-UR,Ultra (Royal),0,False,False
+1322-UW,Ultra (Wine),0,False,False
+1323-C,Cobra,0,False,False
+133-LSBB,Erosa (Black),0,False,False
+133-LSG,Erosa (Gold),0,False,False
+133-NBB,Novo (Black),0,False,False
+133-QB,Quadra (Black),0,False,False
+133-UB,Ultra (Black),0,False,False
+134-L,Lagoona,0,False,False
+134-LG,Lagoona (Gold),0,False,False
+134-LP,Lagoona (Peach),0,False,False
+134-LR,Lagoona (Royal),0,False,False
+134-LSBB,Erosa (Black),0,False,False
+134-LSG,Erosa (Gold),0,False,False
+134-LW,Lagoona (Wine),0,False,False
+134-N,Novo,0,False,False
+134-NB,Novo (Dark Blue),0,False,False
+134-NBB,Novo (Black),0,False,False
+134-NG,Novo (Gold),0,False,False
+134-NP,Novo (Peach),0,False,False
+134-NR,Novo (Royal),0,False,False
+134-NW,Novo (Wine),0,False,False
+134-QB,Quadra (Black),0,False,False
+134-S,Flora,0,False,False
+134-SG,Flora (Gold),0,False,False
+134-SP,Flora (Peach),0,False,False
+134-SR,Flora (Royal),0,False,False
+134-SW,Flora (Wine),0,False,False
+134-UB,Ultra (Black),0,False,False
+135-L,Lagoona,0,False,False
+135-LG,Lagoona (Gold),0,False,False
+135-LP,Lagoona (Peach),0,False,False
+135-LR,Lagoona (Royal),0,False,False
+135-LW,Lagoona (Wine),0,False,False
+135-N,Novo,0,False,False
+135-NB,Novo (Dark Blue),0,False,False
+135-NBB,Novo (Black),0,False,False
+135-NG,Novo (Gold),0,False,False
+135-NP,Novo (Peach),0,False,False
+135-NR,Novo (Royal),0,False,False
+135-NW,Novo (Wine),0,False,False
+135-QB,Quadra (Black),0,False,False
+135-S,Flora,0,False,False
+135-SG,Flora (Gold),0,False,False
+135-SP,Flora (Peach),0,False,False
+135-SR,Flora (Royal),0,False,False
+135-SW,Flora (Wine),0,False,False
+135-UB,Ultra (Black),0,False,False
+136-L,Push Cock,0,False,False
+1374,Roman,0,False,False
+1374-E,Grand,0,False,False
+1374-H,Helix,0,False,False
+1374-HG,Helix (Gold),0,False,False
+1374-HP,Helix (Peach),0,False,False
+1374-HR,Helix (Royal),0,False,False
+1374-HW,Helix (Wine),0,False,False
+1374-I,Ibix,0,False,False
+1374-IG,Ibix (Gold),0,False,False
+1374-IP,Ibix (Peach),0,False,False
+1374-IR,Ibix Royal),0,False,False
+1374-IW,Ibix (Wine),0,False,False
+1374-L,Lagoona,0,False,False
+1374-LG,Lagoona (Gold),0,False,False
+1374-LP,Lagoona (Peach),0,False,False
+1374-LR,Lagoona (Royal),0,False,False
+1374-LSBB,Erosa (Black),0,False,False
+1374-LSG,Erosa (Gold),0,False,False
+1374-LW,Lagoona (Wine),0,False,False
+1374-N,Novo,0,False,False
+1374-NB,Novo (Dark Blue),0,False,False
+1374-NBB,Novo (Black),0,False,False
+1374-NG,Novo (Gold),0,False,False
+1374-NP,Novo (Peach),0,False,False
+1374-NR,Novo (Royal),0,False,False
+1374-NW,Novo (Wine),0,False,False
+1374-O,Standard (Old Handle),0,False,False
+1374-Q,Quadra,0,False,False
+1374-QAB,Quadra (Dark Blue),0,False,False
+1374-QB,Quadra (Black),0,False,False
+1374-QG,Quadra (Gold),0,False,False
+1374-QP,Quadra (Peach),0,False,False
+1374-QR,Quadra (Royal),0,False,False
+1374-QW,Quadra (Wine),0,False,False
+1374-R,Ovian,0,False,False
+1374-RG,Ovian (Gold),0,False,False
+1374-RP,Ovian (Peach),0,False,False
+1374-RR,Ovian (Royal),0,False,False
+1374-RW,Ovian (Wine),0,False,False
+1374-S,Standard (New Handle),0,False,False
+1374-SF,Flora,0,False,False
+1374-SFG,Flora (Gold),0,False,False
+1374-SFP,Flora (Peach),0,False,False
+1374-SFR,Flora (Royal),0,False,False
+1374-SFW,Flora (Wine),0,False,False
+1374-U,Ultra,0,False,False
+1374-UB,Ultra (Black),0,False,False
+1374-UG,Ultra (Gold),0,False,False
+1374-UP,Ultra (Peach),0,False,False
+1374-UR,Ultra (Royal),0,False,False
+1374-UW,Ultra (Wine),0,False,False
+1375-LSBB,Erosa (Black),0,False,False
+1375-LSG,Erosa (Gold),0,False,False
+1375-N,Novo,0,False,False
+1375-NB,Novo (Dark Blue),0,False,False
+1375-NBB,Novo (Black),0,False,False
+1375-NG,Novo (Gold),0,False,False
+1375-NP,Novo (Peach),0,False,False
+1375-NR,Novo (Royal),0,False,False
+1375-NW,Novo (Wine),0,False,False
+1375-QB,Quadra (Black),0,False,False
+1375-UB,Ultra (Black),0,False,False
+141-LSBB,Erosa (Black),0,False,False
+141-LSG,Erosa (Gold),0,False,False
+142-LSBB,Erosa (Black),0,False,False
+142-LSG,Erosa (Gold),0,False,False
+143-LSBB,Erosa (Black),0,False,False
+143-LSG,Erosa (Gold),0,False,False
+144-LSBB,Erosa (Black),0,False,False
+144-LSG,Erosa (Gold),0,False,False
+144-NBB,Novo (Black),0,False,False
+144-QB,Quadra (Black),0,False,False
+144-UB,Ultra (Black),0,False,False
+145-LSBB,Erosa (Black),0,False,False
+145-LSG,Erosa (Gold),0,False,False
+145-NBB,Novo (Black),0,False,False
+145-QB,Quadra (Black),0,False,False
+145-UB,Ultra (Black),0,False,False
+146-D,Delta,0.0,False,False
+146-I,Ibix,0.0,False,False
+146-LSBB,Erosa (Black),0,False,False
+146-LSG,Erosa (Gold),0,False,False
+146-QB,Quadra,0,False,False
+146-R,Ovian,0.0,False,False
+146-RB,Ovian,0,False,False
+147-LSBB,Erosa (Black),0,False,False
+147-LSG,Erosa (Gold),0,False,False
+147-LSQBB,Erosa (Black),0,False,False
+147-LSQG,Erosa (Gold),0,False,False
+147-N,Novo,0,False,False
+147-NB,Novo (Dark Blue),0,False,False
+147-NBB,Novo (Black),0,False,False
+147-NG,Novo (Gold),0,False,False
+147-NP,Novo (Peach),0,False,False
+147-NR,Novo (Royal),0,False,False
+147-NW,Novo (Wine),0,False,False
+147-Q,Quadra,0,False,False
+147-QB,Quadra (Black),0,False,False
+147-QG,Quadra (Gold),0,False,False
+147-QP,Quadra (Peach),0,False,False
+147-QR,Quadra (Royal),0,False,False
+147-QW,Quadra (Wine),0,False,False
+147-U,Ultra,0,False,False
+147-UB,Ultra (Black),0,False,False
+147-UG,Ultra (Gold),0,False,False
+147-UP,Ultra (Peach),0,False,False
+147-UR,Ultra (Royal),0,False,False
+147-UW,Ultra (Wine),0,False,False
+148-D,Delta,0.0,False,False
+148-E,Grand,0,False,False
+148-I,Ibix,0.0,False,False
+148-LSBB,Erosa (Black),0,False,False
+148-LSG,Erosa (Gold),0,False,False
+148-QB,Quadra,0,False,False
+148-R,Ovian,0.0,False,False
+148-RB,Ovian,0,False,False
+149-LSBB,Erosa (Black),0,False,False
+149-LSG,Erosa (Gold),0,False,False
+150-L,Lagoona,0,False,False
+150-LG,Lagoona (Gold),0,False,False
+150-LP,Lagoona (Peach),0,False,False
+150-LR,Lagoona (Royal),0,False,False
+150-LSBB,Erosa (Black),0,False,False
+150-LSG,Erosa (Gold),0,False,False
+150-LW,Lagoona (Wine),0,False,False
+150-QAB,Quadra (Dark Blue),0,False,False
+150-QB,Quadra (Black),0,False,False
+150-UB,Ultra (Black),0,False,False
+1816-C,Showers Sets,0,False,False
+1821-CG,Shower Sets (Gold),0,False,False
+1821-CP,Shower Sets (Peach),0,False,False
+1821-CR,Shower Sets (Royal),0,False,False
+1821-CW,Shower Sets (Wine),0,False,False
+228-Q,Special Cock,0,False,False
+228-QS,Special Cock,0,False,False
+228-QT,Special Cock,0,False,False
+228-QW,Special Cock,0,False,False
+322,P.V.C. Connections,100.0,False,False
+322K,P.V.C. Connections (Plain Nut Round),0,False,False
+323-H,P.V.C. Connections,1766.666667,False,False
+323K,P.V.C. Connections (Plain Nut Round),0,False,False
+324-H,P.V.C. Connections,3060.333333,False,False
+324K,P.V.C. Connections (Plain Nut Round),0,False,False
+325-H,P.V.C. Connections,200.0,False,False
+325K,P.V.C. Connections (Plain Nut Round),0,False,False
+326-H,P.V.C. Connections,533.3333333,False,False
+326K,P.V.C. Connections (Plain Nut Round),0,False,False
+3272-BC,Collapsible Waste Pipe,5000.0,False,False
+3274-B,Collapsible Waste Pipe,33.33333333,False,False
+3274-BC,Collapsible Waste Pipe,0.0,False,False
+328-C,P.V.C. Connections,333.3333333,False,False
+3461,Waste Pipes,10.0,False,False
+348,P.V.C. Connections,1563.333333,False,False
+348K,P.V.C. Connections (Plain Nut Round),0,False,False
+350,P.V.C. Connections,210.0,False,False
+3727,Collapsible Waste Pipe,228.0,False,False
+400-QAB,Quadra (Dark Blue),0,False,False
+4043,Concealed Cistern,0,False,False
+4044,Concealed Cistern,0,False,False
+4045,Concealed Cistern,0,False,False
+501N,Cistern,0,False,False
+501S,Cistern,0,False,False
+503N,Cistern,0,False,False
+642-D,600 Series 204 Super Steel (0.85),0,False,False
+642-DM,600 Series 204 Super Steel (0.85),0,False,False
+650-D,600 Series 204 Super Steel (0.85),0,False,False
+650-DM,600 Series 204 Super Steel (0.85),0,False,False
+650-XD,600 Series 204 Super Steel (0.85),0,False,False
+650-XDM,600 Series 204 Super Steel (0.85),0,False,False
+701N,Cistern,0,False,False
+816-D,800 Series 304 Super Steel (0.75 Mm),0,False,False
+816-DM,800 Series 304 Super Steel (0.75 Mm),0,False,False
+818-D,800 Series 304 Super Steel (0.75 Mm),0,False,False
+818-DM,800 Series 304 Super Steel (0.75 Mm),0,False,False
+820-D,800 Series 304 Super Steel (0.75 Mm),0,False,False
+820-DM,800 Series 304 Super Steel (0.75 Mm),0,False,False
+822-D,800 Series 304 Super Steel (0.75 Mm),0,False,False
+822-DM,800 Series 304 Super Steel (0.75 Mm),0,False,False
+823-D,800 Series 304 Super Steel (0.75 Mm),0,False,False
+823-DM,800 Series 304 Super Steel (0.75 Mm),0,False,False
+824-D,800 Series 304 Super Steel (0.75 Mm),0,False,False
+824-DM,800 Series 304 Super Steel (0.75 Mm),0,False,False
+824-SD,800 Series 304 Super Steel (0.75 Mm),0,False,False
+824-SDM,800 Series 304 Super Steel (0.75 Mm),0,False,False
+824-XD,800 Series 304 Super Steel (0.75 Mm),0,False,False
+824-XDM,800 Series 304 Super Steel (0.75 Mm),0,False,False
+825-D,800 Series 304 Super Steel (0.75 Mm),0,False,False
+825-DM,800 Series 304 Super Steel (0.75 Mm),0,False,False
+842-D,800 Series 304 Super Steel (0.75),0,False,False
+842-DM,800 Series 304 Super Steel (0.75),0,False,False
+850-D,800 Series 304 Super Steel (0.75),0,False,False
+850-DM,800 Series 304 Super Steel (0.75),0,False,False
+850-XD,800 Series 304 Super Steel (0.75),0,False,False
+850-XDM,800 Series 304 Super Steel (0.75),0,False,False
+911-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+911-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+916,900 Series 304 Super Steel (0.85 Mm),0,False,False
+916-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+916-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+918-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+918-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+920-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+920-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+922-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+922-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+923-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+923-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+924-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+924-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+924-SD,900 Series 304 Super Steel (0.85 Mm),0,False,False
+924-SDM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+924-XD,900 Series 304 Super Steel (0.85 Mm),0,False,False
+924-XDM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+925-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+925-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+926-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+926-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+930-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+930-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+932-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+932-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+939-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+939-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+940-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+940-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+942-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+942-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+944-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+944-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+950-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+950-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+950-SD,900 Series 304 Super Steel (0.85 Mm),0,False,False
+950-SDM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+950-XD,900 Series 304 Super Steel (0.85 Mm),0,False,False
+950-XDM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+952-D,900 Series 304 Super Steel (0.85 Mm),0,False,False
+952-DM,900 Series 304 Super Steel (0.85 Mm),0,False,False
+BR-345-BY,Garden Pipe,0,False,False
+BR-345-TG,Garden Pipe,0,False,False
+BR-345-TT,Garden Pipe,0,False,False
+BR-346-BY,Garden Pipe,0,False,False
+BR-346-TG,Garden Pipe,0,False,False
+BR-346-TT,Garden Pipe,0,False,False
+BR-364-BY,Garden Pipe,0,False,False
+BR-364-TG,Garden Pipe,0,False,False
+BR-364-TT,Garden Pipe,0,False,False
+CWP-01,Waste Pipes,0,False,False
+CWP-02,Waste Pipes,0,False,False
+DB-02L,Cistern's & Seat Cover's Accessories,0,False,False
+FT-02,304 Super Steel (0.85 Mm),0,False,False
+FT-02M,304 Super Steel (0.85 Mm),0,False,False
+FT-03,304 Super Steel (0.85 Mm),0,False,False
+FT-03M,304 Super Steel (0.85 Mm),0,False,False
+FT-04,304 Super Steel (0.85 Mm),0,False,False
+FT-04M,304 Super Steel (0.85 Mm),0,False,False
+FT-05,304 Super Steel (0.85 Mm),0,False,False
+FT-05M,304 Super Steel (0.85 Mm),0,False,False
+FT-06,304 Super Steel (0.85 Mm),0,False,False
+FT-06M,304 Super Steel (0.85 Mm),0,False,False
+FT-07,304 Super Steel (0.85 Mm),0,False,False
+FT-07M,304 Super Steel (0.85 Mm),0,False,False
+FT-08,304 Super Steel (0.85 Mm),0,False,False
+FT-08M,304 Super Steel (0.85 Mm),0,False,False
+FT-20,304 Super Steel (0.85 Mm),0,False,False
+FT-20M,304 Super Steel (0.85 Mm),0,False,False
+FT-21,304 Super Steel (0.85 Mm),0,False,False
+FT-21M,304 Super Steel (0.85 Mm),0,False,False
+FT-22,304 Super Steel (0.85 Mm),0,False,False
+FT-22M,304 Super Steel (0.85 Mm),0,False,False
+FT-23,304 Super Steel (0.85 Mm),0,False,False
+FT-23M,304 Super Steel (0.85 Mm),0,False,False
+FT-24,304 Super Steel (0.85 Mm),0,False,False
+FT-24M,304 Super Steel (0.85 Mm),0,False,False
+FT-25,304 Super Steel (0.85 Mm),0,False,False
+FT-25M,304 Super Steel (0.85 Mm),0,False,False
+FT-27,304 Super Steel (0.85 Mm),0,False,False
+FT-27M,304 Super Steel (0.85 Mm),0,False,False
+FT-28,304 Super Steel (0.85 Mm),0,False,False
+FT-28M,304 Super Steel (0.85 Mm),0,False,False
+FT-29,304 Super Steel (0.85 Mm),0,False,False
+FT-29M,304 Super Steel (0.85 Mm),0,False,False
+FT-30,304 Super Steel (0.85 Mm),0,False,False
+FT-30M,304 Super Steel (0.85 Mm),0,False,False
+FT-31,304 Super Steel (0.85 Mm),0,False,False
+FT-31M,304 Super Steel (0.85 Mm),0,False,False
+FT-32,304 Super Steel (0.85 Mm),0,False,False
+FT-32M,304 Super Steel (0.85 Mm),0,False,False
+FT-42,304 Super Steel (0.85 Mm),0,False,False
+FT-45,304 Super Steel (0.85 Mm),0,False,False
+FT-45M,304 Super Steel (0.85 Mm),0,False,False
+FT-52,304 Super Steel (0.85 Mm),0,False,False
+FT-52M,304 Super Steel (0.85 Mm),0,False,False
+FT-53,304 Super Steel (0.85 Mm),0,False,False
+FT-53M,304 Super Steel (0.85 Mm),0,False,False
+FT-54,304 Super Steel (0.85 Mm),0,False,False
+FT-54M,304 Super Steel (0.85 Mm),0,False,False
+FT-61,304 Super Steel (0.85 Mm),0,False,False
+FT-61M,304 Super Steel (0.85 Mm),0,False,False
+FT-62,304 Super Steel (0.85 Mm),0,False,False
+FT-62M,304 Super Steel (0.85 Mm),0,False,False
+FT-63,304 Super Steel (0.85 Mm),0,False,False
+FT-63M,304 Super Steel (0.85 Mm),0,False,False
+FT-64,304 Super Steel (0.85 Mm),0,False,False
+FT-64M,304 Super Steel (0.85 Mm),0,False,False
+FT-65,304 Super Steel (0.85 Mm),0,False,False
+FT-65M,304 Super Steel (0.85 Mm),0,False,False
+FT-70,304 Super Steel (0.85 Mm),0,False,False
+FT-70M,304 Super Steel (0.85 Mm),0,False,False
+FT-71,304 Super Steel (0.85 Mm),0,False,False
+FT-71M,304 Super Steel (0.85 Mm),0,False,False
+FT-72,304 Super Steel (0.85 Mm),0,False,False
+FT-72M,304 Super Steel (0.85 Mm),0,False,False
+FT-73,304 Super Steel (0.85 Mm),0,False,False
+FT-73M,304 Super Steel (0.85 Mm),0,False,False
+FT-74,304 Super Steel (0.85 Mm),0,False,False
+FT-74M,304 Super Steel (0.85 Mm),0,False,False
+FT-75,304 Super Steel (0.85 Mm),0,False,False
+FT-75M,304 Super Steel (0.85 Mm),0,False,False
+FT-76,304 Super Steel (0.85 Mm),0,False,False
+FT-76M,304 Super Steel (0.85 Mm),0,False,False
+FT-77,304 Super Steel (0.85 Mm),0,False,False
+FT-77M,304 Super Steel (0.85 Mm),0,False,False
+FT-78,304 Super Steel (0.85 Mm),0,False,False
+FT-78M,304 Super Steel (0.85 Mm),0,False,False
+FT-79,304 Super Steel (0.85 Mm),0,False,False
+FT-79M,304 Super Steel (0.85 Mm),0,False,False
+GP-345-MB,Garden Pipe,0,False,False
+GP-345-MG,Garden Pipe,0,False,False
+GP-345-MO,Garden Pipe,0,False,False
+GP-345-MW,Garden Pipe,0,False,False
+GP-345-MW/H,Garden Pipe,0,False,False
+GP-345-MY,Garden Pipe,0,False,False
+GP-345-TB,Garden Pipe,0,False,False
+GP-345-TG,Garden Pipe,0,False,False
+GP-345-TO,Garden Pipe,0,False,False
+GP-345-TT,Garden Pipe,0,False,False
+GP-345-TT/H,Garden Pipe,0,False,False
+GP-345-TY,Garden Pipe,0,False,False
+GP-346-MB,Garden Pipe,0,False,False
+GP-346-MG,Garden Pipe,0,False,False
+GP-346-MO,Garden Pipe,0,False,False
+GP-346-MW,Garden Pipe,0,False,False
+GP-346-MW/H,Garden Pipe,0,False,False
+GP-346-MY,Garden Pipe,0,False,False
+GP-346-TB,Garden Pipe,0,False,False
+GP-346-TG,Garden Pipe,0,False,False
+GP-346-TO,Garden Pipe,0,False,False
+GP-346-TT,Garden Pipe,0,False,False
+GP-346-TT/H,Garden Pipe,0,False,False
+GP-346-TY,Garden Pipe,0,False,False
+GP-364-MB,Garden Pipe,0,False,False
+GP-364-MG,Garden Pipe,0,False,False
+GP-364-MO,Garden Pipe,0,False,False
+GP-364-MW,Garden Pipe,0,False,False
+GP-364-MW/H,Garden Pipe,0,False,False
+GP-364-TB,Garden Pipe,0,False,False
+GP-364-TG,Garden Pipe,0,False,False
+GP-364-TO,Garden Pipe,0,False,False
+GP-364-TT,Garden Pipe,0,False,False
+GP-364-TT/H,Garden Pipe,0,False,False
+GP-367-MW,Garden Pipe,0,False,False
+GP-367-TT,Garden Pipe,0,False,False
+H817-D,204 Super Steel (0.85 Mm),0,False,False
+H817-DD,304 Super Steel (0.85 Mm),0,False,False
+H821-D,204 Super Steel (0.85 Mm),0,False,False
+H821-DD,304 Super Steel (0.85 Mm),0,False,False
+H826-D,204 Super Steel (0.85 Mm),0,False,False
+H826-DD,304 Super Steel (0.85 Mm),0,False,False
+H841-D,204 Super Steel (0.85 Mm),0,False,False
+H841-DD,304 Super Steel (0.85 Mm),0,False,False
+H843-D,204 Super Steel (0.85 Mm),0,False,False
+H843-DD,304 Super Steel (0.85 Mm),0,False,False
+H852-D,204 Super Steel (0.85 Mm),0,False,False
+H852-DD,304 Super Steel (0.85 Mm),0,False,False
+LF-157,Water Tank Line Filter,0,False,False
+P-310,204 Super Steel (0.85 Mm),0,False,False
+P-330,204 Super Steel (0.85 Mm),0,False,False
+P-336,204 Super Steel (0.85 Mm),0,False,False
+P-340,204 Super Steel (0.85 Mm),0,False,False
+P-346,204 Super Steel (0.85 Mm),0,False,False
+P-348,204 Super Steel (0.85 Mm),0,False,False
+P-350,204 Super Steel (0.85 Mm),0,False,False
+P-410,204 Super Steel (0.65 Mm),0,False,False
+P-430,204 Super Steel (0.65 Mm),0,False,False
+P-436,204 Super Steel (0.65 Mm),0,False,False
+P-440,204 Super Steel (0.65 Mm),0,False,False
+P-446,204 Super Steel (0.65 Mm),0,False,False
+P-448,204 Super Steel (0.65 Mm),0,False,False
+P-450,204 Super Steel (0.65 Mm),0,False,False
+SA-03,Sink Accessories,0,False,False
+SA-04,Sink Accessories,0,False,False
+SF-02,Cistern's & Seat Cover's Accessories,4.0,False,False

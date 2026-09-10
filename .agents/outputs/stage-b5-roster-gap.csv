@@ -1,0 +1,201 @@
+category,item_code,normalized_code,issued_demand,mrp_series,on_prayag_tab
+Cocks Standard,P-121,P-121,8587.67,Luxor,False
+Cocks Standard,P-124,P-124,6275.0,Luxor,False
+Cocks Standard,PS-121,PS-121,5493.33,Glory,False
+Cocks Standard,PS-124,PS-124,4286.33,Glory,False
+Cocks Standard,P-144,P-144,4215.67,Luxor,False
+Cocks Standard,PS-144,PS-144,3518.67,Glory,False
+Cocks Standard,123-QAB,123-QAB,138.0,Quadra (Dark Blue),False
+Cocks Standard,144-QAB,144-QAB,48.0,Quadra (Dark Blue),False
+Cocks Standard,134-QAB,134-QAB,41.33,Quadra (Dark Blue),False
+Cocks Standard,123-QB,123-QB,41.0,Quadra (Black),False
+Cocks Standard,PTA-22,PTA-22,20.67,(not in current MRP product rows),False
+Cocks Standard,121-FHW,121-FHW,13.33,Helix (Wine),False
+Cocks Standard,133-QAB,133-QAB,4.33,Quadra (Dark Blue),False
+Cocks Standard,121-1E,121-1E,0.0,(not in current MRP product rows),False
+Cocks Standard,121-D,121-D,0.0,(not in current MRP product rows),False
+Cocks Standard,121-FHG,121-FHG,0.0,Helix (Gold),False
+Cocks Standard,121-FHP,121-FHP,0.0,Helix (Peach),False
+Cocks Standard,121-FHR,121-FHR,0.0,Helix (Royal),False
+Cocks Standard,121-FP,121-FP,0.0,(not in current MRP product rows),False
+Cocks Standard,121-N,121-N,0.0,(not in current MRP product rows),False
+Cocks Standard,121-PR,121-PR,0.0,(not in current MRP product rows),False
+Cocks Standard,121-W,121-W,0.0,(not in current MRP product rows),False
+Cocks Standard,122,122,0.0,(not in current MRP product rows),False
+Cocks Standard,123-3E,123-3E,0.0,(not in current MRP product rows),False
+Cocks Standard,123-3U,123-3U,0.0,(not in current MRP product rows),False
+Cocks Standard,123-B,123-B,0.0,(not in current MRP product rows),False
+Cocks Standard,1231F,1231F,0.0,(not in current MRP product rows),False
+Cocks Standard,124-4E,124-4E,0.0,(not in current MRP product rows),False
+Cocks Standard,124-4U,124-4U,0.0,(not in current MRP product rows),False
+Cocks Standard,124-PR,124-PR,0.0,(not in current MRP product rows),False
+Cocks Standard,127-7E,127-7E,0.0,(not in current MRP product rows),False
+Cocks Standard,129-9E,129-9E,0.0,(not in current MRP product rows),False
+Cocks Standard,129-9U,129-9U,0.0,(not in current MRP product rows),False
+Cocks Standard,129-PR,129-PR,0.0,(not in current MRP product rows),False
+Cocks Standard,129-QAB,129-QAB,0.0,Quadra (Dark Blue),False
+Cocks Standard,129-RH,129-RH,0.0,(not in current MRP product rows),False
+Cocks Standard,129I,129I,0.0,(not in current MRP product rows),False
+Cocks Standard,129QW,129QW,0.0,(not in current MRP product rows),False
+Cocks Standard,130-0E,130-0E,0.0,(not in current MRP product rows),False
+Cocks Standard,130-0U,130-0U,0.0,(not in current MRP product rows),False
+Cocks Standard,130-I N,130-I N,0.0,(not in current MRP product rows),False
+Cocks Standard,130-QAB,130-QAB,0.0,Quadra (Dark Blue),False
+Cocks Standard,130C,130C,0.0,(not in current MRP product rows),False
+Cocks Standard,131-B,131-B,0.0,(not in current MRP product rows),False
+Cocks Standard,131-F,131-F,0.0,(not in current MRP product rows),False
+Cocks Standard,131-G,131-G,0.0,(not in current MRP product rows),False
+Cocks Standard,131-PR,131-PR,0.0,(not in current MRP product rows),False
+Cocks Standard,131-S,131-S,0.0,(not in current MRP product rows),False
+Cocks Standard,131-W,131-W,0.0,(not in current MRP product rows),False
+Cocks Standard,1311-W,1311-W,0.0,(not in current MRP product rows),False
+Cocks Standard,132-2E,132-2E,0.0,(not in current MRP product rows),False
+Cocks Standard,132-2U,132-2U,0.0,(not in current MRP product rows),False
+Cocks Standard,132-PR,132-PR,0.0,(not in current MRP product rows),False
+Cocks Standard,132-QAB,132-QAB,0.0,Quadra (Dark Blue),False
+Cocks Standard,1322,1322,0.0,(not in current MRP product rows),False
+Cocks Standard,1322-A,1322-A,0.0,(not in current MRP product rows),False
+Cocks Standard,132I,132I,0.0,(not in current MRP product rows),False
+Cocks Standard,132T,132T,0.0,(not in current MRP product rows),False
+Cocks Standard,133,133,0.0,(not in current MRP product rows),False
+Cocks Standard,133-3E,133-3E,0.0,(not in current MRP product rows),False
+Cocks Standard,133-3U,133-3U,0.0,(not in current MRP product rows),False
+Cocks Standard,1331,1331,0.0,(not in current MRP product rows),False
+Cocks Standard,133C-NEW,133C-NEW,0.0,(not in current MRP product rows),False
+Cocks Standard,133NEW,133NEW,0.0,(not in current MRP product rows),False
+Cocks Standard,144-4E,144-4E,0.0,(not in current MRP product rows),False
+Cocks Standard,144-4U,144-4U,0.0,(not in current MRP product rows),False
+Cocks Standard,144-PR,144-PR,0.0,(not in current MRP product rows),False
+Cocks Standard,145-5E,145-5E,0.0,(not in current MRP product rows),False
+Cocks Standard,145-5U,145-5U,0.0,(not in current MRP product rows),False
+Cocks Standard,145-PR,145-PR,0.0,(not in current MRP product rows),False
+Cocks Standard,145-QAB,145-QAB,0.0,Quadra (Dark Blue),False
+Cocks Standard,PTA-21,PTA-21,0.0,(not in current MRP product rows),False
+Cocks Premium,PTA-76,PTA-76,208.67,(not in current MRP product rows),False
+Cocks Premium,135-QAB,135-QAB,31.33,Quadra (Dark Blue),False
+Cocks Premium,1375-QAB,1375-QAB,20.0,Quadra (Dark Blue),False
+Cocks Premium,135-O,135-O,0.0,(not in current MRP product rows),False
+Cocks Premium,1431-E,1431-E,0.0,(not in current MRP product rows),False
+Cocks Premium,147-7E,147-7E,0.0,(not in current MRP product rows),False
+Cocks Premium,147-PR,147-PR,0.0,(not in current MRP product rows),False
+Cocks Premium,148-C,148-C,0.0,(not in current MRP product rows),False
+Cocks Premium,PTA-77,PTA-77,0.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,PTA-26,PTA-26,32.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,PTA-33,PTA-33,16.33,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,PTA-36,PTA-36,9.67,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,1812,1812,0.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,182,182,0.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,400-S,400-S,0.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,520,520,0.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,520N,520N,0.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,5211N,5211N,0.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,5221N,5221N,0.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,PTA-25,PTA-25,0.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,PTA-27,PTA-27,0.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,PTA-32,PTA-32,0.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,PTA-34,PTA-34,0.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,PTA-44,PTA-44,0.0,(not in current MRP product rows),False
+Faucets & Jetsprays & Shower,PTA-9,PTA-9,0.0,(not in current MRP product rows),False
+Accessorise,493-W,493-W,321.67,Showers & Accessories,False
+Accessorise,PTA-14,PTA-14,247.67,(not in current MRP product rows),False
+Accessorise,PTA-18,PTA-18,172.0,(not in current MRP product rows),False
+Accessorise,PTA-15,PTA-15,140.0,(not in current MRP product rows),False
+Accessorise,PTA-12,PTA-12,53.0,(not in current MRP product rows),False
+Accessorise,PTA-3,PTA-3,31.33,(not in current MRP product rows),False
+Accessorise,492-W,492-W,28.33,Showers & Accessories,False
+Accessorise,PTA-13,PTA-13,22.67,(not in current MRP product rows),False
+Accessorise,PTA-1,PTA-1,19.33,(not in current MRP product rows),False
+Accessorise,111-H,111-H,0.0,(not in current MRP product rows),False
+Accessorise,111-WH,111-WH,0.0,(not in current MRP product rows),False
+Accessorise,118-W,118-W,0.0,(not in current MRP product rows),False
+Accessorise,126-I,126-I,0.0,(not in current MRP product rows),False
+Accessorise,128 X,128 X,0.0,(not in current MRP product rows),False
+Accessorise,1281,1281,0.0,(not in current MRP product rows),False
+Accessorise,190-C,190-C,0.0,(not in current MRP product rows),False
+Accessorise,191-C,191-C,0.0,(not in current MRP product rows),False
+Accessorise,193,193,0.0,(not in current MRP product rows),False
+Accessorise,195-C,195-C,0.0,(not in current MRP product rows),False
+Accessorise,196-IV,196-IV,0.0,(not in current MRP product rows),False
+Accessorise,BEA-44A,BEA-44A,0.0,(not in current MRP product rows),False
+Accessorise,BEA-47A,BEA-47A,0.0,(not in current MRP product rows),False
+Accessorise,BEA-47AB,BEA-47AB,0.0,(not in current MRP product rows),False
+Accessorise,PP-01,PP-01,0.0,(not in current MRP product rows),False
+Accessorise,PP-02,PP-02,0.0,(not in current MRP product rows),False
+Accessorise,PTA-17,PTA-17,0.0,(not in current MRP product rows),False
+Accessorise,PTA-2,PTA-2,0.0,(not in current MRP product rows),False
+Accessorise,PTA-4,PTA-4,0.0,(not in current MRP product rows),False
+Accessorise,PTA-5,PTA-5,0.0,(not in current MRP product rows),False
+Accessorise,PTA-6,PTA-6,0.0,(not in current MRP product rows),False
+Accessorise,PTA-7,PTA-7,0.0,(not in current MRP product rows),False
+Cistern & Seat Cover,513-EWC,513-EWC,846.67,(not in current MRP product rows),False
+Cistern & Seat Cover,PTA-78,PTA-78,242.0,(not in current MRP product rows),False
+Cistern & Seat Cover,PTA-71,PTA-71,155.0,(not in current MRP product rows),False
+Cistern & Seat Cover,PTA-73,PTA-73,89.33,(not in current MRP product rows),False
+Cistern & Seat Cover,PTA-84,PTA-84,61.67,(not in current MRP product rows),False
+Cistern & Seat Cover,PTA-79,PTA-79,60.33,(not in current MRP product rows),False
+Cistern & Seat Cover,PTA-72,PTA-72,49.67,(not in current MRP product rows),False
+Cistern & Seat Cover,PTA-80,PTA-80,44.33,(not in current MRP product rows),False
+Cistern & Seat Cover,PTA-74,PTA-74,22.33,(not in current MRP product rows),False
+Cistern & Seat Cover,PTA-85,PTA-85,20.0,(not in current MRP product rows),False
+Cistern & Seat Cover,411,411,3.33,(not in current MRP product rows),False
+Cistern & Seat Cover,PTA-81,PTA-81,0.0,(not in current MRP product rows),False
+Cistern & Seat Cover,PTA-82,PTA-82,0.0,(not in current MRP product rows),False
+Cistern & Seat Cover,PTA-83,PTA-83,0.0,(not in current MRP product rows),False
+Cabinet,PTA-49,PTA-49,264.33,(not in current MRP product rows),False
+Cabinet,PTA-48,PTA-48,42.0,(not in current MRP product rows),False
+Cabinet,PTA-50,PTA-50,16.67,(not in current MRP product rows),False
+Cabinet,554-F,554-F,0.0,(not in current MRP product rows),False
+Ball Cock,PTA-54,PTA-54,1358.0,(not in current MRP product rows),False
+Ball Cock,PTA-53,PTA-53,230.67,(not in current MRP product rows),False
+Ball Cock,PTA-55,PTA-55,75.33,(not in current MRP product rows),False
+Ball Cock,151L,151L,0.0,(not in current MRP product rows),False
+Ball Cock,B-151,B-151,0.0,(not in current MRP product rows),False
+Ball Cock,B-152,B-152,0.0,(not in current MRP product rows),False
+Ball Cock,B-153,B-153,0.0,(not in current MRP product rows),False
+Ball Cock,B-161,B-161,0.0,(not in current MRP product rows),False
+Ball Cock,B-162,B-162,0.0,(not in current MRP product rows),False
+Ball Cock,B-163,B-163,0.0,(not in current MRP product rows),False
+Ball Cock,B-167,B-167,0.0,(not in current MRP product rows),False
+Ball Cock,B-168,B-168,0.0,(not in current MRP product rows),False
+Ball Cock,B-169,B-169,0.0,(not in current MRP product rows),False
+Ball Cock,B-173,B-173,0.0,(not in current MRP product rows),False
+Ball Cock,B-174,B-174,0.0,(not in current MRP product rows),False
+Ball Cock,B-175,B-175,0.0,(not in current MRP product rows),False
+Ball Cock,N-151,N-151,0.0,(not in current MRP product rows),False
+Ball Cock,N-152,N-152,0.0,(not in current MRP product rows),False
+Ball Cock,N-153,N-153,0.0,(not in current MRP product rows),False
+Ball Cock,PTA-56,PTA-56,0.0,(not in current MRP product rows),False
+Ball Cock,PTA-57,PTA-57,0.0,(not in current MRP product rows),False
+Ball Cock,PTA-58,PTA-58,0.0,(not in current MRP product rows),False
+P.V.C. Connections,323-K,323-K,16407.0,(not in current MRP product rows),False
+P.V.C. Connections,324-K,324-K,15286.0,(not in current MRP product rows),False
+P.V.C. Connections,326-K,326-K,3052.0,(not in current MRP product rows),False
+P.V.C. Connections,PTA-67,PTA-67,1568.5,(not in current MRP product rows),False
+P.V.C. Connections,PTA-68,PTA-68,1344.5,(not in current MRP product rows),False
+P.V.C. Connections,325-K,325-K,1082.0,(not in current MRP product rows),False
+P.V.C. Connections,PTA-66,PTA-66,8.0,(not in current MRP product rows),False
+P.V.C. Connections,321-K,321-K,0.0,(not in current MRP product rows),False
+P.V.C. Connections,322-K,322-K,0.0,(not in current MRP product rows),False
+P.V.C. Connections,323-HK,323-HK,0.0,(not in current MRP product rows),False
+P.V.C. Connections,323-ZK,323-ZK,0.0,(not in current MRP product rows),False
+P.V.C. Connections,324-HK,324-HK,0.0,(not in current MRP product rows),False
+P.V.C. Connections,324-ZK,324-ZK,0.0,(not in current MRP product rows),False
+P.V.C. Connections,325-HK,325-HK,0.0,(not in current MRP product rows),False
+P.V.C. Connections,325-ZK,325-ZK,0.0,(not in current MRP product rows),False
+P.V.C. Connections,326-HK,326-HK,0.0,(not in current MRP product rows),False
+P.V.C. Connections,326-ZK,326-ZK,0.0,(not in current MRP product rows),False
+P.V.C. Connections,328 K,328 K,0.0,(not in current MRP product rows),False
+P.V.C. Connections,328-ZK,328-ZK,0.0,(not in current MRP product rows),False
+P.V.C. Connections,330-ZK,330-ZK,0.0,(not in current MRP product rows),False
+P.V.C. Connections,332-ZK,332-ZK,0.0,(not in current MRP product rows),False
+P.V.C. Connections,348-K,348-K,0.0,(not in current MRP product rows),False
+P.V.C. Connections,350-K,350-K,0.0,(not in current MRP product rows),False
+P.V.C. Connections,PTA-65,PTA-65,0.0,(not in current MRP product rows),False
+P.V.C. Connections,PTA-69,PTA-69,0.0,(not in current MRP product rows),False
+P.V.C. Connections,PTA-70,PTA-70,0.0,(not in current MRP product rows),False
+Waste Pipes,PTA-61,PTA-61,1002.5,(not in current MRP product rows),False
+Waste Pipes,PTA-62,PTA-62,572.0,(not in current MRP product rows),False
+Waste Pipes,PTA-59,PTA-59,92.5,(not in current MRP product rows),False
+Waste Pipes,PTA-60,PTA-60,0.0,(not in current MRP product rows),False
+Waste Pipes,PTA-63,PTA-63,0.0,(not in current MRP product rows),False
+Waste Pipes,PTA-64,PTA-64,0.0,(not in current MRP product rows),False
