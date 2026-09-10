@@ -221,3 +221,836 @@ mtime_ms = 1788674191632
 storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/d9e5e216-a9f6-40f4-9d3e-14f659e71ea5/732d2519-4458-40c3-bd62-0b0798304971"
 storage_version_token = "1788674200150660"
 content_type = "application/pdf"
+
+[[outputs]]
+id = "DQ5toej-fSYg1HzF7-NLR"
+uri = "file://.agents/outputs/round7-prayag-vs-temporary-2367-itemized.csv"
+type = "table"
+title = "Round 7 Prayag vs Temporary Plan 2367 — itemized reconciliation"
+description = "Read-only comparison of the corrected September Prayag sheet against frozen Temporary Plan 2367. Includes every shared, Prayag-only, and app-only row with inputs and classification."
+logical_id = "8f54db4c-3abd-409d-8b05-e04c1b715f82"
+content_hash = "sha256:2f0ea0f95b6d36d7a35f07a0651e5d86f665cfb1b10a39e518714af80a170666"
+size = 164763
+mtime_ms = 1788764141241
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/8f54db4c-3abd-409d-8b05-e04c1b715f82/62d99a3b-74b7-40db-a605-5982a8756e72"
+storage_version_token = "1788764144842199"
+content_type = "text/csv"
+
+[[outputs]]
+id = "ym5wZ8MQ4Yx9a1nrqxDdM"
+uri = "file://.agents/outputs/round7-prayag-vs-temporary-2367-category-inputs.csv"
+type = "table"
+title = "Round 7 Prayag vs Temporary Plan 2367 — category input reconciliation"
+description = "Read-only category-level comparison of sales, stock, last-month pending, current pending, and plan totals."
+logical_id = "f68d53f1-cbeb-47bc-9230-a2dd0daa04e7"
+content_hash = "sha256:bd425f47e80c95ee48ed68516bc4f89ee159f197769fe008c8efaac81547954a"
+size = 1959
+mtime_ms = 1788764142197
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/f68d53f1-cbeb-47bc-9230-a2dd0daa04e7/c9940583-1193-43cb-84c6-73e290f17275"
+storage_version_token = "1788764147434268"
+content_type = "text/csv"
+
+[[outputs]]
+id = "JWPrprynhwP4eADLqkS_b"
+uri = "file://.agents/outputs/round9-fresh-2410-vs-prayag.csv"
+type = "table"
+title = "PTMT comparison with clamp bases"
+description = "Itemized #2410 comparison with code-level clamp, colour-level clamp, colour-clamp benefit, and input-identity fields for every shared code."
+logical_id = "c8a0e00b-3b3a-4cd5-b845-733ae08644cf"
+content_hash = "sha256:689b6a1cf85b9a982138f75801cbff7c3ee241aba7d53cd130565f3ac16a0e7b"
+size = 198124
+mtime_ms = 1788781705255
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/c8a0e00b-3b3a-4cd5-b845-733ae08644cf/4724abc9-0ada-472e-9bef-f4cc5decd61d"
+storage_version_token = "1788781781224246"
+content_type = "text/csv"
+
+[[outputs]]
+id = "FT4uErvPl0_ibNVE08FnJ"
+uri = "file://.agents/outputs/round9-fresh-2410-comparison.md"
+type = "text"
+title = "PTMT method finding summary"
+description = "Business finding explaining why colour-level planning preserves production that code-level clamping suppresses."
+logical_id = "231be05e-7d14-418d-9e8e-ffe421ec3126"
+content_hash = "sha256:aa10ee5224ab6ae043f8a505cd353ad407bad34036d9fb1faf04cad8bd2b3d0f"
+size = 5255
+mtime_ms = 1788781769531
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/231be05e-7d14-418d-9e8e-ffe421ec3126/91f2179b-d1e7-4b82-9620-b003ab252fc0"
+storage_version_token = "1788781783194679"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "c0lDhiUZRALvzNA6-VeSU"
+uri = "file://.local/outputs/september-prayag-variance-method-finding-2026-09-07.pdf"
+type = "pdf"
+title = "September PTMT method finding PDF"
+description = "Standalone Part 2 method note. Uses collaborative wording, whole-piece figures, exact basis labels, and the 123-O / 121-E examples."
+logical_id = "ecbfe86a-1f85-4799-b321-e0622a213cd5"
+content_hash = "sha256:79aa08e47081ca6000fb8420ac227e12aceced8407310cc0fa97872599709c43"
+size = 797826
+mtime_ms = 1788782433083
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/ecbfe86a-1f85-4799-b321-e0622a213cd5/6ef135f7-cde5-4f5e-8019-659bd9b4beb4"
+storage_version_token = "1788782471094244"
+content_type = "application/pdf"
+
+[[outputs]]
+id = "MfZEv9sDn1xLTxS4CKz8Z"
+uri = "file://.local/outputs/september-prayag-variance-method-finding-2026-09-07.docx"
+type = "word_document"
+title = "September PTMT method finding DOCX"
+description = "Editable standalone Word version of Part 2 with the same revised wording and rounded figures."
+logical_id = "08ec92f3-ed8d-4216-9d79-6d672ab26e7e"
+content_hash = "sha256:b7a32bb1ae071158f8b206d598a6c1c9d64307fa0fae6cfddf05615f7cfe278a"
+size = 38400
+mtime_ms = 1788782457174
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/08ec92f3-ed8d-4216-9d79-6d672ab26e7e/4fee4653-cd2d-4899-be97-18f427e8f2e6"
+storage_version_token = "1788782472989443"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "llnpTtWF7MWH-JD4tlZ7m"
+uri = "file://.agents/outputs/ptmt_buffer_multipliers-development.csv"
+type = "table"
+title = "PTMT buffer multipliers — development"
+description = "Read-only export of the full current ptmt_buffer_multipliers table from development."
+logical_id = "31716b46-1d02-4bb1-a780-021734a61fa6"
+content_hash = "sha256:fedba49198ed7d59c7369c12ec5c795405bab823200496645b61dab7b2e12481"
+size = 11561
+mtime_ms = 1788784141515
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/31716b46-1d02-4bb1-a780-021734a61fa6/9f7360e2-4d49-44d0-a2dd-2a74119b814d"
+storage_version_token = "1788784224515583"
+content_type = "text/csv"
+
+[[outputs]]
+id = "HhxAiZLwxAI7LQGWSEIyO"
+uri = "file://.agents/outputs/ptmt_buffer_multipliers-production.csv"
+type = "table"
+title = "PTMT buffer multipliers — production"
+description = "Read-only export of the full current ptmt_buffer_multipliers table from production."
+logical_id = "a7917011-4ab2-40df-83b5-c3a100dc54f7"
+content_hash = "sha256:af080e04e1bbb0cbf508e8cf8320bc291d78b02d5005746fb49705b75dca6dd9"
+size = 11561
+mtime_ms = 1788784142455
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/a7917011-4ab2-40df-83b5-c3a100dc54f7/ebc41388-9e19-448c-8775-dccaea3806b5"
+storage_version_token = "1788784226402471"
+content_type = "text/csv"
+
+[[outputs]]
+id = "MkDuBt0g6RlRgj3IzpxqS"
+uri = "file://.agents/outputs/september-capacity-pass2-readonly-report-2026-09-07.docx"
+type = "word_document"
+title = "PTMT Capacity Merge & Pass 2 Review"
+description = "Editable Word version of the read-only capacity, Pass 2, unexplained increase, and Summary-screen report dated 7 September 2026."
+logical_id = "4c76bfdf-6c3a-4b4a-8424-b1ef71531d49"
+content_hash = "sha256:9af6e3f327f14f9ad7704766d6f7e6adbae785e15ffa100edf840c8a29a053f7"
+size = 43849
+mtime_ms = 1788786069769
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/4c76bfdf-6c3a-4b4a-8424-b1ef71531d49/f95a025b-829d-4b44-879a-33938b6a95a5"
+storage_version_token = "1788786080168623"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "XVR6BZaAq2i1oXND1REtU"
+uri = "file://.agents/outputs/ptmt-stage-a-read-only-report-2026-09-07.doc"
+type = "word_document"
+title = "PTMT Stage A Read-only Report"
+description = "Legacy Word-compatible .doc version of the Stage A PTMT closure checks."
+logical_id = "cf819190-4172-443f-8f03-0c9c0dfa0729"
+content_hash = "sha256:35e546680d825b0e47746a7d4f2ca834044f27006a78070a6626b37e84aaa908"
+size = 10940
+mtime_ms = 1788791184480
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/cf819190-4172-443f-8f03-0c9c0dfa0729/6872ff24-92f3-4bab-8d75-247c0f5537df"
+storage_version_token = "1788791191571697"
+content_type = "application/msword"
+
+[[outputs]]
+id = "sXRgdPcY-Ptirb0AMl3bk"
+uri = "file://.agents/outputs/ptmt-stage-a2-stock-direction-report-2026-09-07.doc"
+type = "word_document"
+title = "PTMT Stage A2 Stock Direction Report"
+description = "Editable Word-compatible .doc version of the Stage A2 read-only stock direction investigation."
+logical_id = "c775e86a-bbf9-43f9-b89c-3c4d2fc89fb2"
+content_hash = "sha256:121d33428d3a8d4adae4ace5c3b3dea097a5e63e322ce9cd57c68ab84c0d32d7"
+size = 8601
+mtime_ms = 1788792550823
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/c775e86a-bbf9-43f9-b89c-3c4d2fc89fb2/0ccc250c-c53b-4e3f-889f-101547a9c3bc"
+storage_version_token = "1788792558437092"
+content_type = "application/msword"
+
+[[outputs]]
+id = "466HwC0oJfxKgtKN8bzvI"
+uri = "file://.local/outputs/ptmt-stage-a3-stock-misallocation-report-2026-09-07.docx"
+type = "word_document"
+title = "PTMT Stage A3 Stock Misallocation Report"
+description = "Editable Word document containing the complete read-only Stage A3 findings for 7 September 2026."
+logical_id = "c55662dc-faed-4237-9fad-04884f4a7544"
+content_hash = "sha256:cc829d7e5d5e6071b10c7d05600c2d72c5787685a6c182ab0400be664dd0f412"
+size = 13015
+mtime_ms = 1788793532511
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/c55662dc-faed-4237-9fad-04884f4a7544/1c1498d2-6201-4b4d-929e-313cd88301a4"
+storage_version_token = "1788793540087799"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "lnR74Pbe3Hsn0uMSJ9mV1"
+uri = "file://.agents/outputs/stage-b5-roster-gap.csv"
+type = "table"
+title = "Stage B5 PTMT Roster Gap — Run 2419"
+description = "Complete per-code list of September Temporary Plan #2419 items absent from their Prayag planning tabs, with issued demand and authoritative MRP series where joined."
+logical_id = "ef4aeca5-060e-496b-820f-4cb06b6dc0ad"
+content_hash = "sha256:94149b188327def9c1236ab59fd59f5be94cce5e00dab975f8767cef5aeccc30"
+size = 14554
+mtime_ms = 1788794512840
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/ef4aeca5-060e-496b-820f-4cb06b6dc0ad/325c73c2-ebdc-45ff-9ab3-15590c43a41b"
+storage_version_token = "1788794617318530"
+content_type = "text/csv"
+
+[[outputs]]
+id = "K5urSUqAbDSKHQzL_JH9Z"
+uri = "file://.agents/outputs/ptmt-stage-e-read-only-report-2026-09-08.md"
+type = "text"
+title = "PTMT Stage E read-only report"
+description = "E1 and E2 roster, MRP join, shared-code, and colour-clamp analysis for draft Temporary Plan #2419."
+logical_id = "486cff19-a79e-4cf7-be6a-165f87068f17"
+content_hash = "sha256:439dfe21093c3e83e95827fd4e5cf9bf61a8ecccb188ccae121b8148d0bbce83"
+size = 7227
+mtime_ms = 1788846348650
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/486cff19-a79e-4cf7-be6a-165f87068f17/5a03ff15-9385-42ee-b373-25e1b45f034a"
+storage_version_token = "1788846358241034"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "-kw4r6BNVT3ck5K_ZpNIM"
+uri = "file://.agents/outputs/ptmt-stage-f1-read-only-report-2026-09-08.md"
+type = "text"
+title = "PTMT Stage F1 read-only report"
+description = "Roster entry paths, candidate admissions, MRP gaps, and normalization analysis. F2 was not started."
+logical_id = "f19f9a39-049a-4ebe-9fda-2978add31f03"
+content_hash = "sha256:7283ed4fc289774d4d25d5ac442a062f825e46b69767973f4fcda5ce1da210c7"
+size = 10173
+mtime_ms = 1788847030994
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/f19f9a39-049a-4ebe-9fda-2978add31f03/14d641c2-f9e9-4b4c-a3d5-5e2334f62ffb"
+storage_version_token = "1788847038148429"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "ioFSwaGZ3jfjtQZGX36Os"
+uri = "file://.agents/outputs/ptmt-stage-g1-read-only-report-2026-09-08.md"
+type = "text"
+title = "PTMT Stage G1 read-only report"
+description = "Roster merge behavior, normalization call sites, persisted-key impact, four K-code evidence, and complete cross-source spelling analysis."
+logical_id = "498b2e55-c4de-491a-bc9c-de9f736dc2b5"
+content_hash = "sha256:f70da96f05b5cb8152c7d2bc0be7689ba45d0bccc8001da6d983745ca39c0d2a"
+size = 13654
+mtime_ms = 1788847946167
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/498b2e55-c4de-491a-bc9c-de9f736dc2b5/ccff7b75-3f43-4ee6-81cf-e753f9ff746e"
+storage_version_token = "1788847954764885"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "btR0NbXE2Xg0IcO6Wyfz9"
+uri = "file://.agents/outputs/ptmt-stage-h1-h3-read-only-report-2026-09-08.md"
+type = "text"
+title = "PTMT Stage H1 and H3 read-only report"
+description = "Duplicate-guard sizing, current roster collisions, MRP evidence, construction path, and roster-admission candidate analysis."
+logical_id = "5de22c16-a0fc-4e7b-b1e3-3ec72a923184"
+content_hash = "sha256:0103ae45914d0624eec0fc21c2cbf2137c4c0c81de805d07ad0301790ed1f00f"
+size = 8125
+mtime_ms = 1788850152142
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/5de22c16-a0fc-4e7b-b1e3-3ec72a923184/53827c78-89b2-42b2-b506-7f233be14219"
+storage_version_token = "1788850159691984"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "sEQeLpBiCHys3dYGrwRsl"
+uri = "file://.agents/outputs/ptmt-stage-h4b-read-only-report-2026-09-08.md"
+type = "text"
+title = "PTMT Stage H4b read-only report"
+description = "Source-vintage trace for 3272-BC, arithmetic behind 6,912 and 2,976, other Waste Pipe candidates, and independent landing calculation."
+logical_id = "9c3276f2-b641-42c4-b881-0418fa4ece3c"
+content_hash = "sha256:cfee43f8636f0ea410b983241da149a6bcfb30b763687715ecd57f0b30f7c4b4"
+size = 4614
+mtime_ms = 1788850448469
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/9c3276f2-b641-42c4-b881-0418fa4ece3c/e0f8fbe6-5e14-4752-a949-201b78247df0"
+storage_version_token = "1788850457464160"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "BB2I4D6WqGbPvUMAinmOc"
+uri = "file://.agents/outputs/ptmt-stage-h2r-read-only-report-2026-09-08.md"
+type = "text"
+title = "PTMT Stage H2r report"
+description = "Warning-only raw-spelling guard implementation, focused verification, live-roster values, and the 129-QW category split."
+logical_id = "205cca53-bdb7-4338-8e64-611dc699581a"
+content_hash = "sha256:bf817d6776699d1aa18afbe7ce9aaa137fdfe578d1cefa710e5f28f784201627"
+size = 4019
+mtime_ms = 1788852636509
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/205cca53-bdb7-4338-8e64-611dc699581a/7884346c-3e72-41c0-a0be-caad95bcd827"
+storage_version_token = "1788852699299237"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "m3kCP7-FqNvLZKGxau_V8"
+uri = "file://.agents/outputs/stage-h2r-current-roster-warning.json"
+type = "unspecified"
+title = "H2r full warning payload"
+description = "Complete current-roster collision inventory with row-level raw spellings, categories, entry paths, and #2419 demand joins."
+logical_id = "2be21b9f-95b3-419b-b2a1-17ca86966426"
+content_hash = "sha256:0671d9a68835062445d26def590f9c26c2ccd1a44eac62051df7a8ca765941c8"
+size = 49933
+mtime_ms = 1788852636497
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/2be21b9f-95b3-419b-b2a1-17ca86966426/d52c88a8-839f-4532-8618-a1228ca4be58"
+storage_version_token = "1788852701361180"
+content_type = "application/octet-stream"
+
+[[outputs]]
+id = "3vJnZkZpf_YA6ruG-bGol"
+uri = "file://reports/plumbing-stage-a-read-only-audit-2026-09-08.docx"
+type = "word_document"
+title = "Plumbing Stage A Read-Only Audit"
+description = "Editable Word report covering PA.1–PA.8, current source mappings, upload-period behavior, pending segments, roster counts, and kilograms handling."
+logical_id = "ff7035a1-0473-4a04-ab3b-3a5e1842e23d"
+content_hash = "sha256:0a2d8c1f25b69eb283ce7af554c91d29554510f284ba0d68616278a46a02d133"
+size = 43522
+mtime_ms = 1788856335755
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/ff7035a1-0473-4a04-ab3b-3a5e1842e23d/c126c06e-55a0-416c-80a6-65901428f913"
+storage_version_token = "1788856343302007"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "6Y5CJmeHRet3YuarjOZqJ"
+uri = "file://plumbing-stage-b-pb1-pb2-report.docx"
+type = "word_document"
+title = "Plumbing Stage B — PB1/PB2 Report"
+description = "DOCX report covering read-only Plumbing stock lookup, Trading rows, period detection, SWR buffer basis, and header fallback findings."
+logical_id = "712b0755-a05a-4c19-a399-4c1a16c3a2b5"
+content_hash = "sha256:1b57649186859dbb042d6cd5669f54635cf097606b58a5f89c8645d7843f8133"
+size = 43776
+mtime_ms = 1788865668338
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/712b0755-a05a-4c19-a399-4c1a16c3a2b5/3f632cd4-dd01-4d33-9970-218c48e03a96"
+storage_version_token = "1788865678003874"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "6wx65EzX3eP-9aJ3lUFEv"
+uri = "file://.agents/outputs/plumbing-pb3-pb3.0-read-only-report.docx"
+type = "word_document"
+title = "Plumbing Stage B PB3.0 read-only report"
+description = "PB3.0 evidence report with the 203-code appendix, recurrence/guard finding, category vocabulary, and directional estimate."
+logical_id = "b8c71f41-035a-4ee4-b84c-2795bcbd0bb9"
+content_hash = "sha256:85c2d645e3ce76809bd7081a2a51b328b76d43d15bb910779f8b69c881a39cc6"
+size = 45350
+mtime_ms = 1788866909461
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/b8c71f41-035a-4ee4-b84c-2795bcbd0bb9/a313e077-1385-4d78-a798-16dbbb601e17"
+storage_version_token = "1788866931958129"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "8gJyfx9_DvUYFqE5WSvY5"
+uri = "file://.agents/outputs/plumbing-pb3-missing-september-roster.csv"
+type = "table"
+title = "PB3.0 complete 203-code appendix"
+description = "Every upload #13 FG Stock code absent from the effective September Plumbing roster, with item name, category, Net Stock, classification, and alias evidence."
+logical_id = "a5c2cb21-53ce-4c87-a41a-16984dc5879d"
+content_hash = "sha256:5b6d15b2fef683e82941ed88548eb146c9d6814fe721f4d8956db44207330aba"
+size = 22217
+mtime_ms = 1788866843224
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/a5c2cb21-53ce-4c87-a41a-16984dc5879d/afb7ddcc-1a40-474b-9df0-383d92c38c6e"
+storage_version_token = "1788866935015593"
+content_type = "text/csv"
+
+[[outputs]]
+id = "BKKElzaD-GI7gdwhBkVzg"
+uri = "file://.agents/outputs/plumbing-pb3-category-variants.csv"
+type = "table"
+title = "PB3.0 category vocabulary table"
+description = "All raw category labels across stored uploads #8 and #13, with source totals and September-roster presence counts."
+logical_id = "f22e6466-1a74-4e3d-a125-88b58553faa3"
+content_hash = "sha256:89f0e96e7306ac47ca4187b49d4d062b8783ec7cb06652e79926f1b76c4250ff"
+size = 1004
+mtime_ms = 1788866844204
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/f22e6466-1a74-4e3d-a125-88b58553faa3/9dd63589-7740-4156-be1c-046abd291b5c"
+storage_version_token = "1788866937190044"
+content_type = "text/csv"
+
+[[outputs]]
+id = "8EwuAsHgA4Nhfc-joxDry"
+uri = "file://.agents/outputs/plumbing-pb3-direction-estimate.csv"
+type = "table"
+title = "PB3.0 directional estimate by category"
+description = "Read-only gross estimate separating missing positive stock from missing negative pending-last-month quantities."
+logical_id = "b9dd5c36-ff9c-4304-8dfe-5f5da6fd29c3"
+content_hash = "sha256:4c43b940d54af59b2851fff1c79f45c6c91072e20ace89b58f350788c26dff86"
+size = 604
+mtime_ms = 1788866845964
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/b9dd5c36-ff9c-4304-8dfe-5f5da6fd29c3/f7a71e56-7ad7-418b-8186-44c35f226ed5"
+storage_version_token = "1788866939313586"
+content_type = "text/csv"
+
+[[outputs]]
+id = "Bv8i62Rht_8Xzf4zmFUOk"
+uri = "file://.agents/outputs/plumbing-stage-b-pb3b-pb34-read-only-report.docx"
+type = "word_document"
+title = "Plumbing Stage B PB3.0b and PB3.4 read-only report"
+description = "Word document containing the reviewed exclusion behavior, class-c batch evidence, multiplier comparison, scenario totals, limitations, and verification status."
+logical_id = "fd449f31-33c1-43f7-874c-a2eecde2f020"
+content_hash = "sha256:3df035a1bbf2c8258b551c24363b4dc95f08312a64798dd12e6a1d21260c71e6"
+size = 42284
+mtime_ms = 1788868127844
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/fd449f31-33c1-43f7-874c-a2eecde2f020/50a6b1ae-a4f1-40fe-9011-604559cf61e0"
+storage_version_token = "1788868135024502"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "0z7bJHrydUmXBj2UbhMAE"
+uri = "file://.agents/outputs/plumbing-pb5-read-only-report.md"
+type = "text"
+title = "Plumbing PB5 read-only evidence report"
+description = "PB5.1 guard evidence, PB5.2 AGRI-excluded scenarios, and PB5.3 AGRI roster evidence."
+logical_id = "850b03ef-baa6-4896-9136-f2b94dd3246e"
+content_hash = "sha256:a9cef161f3991fd0bcd72510d32d526ab81df07ac859c8ea08f4d6151ed7087a"
+size = 6132
+mtime_ms = 1788869927936
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/850b03ef-baa6-4896-9136-f2b94dd3246e/79320e50-658a-4636-9ce5-7db1861f496d"
+storage_version_token = "1788869938416364"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "JwuoZkWBtnFRW1MAg38EO"
+uri = "file://.agents/outputs/plumbing-pb5-agri-class-c.csv"
+type = "table"
+title = "Plumbing PB5 AGRI class-c rows"
+description = "76 AGRI class-c codes with item name, stock, and pending-last-month quantities."
+logical_id = "47d47d53-24b0-436e-9254-c4d4230c21bc"
+content_hash = "sha256:4619cb47555aadd7263f1c0f2fc4b47618b692b98a9ffbcdd8612bf7fd5c79a2"
+size = 4270
+mtime_ms = 1788869894859
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/47d47d53-24b0-436e-9254-c4d4230c21bc/be165f28-7b68-4cd5-8afd-7f1a88ec5b88"
+storage_version_token = "1788869941038110"
+content_type = "text/csv"
+
+[[outputs]]
+id = "oPnjxGnDH81tb2awjFCwJ"
+uri = "file://.agents/outputs/plumbing-pb6.0-read-only-report.md"
+type = "text"
+title = "Plumbing PB6.0 read-only evidence report"
+description = "Plan-gate trace, uploaded-versus-live pending reconciliation, and regression baseline evidence."
+logical_id = "f86c555e-92e1-4d77-8366-e58465495d3f"
+content_hash = "sha256:32f7d4c3805f4ab373c84464f8fee6d49f3ceea84788ea07b33dcbdae9609ec4"
+size = 5735
+mtime_ms = 1788871033055
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/f86c555e-92e1-4d77-8366-e58465495d3f/8a727436-8be6-48c2-9748-d950a480c1da"
+storage_version_token = "1788871045079326"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "MPrPNHRDgZmUPA7bS7RAb"
+uri = "file://.agents/outputs/plumbing-pb7-read-only-report.md"
+type = "text"
+title = "Plumbing PB7 read-only evidence report"
+description = "Complete pending-join investigation covering unmatched rows, source populations, join contract, live capture drift, and regression classification."
+logical_id = "c1d5095d-de66-4388-a106-2ba9db9974e1"
+content_hash = "sha256:b1d76344a51b14d04ad2ba5a9fa2c66e75f2e35849342acfc38484bc8c2418e6"
+size = 15859
+mtime_ms = 1788871855299
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/c1d5095d-de66-4388-a106-2ba9db9974e1/36a5ffd1-a981-43d2-b3a9-374f0a3f9bf8"
+storage_version_token = "1788871866012598"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "S_e_GmM9g_X4JhpBTUFA6"
+uri = "file://.agents/outputs/plumbing-pb7-unmatched-upload18.csv"
+type = "table"
+title = "PB7 unmatched SAP upload #18 rows"
+description = "68 raw unmatched source rows with item code, canonical code, item description, segment, balance quantity, and diagnostic outcome."
+logical_id = "696dae1d-6620-40e5-8367-3e5bd27df8ee"
+content_hash = "sha256:35f4561c81fef9c3ef474dac2ed6e4dd50f16c8b4a965bae1d1019749f28c816"
+size = 7334
+mtime_ms = 1788871781091
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/696dae1d-6620-40e5-8367-3e5bd27df8ee/60439a1f-77c5-491d-b3b4-91306b9177bb"
+storage_version_token = "1788871868546948"
+content_type = "text/csv"
+
+[[outputs]]
+id = "I5Y-VwtnuQTcQWyY7HNgA"
+uri = "file://.agents/outputs/plumbing-pb8-read-only-report.md"
+type = "text"
+title = "Plumbing PB8 read-only report"
+description = "PB8.1 Unmapped-route evidence and PB8.6 conservation values/history. No code or data changes were made."
+logical_id = "687b598a-ee43-4445-a9f8-22bf21277d65"
+content_hash = "sha256:e45185de892afab7df76f7d4106d38dcd7a1ed6f8f443817250d69432d9c0b28"
+size = 9484
+mtime_ms = 1788872555130
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/687b598a-ee43-4445-a9f8-22bf21277d65/e72f8189-acc3-49e6-bf83-7cad8141390a"
+storage_version_token = "1788872564907691"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "M5V75qnIQQJieYOKuwuwL"
+uri = "file://.agents/outputs/plumbing-pb8-unmapped-read-only.csv"
+type = "table"
+title = "PB8 Unmapped per-code scenario"
+description = "64 unmatched codes with pending, latest-available FG stock illustration, average sale, and clamped production values."
+logical_id = "f6e66452-91ff-4de4-b17e-d02441e1d782"
+content_hash = "sha256:cca6c5b354b0bd0a9e4cf490a42e9d9febf03fca03bc668e58cc938fec439aa8"
+size = 5093
+mtime_ms = 1788872365183
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/f6e66452-91ff-4de4-b17e-d02441e1d782/0e6128b1-0e04-4f49-8039-cd31ea2ada28"
+storage_version_token = "1788872567165844"
+content_type = "text/csv"
+
+[[outputs]]
+id = "uBv29DFkclaoWW248lsZ9"
+uri = "file://.agents/outputs/plumbing-pb9.1-read-only-report.md"
+type = "text"
+title = "Plumbing PB9.1 read-only report"
+description = "Confirms negative Net Stock is consumed as pending-last-month, separates it from the no-separate-dummy-upload flag, and reports the attached September-source totals and UPVC gate evidence."
+logical_id = "23bee457-8aaf-42f0-9747-700f76cf7382"
+content_hash = "sha256:5621a4bc6c37c1e2a1a04ef05afbeddcdbad0e94288ae7f1affd6de37e93110d"
+size = 7576
+mtime_ms = 1788873158563
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/23bee457-8aaf-42f0-9747-700f76cf7382/6b979987-fb65-4a47-9d1d-7b141ce87a83"
+storage_version_token = "1788873172536444"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "HiY3ejdogpkLofsY5huT4"
+uri = "file://PB10.0_Plumbing_Read-Only_Findings.docx"
+type = "word_document"
+title = "PB10.0 Plumbing Read-Only Findings"
+description = "Word document containing the PB10.0 ceiling provenance, September upload-selection, dummy-stock source, frozen-versus-live recompute, and approval-boundary findings."
+logical_id = "320665a1-1eb2-4744-87dc-ab50f2599dc4"
+content_hash = "sha256:2ccde2cb858ec510ebc3c9b8b7babf9d69880b1a35ef334112822f5e7d2f19e9"
+size = 42097
+mtime_ms = 1788876720773
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/320665a1-1eb2-4744-87dc-ab50f2599dc4/8ec63158-dcbb-4d1d-8f52-c1454acf200b"
+storage_version_token = "1788876734548155"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "4YW3QOmGBKArUh7mzx2-e"
+uri = "file://PC0_Plan_Run_Controls_Read-Only_Audit.docx"
+type = "word_document"
+title = "PC.0 Plan Run Controls Read-Only Audit"
+description = "Word document containing the PC.0 findings for Summary source precedence, current Production and development run snapshots, Temporary Plan UI surfaces, and finalized-run mutation paths."
+logical_id = "56179770-d283-458b-8868-0b944d217dbf"
+content_hash = "sha256:bcfd2401232dd2b9a85d487609f28036fa10b4396c46e8de1c7b204616223583"
+size = 41429
+mtime_ms = 1788878080272
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/56179770-d283-458b-8868-0b944d217dbf/3ad21888-474e-4e4d-a8ae-99f267d8b6eb"
+storage_version_token = "1788878088551315"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "BGkQ3Uu7JvlQbp5r2hixA"
+uri = "file://.local/outputs/Prayag-India-Production-Planning---Operations.pptx"
+type = "slides"
+title = "Prayag India Production Planning & Operations.pptx"
+logical_id = "9e36eb1d-4115-4e10-a769-a6bfe89bc77c"
+
+[[outputs]]
+id = "81hL0_6IL2BnUTb48Wp92"
+uri = "file://attached_assets/Three_Previous_Query_Results_2026-09-09.docx"
+type = "word_document"
+title = "Three Previous Query Results"
+description = "Word report containing the verified results for the machine-contract audit, post-PL.1 PTMT production-plan audit, and Plumbing September baseline query."
+logical_id = "c9668a7f-7905-4b6c-b5d9-eabd7741bad2"
+content_hash = "sha256:4fc1a1c6084a594b508f198d0949b930e6515b4c14e05d9fae4a0e1ea0b86b55"
+size = 43823
+mtime_ms = 1788928766791
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/c9668a7f-7905-4b6c-b5d9-eabd7741bad2/6a6e71b6-e0bc-4dfe-96dd-8ed393c15d5e"
+storage_version_token = "1788928787653374"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "iO11k7WKgPPYehyZDmHoy"
+uri = "file://attached_assets/RB0_run44_exact_samples_2026-09-09.md"
+type = "text"
+title = "RB.0 Run 44 Exact Scheduler Samples"
+description = "Untruncated development-database request and response samples for run 44, covering one pipe batch and one fitting batch. Production currently has no stored schedule rows for run 44."
+logical_id = "d8109d25-115a-46c3-a982-4ae04d1ebf49"
+content_hash = "sha256:4064230e5cf6c81b67f1f4409fa60074163b34f472ebcfe86e0598cc23635814"
+size = 626422
+mtime_ms = 1788930026591
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/d8109d25-115a-46c3-a982-4ae04d1ebf49/6af2d01c-4660-4b1c-a084-981d0ef190cc"
+storage_version_token = "1788930041941681"
+content_type = "text/markdown"
+
+[[outputs]]
+id = "QkKvl31jGrfrCTmCdYxzy"
+uri = "file://exports/plumbing-unmapped-mrp-series-2026-09.docx"
+type = "word_document"
+title = "September 2026 Plumbing — Unmapped MRP Coverage Report"
+description = "Word report listing all 248 Unclassified Plumbing codes, their authoritative MRP series where matched, source coverage findings, and the 195 Pipes & Fittings versus 53 MRP-absent split."
+logical_id = "3c5aefe4-a0e3-4eb7-b736-c7f1998368ab"
+content_hash = "sha256:c9fabca051bdcd9d14d132077f619d0271a68f47c3b785cd14e403eebc41f0c8"
+size = 19153
+mtime_ms = 1788948538663
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/3c5aefe4-a0e3-4eb7-b736-c7f1998368ab/df106a8e-af2d-4551-8832-c0651a629918"
+storage_version_token = "1788948548448999"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "TcqDPuakIqAHCz_FyiH92"
+uri = "file://.agents/outputs/plumbing-mrp-roster-coverage-2026-09.csv"
+type = "table"
+title = "September 2026 Plumbing MRP roster coverage"
+description = "Complete in-both, MRP-only, and roster-only coverage delta for the current September planning workbook versus the authoritative Pipes & Fittings MRP division."
+logical_id = "ee680eb7-df0c-473e-b526-082ef72aab97"
+content_hash = "sha256:e69a8467758be3b34ec46a3ab015834df7165a19701d901d2ef15ef5ae29a4cb"
+size = 331250
+mtime_ms = 1788949130495
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/ee680eb7-df0c-473e-b526-082ef72aab97/38b6cbec-1697-48cd-91b3-9e8dc36e7a60"
+storage_version_token = "1788949162342353"
+content_type = "text/csv"
+
+[[outputs]]
+id = "U68TnCXnE4EFyvA0fpA2t"
+uri = "file://.agents/outputs/plumbing-mrp-absent-53-2026-09.csv"
+type = "table"
+title = "53 Plumbing codes absent from MRP"
+description = "Prayag master-data escalation list for the 53 previously Unclassified codes absent from the authoritative MRP and checked rate-list source."
+logical_id = "72e58f19-33af-4a91-9fe0-1486a12bd968"
+content_hash = "sha256:fb1de35dd91857665d885d8d383afca198c3eb4043b59c0ae5e32bdd53e347e6"
+size = 6421
+mtime_ms = 1788949130495
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/72e58f19-33af-4a91-9fe0-1486a12bd968/abb76086-9140-4a49-aa74-93987ef10055"
+storage_version_token = "1788949167764383"
+content_type = "text/csv"
+
+[[outputs]]
+id = "atJW2zDGnhqpPN_s8s3i1"
+uri = "file://reports/plumbing-capacity-investigation-2026-09.docx"
+type = "word_document"
+title = "Plumbing Capacity Investigation — September 2026"
+description = "Formatted Word report covering the Plumbing capacity recompute, per-category statistics, zero-capacity root causes, and HDPE/MRP category decisions."
+logical_id = "33fd9ae2-c9f4-4516-b251-49b7d8d89866"
+content_hash = "sha256:d1747dcedc6a50c2729c6eab593ee75370810db4ae6ff21dacddb0c0b8612a39"
+size = 41331
+mtime_ms = 1788950206670
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/33fd9ae2-c9f4-4516-b251-49b7d8d89866/0557a919-ac45-4300-aac7-8d21b44e81df"
+storage_version_token = "1788950212452245"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "m0m_dkaX8Xy90qKsryKiv"
+uri = "file://artifacts/machine-contract-investigation-september-2026.docx"
+type = "word_document"
+title = "Machine Contract Investigation — September 2026"
+description = "Word document containing the read-only MC.0 coverage join, MC.1 scheduler probe, MC.2 parser check, top data-limited rows, and recorded factual corrections."
+logical_id = "fa8587bb-9fd8-4794-a033-f6abcb85853e"
+content_hash = "sha256:1b67ed2926b1d90a3d4e80439a99f2279c0ed32ebeccdfdea421ff64bdfb2611"
+size = 42588
+mtime_ms = 1788952708341
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/fa8587bb-9fd8-4794-a033-f6abcb85853e/8a1d0814-0d3f-44b1-8bc9-cbae1bc46f58"
+storage_version_token = "1788952717554117"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "6IigmcbN-7v9bJIX6Cll8"
+uri = "file://deliverables/September_2026_Roster_and_Unclassified_ReadOnly_Findings.docx"
+type = "word_document"
+title = "September 2026 Roster and Unclassified Findings"
+description = "Read-only PR.1–PR.3 investigation covering Plumbing Unclassified populations, roster reconciliation, and PTMT roster variance."
+logical_id = "8bcfeacf-1d99-4b6e-8352-dd05ed45200f"
+content_hash = "sha256:558f5d6ea45720008ab9572db4152d34df8eb1a17866f1e2e68a7251843b0c7e"
+size = 40858
+mtime_ms = 1788959578827
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/8bcfeacf-1d99-4b6e-8352-dd05ed45200f/e3983ca4-2308-4ec1-9cdb-44afdd28367d"
+storage_version_token = "1788959589578819"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "4F4QlFPyQU_rHXzh_2fEd"
+uri = "file://deliverables/Weekly_Release_Plan_ReadOnly_Investigation_2026-09-09.docx"
+type = "word_document"
+title = "Weekly Release Plan Read-only Investigation"
+description = "Word report covering WK.1–WK.2: allocation rules, finalized-plan requirements, September working days, live Plumbing conservation, and current export availability."
+logical_id = "6ece0282-76b4-4a5b-8632-4e5ee348cfb0"
+content_hash = "sha256:2ba80b4b36817c23d37c0f619321df38ca42fc8d9da7c24217d25d9cfd750dac"
+size = 42316
+mtime_ms = 1788960472339
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/6ece0282-76b4-4a5b-8632-4e5ee348cfb0/e66cc56c-6a1b-4329-b0d8-2cc19d022196"
+storage_version_token = "1788960483146345"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "ts2tBTVy-Kcijzxgx1WgP"
+uri = "file://deliverables/Dummy_First_and_Night_Shift_ReadOnly_Investigation_2026-09-09.docx"
+type = "word_document"
+title = "Dummy-first and Night-shift Read-only Investigation"
+description = "Word report covering PTMT and Plumbing priority behavior, September dummy estimates, current machine-capacity values, and the night-shift design questions."
+logical_id = "4add7b46-b6c2-4590-ba3a-caa44fec6842"
+content_hash = "sha256:145f849aedb7e54a8ea271bb144aef3e8a6f7cb7102228146113c1b9a768d282"
+size = 43157
+mtime_ms = 1788960886599
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/4add7b46-b6c2-4590-ba3a-caa44fec6842/b7363447-bbc2-46c3-98c3-aeb42921d375"
+storage_version_token = "1788960895083469"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "9c_slCZetC_TmNar97n7o"
+uri = "file://deliverables/Dummy_First_Parity_and_Shift_Aware_Planning_ReadOnly_2026-09-09.docx"
+type = "word_document"
+title = "Dummy-first Parity and Shift-aware Planning Report"
+description = "Read-only SH.0 findings, SH.1 scope and approval boundary, per-machine shift sizing, W1 saturation, and SH.2 design/cost notes."
+logical_id = "44946237-2ca3-4104-b908-052efd756cdc"
+content_hash = "sha256:b719ee4d1748eed06b3eb13252167a47e1adecb2d0600b8832a8cb476a8ef5c4"
+size = 43748
+mtime_ms = 1788961215291
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/44946237-2ca3-4104-b908-052efd756cdc/b59cda00-17b7-45f0-bc20-53a840745c96"
+storage_version_token = "1788961224794222"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "J8aPrp1-jdNUCjLPkiwAG"
+uri = "file://deliverables/Plumbing_Frozen_Cascade_Reconciliation_2026-09-09.docx"
+type = "word_document"
+title = "Plumbing Frozen Cascade Reconciliation"
+description = "Read-only FR.1/FR.2/FR.3 report covering the frozen #2574 old-vs-new cascade comparison, MC8 status, residual breakdown, top 20 items, and the draft question for Prayag."
+logical_id = "ec67b70d-432f-42d5-8f33-421f2752cd68"
+content_hash = "sha256:3c595a83df928a9300a0173e6fa5ba100c78b360de4b6f441183890a75ab3d7b"
+size = 40744
+mtime_ms = 1788962328854
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/ec67b70d-432f-42d5-8f33-421f2752cd68/4e4334bc-6af9-4487-bd95-598a0976eb70"
+storage_version_token = "1788962335357640"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "tyu2t12tleb_P3majSlIZ"
+uri = "file://deliverables/Plumbing_Run_2574_Missing_BOM_Rows_2026-09-09.csv"
+type = "table"
+title = "Plumbing run 2574 — 149 missing BOM rows"
+description = "Corrected read-only export sorted by unfeasible pieces descending. Positive current-source weights are matched by normalized item code and include route status, dummy/orders/buffer quantities, and July/August snapshot status."
+logical_id = "27ea1067-6e2e-4694-b469-85531c184b3d"
+content_hash = "sha256:19412096ce5b037b29f4d953f483f6cd3251d51d0ccf4b7e8f6108dab5953039"
+size = 25087
+mtime_ms = 1788964468310
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/27ea1067-6e2e-4694-b469-85531c184b3d/30638135-2427-49b1-bec3-1a0cf5cc55ab"
+storage_version_token = "1788964471381526"
+content_type = "text/csv"
+
+[[outputs]]
+id = "exxEo1x-LAOEUEmMFc0gP"
+uri = "file://deliverables/Plumbing_Run_2574_NO_BOM_WEIGHT_149_rows.csv"
+type = "table"
+title = "Plumbing #2574 — 149 NO BOM WEIGHT rows"
+description = "Frozen September Temporary Plan #2574, sorted by unfeasible pieces descending. Exact BOM-team columns: item code, item name, category, material, unfeasible pieces, DUMMY, ORDERS, BUFFER, and machine-route yes/no."
+logical_id = "c823b4a0-061e-43c0-8436-bec0fe4055c4"
+content_hash = "sha256:dd4e5648665d83a464cdfb0714bdca732a38b8b49a1089f2018f3be6b4268dfb"
+size = 11550
+mtime_ms = 1788965953493
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/c823b4a0-061e-43c0-8436-bec0fe4055c4/cbee8e48-f121-4299-a197-544acf527c87"
+storage_version_token = "1788966000006608"
+content_type = "text/csv"
+
+[[outputs]]
+id = "ffMIK6ENwYkIso0VsPzCI"
+uri = "file://deliverables/Prayag_Machine_Planning_MP0_MP1_Report_2026-09-09.docx"
+type = "word_document"
+title = "Prayag Machine Planning — MP.0 / MP.1 Report"
+description = "Word document containing the five-code read-only scheduler probe, local-versus-Prayag machine findings, scheduler contract, Plumbing-only page design, persistence model, Excel requirements, and 11–16 day cost estimate."
+logical_id = "e99febc0-17b8-4b30-b599-065edb71656d"
+content_hash = "sha256:c173ef0355f7fb9630575d0bbd1220f4939e94137f5c2ea0b0d88cc473899868"
+size = 42378
+mtime_ms = 1788967440777
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/e99febc0-17b8-4b30-b599-065edb71656d/7f20658b-ed17-4668-91d4-a516e6c7a46a"
+storage_version_token = "1788967464208146"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "b9hBirmXza38-m7jnyKvn"
+uri = "file://deliverables/September_Plumbing_RU0_ReadOnly_Diagnosis.docx"
+type = "word_document"
+title = "September Plumbing RU.0 Read-only Diagnosis"
+description = "Formatted Word document covering the current guard ordering, Unclassified routing, September upload figures, fingerprints, and unmatched-stock handling."
+logical_id = "44994b88-f773-4248-92d5-f37c56231c77"
+content_hash = "sha256:f5e01dd190ffa0e542d281b10a7117c3a2a97cf63d99a1fc2a093144ad25ee55"
+size = 41001
+mtime_ms = 1788972441914
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/44994b88-f773-4248-92d5-f37c56231c77/f1944ee6-63c3-4d49-9dbf-9482490aa433"
+storage_version_token = "1788972447461968"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "FxuwKiV1zZt-WCdVSx-wW"
+uri = "file://deliverables/September_Plumbing_TP_ReadOnly_Reconciliation.docx"
+type = "word_document"
+title = "September Plumbing TP Read-only Reconciliation"
+description = "Word document reconciling the 19,012 versus 33,386 reads, comparing uploads #18 and #21, tracing plan creation versus validation paths, and confirming the 64-code PB7 set."
+logical_id = "1ee226e1-fc4d-42c8-8a42-38ac20e7dd6c"
+content_hash = "sha256:1dca356665a735f0473ca23be01b85f78494db127efacefe04ec8896bae7b536"
+size = 41722
+mtime_ms = 1788972716906
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/1ee226e1-fc4d-42c8-8a42-38ac20e7dd6c/b3c3b778-dc9a-47d7-bf5c-ba85eae716ba"
+storage_version_token = "1788972726064164"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "1cNfHsCGVJCOGPD4A6P0u"
+uri = "file://deliverables/September_Plumbing_Temporary_Plan_RN3_Run_2656.xlsx"
+type = "table"
+title = "September Plumbing Temporary Plan — RN.3 draft #2656"
+description = "Demand-true Temporary Plan export with 1,387 items, 13 material groups plus Unclassified, and persisted run provenance trace. Status remains draft."
+logical_id = "2218eb82-8da3-4890-9614-23ba2e96d3a6"
+content_hash = "sha256:07c43a5c795fbc8f89bb246a25e085b9eb2be4315f69b2b94212faa37d5606b9"
+size = 95392
+mtime_ms = 1788973464910
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/2218eb82-8da3-4890-9614-23ba2e96d3a6/1ee0df2d-bb4e-4093-be29-1a8cad004496"
+storage_version_token = "1788973497669294"
+content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+[[outputs]]
+id = "wcfXHIz0qZW2DRCG2Nvls"
+uri = "file://deliverables/September_Plumbing_Machine_Feasible_RN3_Run_2656.xlsx"
+type = "table"
+title = "September Plumbing Machine-Feasible Plan — RN.3 draft #2656"
+description = "In-memory cascade export with item-wise achievable output, unfeasible reasons, weekly machine load, and independent conservation check."
+logical_id = "38963ac1-77b5-46ea-be92-2393e84bca58"
+content_hash = "sha256:d6f5be8f69b6cb402bb68d7fbb294fd861357dc11bfa5263139c6241c3966721"
+size = 89805
+mtime_ms = 1788973465447
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/38963ac1-77b5-46ea-be92-2393e84bca58/04558cfd-70d5-4791-9599-982862683ed6"
+storage_version_token = "1788973499828566"
+content_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+[[outputs]]
+id = "Ix6T_XtsxsQy_J2Af6dow"
+uri = "file://deliverables/September_Plumbing_RN3_Report.txt"
+type = "text"
+title = "September Plumbing RN.3 values report"
+description = "Group-by-group engine demand versus Prayag targets, pending fingerprints, machine-feasible totals, reason totals, utilisation, and verification results."
+logical_id = "bb0141f7-e025-4377-86c4-b695b3ef9cc7"
+content_hash = "sha256:4d1529129322f1f472d7f67cac62d7c45894f5ee6be36955ac735b1b90b3e5e5"
+size = 2390
+mtime_ms = 1788973485996
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/bb0141f7-e025-4377-86c4-b695b3ef9cc7/0c94598e-c7b1-4c07-bab6-5f800b61e3ba"
+storage_version_token = "1788973501815159"
+content_type = "text/plain"
+
+[[outputs]]
+id = "LkB8ysSsvhWW3o9AtBI2y"
+uri = "file://deliverables/September_2026_PTMT_Roster_Forensic_ReadOnly_Report.docx"
+type = "word_document"
+title = "September 2026 PTMT Roster Forensic Report"
+description = "Corrected read-only Word report covering the REPORT 1–9 fallback, +158 variance, source paths, cache behavior, punctuation checks, 121-O / WHITE, 144-O / WHITE, and multiplier findings."
+logical_id = "91aa98b8-f96d-4c8b-9caa-e2ad695726f9"
+content_hash = "sha256:b4351e2b8a0a83c41e1b6f68f7a6a6fbce558ef1aaf87903b808d7fb856e3130"
+size = 42686
+mtime_ms = 1789018025079
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/91aa98b8-f96d-4c8b-9caa-e2ad695726f9/5650219e-c9c8-4be7-92da-a7b17e7292dc"
+storage_version_token = "1789018034870302"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+[[outputs]]
+id = "HJZ34BvYPuxICmZuIpypz"
+uri = "file://deliverables/September_2026_PTMT_Workbook_Source_Forensic_Report.docx"
+type = "word_document"
+title = "September 2026 PTMT Workbook Source Forensic Report"
+description = "Read-only WB.1/WB.2 report: configured PTMT ANUJ source, shared September workbook comparison, tab row counts, parser results, and the evidence boundary. No workbook, plan, policy, or deployment changes were made."
+logical_id = "3fa48dc8-7dc8-4cc8-b440-22023074da97"
+content_hash = "sha256:73c0348e710cc63680f9ead45d6b2a1c8de305d9f4be17d0705277aa8a2e55a4"
+size = 43252
+mtime_ms = 1789018860610
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:ae4c76a3-0789-4014-9ec1-26be14befb18/3fa48dc8-7dc8-4cc8-b440-22023074da97/c3203cb2-aa66-46c8-99b4-4180b6b09a4e"
+storage_version_token = "1789018867348494"
+content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
