@@ -838,10 +838,10 @@ export type PtmtRosterResolution = {
   fallbackReason: string | null;
 };
 
-export async function resolveEffectivePtmtRoster(): Promise<PtmtRosterResolution> {
+export async function resolveEffectivePtmtRoster(month: string): Promise<PtmtRosterResolution> {
   let fallbackReason: string | null = null;
   try {
-    const reportRows = await fetchPtmtReportRoster();
+    const reportRows = await fetchPtmtReportRoster(month);
     if (reportRows.length > 0) {
       const items = buildPtmtReportRoster(reportRows);
       return {
@@ -902,8 +902,8 @@ export async function resolveEffectivePtmtRoster(): Promise<PtmtRosterResolution
   };
 }
 
-export async function getEffectivePtmtRoster(): Promise<EffectivePtmtRosterItem[]> {
-  return (await resolveEffectivePtmtRoster()).items;
+export async function getEffectivePtmtRoster(month: string): Promise<EffectivePtmtRosterItem[]> {
+  return (await resolveEffectivePtmtRoster(month)).items;
 }
 
 export async function getRateListReport() {

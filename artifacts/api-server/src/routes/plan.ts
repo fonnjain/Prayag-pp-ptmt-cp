@@ -1081,6 +1081,7 @@ export type PtmtPlanValidationInputs = {
   pendingTotals: DualTotals;
   liveOrderTotals: DualTotals;
   currentStockRows: Record<string, unknown>[];
+  enforcePendingJoin?: boolean;
 };
 
 /**
@@ -1098,6 +1099,7 @@ export function buildPtmtPlanItemsForValidation({
   pendingTotals,
   liveOrderTotals,
   currentStockRows,
+  enforcePendingJoin = true,
 }: PtmtPlanValidationInputs): PlanItemWithBom[] {
   const bufferByCategory = new Map<string, number>(bufferRows.map((b) => [b.name, b.multiplier]));
   const rosterIndex = buildPendingRosterIndex(itemRows);
@@ -1136,8 +1138,10 @@ export function buildPtmtPlanItemsForValidation({
     itemRows,
     { sourceRole: "pending_current" },
   );
-  assertPlanUsesPendingJoin("PTMT validation last-month pending", lastMonthDiagnostics, items, "pendingOrderLastMonth");
-  assertPlanUsesPendingJoin("PTMT validation current pending", currentDiagnostics, items, "pendingOrder");
+  if (enforcePendingJoin) {
+    assertPlanUsesPendingJoin("PTMT validation last-month pending", lastMonthDiagnostics, items, "pendingOrderLastMonth");
+    assertPlanUsesPendingJoin("PTMT validation current pending", currentDiagnostics, items, "pendingOrder");
+  }
   return items;
 }
 
@@ -1500,7 +1504,7 @@ async function buildPtmtPlanItemsInner(
   // ── 1. UPLOADS + DB FIRST — fail fast (loudly, naming the file) before any sheet read ──
   const [itemRows, bufferRows, bandRows, currentStockRows, pendingLastMoRows, pendingOrderRows, monthlyMultiplierRows] =
     await Promise.all([
-      getEffectivePtmtRoster(),
+      getEffectivePtmtRoster(month),
       db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, segment)),
       db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, segment)),
       requireUploadRows("current_stock", "FG Stock (current stock)", month),
@@ -3339,7 +3343,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   ] = await Promise.all([
     loadLatestUploadRowsByKind("current_stock", month),
     loadLatestUploadRowsByKind("last_month_pending", month),
-    resolveEffectivePtmtRoster(),
+    resolveEffectivePtmtRoster(month),
     db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "PTMT")),
     fetchAvg3MoSaleTotals(month),
     Promise.resolve(livePendingCapture.totals),
@@ -3482,11 +3486,42 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     itemRows,
     { sourceRole: "pending_last_month" },
   );
-  assertPendingJoinIdentity(
+  const recordPendingJoinCheck = (
+    label: string,
+    diagnostics: PendingPlanDiagnostics,
+    expectedSourceQuantity: number,
+    policy: ReviewedPendingExclusionPolicy,
+  ) => {
+    try {
+      assertPendingJoinIdentity(label, diagnostics, expectedSourceQuantity, policy);
+      checks.push({
+        name: `${label} · reviewed reconciliation`,
+        expected: 1,
+        actual: 1,
+        pass: true,
+        tolerance: "exact source/join identity and reviewed exclusions",
+      });
+    } catch (err) {
+      checks.push({
+        name: `${label} · reviewed reconciliation`,
+        expected: 1,
+        actual: 0,
+        pass: false,
+        tolerance: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+  recordPendingJoinCheck(
     "PTMT last-month pending (validation)",
     pendingLastMonthDiagnostics,
     totalByCode(lmTotals),
     reviewedPendingExclusionPolicy("PTMT", "pending_last_month", month),
+  );
+  recordPendingJoinCheck(
+    "PTMT uploaded current pending (validation)",
+    pendingPlanDiagnostics,
+    pendingPlanDiagnostics.sourceQuantity,
+    reviewedPendingExclusionPolicy("PTMT", "pending_current", month),
   );
 
   // ── 3. Current pending ────────────────────────────────────────────────
@@ -3538,6 +3573,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     pendingTotals: pendingOrderTotals,
     liveOrderTotals,
     currentStockRows: stockRows,
+    enforcePendingJoin: false,
   });
   const pendingPlanReconciliation = reconcilePendingPlan(
     planItems,
@@ -3748,7 +3784,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   const joinedKeys = new Map<string, number>();
   for (const item of itemRows) {
     const isSingleVariant = pendingJoinModeForItem(rosterIndex, item) === "code";
-    const key = isSingleVariant ? `code::${normalizeCode(item.itemCode)}` : `exact::${normalizeCode(item.itemCode)}::${item.colour.trim().toUpperCase()}`;
+    const key = isSingleVariant ? `code::${normalizeCode(item.itemCode)}` : `exact::${itemKey(item.itemCode, item.colour)}`;
     if (!joinedKeys.has(key)) joinedKeys.set(key, resolveTotal(stockTotalsForPlan, item.itemCode, item.colour, isSingleVariant));
   }
   const joinedStockSum = Math.round([...joinedKeys.values()].reduce((a, b) => a + b, 0));

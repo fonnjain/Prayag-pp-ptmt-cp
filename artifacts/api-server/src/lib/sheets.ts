@@ -220,6 +220,18 @@ export class WorkbookResolutionError extends Error {
   }
 }
 
+export class WorkbookConfigurationRequiredError extends Error {
+  readonly division: WorkbookDivision;
+  readonly month: string;
+
+  constructor(division: WorkbookDivision, month: string) {
+    super(`No configured ${division} workbook exists for ${month}; refusing to auto-discover or reuse another month's workbook.`);
+    this.name = "WorkbookConfigurationRequiredError";
+    this.division = division;
+    this.month = month;
+  }
+}
+
 /** Human-readable title pattern + Drive name-contains keyword per division. */
 const WORKBOOK_TITLE_PATTERNS: Record<WorkbookDivision, { contains: string; pattern: string }> = {
   PTMT:     { contains: "PTMT PLAN & ACTUAL",       pattern: "N. PTMT PLAN & ACTUAL - <Mon>-<YY>" },
@@ -383,6 +395,7 @@ async function fetchDriveFileMeta(fileId: string): Promise<{ name: string; modif
 export async function resolveWorkbookForMonth(
   division: WorkbookDivision,
   month: string,
+  options: { requireConfigured?: boolean } = {},
 ): Promise<ResolvedWorkbook> {
   const cacheKey = `${division}_${month}`;
   const now = Date.now();
@@ -393,6 +406,9 @@ export async function resolveWorkbookForMonth(
 
   // 1. Pinned (DB) — human override wins until unpinned.
   const dbId = await loadWorkbookIdFromDb(division, month);
+  if (options.requireConfigured && !dbId) {
+    throw new WorkbookConfigurationRequiredError(division, month);
+  }
   // 2. Static legacy map — exact month key only, so it can never serve another month.
   // The Apr–Jul '26 static PTMT IDs are Date Sheet (machine-report) workbooks,
   // so they belong to the PTMT-Machine feed, not the PLAN & ACTUAL feed.
@@ -1022,9 +1038,11 @@ export function parsePtmtReportRows(values: string[][], report: string, category
  * REPORT 1 and most reports are code+colour; REPORT 2 is intentionally
  * code-only with blank colour cells.
  */
-export async function fetchPtmtReportRoster(): Promise<PtmtReportRosterRow[]> {
+export async function fetchPtmtReportRoster(month: string): Promise<PtmtReportRosterRow[]> {
   return runInAllowedReadScope("fetchPtmtReportRoster", async () => {
-    const tabs = await listTabs(SHEET_IDS.ptmtAnuj);
+    const resolved = await resolveWorkbookForMonth("PTMT", month, { requireConfigured: true });
+    const workbookId = resolved.workbookId;
+    const tabs = await listTabs(workbookId);
     const reportTabs = Object.keys(PTMT_REPORT_TAB_CATEGORIES)
       .map((report) => tabs.find((tab) => normalizedSheetHeader(tab) === normalizedSheetHeader(report)))
       .filter((tab): tab is string => Boolean(tab));
@@ -1033,12 +1051,12 @@ export async function fetchPtmtReportRoster(): Promise<PtmtReportRosterRow[]> {
       const report = Object.keys(PTMT_REPORT_TAB_CATEGORIES).find(
         (candidate) => normalizedSheetHeader(candidate) === normalizedSheetHeader(tab),
       )!;
-      const values = await throttledGetTabValues(SHEET_IDS.ptmtAnuj, tab, "A1:Z50000");
+      const values = await throttledGetTabValues(workbookId, tab, "A1:Z50000");
       rows.push(...parsePtmtReportRows(values, report, PTMT_REPORT_TAB_CATEGORIES[report]!)
-        .map((row) => ({ ...row, sourceWorkbookId: SHEET_IDS.ptmtAnuj })));
+        .map((row) => ({ ...row, sourceWorkbookId: workbookId })));
     }
     if (rows.length === 0) {
-      throw new Error(`PTMT REPORT 1-9 roster has no recognised item rows in ${SHEET_IDS.ptmtAnuj}`);
+      throw new Error(`PTMT REPORT 1-9 roster has no recognised item rows in ${workbookId} for ${month}`);
     }
     logger.info(
       {
