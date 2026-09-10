@@ -830,16 +830,33 @@ export function buildRateListCategorySplit(
   });
 }
 
-export async function getEffectivePtmtRoster(): Promise<EffectivePtmtRosterItem[]> {
+export type PtmtRosterResolution = {
+  items: EffectivePtmtRosterItem[];
+  rosterSource: "REPORT_1_9" | "FALLBACK";
+  rosterRowCount: number;
+  workbookId: string | null;
+  fallbackReason: string | null;
+};
+
+export async function resolveEffectivePtmtRoster(): Promise<PtmtRosterResolution> {
+  let fallbackReason: string | null = null;
   try {
     const reportRows = await fetchPtmtReportRoster();
     if (reportRows.length > 0) {
-      return buildPtmtReportRoster(reportRows);
+      const items = buildPtmtReportRoster(reportRows);
+      return {
+        items,
+        rosterSource: "REPORT_1_9",
+        rosterRowCount: items.length,
+        workbookId: reportRows.find((row) => row.sourceWorkbookId)?.sourceWorkbookId ?? null,
+        fallbackReason: null,
+      };
     }
   } catch (err) {
     // Keep the legacy sources as an explicit recovery path for connector
     // outages. A successful REPORT read always wins and is never merged with
     // category-tab/rate-list identities.
+    fallbackReason = String(err);
     logger.warn({ err: String(err) }, "PTMT REPORT 1-9 roster unavailable; using legacy reference-data recovery path");
   }
 
@@ -867,7 +884,7 @@ export async function getEffectivePtmtRoster(): Promise<EffectivePtmtRosterItem[
       eq(mrpControlRowsTable.isLoadable, true),
     ))
     : [];
-  return buildEffectivePtmtRosterWithClassifier(
+  const items = buildEffectivePtmtRosterWithClassifier(
     itemRows,
     rateRows,
     catalogueRows,
@@ -876,6 +893,17 @@ export async function getEffectivePtmtRoster(): Promise<EffectivePtmtRosterItem[
     new Set(bufferRows.map((row) => row.name)),
     true,
   );
+  return {
+    items,
+    rosterSource: "FALLBACK",
+    rosterRowCount: items.length,
+    workbookId: null,
+    fallbackReason,
+  };
+}
+
+export async function getEffectivePtmtRoster(): Promise<EffectivePtmtRosterItem[]> {
+  return (await resolveEffectivePtmtRoster()).items;
 }
 
 export async function getRateListReport() {

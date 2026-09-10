@@ -44,7 +44,7 @@ import type { PendingPlanDiagnostics, PendingPlanResolutionRow } from "../lib/in
 import { logger } from "../lib/logger";
 import { reviewedBufferMultiplier } from "../lib/master-products";
 import { getMrpPlanningGate } from "../lib/mrp-control";
-import { getEffectivePtmtRoster } from "../lib/rate-list";
+import { getEffectivePtmtRoster, resolveEffectivePtmtRoster } from "../lib/rate-list";
 import { buildElapsedProductionDays } from "../lib/plant-engine";
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "../lib/plant-lifecycle";
 import { exportPlanPdf } from "../lib/pdf-export";
@@ -3330,7 +3330,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   const [
     stockRows,
     lastMoRows,
-    itemRows,
+    rosterResolution,
     bufferRows,
     avg3MoTotals,
     pendingTotals,
@@ -3339,13 +3339,14 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   ] = await Promise.all([
     loadLatestUploadRowsByKind("current_stock", month),
     loadLatestUploadRowsByKind("last_month_pending", month),
-    getEffectivePtmtRoster(),
+    resolveEffectivePtmtRoster(),
     db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "PTMT")),
     fetchAvg3MoSaleTotals(month),
     Promise.resolve(livePendingCapture.totals),
     fetchLiveOrderTotals(month),
     requireUploadSnapshot("pending_orders", "Current Pending Orders", month),
   ]);
+  const itemRows = rosterResolution.items;
 
   const checks: CheckResult[] = [];
   res.locals.validationChecks = checks;
@@ -3393,6 +3394,11 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     { sourceRole: "pending_current" },
   );
   pendingUploadDiagnostics.pendingPlan = pendingPlanDiagnostics;
+  const livePendingPlanDiagnostics = pendingPlanDiagnosticsFromParsedRows(
+    pendingTotals.pendingRows ?? [],
+    itemRows,
+    { sourceRole: "pending_current_live" },
+  );
 
   // ── 0. Planning-isolation guards (live pending is explicitly allow-listed) ──
   checks.push(...(await buildPlanningIsolationChecks(month, "PTMT")));
@@ -3621,6 +3627,16 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   // in the August 2026 upload (~1,015 silently-zero rows).
   const indepExact = new Map<string, number>();
   const indepByCode = new Map<string, number>();
+  const indepStrictSourcesByExact = new Map<string, Array<{
+    itemCode: string;
+    colour: string;
+    quantity: number;
+  }>>();
+  const indepStrictSourcesByCode = new Map<string, Array<{
+    itemCode: string;
+    colour: string;
+    quantity: number;
+  }>>();
   for (const row of stockRows) {
     const rec = row as Record<string, unknown>;
     const code = normalizeCode(String(rec["Item Code"] ?? "").trim());
@@ -3634,6 +3650,22 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     }
     indepExact.set(`${code}::${colour}`, (indepExact.get(`${code}::${colour}`) ?? 0) + qty);
     indepByCode.set(code, (indepByCode.get(code) ?? 0) + qty);
+    if (qty !== 0) {
+      const source = {
+        itemCode: String(rec["Item Code"] ?? "").trim(),
+        colour: String(rec["Colour"] ?? rec["Color"] ?? "").trim(),
+        quantity: qty,
+      };
+      const exactKey = `${normalizeCodeStrict(code)}::${colour}`;
+      indepStrictSourcesByExact.set(exactKey, [
+        ...(indepStrictSourcesByExact.get(exactKey) ?? []),
+        source,
+      ]);
+      indepStrictSourcesByCode.set(normalizeCodeStrict(code), [
+        ...(indepStrictSourcesByCode.get(normalizeCodeStrict(code)) ?? []),
+        source,
+      ]);
+    }
   }
   // Strict-layer maps: same rows keyed by punctuation-stripped code, so a future
   // upload that writes "A465" where item_master says "A-465" still trips the guard.
@@ -3647,6 +3679,12 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   }
   let stockJoinMisses = 0;       // engine-normalization layer — must be 0
   let stockJoinStrictMisses = 0; // strict layer — baseline 1 (501-S WHITE, hyphen-variant in FG file)
+  const strictJoinPairs: Array<{
+    sourceRole: "current_stock";
+    rosterItemCode: string;
+    rosterColour: string;
+    sourceRows: Array<{ itemCode: string; colour: string; quantity: number }>;
+  }> = [];
   for (const item of itemRows) {
     const isSingleVariant = pendingJoinModeForItem(rosterIndex, item) === "code";
     const engineStock = resolveTotal(stockTotalsForPlan, item.itemCode, item.colour, isSingleVariant);
@@ -3661,7 +3699,17 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     const indepStrict = isSingleVariant
       ? (indepStrictByCode.get(sc) ?? 0)
       : (indepStrictExact.get(`${sc}::${colourKey}`) ?? 0);
-    if (indepStrict !== 0) stockJoinStrictMisses++;
+    if (indepStrict !== 0) {
+      stockJoinStrictMisses++;
+      strictJoinPairs.push({
+        sourceRole: "current_stock",
+        rosterItemCode: item.itemCode,
+        rosterColour: item.colour,
+        sourceRows: isSingleVariant
+          ? indepStrictSourcesByCode.get(sc) ?? []
+          : indepStrictSourcesByExact.get(`${sc}::${colourKey}`) ?? [],
+      });
+    }
   }
   checks.push({
     name: "Stock-join coverage guard (plan rows with Stock=0 but FG non-zero, same key)",
@@ -3796,6 +3844,23 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     }
     : null;
 
+  const rosterEvidence = {
+    rosterSource: rosterResolution.rosterSource,
+    rosterRowCount: rosterResolution.rosterRowCount,
+    workbookId: rosterResolution.workbookId,
+    fallbackReason: rosterResolution.fallbackReason,
+    exclusionFingerprints: {
+      pending_current_live: pendingExclusionFingerprint(livePendingPlanDiagnostics),
+      pending_current: pendingExclusionFingerprint(pendingPlanDiagnostics),
+      pending_last_month: pendingExclusionFingerprint(pendingLastMonthDiagnostics),
+    },
+    strictJoinPairs,
+  };
+  await updatePendingReadSnapshotDiagnostics(pendingReadCaptureId, {
+    ...pendingDiagnostics,
+    ptmtRosterEvidence: rosterEvidence,
+  });
+
   res.json({
     month,
     segment,
@@ -3805,6 +3870,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     failCount,
     checks,
     sourceComparison: ptmtSourceComparison,
+    rosterEvidence,
     itemCoverage: {
       sourceNotInPlan: sourceNotInPlanCodes.sort((a, b) => b.stock - a.stock).slice(0, 50),
       sourceNotInPlanCount: sourceNotInPlanCodes.length,
