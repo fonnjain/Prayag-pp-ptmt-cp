@@ -391,6 +391,7 @@ export default function ProductsPage() {
               <SelectItem value="catalogue">Catalogue</SelectItem>
               <SelectItem value="seed">Seed</SelectItem>
               <SelectItem value="mrp">MRP</SelectItem>
+              <SelectItem value="prayag-planning-tabs">Prayag planning tabs</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -454,6 +455,33 @@ export default function ProductsPage() {
                   <div className="text-muted-foreground">Governed roster July matched</div>
                   <div className="font-semibold">{rateListReport.reconciliation?.matchedQuantity?.toLocaleString() ?? "—"} pcs</div>
                 </div>
+              </div>
+            )}
+            {rateListReport?.prayagPlanningEvidence && (
+              <div className="mt-3 rounded border border-blue-200 bg-blue-50/40 px-3 py-2 text-xs">
+                <div className="font-semibold text-blue-950">Prayag planning-category authority</div>
+                <p className="mt-1 text-blue-900/80">
+                  {rateListReport.prayagPlanningEvidence.status === "loaded"
+                    ? `${Number(rateListReport.prayagPlanningEvidence.mappedCodeCount).toLocaleString()} shared-code mappings (${Number(rateListReport.prayagPlanningEvidence.sharedRowCount).toLocaleString()} shared rows) are applied from the comparison evidence. MRP series remains visible for traceability.`
+                    : "Planning-category evidence is unavailable; no Prayag override is being applied."}
+                </p>
+                {rateListReport.prayagPlanningEvidence.unknownCategories?.length > 0 && (
+                  <p className="mt-1 font-medium text-amber-800">
+                    Unmatched Prayag categories: {rateListReport.prayagPlanningEvidence.unknownCategories.join(", ")}
+                  </p>
+                )}
+                {rateListReport.prayagPlanningEvidence.appOnlyMrpSeries?.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer font-medium text-blue-950">
+                      {Number(rateListReport.prayagPlanningEvidence.appOnlyRowCount ?? rateListReport.prayagPlanningEvidence.appOnlyMrpSeries.length).toLocaleString()} app-only rows · {rateListReport.prayagPlanningEvidence.appOnlyMrpSeries.length.toLocaleString()} unique codes · show MRP series
+                    </summary>
+                    <div className="mt-2 max-h-32 overflow-auto rounded border bg-background px-2 py-1 font-mono text-[10px]">
+                      {rateListReport.prayagPlanningEvidence.appOnlyMrpSeries.map((entry: { code: string; series: string | null }) => (
+                        <div key={entry.code}>{entry.code} · {entry.series ?? "no MRP series"}</div>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </div>
             )}
             {rateListReport?.categorySplit?.after?.length > 0 && (
@@ -900,6 +928,11 @@ export default function ProductsPage() {
                               </span>
                             )}
                           </div>
+                          {(row as ProductListRow & { mrpSeries?: string | null }).mrpSeries && (
+                            <div className="text-[10px] text-muted-foreground font-mono mt-0.5">
+                              MRP series: {(row as ProductListRow & { mrpSeries?: string | null }).mrpSeries}
+                            </div>
+                          )}
                           {row.lastSeenProductionMonth && (
                             <div className="text-[10px] text-muted-foreground font-mono mt-0.5">
                               Seen: {row.lastSeenProductionMonth}

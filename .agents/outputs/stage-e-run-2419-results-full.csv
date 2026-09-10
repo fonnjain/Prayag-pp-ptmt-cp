@@ -1,0 +1,3586 @@
+id,item_code,colour,category,buffer_req,production_plan
+420346,101,IVORY,Accessorise,54,0
+420347,101,WHITE,Accessorise,344,0
+420348,102,IVORY,Accessorise,23.33,0
+420349,102,WHITE,Accessorise,97.33,0
+420350,103,IVORY,Accessorise,617,0
+420351,103,PINK,Accessorise,0,0
+420352,103,WHITE,Accessorise,4403,3869
+420353,104,IVORY,Accessorise,16.67,0
+420354,104,WHITE,Accessorise,204.67,187.67
+420355,105,IVORY,Accessorise,245.33,279.33
+420356,105,WHITE,Accessorise,840,1234
+420357,106,IVORY,Accessorise,0,0
+420358,106,WHITE,Accessorise,0,0
+420359,107,WHITE,Accessorise,164,213
+420360,110,IVORY,Accessorise,0,0
+420361,110,WHITE,Accessorise,62,0
+420362,111,IVORY,Accessorise,150,0
+420363,111,WHITE,Accessorise,410.67,0
+420364,111-H,,Accessorise,0,0
+420365,111-WH,,Accessorise,0,0
+420366,1111,IVORY,Accessorise,16.67,0
+420367,1111,WHITE,Accessorise,106.67,0
+420368,112,IVORY,Accessorise,338.33,0
+420369,112,WHITE,Accessorise,1177.33,868.33
+420370,113,IVORY,Accessorise,55,0
+420371,113,WHITE,Accessorise,693.33,385.33
+420372,114,IVORY,Accessorise,0,0
+420373,114,WHITE,Accessorise,51,0
+420374,115,BLACK,Accessorise,0,0
+420375,115,BROWN,Accessorise,0,0
+420376,115,GREY,Accessorise,0,0
+420377,115,IVORY,Accessorise,127.67,0
+420378,115,O BLUE,Accessorise,0,0
+420379,115,SAPPHIRE,Accessorise,0,0
+420380,115,WHITE,Accessorise,685.33,0
+420381,1151,IVORY,Accessorise,0,0
+420382,1151,WHITE,Accessorise,0,0
+420383,116,IVORY,Accessorise,34,46
+420384,116,WHITE,Accessorise,129.33,194.33
+420385,117,IVORY,Accessorise,0,0
+420386,117,WHITE,Accessorise,92.67,0
+420387,118,IVORY,Accessorise,0,0
+420388,118,WHITE,Accessorise,41.33,0
+420389,118-W,,Accessorise,0,0
+420390,119,IVORY,Accessorise,0,0
+420391,119,WHITE,Accessorise,23.33,15.33
+420392,119-W,IVORY,Accessorise,0,0
+420393,119-W,WHITE,Accessorise,23,14
+420394,1191,IVORY,Accessorise,0,0
+420395,1191,WHITE,Accessorise,29.33,0
+420396,120,BURGUNDY,Cocks Standard,0,0
+420397,120,GREEN,Cocks Standard,0,0
+420398,120,IVORY,Cocks Standard,363.33,377.33
+420399,120,M GREEN,Cocks Standard,0,0
+420400,120,PINK,Cocks Standard,0,0
+420401,120,WHITE,Cocks Standard,1230.33,1723.33
+420402,120-C,BURGUNDY,Cocks Standard,0,0
+420403,120-C,GREEN,Cocks Standard,0,0
+420404,120-C,IVORY,Cocks Standard,0,0
+420405,120-C,M GREEN,Cocks Standard,0,0
+420406,120-C,PINK,Cocks Standard,0,0
+420407,120-C,WHITE,Cocks Standard,2160,3412
+420408,120-M,BURGUNDY,Cocks Standard,0,0
+420409,120-M,GREEN,Cocks Standard,0,0
+420410,120-M,IVORY,Cocks Standard,720,0
+420411,120-M,M GREEN,Cocks Standard,0,0
+420412,120-M,PINK,Cocks Standard,0,0
+420413,120-M,WHITE,Cocks Standard,1980,1150
+420414,120-R,BURGUNDY,Cocks Standard,0,0
+420415,120-R,GREEN,Cocks Standard,0,0
+420416,120-R,IVORY,Cocks Standard,840,214
+420417,120-R,M GREEN,Cocks Standard,0,0
+420418,120-R,PINK,Cocks Standard,0,0
+420419,120-R,WHITE,Cocks Standard,440,340
+420420,120-S,BURGUNDY,Cocks Standard,0,0
+420421,120-S,GREEN,Cocks Standard,0,0
+420422,120-S,IVORY,Cocks Standard,150,8
+420423,120-S,M GREEN,Cocks Standard,0,0
+420424,120-S,PINK,Cocks Standard,0,0
+420425,120-S,WHITE,Cocks Standard,9550.67,10841.67
+420426,120-W,BURGUNDY,Cocks Standard,0,0
+420427,120-W,GREEN,Cocks Standard,0,0
+420428,120-W,IVORY,Cocks Standard,420,0
+420429,120-W,M GREEN,Cocks Standard,0,0
+420430,120-W,PINK,Cocks Standard,0,0
+420431,120-W,WHITE,Cocks Standard,570,0
+420432,120-WS,BURGUNDY,Cocks Standard,0,0
+420433,120-WS,GREEN,Cocks Standard,0,0
+420434,120-WS,IVORY,Cocks Standard,13650,21678
+420435,120-WS,M GREEN,Cocks Standard,0,0
+420436,120-WS,PINK,Cocks Standard,0,0
+420437,120-WS,WHITE,Cocks Standard,35933.33,53137.33
+420438,121,BLUE,Cocks Standard,0,0
+420439,121,BURGUNDY,Cocks Standard,0,0
+420440,121,GREEN,Cocks Standard,0,0
+420441,121,IVORY,Cocks Standard,27974.33,14147.33
+420442,121,M GREEN,Cocks Standard,0,0
+420443,121,PINK,Cocks Standard,72,202
+420444,121,WHITE,Cocks Standard,25206.67,12049.67
+420445,121-1E,,Cocks Standard,0,0
+420446,121-A,IVORY,Cocks Standard,0,0
+420447,121-A,WHITE,Cocks Standard,198,294
+420448,121-AB,BLACK,Cocks Standard,0,0
+420449,121-ABF,BLACK,Cocks Standard,0,0
+420450,121-AF,WHITE,Cocks Standard,0,0
+420451,121-AP,IVORY,Cocks Standard,418,266
+420452,121-AP,WHITE,Cocks Standard,132,21
+420453,121-APF,IVORY,Cocks Standard,0,0
+420454,121-AS,IVORY,Cocks Standard,1100,2057
+420455,121-AS,WHITE,Cocks Standard,116,0
+420456,121-ASF,IVORY,Cocks Standard,0,0
+420457,121-ASF,WHITE,Cocks Standard,0,0
+420458,121-B,BURGUNDY,Cocks Standard,0,0
+420459,121-B,GREEN,Cocks Standard,0,0
+420460,121-B,IVORY,Cocks Standard,0,0
+420461,121-B,M GREEN,Cocks Standard,0,0
+420462,121-B,PINK,Cocks Standard,0,0
+420463,121-B,WHITE,Cocks Standard,137,0
+420464,121-BF,WHITE,Cocks Standard,180,226
+420465,121-C,,Cocks Standard,132,132
+420466,121-C,BURGUNDY,Cocks Standard,0,0
+420467,121-C,GREEN,Cocks Standard,0,0
+420468,121-C,IVORY,Cocks Standard,0,0
+420469,121-C,M GREEN,Cocks Standard,0,0
+420470,121-C,WHITE,Cocks Standard,992.67,3.67
+420471,121-CF,,Cocks Standard,44,110
+420472,121-D,,Cocks Standard,0,0
+420473,121-E,BURGUNDY,Cocks Standard,0,0
+420474,121-E,GREEN,Cocks Standard,0,0
+420475,121-E,IVORY,Cocks Standard,0,0
+420476,121-E,M GREEN,Cocks Standard,0,0
+420477,121-E,PINK,Cocks Standard,0,0
+420478,121-E,WHITE,Cocks Standard,798.33,644.33
+420479,121-EB,IVORY,Cocks Standard,396,0
+420480,121-EB,WHITE,Cocks Standard,550,816
+420481,121-EBF,,Cocks Standard,0,0
+420482,121-F,IVORY,Cocks Standard,0,0
+420483,121-F,WHITE,Cocks Standard,36,32
+420484,121-FB,BLUE,Cocks Standard,0,0
+420485,121-FHG,,Cocks Standard,0,0
+420486,121-FHP,,Cocks Standard,0,0
+420487,121-FHR,,Cocks Standard,0,0
+420488,121-FHW,,Cocks Standard,3.33,13.33
+420489,121-FP,,Cocks Standard,0,0
+420490,121-H,BURGUNDY,Cocks Standard,0,0
+420491,121-H,GREEN,Cocks Standard,0,0
+420492,121-H,IVORY,Cocks Standard,330,0
+420493,121-H,M GREEN,Cocks Standard,0,0
+420494,121-H,PINK,Cocks Standard,0,0
+420495,121-H,WHITE,Cocks Standard,1166,0
+420496,121-HG,,Cocks Premium,0,0
+420497,121-HP,,Cocks Premium,0,0
+420498,121-HR,223,Cocks Premium,220,94
+420499,121-HW,,Cocks Premium,66,68
+420500,121-I,IVORY,Cocks Standard,0,0
+420501,121-I,WHITE,Cocks Standard,0,0
+420502,121-IG,,Cocks Premium,16,0
+420503,121-IP,,Cocks Premium,16,0
+420504,121-IR,,Cocks Premium,64,41
+420505,121-IW,,Cocks Premium,0,0
+420506,121-JJM,IVORY,Cocks Standard,0,0
+420507,121-JJM,PINK,Cocks Standard,0,0
+420508,121-JJM,WHITE,Cocks Standard,0,0
+420509,121-K,WHITE,Cocks Standard,66,0
+420510,121-KF,WHITE,Cocks Standard,0,0
+420511,121-L,IVORY,Cocks Standard,0,0
+420512,121-L,WHITE,Cocks Standard,0,0
+420513,121-LG,,Cocks Premium,0,0
+420514,121-LP,,Cocks Premium,0,0
+420515,121-LR,,Cocks Premium,0,0
+420516,121-LSF,,Cocks Standard,0,0
+420517,121-LSFB,BLUE,Cocks Standard,36,8
+420518,121-LW,,Cocks Premium,0,0
+420519,121-N,,Cocks Standard,0,0
+420520,121-O,,Cocks Standard,0,2
+420521,121-O,BLUE,Cocks Standard,0,0
+420522,121-O,BURGUNDY,Cocks Standard,0,0
+420523,121-O,GREEN,Cocks Standard,0,0
+420524,121-O,IVORY,Cocks Standard,3276,4675
+420525,121-O,M GREEN,Cocks Standard,0,0
+420526,121-O,PINK,Cocks Standard,756,1084
+420527,121-O,WHITE,Cocks Standard,13004,3974
+420528,121-P,BURGUNDY,Cocks Standard,0,0
+420529,121-P,GREEN,Cocks Standard,0,0
+420530,121-P,IVORY,Cocks Standard,180,0
+420531,121-P,M GREEN,Cocks Standard,0,0
+420532,121-P,PINK,Cocks Standard,0,0
+420533,121-P,WHITE,Cocks Standard,156,266
+420534,121-PF,,Cocks Standard,0,0
+420535,121-PR,,Cocks Standard,0,0
+420536,121-R,BURGUNDY,Cocks Standard,0,0
+420537,121-R,GREEN,Cocks Standard,0,0
+420538,121-R,IVORY,Cocks Standard,256,606
+420539,121-R,M GREEN,Cocks Standard,0,0
+420540,121-R,PINK,Cocks Standard,0,0
+420541,121-R,WHITE,Cocks Standard,133,128
+420542,121-RG,,Cocks Premium,40,231
+420543,121-RP,,Cocks Premium,0,0
+420544,121-RR,,Cocks Premium,37,12
+420545,121-RW,,Cocks Premium,32,30
+420546,121-S,BURGUNDY,Cocks Standard,0,0
+420547,121-S,GREEN,Cocks Standard,0,0
+420548,121-S,IVORY,Cocks Standard,612,528
+420549,121-S,M GREEN,Cocks Standard,0,0
+420550,121-S,PINK,Cocks Standard,0,0
+420551,121-S,WHITE,Cocks Standard,648,0
+420552,121-SG,,Cocks Premium,6.67,0
+420553,121-SP,,Cocks Premium,396,856
+420554,121-SR,,Cocks Premium,2225.67,800.67
+420555,121-SW,,Cocks Premium,0,0
+420556,121-V,BURGUNDY,Cocks Standard,0,0
+420557,121-V,GREEN,Cocks Standard,0,0
+420558,121-V,IVORY,Cocks Standard,216,30
+420559,121-V,M GREEN,Cocks Standard,0,0
+420560,121-V,PINK,Cocks Standard,0,0
+420561,121-V,WHITE,Cocks Standard,0,0
+420562,121-VG,,Cocks Premium,0,0
+420563,121-VP,,Cocks Premium,396,648
+420564,121-VR,,Cocks Premium,108,8
+420565,121-VW,,Cocks Premium,0,0
+420566,121-W,,Cocks Standard,0,0
+420567,122,,Cocks Standard,0,0
+420568,122-O,BURGUNDY,Cocks Standard,0,0
+420569,122-O,GREEN,Cocks Standard,0,0
+420570,122-O,IVORY,Cocks Standard,0,0
+420571,122-O,M GREEN,Cocks Standard,0,0
+420572,122-O,PINK,Cocks Standard,0,0
+420573,122-O,WHITE,Cocks Standard,0,0
+420574,123,BLUE,Cocks Standard,20,0
+420575,123,BURGUNDY,Cocks Standard,0,0
+420576,123,GREEN,Cocks Standard,0,0
+420577,123,IVORY,Cocks Standard,12491.67,8839.67
+420578,123,M GREEN,Cocks Standard,0,0
+420579,123,PINK,Cocks Standard,180,25
+420580,123,WHITE,Cocks Standard,3876.67,0
+420581,123-3E,,Cocks Standard,0,0
+420582,123-3U,,Cocks Standard,0,0
+420583,123-A,IVORY,Cocks Standard,0,0
+420584,123-A,WHITE,Cocks Standard,20,0
+420585,123-AB,BLACK,Cocks Standard,0,0
+420586,123-ABF,BLACK,Cocks Standard,0,0
+420587,123-ABN,,Cocks Standard,0,0
+420588,123-AF,IVORY,Cocks Standard,0,0
+420589,123-AF,WHITE,Cocks Standard,61.33,40.33
+420590,123-AN,WHITE,Cocks Standard,0,0
+420591,123-B,,Cocks Standard,0,0
+420592,123-C,BURGUNDY,Cocks Standard,0,0
+420593,123-C,GREEN,Cocks Standard,0,0
+420594,123-C,IVORY,Cocks Standard,0,0
+420595,123-C,M GREEN,Cocks Standard,0,0
+420596,123-C,PINK,Cocks Standard,0,0
+420597,123-C,WHITE,Cocks Standard,1361.67,718.67
+420598,123-CF,BURGUNDY,Cocks Standard,0,0
+420599,123-CF,GREEN,Cocks Standard,0,0
+420600,123-CF,IVORY,Cocks Standard,0,0
+420601,123-CF,M GREEN,Cocks Standard,0,0
+420602,123-CF,PINK,Cocks Standard,0,0
+420603,123-CF,WHITE,Cocks Standard,546,531
+420604,123-CN,BURGUNDY,Cocks Standard,0,0
+420605,123-CN,GREEN,Cocks Standard,0,0
+420606,123-CN,IVORY,Cocks Standard,0,0
+420607,123-CN,M GREEN,Cocks Standard,0,0
+420608,123-CN,PINK,Cocks Standard,0,0
+420609,123-CN,WHITE,Cocks Standard,0,0
+420610,123-D,BURGUNDY,Cocks Standard,0,0
+420611,123-D,GREEN,Cocks Standard,0,0
+420612,123-D,IVORY,Cocks Standard,44,0
+420613,123-D,M GREEN,Cocks Standard,0,0
+420614,123-D,PINK,Cocks Standard,0,0
+420615,123-D,WHITE,Cocks Standard,44,64
+420616,123-DB,BLACK,Cocks Standard,308,564
+420617,123-DG,33,Cocks Premium,11,0
+420618,123-DP,,Cocks Premium,36.33,0
+420619,123-DR,61,Cocks Premium,429,293
+420620,123-DW,,Cocks Premium,11,0
+420621,123-E,BURGUNDY,Cocks Standard,0,0
+420622,123-E,GREEN,Cocks Standard,0,0
+420623,123-E,IVORY,Cocks Standard,0,0
+420624,123-E,M GREEN,Cocks Standard,0,0
+420625,123-E,PINK,Cocks Standard,0,0
+420626,123-E,WHITE,Cocks Standard,9,0
+420627,123-EF,BURGUNDY,Cocks Standard,0,0
+420628,123-EF,GREEN,Cocks Standard,0,0
+420629,123-EF,IVORY,Cocks Standard,0,0
+420630,123-EF,M GREEN,Cocks Standard,0,0
+420631,123-EF,PINK,Cocks Standard,0,0
+420632,123-EF,WHITE,Cocks Standard,0,0
+420633,123-EN,BURGUNDY,Cocks Standard,0,0
+420634,123-EN,GREEN,Cocks Standard,0,0
+420635,123-EN,IVORY,Cocks Standard,0,0
+420636,123-EN,M GREEN,Cocks Standard,0,0
+420637,123-EN,PINK,Cocks Standard,0,0
+420638,123-EN,WHITE,Cocks Standard,0,0
+420639,123-F,BURGUNDY,Cocks Standard,0,0
+420640,123-F,GREEN,Cocks Standard,0,0
+420641,123-F,IVORY,Cocks Standard,61.33,0
+420642,123-F,M GREEN,Cocks Standard,0,0
+420643,123-F,PINK,Cocks Standard,0,0
+420644,123-F,WHITE,Cocks Standard,466,495
+420645,123-FH,IVORY,Unclassified,,0
+420646,123-FH,IVORY,Unclassified,,0
+420647,123-FH,WHITE,Unclassified,,0
+420648,123-FHG,,Cocks Premium,0,0
+420649,123-FHP,,Cocks Premium,0,0
+420650,123-FHR,,Cocks Premium,0,0
+420651,123-FHW,,Cocks Premium,0,0
+420652,123-FP,BURGUNDY,Cocks Standard,0,0
+420653,123-FP,GREEN,Cocks Standard,0,0
+420654,123-FP,IVORY,Cocks Standard,0,0
+420655,123-FP,M GREEN,Cocks Standard,0,0
+420656,123-FP,PINK,Cocks Standard,0,0
+420657,123-FP,WHITE,Cocks Standard,18.67,11.67
+420658,123-H,BURGUNDY,Cocks Standard,0,0
+420659,123-H,GREEN,Cocks Standard,0,0
+420660,123-H,IVORY,Cocks Standard,0,0
+420661,123-H,M GREEN,Cocks Standard,0,0
+420662,123-H,PINK,Cocks Standard,0,0
+420663,123-H,WHITE,Cocks Standard,980,0
+420664,123-HG,,Cocks Premium,20,0
+420665,123-HN,,Unclassified,,0
+420666,123-HNG,,Cocks Premium,0,0
+420667,123-HNP,,Cocks Premium,0,0
+420668,123-HNR,,Cocks Premium,0,0
+420669,123-HNW,,Cocks Premium,0,0
+420670,123-HP,,Cocks Premium,0,0
+420671,123-HR,,Cocks Premium,20,14
+420672,123-HW,,Cocks Premium,40,0
+420673,123-I,IVORY,Cocks Standard,0,0
+420674,123-I,WHITE,Cocks Standard,143,111
+420675,123-IG,,Cocks Premium,11,22
+420676,123-IP,,Cocks Premium,0,0
+420677,123-IR,,Cocks Premium,0,0
+420678,123-IW,,Cocks Premium,0,0
+420679,123-K,WHITE,Cocks Standard,820,986
+420680,123-KF,WHITE,Cocks Standard,0.33,0
+420681,123-KN,WHITE,Cocks Standard,0,0
+420682,123-L,IVORY,Cocks Standard,0,0
+420683,123-L,WHITE,Cocks Standard,0,0
+420684,123-LG,,Cocks Premium,0,0
+420685,123-LP,,Cocks Premium,0,0
+420686,123-LR,,Cocks Premium,0,0
+420687,123-LS,WHITE,Cocks Standard,80,51
+420688,123-LSB,BLUE,Cocks Standard,0,450
+420689,123-LSF,IVORY,Cocks Standard,0,0
+420690,123-LSFB,BLUE,Cocks Standard,15.33,0
+420691,123-LSN,WHITE,Cocks Standard,0,0
+420692,123-LSNB,BLUE,Cocks Standard,0,0
+420693,123-LW,,Cocks Premium,11,0
+420694,123-N,BURGUNDY,Cocks Standard,0,0
+420695,123-N,GREEN,Cocks Standard,0,0
+420696,123-N,IVORY,Cocks Standard,0,0
+420697,123-N,M GREEN,Cocks Standard,0,0
+420698,123-N,PINK,Cocks Standard,0,0
+420699,123-N,WHITE,Cocks Standard,38,0
+420700,123-NN,IVORY,Cocks Standard,0,0
+420701,123-NN,WHITE,Cocks Standard,90.33,56.33
+420702,123-NNB,,Cocks Premium,198,355
+420703,123-NNG,,Cocks Premium,54.33,54.33
+420704,123-NNP,,Cocks Premium,54,41
+420705,123-NNR,,Cocks Premium,144,0
+420706,123-NNW,,Cocks Premium,54,28
+420707,123-O,BURGUNDY,Cocks Standard,0,0
+420708,123-O,GREEN,Cocks Standard,0,0
+420709,123-O,IVORY,Cocks Standard,20,0
+420710,123-O,M GREEN,Cocks Standard,0,0
+420711,123-O,PINK,Cocks Standard,0,0
+420712,123-O,WHITE,Cocks Standard,973.67,668.67
+420713,123-ON,BURGUNDY,Cocks Standard,0,0
+420714,123-ON,GREEN,Cocks Standard,0,0
+420715,123-ON,IVORY,Cocks Standard,0,0
+420716,123-ON,M GREEN,Cocks Standard,0,0
+420717,123-ON,PINK,Cocks Standard,0,0
+420718,123-ON,WHITE,Cocks Standard,20,0
+420719,123-P,BURGUNDY,Cocks Standard,0,0
+420720,123-P,GREEN,Cocks Standard,0,0
+420721,123-P,IVORY,Cocks Standard,30.67,23.67
+420722,123-P,M GREEN,Cocks Standard,0,0
+420723,123-P,PINK,Cocks Standard,0,0
+420724,123-P,WHITE,Cocks Standard,106,282
+420725,123-PN,BURGUNDY,Cocks Standard,0,0
+420726,123-PN,GREEN,Cocks Standard,0,0
+420727,123-PN,IVORY,Cocks Standard,0,0
+420728,123-PN,M GREEN,Cocks Standard,0,0
+420729,123-PN,PINK,Cocks Standard,0,0
+420730,123-PN,WHITE,Cocks Standard,0,0
+420731,123-Q,BURGUNDY,Cocks Standard,0,0
+420732,123-Q,GREEN,Cocks Standard,0,0
+420733,123-Q,IVORY,Cocks Standard,124.33,76.33
+420734,123-Q,M GREEN,Cocks Standard,0,0
+420735,123-Q,PINK,Cocks Standard,0,0
+420736,123-Q,WHITE,Cocks Standard,319,0
+420737,123-QAB,,Cocks Standard,55,138
+420738,123-QB,,Cocks Standard,44,41
+420739,123-QG,27,Cocks Premium,77,0
+420740,123-QP,,Cocks Premium,77,0
+420741,123-QR,376,Cocks Premium,935.67,597.67
+420742,123-QW,,Cocks Premium,33,0
+420743,123-R,BURGUNDY,Cocks Standard,0,0
+420744,123-R,GREEN,Cocks Standard,0,0
+420745,123-R,IVORY,Cocks Standard,11,0
+420746,123-R,M GREEN,Cocks Standard,0,0
+420747,123-R,PINK,Cocks Standard,0,0
+420748,123-R,WHITE,Cocks Standard,11,0
+420749,123-RG,17,Cocks Premium,22,0
+420750,123-RP,,Cocks Premium,0,0
+420751,123-RR,,Cocks Premium,22,50
+420752,123-RW,,Cocks Premium,0,0
+420753,123-S,IVORY,Cocks Standard,216,220
+420754,123-S,WHITE,Cocks Standard,216,80
+420755,123-U,BURGUNDY,Cocks Standard,0,0
+420756,123-U,GREEN,Cocks Standard,0,0
+420757,123-U,IVORY,Cocks Standard,0,0
+420758,123-U,M GREEN,Cocks Standard,0,0
+420759,123-U,PINK,Cocks Standard,0,0
+420760,123-U,WHITE,Cocks Standard,132,223
+420761,123-UG,,Cocks Premium,44,0
+420762,123-UP,,Cocks Premium,11,0
+420763,123-UR,88,Cocks Premium,187,76
+420764,123-UW,,Cocks Premium,0,0
+420765,123-WS,IVORY,Cocks Standard,648,352
+420766,123-WS,WHITE,Cocks Standard,1224,288
+420767,1231,BURGUNDY,Cocks Standard,0,0
+420768,1231,GREEN,Cocks Standard,0,0
+420769,1231,IVORY,Cocks Standard,0,0
+420770,1231,M GREEN,Cocks Standard,0,0
+420771,1231,PINK,Cocks Standard,0,0
+420772,1231,WHITE,Cocks Standard,140,0
+420773,1231-F,BURGUNDY,Cocks Standard,0,0
+420774,1231-F,GREEN,Cocks Standard,0,0
+420775,1231-F,IVORY,Cocks Standard,0,0
+420776,1231-F,M GREEN,Cocks Standard,0,0
+420777,1231-F,PINK,Cocks Standard,0,0
+420778,1231-F,WHITE,Cocks Standard,15.33,0
+420779,1231-N,BURGUNDY,Cocks Standard,0,0
+420780,1231-N,GREEN,Cocks Standard,0,0
+420781,1231-N,IVORY,Cocks Standard,0,0
+420782,1231-N,M GREEN,Cocks Standard,0,0
+420783,1231-N,PINK,Cocks Standard,0,0
+420784,1231-N,WHITE,Cocks Standard,0,0
+420785,1231F,,Cocks Standard,0,0
+420786,124,BLUE,Cocks Standard,0,0
+420787,124,BURGUNDY,Cocks Standard,0,0
+420788,124,GREEN,Cocks Standard,0,0
+420789,124,IVORY,Cocks Standard,4960,0
+420790,124,M GREEN,Cocks Standard,0,0
+420791,124,PINK,Cocks Standard,0,0
+420792,124,WHITE,Cocks Standard,9815.33,3982.33
+420793,124-4E,,Cocks Standard,0,0
+420794,124-4U,,Cocks Standard,0,0
+420795,124-A,IVORY,Cocks Standard,0,0
+420796,124-A,WHITE,Cocks Standard,0,0
+420797,124-AB,BLACK,Cocks Standard,0,0
+420798,124-ABF,BLACK,Cocks Standard,0,0
+420799,124-AF,IVORY,Cocks Standard,0,0
+420800,124-AF,WHITE,Cocks Standard,0,0
+420801,124-AP,IVORY,Cocks Standard,184,68
+420802,124-AP,WHITE,Cocks Standard,0,0
+420803,124-AS,IVORY,Cocks Standard,72,49
+420804,124-AS,WHITE,Cocks Standard,87.33,0
+420805,124-B,BURGUNDY,Cocks Standard,0,0
+420806,124-B,GREEN,Cocks Standard,0,0
+420807,124-B,IVORY,Cocks Standard,144,118
+420808,124-B,M GREEN,Cocks Standard,0,0
+420809,124-B,PINK,Cocks Standard,0,0
+420810,124-B,WHITE,Cocks Standard,162,66
+420811,124-BF,IVORY,Cocks Standard,18,63
+420812,124-BF,WHITE,Cocks Standard,33.33,0
+420813,124-C,BURGUNDY,Cocks Standard,0,0
+420814,124-C,GREEN,Cocks Standard,0,0
+420815,124-C,IVORY,Cocks Standard,0,0
+420816,124-C,M GREEN,Cocks Standard,0,0
+420817,124-C,PINK,Cocks Standard,0,0
+420818,124-C,WHITE,Cocks Standard,2187.67,917.67
+420819,124-CF,WHITE,Cocks Standard,444.67,196.67
+420820,124-D,IVORY,Cocks Standard,0,0
+420821,124-D,WHITE,Cocks Standard,139.33,148.33
+420822,124-DB,BLACK,Cocks Standard,209,366
+420823,124-DG,GOLD,Cocks Standard,0,0
+420824,124-DP,,Cocks Premium,22,0
+420825,124-DR,R BLUE,Cocks Standard,33,0
+420826,124-DW,WINE,Cocks Standard,0,30
+420827,124-E,BURGUNDY,Cocks Standard,0,0
+420828,124-E,GREEN,Cocks Standard,0,0
+420829,124-E,IVORY,Cocks Standard,0,0
+420830,124-E,M GREEN,Cocks Standard,0,0
+420831,124-E,PINK,Cocks Standard,0,0
+420832,124-E,WHITE,Cocks Standard,288,0
+420833,124-EB,IVORY,Cocks Standard,54,0
+420834,124-EB,WHITE,Cocks Standard,234,627
+420835,124-EF,BURGUNDY,Cocks Standard,0,0
+420836,124-EF,GREEN,Cocks Standard,0,0
+420837,124-EF,IVORY,Cocks Standard,0,0
+420838,124-EF,M GREEN,Cocks Standard,0,0
+420839,124-EF,PINK,Cocks Standard,0,0
+420840,124-EF,WHITE,Cocks Standard,0,0
+420841,124-F,BURGUNDY,Cocks Standard,0,0
+420842,124-F,GREEN,Cocks Standard,0,0
+420843,124-F,IVORY,Cocks Standard,276,0
+420844,124-F,M GREEN,Cocks Standard,0,0
+420845,124-F,PINK,Cocks Standard,15.33,0
+420846,124-F,WHITE,Cocks Standard,832,879
+420847,124-FH,IVORY,Unclassified,,0
+420848,124-FH,IVORY,Unclassified,,0
+420849,124-FH,WHITE,Unclassified,,0
+420850,124-FHG,,Cocks Premium,0,0
+420851,124-FHP,,Cocks Premium,0,0
+420852,124-FHR,,Cocks Premium,0,0
+420853,124-FHW,,Cocks Premium,3.33,0
+420854,124-FP,BURGUNDY,Cocks Standard,0,0
+420855,124-FP,GREEN,Cocks Standard,0,0
+420856,124-FP,IVORY,Cocks Standard,0,0
+420857,124-FP,M GREEN,Cocks Standard,0,0
+420858,124-FP,PINK,Cocks Standard,0,0
+420859,124-FP,WHITE,Cocks Standard,1.33,0
+420860,124-H,BURGUNDY,Cocks Standard,0,0
+420861,124-H,GREEN,Cocks Standard,0,0
+420862,124-H,IVORY,Cocks Standard,306.67,0
+420863,124-H,M GREEN,Cocks Standard,0,0
+420864,124-H,PINK,Cocks Standard,0,0
+420865,124-H,WHITE,Cocks Standard,1905.67,0
+420866,124-HG,,Cocks Premium,15.33,0
+420867,124-HP,,Cocks Premium,0,0
+420868,124-HR,,Cocks Premium,82,69
+420869,124-HW,,Cocks Premium,30.67,0
+420870,124-I,IVORY,Cocks Standard,0,0
+420871,124-I,WHITE,Cocks Standard,0,0
+420872,124-IG,,Cocks Premium,0,0
+420873,124-IP,,Cocks Premium,0,0
+420874,124-IR,,Cocks Premium,0,0
+420875,124-IW,,Cocks Premium,0,0
+420876,124-K,WHITE,Cocks Standard,950.67,1822.67
+420877,124-KF,WHITE,Cocks Standard,0,0
+420878,124-L,WHITE,Cocks Standard,0,0
+420879,124-LG,,Cocks Premium,0,0
+420880,124-LP,,Cocks Premium,0,0
+420881,124-LR,,Cocks Premium,0,0
+420882,124-LS,WHITE,Cocks Standard,61.33,0
+420883,124-LSB,BLUE,Cocks Standard,0,120
+420884,124-LSF,WHITE,Cocks Standard,0,0
+420885,124-LSFB,BLUE,Cocks Standard,7.67,0
+420886,124-LW,,Cocks Premium,0,0
+420887,124-N,IVORY,Cocks Standard,0,0
+420888,124-N,WHITE,Cocks Standard,66,11
+420889,124-NB,,Cocks Premium,121,218
+420890,124-NG,,Cocks Premium,44.33,0
+420891,124-NP,,Cocks Premium,55,0
+420892,124-NR,,Cocks Premium,176,0
+420893,124-NW,,Cocks Premium,11,0
+420894,124-O,BURGUNDY,Cocks Standard,0,0
+420895,124-O,GREEN,Cocks Standard,0,0
+420896,124-O,IVORY,Cocks Standard,1520,0
+420897,124-O,M GREEN,Cocks Standard,0,0
+420898,124-O,PINK,Cocks Standard,0,0
+420899,124-O,WHITE,Cocks Standard,3600.33,414.33
+420900,124-P,BURGUNDY,Cocks Standard,0,0
+420901,124-P,GREEN,Cocks Standard,0,0
+420902,124-P,IVORY,Cocks Standard,276,343
+420903,124-P,M GREEN,Cocks Standard,0,0
+420904,124-P,PINK,Cocks Standard,0,0
+420905,124-P,WHITE,Cocks Standard,146,0
+420906,124-PR,,Cocks Standard,0,0
+420907,124-R,BURGUNDY,Cocks Standard,0,0
+420908,124-R,GREEN,Cocks Standard,0,0
+420909,124-R,IVORY,Cocks Standard,0,0
+420910,124-R,M GREEN,Cocks Standard,0,0
+420911,124-R,PINK,Cocks Standard,0,0
+420912,124-R,WHITE,Cocks Standard,80,240
+420913,124-RG,,Cocks Premium,60,55
+420914,124-RP,,Cocks Premium,0,0
+420915,124-RR,,Cocks Premium,20,79
+420916,124-RW,,Cocks Premium,0,0
+420917,124-S,BURGUNDY,Cocks Standard,0,0
+420918,124-S,GREEN,Cocks Standard,0,0
+420919,124-S,IVORY,Cocks Standard,216,0
+420920,124-S,M GREEN,Cocks Standard,0,0
+420921,124-S,PINK,Cocks Standard,0,0
+420922,124-S,WHITE,Cocks Standard,353.33,235.33
+420923,124-SG,,Cocks Premium,84.67,155.67
+420924,124-SP,,Cocks Premium,72,233
+420925,124-SR,,Cocks Premium,1120.67,1460.67
+420926,124-SW,,Cocks Premium,0,0
+420927,124-U,BURGUNDY,Cocks Standard,0,0
+420928,124-U,GREEN,Cocks Standard,0,0
+420929,124-U,IVORY,Cocks Standard,0,0
+420930,124-U,M GREEN,Cocks Standard,0,0
+420931,124-U,PINK,Cocks Standard,0,0
+420932,124-U,WHITE,Cocks Standard,149,375
+420933,124-UG,,Cocks Premium,0,0
+420934,124-UP,,Cocks Premium,11,0
+420935,124-UR,32,Cocks Premium,81,49
+420936,124-UW,,Cocks Premium,0,0
+420937,124-V,BURGUNDY,Cocks Standard,0,0
+420938,124-V,GREEN,Cocks Standard,0,0
+420939,124-V,IVORY,Cocks Standard,0,0
+420940,124-V,M GREEN,Cocks Standard,0,0
+420941,124-V,PINK,Cocks Standard,0,0
+420942,124-V,WHITE,Cocks Standard,0,0
+420943,124-VG,,Cocks Premium,0,0
+420944,124-VP,54,Cocks Premium,54,0
+420945,124-VR,,Cocks Premium,54,31
+420946,124-VW,,Cocks Premium,0,0
+420947,124-W,IVORY,Cocks Standard,100,0
+420948,124-W,WHITE,Cocks Standard,1080,1752
+420949,124-WS,IVORY,Cocks Standard,0,0
+420950,124-WS,WHITE,Cocks Standard,340,386
+420951,1241,BURGUNDY,Cocks Standard,0,0
+420952,1241,GREEN,Cocks Standard,0,0
+420953,1241,IVORY,Cocks Standard,398.67,490.67
+420954,1241,M GREEN,Cocks Standard,0,0
+420955,1241,PINK,Cocks Standard,0,0
+420956,1241,WHITE,Cocks Standard,506,0
+420957,1241-F,BURGUNDY,Cocks Standard,0,0
+420958,1241-F,GREEN,Cocks Standard,0,0
+420959,1241-F,IVORY,Cocks Standard,0,0
+420960,1241-F,M GREEN,Cocks Standard,0,0
+420961,1241-F,PINK,Cocks Standard,0,0
+420962,1241-F,WHITE,Cocks Standard,0.67,0
+420963,125-O,BURGUNDY,Cocks Standard,0,0
+420964,125-O,GREEN,Cocks Standard,0,0
+420965,125-O,IVORY,Cocks Standard,2095.33,3019.33
+420966,125-O,M GREEN,Cocks Standard,0,0
+420967,125-O,PINK,Cocks Standard,0,0
+420968,125-O,WHITE,Cocks Standard,528,887
+420969,125-S,IVORY,Cocks Standard,126,105
+420970,125-S,WHITE,Cocks Standard,54,0
+420971,125-WS,IVORY,Cocks Standard,180,0
+420972,125-WS,WHITE,Cocks Standard,252,170
+420973,126,,Accessorise,0,0
+420974,126,IVORY,Accessorise,43.33,43.33
+420975,126,WHITE,Accessorise,83.33,83.33
+420976,126-I,,Accessorise,0,0
+420977,126-SQ,,Unclassified,,0
+420978,126-SQ,,Unclassified,,0
+420979,126-SQ,IVORY,Unclassified,,0
+420980,126-SQ,PINK,Unclassified,,0
+420981,126-SQ,WHITE,Unclassified,,0
+420982,127,BURGUNDY,Cocks Standard,0,0
+420983,127,GREEN,Cocks Standard,0,0
+420984,127,IVORY,Cocks Standard,1414.67,2142.67
+420985,127,M GREEN,Cocks Standard,0,0
+420986,127,PINK,Cocks Standard,0,0
+420987,127,WHITE,Cocks Standard,2497.33,3720.33
+420988,127-7E,,Cocks Standard,0,0
+420989,127-A,WHITE,Cocks Standard,22,0
+420990,127-AB,,Cocks Standard,0,0
+420991,127-AP,IVORY,Cocks Standard,0,0
+420992,127-AP,WHITE,Cocks Standard,0,0
+420993,127-AS,IVORY,Cocks Standard,132,121
+420994,127-AS,WHITE,Cocks Standard,44,0
+420995,127-B,BURGUNDY,Cocks Standard,0,0
+420996,127-B,GREEN,Cocks Standard,0,0
+420997,127-B,IVORY,Cocks Standard,88,60
+420998,127-B,M GREEN,Cocks Standard,0,0
+420999,127-B,PINK,Cocks Standard,0,0
+421000,127-B,WHITE,Cocks Standard,44,0
+421001,127-C,BURGUNDY,Cocks Standard,0,0
+421002,127-C,GREEN,Cocks Standard,0,0
+421003,127-C,IVORY,Cocks Standard,0,0
+421004,127-C,M GREEN,Cocks Standard,0,0
+421005,127-C,PINK,Cocks Standard,0,0
+421006,127-C,WHITE,Cocks Standard,990,1559
+421007,127-D,WHITE,Cocks Standard,11,29
+421008,127-DB,BLACK,Cocks Standard,99,308
+421009,127-DG,,Cocks Standard,0,0
+421010,127-DP,PEACH,Cocks Standard,13,0
+421011,127-DR,R BLUE,Cocks Standard,0,0
+421012,127-DW,,Cocks Standard,0,33
+421013,127-E,BURGUNDY,Cocks Standard,0,0
+421014,127-E,GREEN,Cocks Standard,0,0
+421015,127-E,IVORY,Cocks Standard,0,0
+421016,127-E,M GREEN,Cocks Standard,0,0
+421017,127-E,PINK,Cocks Standard,0,0
+421018,127-E,WHITE,Cocks Standard,23,0
+421019,127-EB,IVORY,Cocks Standard,0,0
+421020,127-EB,WHITE,Cocks Standard,198,428
+421021,127-H,BURGUNDY,Cocks Standard,0,0
+421022,127-H,GREEN,Cocks Standard,0,0
+421023,127-H,IVORY,Cocks Standard,0,0
+421024,127-H,M GREEN,Cocks Standard,0,0
+421025,127-H,PINK,Cocks Standard,0,0
+421026,127-H,WHITE,Cocks Standard,484,0
+421027,127-HG,,Cocks Premium,22,83
+421028,127-HP,,Cocks Premium,0,0
+421029,127-HR,,Cocks Premium,0,0
+421030,127-HW,,Cocks Premium,22,72
+421031,127-K,WHITE,Cocks Standard,330,1202
+421032,127-LS,WHITE,Cocks Standard,0,0
+421033,127-LSB,BLUE,Cocks Standard,11,375
+421034,127-O,BURGUNDY,Cocks Standard,0,0
+421035,127-O,GREEN,Cocks Standard,0,0
+421036,127-O,IVORY,Cocks Standard,110,281
+421037,127-O,M GREEN,Cocks Standard,0,0
+421038,127-O,PINK,Cocks Standard,0,0
+421039,127-O,WHITE,Cocks Standard,814,698
+421040,127-P,BURGUNDY,Cocks Standard,0,0
+421041,127-P,GREEN,Cocks Standard,0,0
+421042,127-P,IVORY,Cocks Standard,22,0
+421043,127-P,M GREEN,Cocks Standard,0,0
+421044,127-P,PINK,Cocks Standard,0,0
+421045,127-P,WHITE,Cocks Standard,220,608
+421046,127-S,BURGUNDY,Cocks Standard,0,0
+421047,127-S,GREEN,Cocks Standard,0,0
+421048,127-S,IVORY,Cocks Standard,81,20
+421049,127-S,M GREEN,Cocks Standard,0,0
+421050,127-S,PINK,Cocks Standard,0,0
+421051,127-S,WHITE,Cocks Standard,154,0
+421052,127-SG,,Cocks Premium,3.33,0
+421053,127-SP,,Cocks Premium,0,0
+421054,127-SR,,Cocks Premium,352,305
+421055,127-SW,,Cocks Premium,0,0
+421056,127-V,BURGUNDY,Cocks Standard,0,0
+421057,127-V,GREEN,Cocks Standard,0,0
+421058,127-V,IVORY,Cocks Standard,0,0
+421059,127-V,M GREEN,Cocks Standard,0,0
+421060,127-V,PINK,Cocks Standard,0,0
+421061,127-V,WHITE,Cocks Standard,0,0
+421062,127-VG,,Cocks Premium,0,0
+421063,127-VP,,Cocks Premium,0,0
+421064,127-VR,,Cocks Premium,0,0
+421065,127-VW,,Cocks Premium,0,0
+421066,128,IVORY,Accessorise,1280,1298
+421067,128,PINK,Accessorise,106.67,264.67
+421068,128,WHITE,Accessorise,2394,3869
+421069,128 X,,Accessorise,0,0
+421070,1281,,Accessorise,0,0
+421071,129,BLUE,Cocks Standard,0,0
+421072,129,BURGUNDY,Cocks Standard,0,0
+421073,129,GREEN,Cocks Standard,8,0
+421074,129,IVORY,Cocks Standard,8962.67,16237.67
+421075,129,M GREEN,Cocks Standard,0,0
+421076,129,PINK,Cocks Standard,168,207
+421077,129,WHITE,Cocks Standard,4390,7968
+421078,129-9E,,Cocks Standard,0,0
+421079,129-9U,,Cocks Standard,0,0
+421080,129-A,WHITE,Cocks Standard,32,95
+421081,129-AB,,Cocks Standard,0,0
+421082,129-AP,IVORY,Cocks Standard,104,0
+421083,129-AP,WHITE,Cocks Standard,28,0
+421084,129-AS,IVORY,Cocks Standard,424,891
+421085,129-AS,WHITE,Cocks Standard,96,80
+421086,129-B,BURGUNDY,Cocks Standard,0,0
+421087,129-B,GREEN,Cocks Standard,0,0
+421088,129-B,IVORY,Cocks Standard,0,0
+421089,129-B,M GREEN,Cocks Standard,0,0
+421090,129-B,PINK,Cocks Standard,0,0
+421091,129-B,WHITE,Cocks Standard,100,46
+421092,129-C,BURGUNDY,Cocks Standard,0,0
+421093,129-C,GREEN,Cocks Standard,0,0
+421094,129-C,IVORY,Cocks Standard,0,0
+421095,129-C,M GREEN,Cocks Standard,0,0
+421096,129-C,PINK,Cocks Standard,0,0
+421097,129-C,WHITE,Cocks Standard,877,1754
+421098,129-D,BURGUNDY,Cocks Standard,0,0
+421099,129-D,GREEN,Cocks Standard,0,0
+421100,129-D,IVORY,Cocks Standard,32,37
+421101,129-D,M GREEN,Cocks Standard,0,0
+421102,129-D,PINK,Cocks Standard,0,0
+421103,129-D,WHITE,Cocks Standard,67,104
+421104,129-DB,BLACK,Cocks Standard,56,117
+421105,129-DG,,Cocks Premium,3.33,0
+421106,129-DP,,Cocks Premium,10,0
+421107,129-DR,,Cocks Premium,48,199
+421108,129-DW,,Cocks Premium,0,18
+421109,129-E,BURGUNDY,Cocks Standard,0,0
+421110,129-E,GREEN,Cocks Standard,0,0
+421111,129-E,IVORY,Cocks Standard,0,0
+421112,129-E,M GREEN,Cocks Standard,0,0
+421113,129-E,PINK,Cocks Standard,0,0
+421114,129-E,WHITE,Cocks Standard,1,0
+421115,129-EB,IVORY,Cocks Standard,0,0
+421116,129-EB,WHITE,Cocks Standard,144,256
+421117,129-H,BURGUNDY,Cocks Standard,0,0
+421118,129-H,GREEN,Cocks Standard,0,0
+421119,129-H,IVORY,Cocks Standard,96,0
+421120,129-H,M GREEN,Cocks Standard,0,0
+421121,129-H,PINK,Cocks Standard,0,0
+421122,129-H,WHITE,Cocks Standard,552,0
+421123,129-HG,,Cocks Premium,0,0
+421124,129-HP,,Cocks Premium,0,0
+421125,129-HR,99,Cocks Premium,104,55
+421126,129-HW,,Cocks Premium,8,0
+421127,129-I,IVORY,Cocks Standard,0,0
+421128,129-I,WHITE,Cocks Standard,0,0
+421129,129-IG,,Cocks Premium,10,9
+421130,129-IP,,Cocks Premium,0,0
+421131,129-IR,,Cocks Premium,0,0
+421132,129-IW,,Cocks Premium,0,0
+421133,129-K,WHITE,Cocks Standard,112,164
+421134,129-L,WHITE,Cocks Standard,10,0
+421135,129-LG,,Cocks Premium,0,0
+421136,129-LP,,Cocks Premium,0,0
+421137,129-LR,,Cocks Premium,0,0
+421138,129-LS,WHITE,Cocks Standard,32,1
+421139,129-LSB,BLUE,Cocks Standard,8,295
+421140,129-LW,,Cocks Premium,10,0
+421141,129-N,IVORY,Cocks Standard,0,0
+421142,129-N,WHITE,Cocks Standard,32,75
+421143,129-NB,,Cocks Premium,18.67,8.67
+421144,129-NG,,Cocks Premium,9.33,7.33
+421145,129-NP,,Cocks Premium,0,0
+421146,129-NR,,Cocks Premium,46.67,0
+421147,129-NW,,Cocks Premium,18.67,0
+421148,129-O,BURGUNDY,Cocks Standard,0,0
+421149,129-O,GREEN,Cocks Standard,0,0
+421150,129-O,IVORY,Cocks Standard,64,0
+421151,129-O,M GREEN,Cocks Standard,0,0
+421152,129-O,PINK,Cocks Standard,0,0
+421153,129-O,WHITE,Cocks Standard,456,307
+421154,129-P,BURGUNDY,Cocks Standard,0,0
+421155,129-P,GREEN,Cocks Standard,0,0
+421156,129-P,IVORY,Cocks Standard,48,35
+421157,129-P,M GREEN,Cocks Standard,0,0
+421158,129-P,PINK,Cocks Standard,0,0
+421159,129-P,WHITE,Cocks Standard,86,225
+421160,129-PR,,Cocks Standard,0,0
+421161,129-Q,BURGUNDY,Cocks Standard,0,0
+421162,129-Q,GREEN,Cocks Standard,0,0
+421163,129-Q,IVORY,Cocks Standard,32,0
+421164,129-Q,M GREEN,Cocks Standard,0,0
+421165,129-Q,PINK,Cocks Standard,0,0
+421166,129-Q,WHITE,Cocks Standard,0,0
+421167,129-QAB,,Cocks Standard,8,0
+421168,129-QG,,Cocks Premium,24,20
+421169,129-QP,,Cocks Premium,24,0
+421170,129-QR,107,Cocks Premium,208,185
+421171,129-QW,,Cocks Premium,0,0
+421172,129-R,BURGUNDY,Cocks Standard,0,0
+421173,129-R,GREEN,Cocks Standard,0,0
+421174,129-R,IVORY,Cocks Standard,0,0
+421175,129-R,M GREEN,Cocks Standard,0,0
+421176,129-R,PINK,Cocks Standard,0,0
+421177,129-R,WHITE,Cocks Standard,10,6
+421178,129-RG,,Cocks Premium,30,17
+421179,129-RH,,Cocks Standard,0,0
+421180,129-RP,,Cocks Premium,0,0
+421181,129-RR,,Cocks Premium,10,9
+421182,129-RW,,Cocks Premium,0,0
+421183,129-S,BURGUNDY,Cocks Standard,0,0
+421184,129-S,GREEN,Cocks Standard,0,0
+421185,129-S,IVORY,Cocks Standard,136,235
+421186,129-S,M GREEN,Cocks Standard,0,0
+421187,129-S,PINK,Cocks Standard,0,0
+421188,129-S,WHITE,Cocks Standard,232,346
+421189,129-SG,,Cocks Premium,17.67,0
+421190,129-SP,,Cocks Premium,16,3
+421191,129-SR,,Cocks Premium,340.33,499.33
+421192,129-SW,,Cocks Premium,8,4
+421193,129-U,BURGUNDY,Cocks Standard,0,0
+421194,129-U,GREEN,Cocks Standard,0,0
+421195,129-U,IVORY,Cocks Standard,0,0
+421196,129-U,M GREEN,Cocks Standard,0,0
+421197,129-U,PINK,Cocks Standard,0,0
+421198,129-U,WHITE,Cocks Standard,24,9
+421199,129-UG,,Cocks Premium,0,0
+421200,129-UP,,Cocks Premium,8,0
+421201,129-UR,,Cocks Premium,16,0
+421202,129-UW,,Cocks Premium,0,0
+421203,129-V,BURGUNDY,Cocks Standard,0,0
+421204,129-V,GREEN,Cocks Standard,0,0
+421205,129-V,IVORY,Cocks Standard,40,0
+421206,129-V,M GREEN,Cocks Standard,0,0
+421207,129-V,PINK,Cocks Standard,0,0
+421208,129-V,WHITE,Cocks Standard,0,0
+421209,129-VG,,Cocks Premium,0,0
+421210,129-VP,14,Cocks Premium,32,14
+421211,129-VR,,Cocks Premium,16,11
+421212,129-VW,,Cocks Premium,0,0
+421213,1291,BURGUNDY,Cocks Standard,0,0
+421214,1291,GREEN,Cocks Standard,0,0
+421215,1291,IVORY,Cocks Standard,72,0
+421216,1291,M GREEN,Cocks Standard,0,0
+421217,1291,PINK,Cocks Standard,0,0
+421218,1291,WHITE,Cocks Standard,160,75
+421219,129I,,Cocks Standard,0,0
+421220,129QW,,Cocks Standard,0,0
+421221,130,BLUE,Cocks Standard,0,0
+421222,130,BURGUNDY,Cocks Standard,0,0
+421223,130,GREEN,Cocks Standard,0,0
+421224,130,IVORY,Cocks Standard,2421,4031
+421225,130,M GREEN,Cocks Standard,0,0
+421226,130,PINK,Cocks Standard,66,0
+421227,130,WHITE,Cocks Standard,3911.67,6583.67
+421228,130-0E,,Cocks Standard,0,0
+421229,130-0U,,Cocks Standard,0,0
+421230,130-A,WHITE,Cocks Standard,0,0
+421231,130-AB,,Cocks Standard,0,0
+421232,130-AP,IVORY,Cocks Standard,10,0
+421233,130-AP,WHITE,Cocks Standard,0,0
+421234,130-AS,IVORY,Cocks Standard,200,373
+421235,130-AS,WHITE,Cocks Standard,90,71
+421236,130-B,BURGUNDY,Cocks Standard,0,0
+421237,130-B,GREEN,Cocks Standard,0,0
+421238,130-B,IVORY,Cocks Standard,50,22
+421239,130-B,M GREEN,Cocks Standard,0,0
+421240,130-B,PINK,Cocks Standard,0,0
+421241,130-B,WHITE,Cocks Standard,130,211
+421242,130-C,BURGUNDY,Cocks Standard,0,0
+421243,130-C,GREEN,Cocks Standard,0,0
+421244,130-C,IVORY,Cocks Standard,0,0
+421245,130-C,M GREEN,Cocks Standard,0,0
+421246,130-C,PINK,Cocks Standard,0,0
+421247,130-C,WHITE,Cocks Standard,286,115
+421248,130-D,BURGUNDY,Cocks Standard,0,0
+421249,130-D,GREEN,Cocks Standard,0,0
+421250,130-D,IVORY,Cocks Standard,40,70
+421251,130-D,M GREEN,Cocks Standard,0,0
+421252,130-D,PINK,Cocks Standard,0,0
+421253,130-D,WHITE,Cocks Standard,54,93
+421254,130-DB,BLACK,Cocks Standard,110,77
+421255,130-DG,,Cocks Premium,3.33,3.33
+421256,130-DP,,Cocks Premium,10,0
+421257,130-DR,,Cocks Premium,70,309
+421258,130-DW,,Cocks Premium,0,12
+421259,130-E,BURGUNDY,Cocks Standard,0,0
+421260,130-E,GREEN,Cocks Standard,0,0
+421261,130-E,IVORY,Cocks Standard,0,0
+421262,130-E,M GREEN,Cocks Standard,0,0
+421263,130-E,PINK,Cocks Standard,0,0
+421264,130-E,WHITE,Cocks Standard,275.33,534.33
+421265,130-EB,IVORY,Cocks Standard,0,0
+421266,130-EB,WHITE,Cocks Standard,250,619
+421267,130-H,BURGUNDY,Cocks Standard,0,0
+421268,130-H,GREEN,Cocks Standard,0,0
+421269,130-H,IVORY,Cocks Standard,0,0
+421270,130-H,M GREEN,Cocks Standard,0,0
+421271,130-H,PINK,Cocks Standard,0,0
+421272,130-H,WHITE,Cocks Standard,22,0
+421273,130-HG,,Cocks Premium,0,0
+421274,130-HP,,Cocks Premium,0,0
+421275,130-HR,,Cocks Premium,88,86
+421276,130-HW,,Cocks Premium,22,0
+421277,130-I,IVORY,Cocks Standard,0,0
+421278,130-I,WHITE,Cocks Standard,143,110
+421279,130-I N,,Cocks Standard,0,0
+421280,130-IG,,Cocks Premium,11,0
+421281,130-IP,,Cocks Premium,22,0
+421282,130-IR,,Cocks Premium,11,0
+421283,130-IW,,Cocks Premium,0,0
+421284,130-K,WHITE,Cocks Standard,0,0
+421285,130-L,WHITE,Cocks Standard,55,25
+421286,130-LG,,Cocks Premium,0,0
+421287,130-LP,,Cocks Premium,0,0
+421288,130-LR,,Cocks Premium,0,0
+421289,130-LS,WHITE,Cocks Standard,0,0
+421290,130-LSB,BLUE,Cocks Standard,10,238
+421291,130-LW,,Cocks Premium,11,0
+421292,130-N,IVORY,Cocks Standard,0,0
+421293,130-N,WHITE,Cocks Standard,50,168
+421294,130-NB,,Cocks Premium,10,39
+421295,130-NG,,Cocks Premium,0.33,0
+421296,130-NP,,Cocks Premium,10,0
+421297,130-NR,,Cocks Premium,30,0
+421298,130-NW,,Cocks Premium,20,18
+421299,130-O,BURGUNDY,Cocks Standard,0,0
+421300,130-O,GREEN,Cocks Standard,0,0
+421301,130-O,IVORY,Cocks Standard,120,0
+421302,130-O,M GREEN,Cocks Standard,0,0
+421303,130-O,PINK,Cocks Standard,0,0
+421304,130-O,WHITE,Cocks Standard,1200,1618
+421305,130-P,BURGUNDY,Cocks Standard,0,0
+421306,130-P,GREEN,Cocks Standard,0,0
+421307,130-P,IVORY,Cocks Standard,3.33,0
+421308,130-P,M GREEN,Cocks Standard,0,0
+421309,130-P,PINK,Cocks Standard,0,0
+421310,130-P,WHITE,Cocks Standard,50,68
+421311,130-Q,BURGUNDY,Cocks Standard,0,0
+421312,130-Q,GREEN,Cocks Standard,0,0
+421313,130-Q,IVORY,Cocks Standard,200,303
+421314,130-Q,M GREEN,Cocks Standard,0,0
+421315,130-Q,PINK,Cocks Standard,0,0
+421316,130-Q,WHITE,Cocks Standard,220,236
+421317,130-QAB,,Cocks Standard,0,0
+421318,130-QG,,Cocks Premium,0,0
+421319,130-QP,,Cocks Premium,50,62
+421320,130-QR,36,Cocks Premium,239.33,294.33
+421321,130-QW,,Cocks Premium,0,0
+421322,130-R,BURGUNDY,Cocks Standard,0,0
+421323,130-R,GREEN,Cocks Standard,0,0
+421324,130-R,IVORY,Cocks Standard,44,14
+421325,130-R,M GREEN,Cocks Standard,0,0
+421326,130-R,PINK,Cocks Standard,0,0
+421327,130-R,WHITE,Cocks Standard,11,0
+421328,130-RG,,Cocks Premium,54,21
+421329,130-RN,34,Unclassified,,0
+421330,130-RN,IVORY,Unclassified,,0
+421331,130-RN,WHITE,Unclassified,,0
+421332,130-RNG,,Cocks Premium,0,0
+421333,130-RNP,,Cocks Premium,0,0
+421334,130-RNR,,Cocks Premium,0,0
+421335,130-RNW,,Cocks Premium,0,0
+421336,130-RP,,Cocks Premium,0,0
+421337,130-RR,,Cocks Premium,0,0
+421338,130-RW,,Cocks Premium,0,0
+421339,130-S,BURGUNDY,Cocks Standard,0,0
+421340,130-S,GREEN,Cocks Standard,0,0
+421341,130-S,IVORY,Cocks Standard,100,138
+421342,130-S,M GREEN,Cocks Standard,0,0
+421343,130-S,PINK,Cocks Standard,0,0
+421344,130-S,WHITE,Cocks Standard,180,100
+421345,130-SG,,Cocks Premium,21.67,0
+421346,130-SP,,Cocks Premium,110,227
+421347,130-SR,,Cocks Premium,331,671
+421348,130-SW,,Cocks Premium,0,0
+421349,130-U,BURGUNDY,Cocks Standard,0,0
+421350,130-U,GREEN,Cocks Standard,0,0
+421351,130-U,IVORY,Cocks Standard,0,0
+421352,130-U,M GREEN,Cocks Standard,0,0
+421353,130-U,PINK,Cocks Standard,0,0
+421354,130-U,WHITE,Cocks Standard,90,264
+421355,130-UG,,Cocks Premium,0,0
+421356,130-UP,30,Cocks Premium,10,0
+421357,130-UR,13,Cocks Premium,50,19
+421358,130-UW,,Cocks Premium,10,0
+421359,130-V,BURGUNDY,Cocks Standard,0,0
+421360,130-V,GREEN,Cocks Standard,0,0
+421361,130-V,IVORY,Cocks Standard,10,0
+421362,130-V,M GREEN,Cocks Standard,0,0
+421363,130-V,PINK,Cocks Standard,0,0
+421364,130-V,WHITE,Cocks Standard,0,0
+421365,130-VG,,Cocks Premium,40,25
+421366,130-VP,60,Cocks Premium,80,38
+421367,130-VR,,Cocks Premium,10,0
+421368,130-VW,,Cocks Premium,0,0
+421369,130C,,Cocks Standard,0,0
+421370,131,BURGUNDY,Cocks Standard,0,0
+421371,131,GREEN,Cocks Standard,0,0
+421372,131,IVORY,Cocks Standard,408.33,491.33
+421373,131,M GREEN,Cocks Standard,0,0
+421374,131,PINK,Cocks Standard,0,0
+421375,131,WHITE,Cocks Standard,1130,1509
+421376,131-A,IVORY,Cocks Standard,0,0
+421377,131-A,WHITE,Cocks Standard,50,33
+421378,131-AB,,Cocks Standard,0,0
+421379,131-B,,Cocks Standard,0,0
+421380,131-C,BURGUNDY,Cocks Standard,0,0
+421381,131-C,GREEN,Cocks Standard,0,0
+421382,131-C,IVORY,Cocks Standard,0,0
+421383,131-C,M GREEN,Cocks Standard,0,0
+421384,131-C,PINK,Cocks Standard,0,0
+421385,131-C,WHITE,Cocks Standard,285,548
+421386,131-D,IVORY,Cocks Standard,0,58
+421387,131-DB,BLACK,Cocks Standard,0,83
+421388,131-DG,,Cocks Standard,0,0
+421389,131-DP,PEACH,Cocks Standard,0,20
+421390,131-DR,R BLUE,Cocks Standard,0,44
+421391,131-DW,,Cocks Standard,0,10
+421392,131-F,,Cocks Standard,0,0
+421393,131-G,,Cocks Standard,0,0
+421394,131-H,BURGUNDY,Cocks Standard,0,0
+421395,131-H,GREEN,Cocks Standard,0,0
+421396,131-H,IVORY,Cocks Standard,0,0
+421397,131-H,M GREEN,Cocks Standard,0,0
+421398,131-H,PINK,Cocks Standard,0,0
+421399,131-H,WHITE,Cocks Standard,240,171
+421400,131-HG,,Cocks Premium,0,0
+421401,131-HP,,Cocks Premium,0,0
+421402,131-HR,,Cocks Premium,10,0
+421403,131-HW,,Cocks Premium,0,0
+421404,131-I,IVORY,Cocks Standard,0,0
+421405,131-I,WHITE,Cocks Standard,0,0
+421406,131-IG,,Cocks Premium,0,0
+421407,131-IP,,Cocks Premium,0,0
+421408,131-IR,,Cocks Premium,0,0
+421409,131-IW,,Cocks Premium,0,0
+421410,131-K,WHITE,Cocks Standard,0,0
+421411,131-L,WHITE,Cocks Standard,0,0
+421412,131-LG,,Cocks Premium,0,0
+421413,131-LP,,Cocks Premium,0,0
+421414,131-LR,,Cocks Premium,0,0
+421415,131-LS,WHITE,Cocks Standard,0,0
+421416,131-LSB,BLUE,Cocks Standard,0,341
+421417,131-LW,,Cocks Premium,0,0
+421418,131-N,BURGUNDY,Cocks Standard,0,0
+421419,131-N,GREEN,Cocks Standard,0,0
+421420,131-N,IVORY,Cocks Standard,590,657
+421421,131-N,M GREEN,Cocks Standard,0,0
+421422,131-N,PINK,Cocks Standard,0,0
+421423,131-N,WHITE,Cocks Standard,300,215
+421424,131-NP,BURGUNDY,Cocks Standard,0,0
+421425,131-NP,GREEN,Cocks Standard,0,0
+421426,131-NP,IVORY,Cocks Standard,0,0
+421427,131-NP,M GREEN,Cocks Standard,0,0
+421428,131-NP,PINK,Cocks Standard,0,0
+421429,131-NP,WHITE,Cocks Standard,0,0
+421430,131-O,BURGUNDY,Cocks Standard,0,0
+421431,131-O,GREEN,Cocks Standard,0,0
+421432,131-O,IVORY,Cocks Standard,0,0
+421433,131-O,M GREEN,Cocks Standard,0,0
+421434,131-O,PINK,Cocks Standard,0,0
+421435,131-O,WHITE,Cocks Standard,90,0
+421436,131-P,BURGUNDY,Cocks Standard,0,0
+421437,131-P,GREEN,Cocks Standard,0,0
+421438,131-P,IVORY,Cocks Standard,0,0
+421439,131-P,M GREEN,Cocks Standard,0,0
+421440,131-P,PINK,Cocks Standard,0,0
+421441,131-P,WHITE,Cocks Standard,62,180
+421442,131-PR,,Cocks Standard,0,0
+421443,131-S,,Cocks Standard,0,0
+421444,131-W,,Cocks Standard,0,0
+421445,1311,BURGUNDY,Cocks Standard,0,0
+421446,1311,GREEN,Cocks Standard,0,0
+421447,1311,IVORY,Cocks Standard,90,134
+421448,1311,M GREEN,Cocks Standard,0,0
+421449,1311,PINK,Cocks Standard,0,0
+421450,1311,WHITE,Cocks Standard,140,168
+421451,1311-C,BURGUNDY,Cocks Standard,0,0
+421452,1311-C,GREEN,Cocks Standard,0,0
+421453,1311-C,IVORY,Cocks Standard,0,0
+421454,1311-C,M GREEN,Cocks Standard,0,0
+421455,1311-C,PINK,Cocks Standard,0,0
+421456,1311-C,WHITE,Cocks Standard,450.33,1012.33
+421457,1311-H,BURGUNDY,Cocks Standard,0,0
+421458,1311-H,GREEN,Cocks Standard,0,0
+421459,1311-H,IVORY,Cocks Standard,40,0
+421460,1311-H,M GREEN,Cocks Standard,0,0
+421461,1311-H,PINK,Cocks Standard,0,0
+421462,1311-H,WHITE,Cocks Standard,160,0
+421463,1311-HG,,Cocks Premium,0,0
+421464,1311-HP,,Cocks Premium,0,0
+421465,1311-HR,,Cocks Premium,10,15
+421466,1311-HW,,Cocks Premium,0,0
+421467,1311-K,WHITE,Cocks Standard,120,146
+421468,1311-N,BURGUNDY,Cocks Standard,0,0
+421469,1311-N,GREEN,Cocks Standard,0,0
+421470,1311-N,IVORY,Cocks Standard,0,0
+421471,1311-N,M GREEN,Cocks Standard,0,0
+421472,1311-N,PINK,Cocks Standard,0,0
+421473,1311-N,WHITE,Cocks Standard,98.33,0
+421474,1311-W,,Cocks Standard,0,0
+421475,132,BURGUNDY,Cocks Standard,0,0
+421476,132,GREEN,Cocks Standard,0,0
+421477,132,IVORY,Cocks Standard,1495,2662
+421478,132,M GREEN,Cocks Standard,0,0
+421479,132,PINK,Cocks Standard,0,0
+421480,132,WHITE,Cocks Standard,1428.67,1655.67
+421481,132-2E,,Cocks Standard,0,0
+421482,132-2U,,Cocks Standard,0,0
+421483,132-A,IVORY,Cocks Standard,0,0
+421484,132-A,WHITE,Cocks Standard,0,0
+421485,132-AB,,Cocks Standard,0,0
+421486,132-AP,IVORY,Cocks Standard,0,0
+421487,132-AP,WHITE,Cocks Standard,0,0
+421488,132-AS,IVORY,Cocks Standard,17.33,15.33
+421489,132-AS,WHITE,Cocks Standard,52,23
+421490,132-B,BURGUNDY,Cocks Standard,0,0
+421491,132-B,GREEN,Cocks Standard,0,0
+421492,132-B,IVORY,Cocks Standard,17.33,0
+421493,132-B,M GREEN,Cocks Standard,0,0
+421494,132-B,PINK,Cocks Standard,0,0
+421495,132-B,WHITE,Cocks Standard,69.33,91.33
+421496,132-C,BURGUNDY,Cocks Standard,0,0
+421497,132-C,GREEN,Cocks Standard,0,0
+421498,132-C,IVORY,Cocks Standard,0,0
+421499,132-C,M GREEN,Cocks Standard,0,0
+421500,132-C,PINK,Cocks Standard,0,0
+421501,132-C,WHITE,Cocks Standard,780.33,1207.33
+421502,132-D,BURGUNDY,Cocks Standard,0,0
+421503,132-D,GREEN,Cocks Standard,0,0
+421504,132-D,IVORY,Cocks Standard,13,0
+421505,132-D,M GREEN,Cocks Standard,0,0
+421506,132-D,PINK,Cocks Standard,0,0
+421507,132-D,WHITE,Cocks Standard,13,0
+421508,132-DB,BLACK,Cocks Standard,34.67,0
+421509,132-DG,,Cocks Premium,0,0
+421510,132-DP,,Cocks Premium,10.67,10.67
+421511,132-DR,,Cocks Premium,82.33,236.33
+421512,132-DW,,Cocks Premium,0,14
+421513,132-E,BURGUNDY,Cocks Standard,0,0
+421514,132-E,GREEN,Cocks Standard,0,0
+421515,132-E,IVORY,Cocks Standard,0,0
+421516,132-E,M GREEN,Cocks Standard,0,0
+421517,132-E,PINK,Cocks Standard,0,0
+421518,132-E,WHITE,Cocks Standard,4.33,0
+421519,132-EB,WHITE,Cocks Standard,114,220
+421520,132-H,BURGUNDY,Cocks Standard,346.67,562.67
+421521,132-H,IVORY,Cocks Standard,121.33,34.33
+421522,132-H,PINK,Cocks Standard,0,0
+421523,132-H,WHITE,Cocks Standard,832,1151
+421524,132-HG,,Cocks Premium,0,0
+421525,132-HP,,Cocks Premium,0,0
+421526,132-HR,,Cocks Premium,0,0
+421527,132-HW,,Cocks Premium,4.33,0
+421528,132-I,IVORY,Cocks Standard,13,0
+421529,132-I,WHITE,Cocks Standard,73.67,0
+421530,132-IG,,Cocks Premium,4.33,4.33
+421531,132-IP,,Cocks Premium,17.33,40.33
+421532,132-IR,,Cocks Premium,13,0
+421533,132-IW,,Cocks Premium,0,0
+421534,132-K,WHITE,Cocks Standard,433.33,815.33
+421535,132-L,IVORY,Cocks Standard,0,0
+421536,132-L,WHITE,Cocks Standard,21.67,0.67
+421537,132-LG,,Cocks Premium,0,0
+421538,132-LP,,Cocks Premium,0,0
+421539,132-LR,,Cocks Premium,0,0
+421540,132-LS,WHITE,Cocks Standard,8.67,0
+421541,132-LSB,BLUE,Cocks Standard,13,252
+421542,132-LST,,Cocks Standard,0,0
+421543,132-LSTB,BLUE,Cocks Standard,0,237
+421544,132-LW,,Cocks Premium,0,0
+421545,132-N,IVORY,Cocks Standard,0,0
+421546,132-N,WHITE,Cocks Standard,17.33,67.33
+421547,132-NB,,Cocks Premium,21.67,26.67
+421548,132-NG,,Cocks Premium,0,0
+421549,132-NP,,Cocks Premium,17.33,0
+421550,132-NR,,Cocks Premium,47.67,0
+421551,132-NW,,Cocks Premium,0,0
+421552,132-O,BURGUNDY,Cocks Standard,0,0
+421553,132-O,GREEN,Cocks Standard,0,0
+421554,132-O,IVORY,Cocks Standard,34.67,0
+421555,132-O,M GREEN,Cocks Standard,0,0
+421556,132-O,PINK,Cocks Standard,0,0
+421557,132-O,WHITE,Cocks Standard,416,536
+421558,132-OT,BURGUNDY,Cocks Standard,0,0
+421559,132-OT,GREEN,Cocks Standard,0,0
+421560,132-OT,IVORY,Cocks Standard,40,69
+421561,132-OT,M GREEN,Cocks Standard,0,0
+421562,132-OT,PINK,Cocks Standard,0,0
+421563,132-OT,WHITE,Cocks Standard,300,296
+421564,132-P,BURGUNDY,Cocks Standard,0,0
+421565,132-P,GREEN,Cocks Standard,0,0
+421566,132-P,IVORY,Cocks Standard,39,52
+421567,132-P,M GREEN,Cocks Standard,0,0
+421568,132-P,PINK,Cocks Standard,0,0
+421569,132-P,WHITE,Cocks Standard,40.33,0
+421570,132-PR,,Cocks Standard,0,0
+421571,132-Q,BURGUNDY,Cocks Standard,0,0
+421572,132-Q,GREEN,Cocks Standard,0,0
+421573,132-Q,IVORY,Cocks Standard,40,44
+421574,132-Q,M GREEN,Cocks Standard,0,0
+421575,132-Q,PINK,Cocks Standard,0,0
+421576,132-Q,WHITE,Cocks Standard,20,0
+421577,132-QAB,,Cocks Standard,10,0
+421578,132-QG,,Cocks Premium,20,9
+421579,132-QP,,Cocks Premium,24.33,24.33
+421580,132-QR,62,Cocks Premium,396,460
+421581,132-QW,,Cocks Premium,0,0
+421582,132-R,BURGUNDY,Cocks Standard,0,0
+421583,132-R,GREEN,Cocks Standard,0,0
+421584,132-R,IVORY,Cocks Standard,86.67,0
+421585,132-R,M GREEN,Cocks Standard,0,0
+421586,132-R,PINK,Cocks Standard,0,0
+421587,132-R,WHITE,Cocks Standard,21.67,41.67
+421588,132-RG,,Cocks Premium,21.67,0
+421589,132-RP,,Cocks Premium,0,0
+421590,132-RR,,Cocks Premium,17.33,0
+421591,132-RW,3,Cocks Premium,21.67,52.67
+421592,132-S,BURGUNDY,Cocks Standard,0,0
+421593,132-S,GREEN,Cocks Standard,0,0
+421594,132-S,IVORY,Cocks Standard,151.67,239.67
+421595,132-S,M GREEN,Cocks Standard,0,0
+421596,132-S,PINK,Cocks Standard,0,0
+421597,132-S,WHITE,Cocks Standard,147.33,214.33
+421598,132-SG,,Cocks Premium,17.33,22.33
+421599,132-SP,,Cocks Premium,21.67,0
+421600,132-SR,,Cocks Premium,258,209
+421601,132-SW,,Cocks Premium,4.67,0
+421602,132-T,BURGUNDY,Cocks Standard,0,0
+421603,132-T,GREEN,Cocks Standard,0,0
+421604,132-T,IVORY,Cocks Standard,2540,4197
+421605,132-T,M GREEN,Cocks Standard,0,0
+421606,132-T,PINK,Cocks Standard,0,0
+421607,132-T,WHITE,Cocks Standard,1331.67,1902.67
+421608,132-U,BURGUNDY,Cocks Standard,0,0
+421609,132-U,GREEN,Cocks Standard,0,0
+421610,132-U,IVORY,Cocks Standard,0,0
+421611,132-U,M GREEN,Cocks Standard,0,0
+421612,132-U,PINK,Cocks Standard,0,0
+421613,132-U,WHITE,Cocks Standard,60.67,112.67
+421614,132-UG,,Cocks Premium,17.33,0
+421615,132-UP,,Cocks Premium,17.33,12.33
+421616,132-UR,9,Cocks Premium,78,39
+421617,132-UW,,Cocks Premium,0,0
+421618,132-V,BURGUNDY,Cocks Standard,0,0
+421619,132-V,GREEN,Cocks Standard,0,0
+421620,132-V,IVORY,Cocks Standard,4.33,0
+421621,132-V,M GREEN,Cocks Standard,0,0
+421622,132-V,PINK,Cocks Standard,0,0
+421623,132-V,WHITE,Cocks Standard,0,0
+421624,132-VG,,Cocks Premium,0,0
+421625,132-VP,,Cocks Premium,21.67,0
+421626,132-VR,,Cocks Premium,4.33,0
+421627,132-VW,,Cocks Premium,0,0
+421628,1321,BURGUNDY,Cocks Standard,0,0
+421629,1321,GREEN,Cocks Standard,0,0
+421630,1321,IVORY,Cocks Standard,95.33,193.33
+421631,1321,M GREEN,Cocks Standard,0,0
+421632,1321,PINK,Cocks Standard,0,0
+421633,1321,WHITE,Cocks Standard,43.33,46.33
+421634,1322,,Cocks Standard,0,0
+421635,1322-A,,Cocks Standard,0,0
+421636,1322-AP,IVORY,Cocks Standard,90,0
+421637,1322-AP,WHITE,Cocks Standard,0,0
+421638,1322-AS,IVORY,Cocks Standard,210,543
+421639,1322-AS,WHITE,Cocks Standard,30,0
+421640,1322-B,BURGUNDY,Cocks Standard,0,0
+421641,1322-B,GREEN,Cocks Standard,0,0
+421642,1322-B,IVORY,Cocks Standard,0,0
+421643,1322-B,M GREEN,Cocks Standard,0,0
+421644,1322-B,PINK,Cocks Standard,0,0
+421645,1322-B,WHITE,Cocks Standard,20,0
+421646,1322-D,IVORY,Cocks Standard,20,12
+421647,1322-D,WHITE,Cocks Standard,30,24
+421648,1322-DB,BLACK,Cocks Standard,70,111
+421649,1322-DG,,Cocks Premium,3.33,0
+421650,1322-DP,,Cocks Premium,0,0
+421651,1322-DR,,Cocks Premium,10,64
+421652,1322-DW,,Cocks Premium,0,0
+421653,1322-EB,IVORY,Cocks Standard,0,0
+421654,1322-EB,WHITE,Cocks Standard,140,195
+421655,1322-HN,,Unclassified,,0
+421656,1322-HN,IVORY,Unclassified,,0
+421657,1322-HN,WHITE,Unclassified,,0
+421658,1322-HNG,,Cocks Premium,10,18
+421659,1322-HNP,,Cocks Premium,0,0
+421660,1322-HNR,,Cocks Premium,10,0
+421661,1322-HNW,,Cocks Premium,30,42
+421662,1322-S,BURGUNDY,Cocks Standard,0,0
+421663,1322-S,GREEN,Cocks Standard,0,0
+421664,1322-S,IVORY,Cocks Standard,70,172
+421665,1322-S,M GREEN,Cocks Standard,0,0
+421666,1322-S,PINK,Cocks Standard,0,0
+421667,1322-S,WHITE,Cocks Standard,140,309
+421668,1322-SG,,Cocks Premium,3.33,13.33
+421669,1322-SP,,Cocks Premium,40,18
+421670,1322-SR,,Cocks Premium,160,158
+421671,1322-SW,,Cocks Premium,0,0
+421672,1322-V,BURGUNDY,Cocks Standard,0,0
+421673,1322-V,GREEN,Cocks Standard,0,0
+421674,1322-V,IVORY,Cocks Standard,0,0
+421675,1322-V,M GREEN,Cocks Standard,0,0
+421676,1322-V,PINK,Cocks Standard,0,0
+421677,1322-V,WHITE,Cocks Standard,0,0
+421678,1322-VG,,Cocks Premium,10,40
+421679,1322-VP,78,Cocks Premium,26,12
+421680,1322-VR,,Cocks Premium,20,20
+421681,1322-VW,,Cocks Premium,0,0
+421682,1323,BURGUNDY,Cocks Standard,0,0
+421683,1323,GREEN,Cocks Standard,0,0
+421684,1323,IVORY,Cocks Standard,650,1667
+421685,1323,M GREEN,Cocks Standard,0,0
+421686,1323,PINK,Cocks Standard,0,0
+421687,1323,WHITE,Cocks Standard,60,59
+421688,132I,,Cocks Standard,0,0
+421689,132T,,Cocks Standard,0,0
+421690,133,,Cocks Standard,0,0
+421691,133-3E,,Cocks Standard,0,0
+421692,133-3U,,Cocks Standard,0,0
+421693,133-A,WHITE,Cocks Standard,0,0
+421694,133-AB,,Cocks Standard,0,0
+421695,133-AP,IVORY,Cocks Standard,0,0
+421696,133-AP,WHITE,Cocks Standard,0,0
+421697,133-AS,IVORY,Cocks Standard,0,0
+421698,133-AS,WHITE,Cocks Standard,34.67,0
+421699,133-B,BURGUNDY,Cocks Standard,0,0
+421700,133-B,GREEN,Cocks Standard,0,0
+421701,133-B,IVORY,Cocks Standard,0,0
+421702,133-B,M GREEN,Cocks Standard,0,0
+421703,133-B,PINK,Cocks Standard,0,0
+421704,133-B,WHITE,Cocks Standard,4.33,0
+421705,133-C,BURGUNDY,Cocks Standard,0,0
+421706,133-C,GREEN,Cocks Standard,0,0
+421707,133-C,IVORY,Cocks Standard,0,0
+421708,133-C,M GREEN,Cocks Standard,0,0
+421709,133-C,PINK,Cocks Standard,0,0
+421710,133-C,WHITE,Cocks Standard,173.33,424.33
+421711,133-D,BURGUNDY,Cocks Standard,0,0
+421712,133-D,GREEN,Cocks Standard,0,0
+421713,133-D,IVORY,Cocks Standard,0,0
+421714,133-D,M GREEN,Cocks Standard,0,0
+421715,133-D,PINK,Cocks Standard,0,0
+421716,133-D,WHITE,Cocks Standard,10,21
+421717,133-DB,BLACK,Cocks Standard,63,158
+421718,133-DG,,Cocks Premium,0,0
+421719,133-DP,,Cocks Premium,11,44
+421720,133-DR,,Cocks Premium,8.67,22.67
+421721,133-DW,,Cocks Premium,0,0
+421722,133-E,BURGUNDY,Cocks Standard,0,0
+421723,133-E,GREEN,Cocks Standard,0,0
+421724,133-E,IVORY,Cocks Standard,0,0
+421725,133-E,M GREEN,Cocks Standard,0,0
+421726,133-E,PINK,Cocks Standard,0,0
+421727,133-E,WHITE,Cocks Standard,0,0
+421728,133-EB,WHITE,Cocks Standard,34.67,56.67
+421729,133-H,BURGUNDY,Cocks Standard,0,0
+421730,133-H,GREEN,Cocks Standard,0,0
+421731,133-H,IVORY,Cocks Standard,34.67,0
+421732,133-H,M GREEN,Cocks Standard,0,0
+421733,133-H,PINK,Cocks Standard,0,0
+421734,133-H,WHITE,Cocks Standard,69.33,0
+421735,133-HG,,Cocks Premium,0,0
+421736,133-HP,,Cocks Premium,0,0
+421737,133-HR,,Cocks Premium,0,0
+421738,133-HW,,Cocks Premium,0,0
+421739,133-I,IVORY,Cocks Standard,4.33,0
+421740,133-I,WHITE,Cocks Standard,8.67,0
+421741,133-IG,,Cocks Premium,0,0
+421742,133-IP,,Cocks Premium,0,0
+421743,133-IR,,Cocks Premium,0,0
+421744,133-IW,,Cocks Premium,0,0
+421745,133-K,WHITE,Cocks Standard,34.67,55.67
+421746,133-L,WHITE,Cocks Standard,8.67,0
+421747,133-LG,,Cocks Premium,0,0
+421748,133-LP,,Cocks Premium,0,0
+421749,133-LR,,Cocks Premium,0,0
+421750,133-LS,,Cocks Standard,0,0
+421751,133-LSB,BLUE,Cocks Standard,13,312
+421752,133-LW,,Cocks Premium,0,0
+421753,133-N,IVORY,Cocks Standard,0,0
+421754,133-N,WHITE,Cocks Standard,30,116
+421755,133-NB,,Cocks Premium,8.67,0
+421756,133-NEW,BURGUNDY,Cocks Standard,0,0
+421757,133-NEW,GREEN,Cocks Standard,0,0
+421758,133-NEW,IVORY,Cocks Standard,169,136
+421759,133-NEW,M GREEN,Cocks Standard,0,0
+421760,133-NEW,PINK,Cocks Standard,0,0
+421761,133-NEW,WHITE,Cocks Standard,73.67,0
+421762,133-NG,,Cocks Premium,5,0
+421763,133-NP,,Cocks Premium,8.67,0
+421764,133-NR,,Cocks Premium,4.33,0
+421765,133-NW,,Cocks Premium,13,8
+421766,133-O,BURGUNDY,Cocks Standard,0,0
+421767,133-O,GREEN,Cocks Standard,0,0
+421768,133-O,IVORY,Cocks Standard,8.67,0
+421769,133-O,M GREEN,Cocks Standard,0,0
+421770,133-O,PINK,Cocks Standard,0,0
+421771,133-O,WHITE,Cocks Standard,104,193
+421772,133-P,BURGUNDY,Cocks Standard,0,0
+421773,133-P,GREEN,Cocks Standard,0,0
+421774,133-P,IVORY,Cocks Standard,0,0
+421775,133-P,M GREEN,Cocks Standard,0,0
+421776,133-P,PINK,Cocks Standard,0,0
+421777,133-P,WHITE,Cocks Standard,17.67,16.67
+421778,133-Q,BURGUNDY,Cocks Standard,0,0
+421779,133-Q,GREEN,Cocks Standard,0,0
+421780,133-Q,IVORY,Cocks Standard,8.67,0
+421781,133-Q,M GREEN,Cocks Standard,0,0
+421782,133-Q,PINK,Cocks Standard,0,0
+421783,133-Q,WHITE,Cocks Standard,0,0
+421784,133-QAB,,Cocks Standard,4.33,4.33
+421785,133-QG,,Cocks Premium,8.67,0
+421786,133-QP,,Cocks Premium,21.67,47.67
+421787,133-QR,,Cocks Premium,101,110
+421788,133-QW,,Cocks Premium,0,0
+421789,133-R,BURGUNDY,Cocks Standard,0,0
+421790,133-R,GREEN,Cocks Standard,0,0
+421791,133-R,IVORY,Cocks Standard,0,0
+421792,133-R,M GREEN,Cocks Standard,0,0
+421793,133-R,PINK,Cocks Standard,0,0
+421794,133-R,WHITE,Cocks Standard,0,0
+421795,133-RG,,Cocks Premium,4.33,51.33
+421796,133-RP,,Cocks Premium,0,0
+421797,133-RR,,Cocks Premium,0,0
+421798,133-RW,,Cocks Premium,13,52
+421799,133-S,BURGUNDY,Cocks Standard,0,0
+421800,133-S,GREEN,Cocks Standard,0,0
+421801,133-S,IVORY,Cocks Standard,13,0
+421802,133-S,M GREEN,Cocks Standard,0,0
+421803,133-S,PINK,Cocks Standard,0,0
+421804,133-S,WHITE,Cocks Standard,60.67,89.67
+421805,133-SG,,Cocks Premium,0,0
+421806,133-SP,,Cocks Premium,0,0
+421807,133-SR,,Cocks Premium,70,0
+421808,133-SW,,Cocks Premium,0,0
+421809,133-U,BURGUNDY,Cocks Standard,0,0
+421810,133-U,GREEN,Cocks Standard,0,0
+421811,133-U,IVORY,Cocks Standard,0,0
+421812,133-U,M GREEN,Cocks Standard,0,0
+421813,133-U,PINK,Cocks Standard,0,0
+421814,133-U,WHITE,Cocks Standard,37.67,26.67
+421815,133-UG,,Cocks Premium,0,0
+421816,133-UP,,Cocks Premium,0,0
+421817,133-UR,,Cocks Premium,0,0
+421818,133-UW,,Cocks Premium,0,0
+421819,133-V,BURGUNDY,Cocks Standard,0,0
+421820,133-V,GREEN,Cocks Standard,0,0
+421821,133-V,IVORY,Cocks Standard,0,0
+421822,133-V,M GREEN,Cocks Standard,0,0
+421823,133-V,PINK,Cocks Standard,0,0
+421824,133-V,WHITE,Cocks Standard,0,0
+421825,133-VG,,Cocks Premium,0,0
+421826,133-VP,39,Cocks Premium,13,0
+421827,133-VR,,Cocks Premium,0,0
+421828,133-VW,,Cocks Premium,0,0
+421829,1331,,Cocks Standard,0,0
+421830,1332,BURGUNDY,Cocks Standard,0,0
+421831,1332,GREEN,Cocks Standard,0,0
+421832,1332,IVORY,Cocks Standard,17.33,0
+421833,1332,M GREEN,Cocks Standard,0,0
+421834,1332,PINK,Cocks Standard,0,0
+421835,1332,WHITE,Cocks Standard,17.33,0
+421836,133C-NEW,,Cocks Standard,0,0
+421837,133NEW,,Cocks Standard,0,0
+421838,134,BURGUNDY,Cocks Standard,0,0
+421839,134,GREEN,Cocks Standard,0,0
+421840,134,IVORY,Cocks Standard,34.67,42.67
+421841,134,M GREEN,Cocks Standard,0,0
+421842,134,PINK,Cocks Standard,0,0
+421843,134,WHITE,Cocks Standard,108.33,146.33
+421844,134-A,WHITE,Cocks Standard,0,0
+421845,134-AB,,Cocks Standard,0,0
+421846,134-AP,IVORY,Cocks Standard,0,0
+421847,134-AS,,Cocks Standard,0,0
+421848,134-B,IVORY,Cocks Standard,0,0
+421849,134-B,WHITE,Cocks Standard,8.67,32.67
+421850,134-C,BURGUNDY,Cocks Standard,0,0
+421851,134-C,GREEN,Cocks Standard,0,0
+421852,134-C,IVORY,Cocks Standard,0,0
+421853,134-C,M GREEN,Cocks Standard,0,0
+421854,134-C,PINK,Cocks Standard,0,0
+421855,134-C,WHITE,Cocks Standard,34.67,19.67
+421856,134-D,IVORY,Cocks Standard,0,0
+421857,134-D,WHITE,Cocks Standard,0,4
+421858,134-DB,BLACK,Cocks Standard,30.33,61.33
+421859,134-DG,,Cocks Premium,4.33,0
+421860,134-DP,,Cocks Premium,0,0
+421861,134-DR,,Cocks Premium,26,0
+421862,134-DW,,Cocks Premium,0,0
+421863,134-E,,Cocks Standard,0,0
+421864,134-EB,,Cocks Standard,4.33,4.33
+421865,134-H,BURGUNDY,Cocks Standard,0,0
+421866,134-H,GREEN,Cocks Standard,0,0
+421867,134-H,IVORY,Cocks Standard,0,0
+421868,134-H,M GREEN,Cocks Standard,0,0
+421869,134-H,PINK,Cocks Standard,0,0
+421870,134-H,WHITE,Cocks Standard,0,0
+421871,134-HG,,Cocks Premium,0,0
+421872,134-HP,,Cocks Premium,0,0
+421873,134-HR,,Cocks Premium,0,0
+421874,134-HW,,Cocks Premium,0,0
+421875,134-K,WHITE,Cocks Standard,0,0
+421876,134-LS,,Cocks Standard,0,0
+421877,134-LSB,BLUE,Cocks Standard,0,0
+421878,134-O,BURGUNDY,Cocks Standard,0,0
+421879,134-O,GREEN,Cocks Standard,0,0
+421880,134-O,IVORY,Cocks Standard,4.33,4.33
+421881,134-O,M GREEN,Cocks Standard,0,0
+421882,134-O,PINK,Cocks Standard,0,0
+421883,134-O,WHITE,Cocks Standard,4.33,0
+421884,134-P,BURGUNDY,Cocks Standard,0,0
+421885,134-P,GREEN,Cocks Standard,0,0
+421886,134-P,IVORY,Cocks Standard,0,0
+421887,134-P,M GREEN,Cocks Standard,0,0
+421888,134-P,PINK,Cocks Standard,0,0
+421889,134-P,WHITE,Cocks Standard,4.33,0
+421890,134-Q,IVORY,Cocks Standard,17,3
+421891,134-Q,WHITE,Cocks Standard,4.33,4.33
+421892,134-QAB,,Cocks Standard,4.33,41.33
+421893,134-QG,,Cocks Premium,0,0
+421894,134-QP,,Cocks Premium,4.33,13.33
+421895,134-QR,,Cocks Premium,13,18
+421896,134-QW,,Cocks Premium,0,0
+421897,134-R,BURGUNDY,Cocks Standard,0,0
+421898,134-R,GREEN,Cocks Standard,0,0
+421899,134-R,IVORY,Cocks Standard,0,0
+421900,134-R,M GREEN,Cocks Standard,0,0
+421901,134-R,PINK,Cocks Standard,0,0
+421902,134-R,WHITE,Cocks Standard,0,0
+421903,134-RG,,Cocks Premium,9,20
+421904,134-RP,,Cocks Premium,0,0
+421905,134-RR,20,Cocks Premium,8.67,2.67
+421906,134-RW,,Cocks Premium,0,0
+421907,134-U,IVORY,Cocks Standard,0,0
+421908,134-U,WHITE,Cocks Standard,0,0
+421909,134-UG,,Cocks Premium,0,0
+421910,134-UP,,Cocks Premium,0,0
+421911,134-UR,,Cocks Premium,21.67,58.67
+421912,134-UW,,Cocks Premium,0,0
+421913,134-V,,Cocks Standard,0,0
+421914,134-VG,,Cocks Premium,0,0
+421915,134-VP,,Cocks Premium,0,0
+421916,134-VR,,Cocks Premium,8.67,4.67
+421917,134-VW,,Cocks Premium,0,0
+421918,1341,BURGUNDY,Cocks Standard,0,0
+421919,1341,GREEN,Cocks Standard,0,0
+421920,1341,IVORY,Cocks Standard,0,0
+421921,1341,M GREEN,Cocks Standard,0,0
+421922,1341,PINK,Cocks Standard,0,0
+421923,1341,WHITE,Cocks Standard,17.33,0
+421924,135,BURGUNDY,Cocks Standard,0,0
+421925,135,GREEN,Cocks Standard,0,0
+421926,135,IVORY,Cocks Standard,0,0
+421927,135,M GREEN,Cocks Standard,0,0
+421928,135,PINK,Cocks Standard,0,0
+421929,135,WHITE,Cocks Standard,8.67,5.67
+421930,135-A,WHITE,Cocks Standard,0,0
+421931,135-AB,,Cocks Standard,0,0
+421932,135-AP,IVORY,Cocks Standard,0,0
+421933,135-AS,,Cocks Standard,0,0
+421934,135-B,IVORY,Cocks Standard,0,0
+421935,135-B,WHITE,Cocks Standard,4.33,30.33
+421936,135-C,BURGUNDY,Cocks Standard,0,0
+421937,135-C,GREEN,Cocks Standard,0,0
+421938,135-C,IVORY,Cocks Standard,0,0
+421939,135-C,M GREEN,Cocks Standard,0,0
+421940,135-C,PINK,Cocks Standard,0,0
+421941,135-C,WHITE,Cocks Standard,0,0
+421942,135-D,IVORY,Cocks Standard,0,0
+421943,135-D,WHITE,Cocks Standard,0,0
+421944,135-DB,BLACK,Cocks Standard,4.33,0
+421945,135-DG,,Cocks Premium,4.33,3.33
+421946,135-DP,,Cocks Premium,0,0
+421947,135-DR,,Cocks Premium,17.33,11.33
+421948,135-DW,,Cocks Premium,0,0
+421949,135-E,WHITE,Cocks Standard,0.67,0
+421950,135-EB,,Cocks Standard,0,0
+421951,135-K,WHITE,Cocks Standard,0,0
+421952,135-O,,Cocks Premium,0,0
+421953,135-P,BURGUNDY,Cocks Standard,0,0
+421954,135-P,GREEN,Cocks Standard,0,0
+421955,135-P,IVORY,Cocks Standard,0,0
+421956,135-P,M GREEN,Cocks Standard,0,0
+421957,135-P,PINK,Cocks Standard,0,0
+421958,135-P,WHITE,Cocks Standard,0,0
+421959,135-Q,IVORY,Cocks Standard,4.33,4.33
+421960,135-Q,WHITE,Cocks Standard,0,0
+421961,135-QAB,,Cocks Premium,4.33,31.33
+421962,135-QG,,Cocks Premium,0,0
+421963,135-QP,,Cocks Premium,0,0
+421964,135-QR,,Cocks Premium,4.33,0
+421965,135-QW,,Cocks Premium,0,0
+421966,135-R,BURGUNDY,Cocks Standard,0,0
+421967,135-R,GREEN,Cocks Standard,0,0
+421968,135-R,IVORY,Cocks Standard,0,0
+421969,135-R,M GREEN,Cocks Standard,0,0
+421970,135-R,PINK,Cocks Standard,0,0
+421971,135-R,WHITE,Cocks Standard,0,0
+421972,135-RG,,Cocks Premium,8.33,11.33
+421973,135-RP,,Cocks Premium,0,0
+421974,135-RR,26,Cocks Premium,8.67,6.67
+421975,135-RW,,Cocks Premium,0,0
+421976,135-U,WHITE,Cocks Standard,0,0
+421977,135-UG,,Cocks Premium,0,0
+421978,135-UP,,Cocks Premium,0,0
+421979,135-UR,,Cocks Premium,0,0
+421980,135-UW,,Cocks Premium,0,0
+421981,135-V,,Cocks Standard,0,0
+421982,135-VG,,Cocks Premium,0,0
+421983,135-VP,,Cocks Premium,0,0
+421984,135-VR,,Cocks Premium,0,0
+421985,135-VW,,Cocks Premium,0,0
+421986,1351,BURGUNDY,Cocks Standard,0,0
+421987,1351,GREEN,Cocks Standard,0,0
+421988,1351,IVORY,Cocks Standard,0,0
+421989,1351,M GREEN,Cocks Standard,0,0
+421990,1351,PINK,Cocks Standard,0,0
+421991,1351,WHITE,Cocks Standard,0,0
+421992,136,BURGUNDY,Cocks Standard,0,0
+421993,136,GREEN,Cocks Standard,0,0
+421994,136,IVORY,Cocks Standard,0,0
+421995,136,M GREEN,Cocks Standard,0,0
+421996,136,PINK,Cocks Standard,0,0
+421997,136,WHITE,Cocks Standard,119.33,0
+421998,137,BURGUNDY,Cocks Standard,0,0
+421999,137,GREEN,Cocks Standard,0,0
+422000,137,IVORY,Cocks Standard,0,0
+422001,137,M GREEN,Cocks Standard,0,0
+422002,137,PINK,Cocks Standard,0,0
+422003,137,WHITE,Cocks Standard,0,0
+422004,1374-A,WHITE,Cocks Standard,0,0
+422005,1374-AB,,Cocks Standard,0,0
+422006,1374-APF,IVORY,Cocks Standard,0,0
+422007,1374-ASF,,Cocks Standard,0,0
+422008,1374-B,WHITE,Cocks Standard,0,0
+422009,1374-C,,Cocks Standard,0,0
+422010,1374-D,WHITE,Cocks Standard,0,0
+422011,1374-DB,,Cocks Standard,0,0
+422012,1374-DG,,Cocks Standard,0,0
+422013,1374-DP,,Cocks Standard,0,0
+422014,1374-DR,,Cocks Standard,0,0
+422015,1374-DW,,Cocks Standard,0,0
+422016,1374-EBF,,Cocks Standard,0,0
+422017,1374-K,WHITE,Cocks Standard,0,0
+422018,1374-LS,,Cocks Standard,0,0
+422019,1374-LSB,BLUE,Cocks Standard,0,0
+422020,1374-SP,,Cocks Standard,0,0
+422021,1375,BURGUNDY,Cocks Standard,0,0
+422022,1375,GREEN,Cocks Standard,0,0
+422023,1375,IVORY,Cocks Standard,32,0
+422024,1375,M GREEN,Cocks Standard,0,0
+422025,1375,PINK,Cocks Standard,0,0
+422026,1375,WHITE,Cocks Standard,36.33,34.33
+422027,1375-A,WHITE,Cocks Standard,24,18
+422028,1375-AB,,Cocks Standard,0,0
+422029,1375-APF,IVORY,Cocks Standard,0,0
+422030,1375-ASF,,Cocks Standard,0,0
+422031,1375-B,BURGUNDY,Cocks Standard,0,0
+422032,1375-B,GREEN,Cocks Standard,0,0
+422033,1375-B,IVORY,Cocks Standard,26,23
+422034,1375-B,M GREEN,Cocks Standard,0,0
+422035,1375-B,PINK,Cocks Standard,0,0
+422036,1375-B,WHITE,Cocks Standard,4,34
+422037,1375-C,BURGUNDY,Cocks Standard,0,0
+422038,1375-C,GREEN,Cocks Standard,0,0
+422039,1375-C,IVORY,Cocks Standard,0,0
+422040,1375-C,M GREEN,Cocks Standard,0,0
+422041,1375-C,PINK,Cocks Standard,0,0
+422042,1375-C,WHITE,Cocks Standard,238.67,378.67
+422043,1375-D,BURGUNDY,Cocks Standard,0,0
+422044,1375-D,GREEN,Cocks Standard,0,0
+422045,1375-D,IVORY,Cocks Standard,0,0
+422046,1375-D,M GREEN,Cocks Standard,0,0
+422047,1375-D,PINK,Cocks Standard,0,0
+422048,1375-D,WHITE,Cocks Standard,7,0
+422049,1375-DB,BLACK,Cocks Standard,26,44
+422050,1375-DG,3,Cocks Premium,4,6
+422051,1375-DP,,Cocks Premium,2,0
+422052,1375-DR,,Cocks Premium,50,112
+422053,1375-DW,,Cocks Premium,0,12
+422054,1375-E,IVORY,Cocks Standard,0,0
+422055,1375-E,WHITE,Cocks Standard,0.67,0
+422056,1375-EBF,WHITE,Cocks Standard,46,117
+422057,1375-H,IVORY,Cocks Standard,32,11
+422058,1375-H,WHITE,Cocks Standard,64,93
+422059,1375-HG,,Cocks Premium,0,0
+422060,1375-HP,,Cocks Premium,0,0
+422061,1375-HR,,Cocks Premium,6,0
+422062,1375-HW,,Cocks Premium,4,0
+422063,1375-I,IVORY,Cocks Standard,8,0
+422064,1375-I,WHITE,Cocks Standard,0,0
+422065,1375-IG,,Cocks Premium,2,2
+422066,1375-IP,,Cocks Premium,0,0
+422067,1375-IR,,Cocks Premium,2.33,2.33
+422068,1375-IW,,Cocks Premium,0,0
+422069,1375-K,WHITE,Cocks Standard,0,0
+422070,1375-L,WHITE,Cocks Standard,0,0
+422071,1375-LG,,Cocks Premium,0,0
+422072,1375-LP,,Cocks Premium,0,0
+422073,1375-LR,,Cocks Premium,0,0
+422074,1375-LS,,Cocks Standard,0,0
+422075,1375-LSB,BLUE,Cocks Standard,0,138
+422076,1375-LW,,Cocks Premium,4,0
+422077,1375-O,BURGUNDY,Cocks Standard,0,0
+422078,1375-O,GREEN,Cocks Standard,0,0
+422079,1375-O,IVORY,Cocks Standard,20,15
+422080,1375-O,M GREEN,Cocks Standard,0,0
+422081,1375-O,PINK,Cocks Standard,0,0
+422082,1375-O,WHITE,Cocks Standard,78,106
+422083,1375-P,BURGUNDY,Cocks Standard,0,0
+422084,1375-P,GREEN,Cocks Standard,0,0
+422085,1375-P,IVORY,Cocks Standard,0,0
+422086,1375-P,M GREEN,Cocks Standard,0,0
+422087,1375-P,PINK,Cocks Standard,0,0
+422088,1375-P,WHITE,Cocks Standard,0,0
+422089,1375-Q,BURGUNDY,Cocks Standard,0,0
+422090,1375-Q,GREEN,Cocks Standard,0,0
+422091,1375-Q,IVORY,Cocks Standard,16,10
+422092,1375-Q,M GREEN,Cocks Standard,0,0
+422093,1375-Q,PINK,Cocks Standard,0,0
+422094,1375-Q,WHITE,Cocks Standard,22,22
+422095,1375-QAB,,Cocks Premium,8,20
+422096,1375-QG,14,Cocks Premium,8,0
+422097,1375-QP,,Cocks Premium,8,18
+422098,1375-QR,21,Cocks Premium,74,103
+422099,1375-QW,,Cocks Premium,8,5
+422100,1375-R,BURGUNDY,Cocks Standard,0,0
+422101,1375-R,GREEN,Cocks Standard,0,0
+422102,1375-R,IVORY,Cocks Standard,10,0
+422103,1375-R,M GREEN,Cocks Standard,0,0
+422104,1375-R,PINK,Cocks Standard,0,0
+422105,1375-R,WHITE,Cocks Standard,2,0
+422106,1375-RG,4,Cocks Premium,17.33,24.33
+422107,1375-RP,,Cocks Premium,0,0
+422108,1375-RR,12,Cocks Premium,8,0
+422109,1375-RW,,Cocks Premium,0,0
+422110,1375-S,BURGUNDY,Cocks Standard,0,0
+422111,1375-S,GREEN,Cocks Standard,0,0
+422112,1375-S,IVORY,Cocks Standard,218,565
+422113,1375-S,M GREEN,Cocks Standard,0,0
+422114,1375-S,PINK,Cocks Standard,0,0
+422115,1375-S,WHITE,Cocks Standard,332,387
+422116,1375-SF,IVORY,Cocks Standard,14,40
+422117,1375-SF,WHITE,Cocks Standard,56,80
+422118,1375-SFG,,Cocks Premium,2,3
+422119,1375-SFP,,Cocks Premium,24,64
+422120,1375-SFR,,Cocks Premium,65.67,77.67
+422121,1375-SFW,,Cocks Premium,0,0
+422122,1375-SG,,Cocks Premium,0,0
+422123,1375-SP,IVORY,Unclassified,,0
+422124,1375-SP,IVORY,Unclassified,,0
+422125,1375-SP,WHITE,Unclassified,,19
+422126,1375-SR,,Cocks Premium,0,0
+422127,1375-SW,,Cocks Premium,0,0
+422128,1375-U,BURGUNDY,Cocks Standard,0,0
+422129,1375-U,GREEN,Cocks Standard,0,0
+422130,1375-U,IVORY,Cocks Standard,0,0
+422131,1375-U,M GREEN,Cocks Standard,0,0
+422132,1375-U,PINK,Cocks Standard,0,0
+422133,1375-U,WHITE,Cocks Standard,12,22
+422134,1375-UG,,Cocks Premium,0,0
+422135,1375-UP,,Cocks Premium,0,0
+422136,1375-UR,21,Cocks Premium,8,5
+422137,1375-UW,,Cocks Premium,0,0
+422138,1375-V,BURGUNDY,Cocks Standard,0,0
+422139,1375-V,GREEN,Cocks Standard,0,0
+422140,1375-V,IVORY,Cocks Standard,0,0
+422141,1375-V,M GREEN,Cocks Standard,0,0
+422142,1375-V,PINK,Cocks Standard,0,0
+422143,1375-V,WHITE,Cocks Standard,0,0
+422144,1375-VG,,Cocks Premium,0,0
+422145,1375-VP,5,Cocks Premium,18,13
+422146,1375-VR,,Cocks Premium,8,11
+422147,1375-VW,,Cocks Premium,0.33,0.33
+422148,138,BURGUNDY,Cocks Standard,0,0
+422149,138,GREEN,Cocks Standard,0,0
+422150,138,IVORY,Cocks Standard,0,0
+422151,138,M GREEN,Cocks Standard,0,0
+422152,138,PINK,Cocks Standard,0,0
+422153,138,WHITE,Cocks Standard,69.33,69.33
+422154,139,BURGUNDY,Cocks Standard,0,0
+422155,139,GREEN,Cocks Standard,0,0
+422156,139,IVORY,Cocks Standard,106.67,0
+422157,139,M GREEN,Cocks Standard,0,0
+422158,139,PINK,Cocks Standard,0,0
+422159,139,WHITE,Cocks Standard,2100.67,4016.67
+422160,139-M,BURGUNDY,Cocks Standard,0,0
+422161,139-M,GREEN,Cocks Standard,0,0
+422162,139-M,IVORY,Cocks Standard,0,0
+422163,139-M,M GREEN,Cocks Standard,0,0
+422164,139-M,PINK,Cocks Standard,0,0
+422165,139-M,WHITE,Cocks Standard,120,222
+422166,1391,BURGUNDY,Cocks Standard,0,0
+422167,1391,GREEN,Cocks Standard,0,0
+422168,1391,IVORY,Cocks Standard,1313.33,295.33
+422169,1391,M GREEN,Cocks Standard,0,0
+422170,1391,PINK,Cocks Standard,0,0
+422171,1391,WHITE,Cocks Standard,5411.67,7819.67
+422172,1391-M,IVORY,Cocks Standard,10,0
+422173,1391-M,WHITE,Cocks Standard,850,1457
+422174,140,BURGUNDY,Cocks Standard,0,0
+422175,140,GREEN,Cocks Standard,0,0
+422176,140,IVORY,Cocks Standard,370,0
+422177,140,M GREEN,Cocks Standard,0,0
+422178,140,PINK,Cocks Standard,0,0
+422179,140,WHITE,Cocks Standard,1209.67,1271.67
+422180,141,BURGUNDY,Cocks Standard,0,0
+422181,141,GREEN,Cocks Standard,0,0
+422182,141,IVORY,Cocks Standard,173.67,36.67
+422183,141,M GREEN,Cocks Standard,0,0
+422184,141,PINK,Cocks Standard,0,0
+422185,141,WHITE,Cocks Standard,666.67,0
+422186,141-A,WHITE,Cocks Standard,0,0
+422187,141-AB,,Cocks Standard,0,0
+422188,141-ABN,,Cocks Standard,0,0
+422189,141-AN,WHITE,Cocks Standard,0,0
+422190,141-C,BURGUNDY,Cocks Standard,0,0
+422191,141-C,GREEN,Cocks Standard,0,0
+422192,141-C,IVORY,Cocks Standard,0,0
+422193,141-C,M GREEN,Cocks Standard,0,0
+422194,141-C,PINK,Cocks Standard,0,0
+422195,141-C,WHITE,Cocks Standard,0,0
+422196,141-E,BURGUNDY,Cocks Standard,0,0
+422197,141-E,GREEN,Cocks Standard,0,0
+422198,141-E,IVORY,Cocks Standard,0,0
+422199,141-E,M GREEN,Cocks Standard,0,0
+422200,141-E,PINK,Cocks Standard,0,0
+422201,141-E,WHITE,Cocks Standard,256,0
+422202,141-H,BURGUNDY,Cocks Standard,0,0
+422203,141-H,GREEN,Cocks Standard,0,0
+422204,141-H,IVORY,Cocks Standard,0,0
+422205,141-H,M GREEN,Cocks Standard,0,0
+422206,141-H,PINK,Cocks Standard,0,0
+422207,141-H,WHITE,Cocks Standard,0,0
+422208,141-HG,,Cocks Premium,0,0
+422209,141-HP,,Cocks Premium,0,0
+422210,141-HR,,Cocks Premium,0,0
+422211,141-HW,,Cocks Premium,0,0
+422212,141-K,WHITE,Cocks Standard,0,0
+422213,141-LS,,Cocks Standard,0,0
+422214,141-LSB,BLUE,Cocks Standard,0,0
+422215,141-N,BURGUNDY,Cocks Standard,0,0
+422216,141-N,GREEN,Cocks Standard,0,0
+422217,141-N,IVORY,Cocks Standard,0,0
+422218,141-N,M GREEN,Cocks Standard,0,0
+422219,141-N,PINK,Cocks Standard,0,0
+422220,141-N,WHITE,Cocks Standard,13.33,0.33
+422221,141-NP,BURGUNDY,Cocks Standard,0,0
+422222,141-NP,GREEN,Cocks Standard,0,0
+422223,141-NP,IVORY,Cocks Standard,10,29
+422224,141-NP,M GREEN,Cocks Standard,0,0
+422225,141-NP,PINK,Cocks Standard,0,0
+422226,141-NP,WHITE,Cocks Standard,0,0
+422227,141-O,BURGUNDY,Cocks Standard,0,0
+422228,141-O,GREEN,Cocks Standard,0,0
+422229,141-O,IVORY,Cocks Standard,44,38
+422230,141-O,M GREEN,Cocks Standard,0,0
+422231,141-O,PINK,Cocks Standard,0,0
+422232,141-O,WHITE,Cocks Standard,182.67,78.67
+422233,141-P,BURGUNDY,Cocks Standard,0,0
+422234,141-P,GREEN,Cocks Standard,0,0
+422235,141-P,IVORY,Cocks Standard,0,0
+422236,141-P,M GREEN,Cocks Standard,0,0
+422237,141-P,PINK,Cocks Standard,0,0
+422238,141-P,WHITE,Cocks Standard,0,0
+422239,1411,BURGUNDY,Cocks Standard,0,0
+422240,1411,GREEN,Cocks Standard,0,0
+422241,1411,IVORY,Cocks Standard,0,0
+422242,1411,M GREEN,Cocks Standard,0,0
+422243,1411,PINK,Cocks Standard,0,0
+422244,1411,WHITE,Cocks Standard,0,0
+422245,142,BLUE,Cocks Standard,0,0
+422246,142,BURGUNDY,Cocks Standard,0,0
+422247,142,GREEN,Cocks Standard,0,0
+422248,142,IVORY,Cocks Standard,792,1848
+422249,142,M GREEN,Cocks Standard,0,0
+422250,142,PINK,Cocks Standard,0,0
+422251,142,WHITE,Cocks Standard,1272,1579
+422252,142-A,WHITE,Cocks Standard,0,0
+422253,142-AB,,Cocks Standard,0,0
+422254,142-C,BURGUNDY,Cocks Standard,0,0
+422255,142-C,GREEN,Cocks Standard,0,0
+422256,142-C,IVORY,Cocks Standard,0,0
+422257,142-C,M GREEN,Cocks Standard,0,0
+422258,142-C,PINK,Cocks Standard,0,0
+422259,142-C,WHITE,Cocks Standard,44,0
+422260,142-E,BURGUNDY,Cocks Standard,0,0
+422261,142-E,GREEN,Cocks Standard,0,0
+422262,142-E,IVORY,Cocks Standard,0,0
+422263,142-E,M GREEN,Cocks Standard,0,0
+422264,142-E,PINK,Cocks Standard,0,0
+422265,142-E,WHITE,Cocks Standard,78.67,0
+422266,142-H,BURGUNDY,Cocks Standard,0,0
+422267,142-H,GREEN,Cocks Standard,0,0
+422268,142-H,IVORY,Cocks Standard,0,0
+422269,142-H,M GREEN,Cocks Standard,0,0
+422270,142-H,PINK,Cocks Standard,0,0
+422271,142-H,WHITE,Cocks Standard,0,0
+422272,142-HG,,Cocks Premium,0,0
+422273,142-HP,,Cocks Premium,0,0
+422274,142-HR,,Cocks Premium,0,0
+422275,142-HW,,Cocks Premium,0,0
+422276,142-K,WHITE,Cocks Standard,0,0
+422277,142-LS,,Cocks Standard,0,0
+422278,142-LSB,BLUE,Cocks Standard,0,0
+422279,142-O,BURGUNDY,Cocks Standard,0,0
+422280,142-O,GREEN,Cocks Standard,0,0
+422281,142-O,IVORY,Cocks Standard,0,0
+422282,142-O,M GREEN,Cocks Standard,0,0
+422283,142-O,PINK,Cocks Standard,0,0
+422284,142-O,WHITE,Cocks Standard,198.67,248.67
+422285,142-P,BURGUNDY,Cocks Standard,0,0
+422286,142-P,GREEN,Cocks Standard,0,0
+422287,142-P,IVORY,Cocks Standard,0,0
+422288,142-P,M GREEN,Cocks Standard,0,0
+422289,142-P,PINK,Cocks Standard,0,0
+422290,142-P,WHITE,Cocks Standard,44,58
+422291,1421,BURGUNDY,Cocks Standard,0,0
+422292,1421,GREEN,Cocks Standard,0,0
+422293,1421,IVORY,Cocks Standard,0,0
+422294,1421,M GREEN,Cocks Standard,0,0
+422295,1421,PINK,Cocks Standard,0,0
+422296,1421,WHITE,Cocks Standard,33.33,0
+422297,143,BLUE,Cocks Standard,3.33,0
+422298,143,BURGUNDY,Cocks Standard,0,0
+422299,143,GREEN,Cocks Standard,0,0
+422300,143,IVORY,Cocks Standard,2130,3115
+422301,143,M GREEN,Cocks Standard,0,0
+422302,143,PINK,Cocks Standard,91.33,35.33
+422303,143,WHITE,Cocks Standard,4007.33,5439.33
+422304,143-A,WHITE,Cocks Standard,0,0
+422305,143-AB,,Cocks Standard,0,0
+422306,143-C,WHITE,Cocks Standard,110,103
+422307,143-E,BURGUNDY,Cocks Standard,0,0
+422308,143-E,GREEN,Cocks Standard,0,0
+422309,143-E,IVORY,Cocks Standard,0,0
+422310,143-E,M GREEN,Cocks Standard,0,0
+422311,143-E,PINK,Cocks Standard,0,0
+422312,143-E,WHITE,Cocks Standard,8,4
+422313,143-H,BURGUNDY,Cocks Standard,0,0
+422314,143-H,GREEN,Cocks Standard,0,0
+422315,143-H,IVORY,Cocks Standard,0,0
+422316,143-H,M GREEN,Cocks Standard,0,0
+422317,143-H,PINK,Cocks Standard,0,0
+422318,143-H,WHITE,Cocks Standard,42.67,0
+422319,143-HG,,Cocks Premium,0,0
+422320,143-HP,,Cocks Premium,0,0
+422321,143-HR,,Cocks Premium,0,0
+422322,143-HW,,Cocks Premium,0,0
+422323,143-LS,,Cocks Standard,0,0
+422324,143-LSB,BLUE,Cocks Standard,0,0
+422325,143-O,BURGUNDY,Cocks Standard,0,0
+422326,143-O,GREEN,Cocks Standard,0,0
+422327,143-O,IVORY,Cocks Standard,0,0
+422328,143-O,M GREEN,Cocks Standard,0,0
+422329,143-O,PINK,Cocks Standard,0,0
+422330,143-O,WHITE,Cocks Standard,176,0
+422331,143-P,BURGUNDY,Cocks Standard,0,0
+422332,143-P,GREEN,Cocks Standard,0,0
+422333,143-P,IVORY,Cocks Standard,0,0
+422334,143-P,M GREEN,Cocks Standard,0,0
+422335,143-P,PINK,Cocks Standard,0,0
+422336,143-P,WHITE,Cocks Standard,0,0
+422337,1431,BURGUNDY,Cocks Standard,0,0
+422338,1431,GREEN,Cocks Standard,0,0
+422339,1431,IVORY,Cocks Standard,0,0
+422340,1431,M GREEN,Cocks Standard,0,0
+422341,1431,PINK,Cocks Standard,0,0
+422342,1431,WHITE,Cocks Standard,42.67,30.67
+422343,1431-E,,Cocks Premium,0,0
+422344,144,BLUE,Cocks Standard,30,0
+422345,144,BURGUNDY,Cocks Standard,0,0
+422346,144,GREEN,Cocks Standard,30,0
+422347,144,IVORY,Cocks Standard,31453.33,32361.33
+422348,144,M GREEN,Cocks Standard,0,0
+422349,144,PINK,Cocks Standard,852,1936
+422350,144,WHITE,Cocks Standard,21067,17198
+422351,144-4E,,Cocks Standard,0,0
+422352,144-4U,,Cocks Standard,0,0
+422353,144-A,IVORY,Cocks Standard,0,0
+422354,144-A,WHITE,Cocks Standard,90,0
+422355,144-AB,,Cocks Standard,0,0
+422356,144-AP,IVORY,Cocks Standard,450,329
+422357,144-AP,WHITE,Cocks Standard,35.33,0
+422358,144-AS,IVORY,Cocks Standard,1410,2960
+422359,144-AS,WHITE,Cocks Standard,537.67,717.67
+422360,144-B,BURGUNDY,Cocks Standard,0,0
+422361,144-B,GREEN,Cocks Standard,0,0
+422362,144-B,IVORY,Cocks Standard,90,0
+422363,144-B,M GREEN,Cocks Standard,0,0
+422364,144-B,PINK,Cocks Standard,0,0
+422365,144-B,WHITE,Cocks Standard,360,372
+422366,144-C,BURGUNDY,Cocks Standard,0,0
+422367,144-C,GREEN,Cocks Standard,0,0
+422368,144-C,IVORY,Cocks Standard,30,0
+422369,144-C,M GREEN,Cocks Standard,0,0
+422370,144-C,PINK,Cocks Standard,0,0
+422371,144-C,WHITE,Cocks Standard,4230.33,4294.33
+422372,144-D,BURGUNDY,Cocks Standard,0,0
+422373,144-D,GREEN,Cocks Standard,0,0
+422374,144-D,IVORY,Cocks Standard,88,0
+422375,144-D,M GREEN,Cocks Standard,0,0
+422376,144-D,PINK,Cocks Standard,0,0
+422377,144-D,WHITE,Cocks Standard,224.67,27.67
+422378,144-DB,BLACK,Cocks Standard,396,538
+422379,144-DG,,Cocks Premium,22,0
+422380,144-DP,,Cocks Premium,47.33,0
+422381,144-DR,,Cocks Premium,418,343
+422382,144-DW,,Cocks Premium,44,0
+422383,144-E,BURGUNDY,Cocks Standard,0,0
+422384,144-E,GREEN,Cocks Standard,0,0
+422385,144-E,IVORY,Cocks Standard,0,0
+422386,144-E,M GREEN,Cocks Standard,0,0
+422387,144-E,PINK,Cocks Standard,0,0
+422388,144-E,WHITE,Cocks Standard,459.67,0
+422389,144-EB,IVORY,Cocks Standard,390,487
+422390,144-EB,WHITE,Cocks Standard,600,1365
+422391,144-H,BURGUNDY,Cocks Standard,0,0
+422392,144-H,GREEN,Cocks Standard,0,0
+422393,144-H,IVORY,Cocks Standard,360,0
+422394,144-H,M GREEN,Cocks Standard,0,0
+422395,144-H,PINK,Cocks Standard,0,0
+422396,144-H,WHITE,Cocks Standard,3090.33,1038.33
+422397,144-HG,,Cocks Premium,30,42
+422398,144-HP,,Cocks Premium,0,0
+422399,144-HR,,Cocks Premium,240,231
+422400,144-HW,,Cocks Premium,149.33,0
+422401,144-I,IVORY,Cocks Standard,22,0
+422402,144-I,WHITE,Cocks Standard,22,0
+422403,144-IG,,Cocks Premium,22,0
+422404,144-IP,,Cocks Premium,0,0
+422405,144-IR,,Cocks Premium,0,0
+422406,144-IW,,Cocks Premium,0,0
+422407,144-K,WHITE,Cocks Standard,1530,2308
+422408,144-L,WHITE,Cocks Standard,0,0
+422409,144-LG,,Cocks Premium,0,0
+422410,144-LP,,Cocks Premium,0,0
+422411,144-LR,,Cocks Premium,0,0
+422412,144-LS,WHITE,Cocks Standard,0,0
+422413,144-LSB,BLUE,Cocks Standard,60,710
+422414,144-LW,,Cocks Premium,0,0
+422415,144-N,IVORY,Cocks Standard,0,0
+422416,144-N,WHITE,Cocks Standard,110,87
+422417,144-NB,,Cocks Premium,132,162
+422418,144-NG,,Cocks Premium,44.33,44.33
+422419,144-NP,,Cocks Premium,66,0
+422420,144-NR,,Cocks Premium,264,0
+422421,144-NW,,Cocks Premium,66,0
+422422,144-O,BURGUNDY,Cocks Standard,0,0
+422423,144-O,GREEN,Cocks Standard,0,0
+422424,144-O,IVORY,Cocks Standard,1306,0
+422425,144-O,M GREEN,Cocks Standard,0,0
+422426,144-O,PINK,Cocks Standard,0,0
+422427,144-O,WHITE,Cocks Standard,5689.33,1977.33
+422428,144-P,BURGUNDY,Cocks Standard,0,0
+422429,144-P,GREEN,Cocks Standard,0,0
+422430,144-P,IVORY,Cocks Standard,463.33,393.33
+422431,144-P,M GREEN,Cocks Standard,0,0
+422432,144-P,PINK,Cocks Standard,0,0
+422433,144-P,WHITE,Cocks Standard,471.33,1164.33
+422434,144-PR,,Cocks Standard,0,0
+422435,144-Q,BURGUNDY,Cocks Standard,0,0
+422436,144-Q,GREEN,Cocks Standard,0,0
+422437,144-Q,IVORY,Cocks Standard,286,590
+422438,144-Q,M GREEN,Cocks Standard,0,0
+422439,144-Q,PINK,Cocks Standard,0,0
+422440,144-Q,WHITE,Cocks Standard,286,0
+422441,144-QAB,,Cocks Standard,88,48
+422442,144-QG,,Cocks Premium,66,0
+422443,144-QP,,Cocks Premium,44,0
+422444,144-QR,,Cocks Premium,1514.67,2060.67
+422445,144-QW,,Cocks Premium,0,0
+422446,144-R,BURGUNDY,Cocks Standard,0,0
+422447,144-R,GREEN,Cocks Standard,0,0
+422448,144-R,IVORY,Cocks Standard,198,393
+422449,144-R,M GREEN,Cocks Standard,0,0
+422450,144-R,PINK,Cocks Standard,0,0
+422451,144-R,WHITE,Cocks Standard,22,0
+422452,144-RG,,Cocks Premium,122,42
+422453,144-RP,,Cocks Premium,0,0
+422454,144-RR,14,Cocks Premium,66,36
+422455,144-RW,,Cocks Premium,0,0
+422456,144-S,BURGUNDY,Cocks Standard,0,0
+422457,144-S,GREEN,Cocks Standard,0,0
+422458,144-S,IVORY,Cocks Standard,270,0
+422459,144-S,M GREEN,Cocks Standard,0,0
+422460,144-S,PINK,Cocks Standard,0,0
+422461,144-S,WHITE,Cocks Standard,1133.67,1263.67
+422462,144-SG,,Cocks Premium,40,0
+422463,144-SP,,Cocks Premium,270,875
+422464,144-SR,,Cocks Premium,1274,1838
+422465,144-SW,,Cocks Premium,0,0
+422466,144-T,BURGUNDY,Cocks Standard,0,0
+422467,144-T,GREEN,Cocks Standard,0,0
+422468,144-T,IVORY,Cocks Standard,352,280
+422469,144-T,M GREEN,Cocks Standard,0,0
+422470,144-T,PINK,Cocks Standard,0,0
+422471,144-T,WHITE,Cocks Standard,882.67,859.67
+422472,144-U,BURGUNDY,Cocks Standard,0,0
+422473,144-U,GREEN,Cocks Standard,0,0
+422474,144-U,IVORY,Cocks Standard,0,0
+422475,144-U,M GREEN,Cocks Standard,0,0
+422476,144-U,PINK,Cocks Standard,0,0
+422477,144-U,WHITE,Cocks Standard,88,74
+422478,144-UG,,Cocks Premium,66,11
+422479,144-UP,,Cocks Premium,0,0
+422480,144-UR,16,Cocks Premium,132,56
+422481,144-UW,,Cocks Premium,0,0
+422482,144-V,BURGUNDY,Cocks Standard,0,0
+422483,144-V,GREEN,Cocks Standard,0,0
+422484,144-V,IVORY,Cocks Standard,30,0
+422485,144-V,M GREEN,Cocks Standard,0,0
+422486,144-V,PINK,Cocks Standard,0,0
+422487,144-V,WHITE,Cocks Standard,0,0
+422488,144-VG,,Cocks Premium,0,0
+422489,144-VP,53,Cocks Premium,150,98
+422490,144-VR,,Cocks Premium,90,0
+422491,144-VW,,Cocks Premium,0,0
+422492,1441,BURGUNDY,Cocks Standard,0,0
+422493,1441,GREEN,Cocks Standard,0,0
+422494,1441,IVORY,Cocks Standard,300,0
+422495,1441,M GREEN,Cocks Standard,0,0
+422496,1441,PINK,Cocks Standard,0,0
+422497,1441,WHITE,Cocks Standard,540.67,0
+422498,145,BLUE,Cocks Standard,0,0
+422499,145,BURGUNDY,Cocks Standard,0,0
+422500,145,GREEN,Cocks Standard,0,0
+422501,145,IVORY,Cocks Standard,1045,1561
+422502,145,M GREEN,Cocks Standard,0,0
+422503,145,PINK,Cocks Standard,93.33,232.33
+422504,145,WHITE,Cocks Standard,2801.67,3476.67
+422505,145-5E,,Cocks Standard,0,0
+422506,145-5U,,Cocks Standard,0,0
+422507,145-A,WHITE,Cocks Standard,46.67,174.67
+422508,145-AB,WHITE,Cocks Standard,0,0
+422509,145-AP,IVORY,Cocks Standard,40,14
+422510,145-AP,WHITE,Cocks Standard,0,0
+422511,145-AS,IVORY,Cocks Standard,40,0
+422512,145-AS,WHITE,Cocks Standard,63.33,89.33
+422513,145-B,BURGUNDY,Cocks Standard,0,0
+422514,145-B,GREEN,Cocks Standard,0,0
+422515,145-B,IVORY,Cocks Standard,0,0
+422516,145-B,M GREEN,Cocks Standard,0,0
+422517,145-B,PINK,Cocks Standard,0,0
+422518,145-B,WHITE,Cocks Standard,44,45
+422519,145-C,BURGUNDY,Cocks Standard,0,0
+422520,145-C,GREEN,Cocks Standard,0,0
+422521,145-C,IVORY,Cocks Standard,0,0
+422522,145-C,M GREEN,Cocks Standard,0,0
+422523,145-C,PINK,Cocks Standard,0,0
+422524,145-C,WHITE,Cocks Standard,880,1240
+422525,145-D,BURGUNDY,Cocks Standard,0,0
+422526,145-D,GREEN,Cocks Standard,0,0
+422527,145-D,IVORY,Cocks Standard,7.67,0
+422528,145-D,M GREEN,Cocks Standard,0,0
+422529,145-D,PINK,Cocks Standard,0,0
+422530,145-D,WHITE,Cocks Standard,7.67,27.67
+422531,145-DB,BLACK,Cocks Standard,38.33,51.33
+422532,145-DG,10,Cocks Premium,3.33,0
+422533,145-DP,,Cocks Premium,0,0
+422534,145-DR,,Cocks Premium,19.33,48.33
+422535,145-DW,,Cocks Premium,0,16
+422536,145-E,BURGUNDY,Cocks Standard,0,0
+422537,145-E,GREEN,Cocks Standard,0,0
+422538,145-E,IVORY,Cocks Standard,0,0
+422539,145-E,M GREEN,Cocks Standard,0,0
+422540,145-E,PINK,Cocks Standard,0,0
+422541,145-E,WHITE,Cocks Standard,14.67,0
+422542,145-EB,IVORY,Cocks Standard,0,0
+422543,145-EB,WHITE,Cocks Standard,80,158
+422544,145-H,BURGUNDY,Cocks Standard,0,0
+422545,145-H,GREEN,Cocks Standard,0,0
+422546,145-H,IVORY,Cocks Standard,11.67,0
+422547,145-H,M GREEN,Cocks Standard,0,0
+422548,145-H,PINK,Cocks Standard,0,0
+422549,145-H,WHITE,Cocks Standard,220,0
+422550,145-HG,,Cocks Premium,0,0
+422551,145-HP,,Cocks Premium,0,0
+422552,145-HR,,Cocks Premium,1.67,0
+422553,145-HW,,Cocks Premium,0,0
+422554,145-I,IVORY,Cocks Standard,7.67,2.67
+422555,145-I,WHITE,Cocks Standard,7.67,0
+422556,145-IG,,Cocks Premium,7.67,0
+422557,145-IP,,Cocks Premium,0,0
+422558,145-IR,,Cocks Premium,0,0
+422559,145-IW,,Cocks Premium,0,0
+422560,145-K,WHITE,Cocks Standard,40,17
+422561,145-L,WHITE,Cocks Standard,0,0
+422562,145-LG,,Cocks Premium,0,0
+422563,145-LP,,Cocks Premium,0,0
+422564,145-LR,,Cocks Premium,0,0
+422565,145-LS,WHITE,Cocks Standard,11.67,17.67
+422566,145-LSB,BLUE,Cocks Standard,0,241
+422567,145-LW,,Cocks Premium,0,0
+422568,145-N,IVORY,Cocks Standard,0,0
+422569,145-N,WHITE,Cocks Standard,46.67,186.67
+422570,145-NB,,Cocks Premium,23.33,0
+422571,145-NG,,Cocks Premium,18.33,4.33
+422572,145-NP,,Cocks Premium,0,0
+422573,145-NR,,Cocks Premium,35,0
+422574,145-NW,,Cocks Premium,11.67,0
+422575,145-O,BURGUNDY,Cocks Standard,0,0
+422576,145-O,GREEN,Cocks Standard,0,0
+422577,145-O,IVORY,Cocks Standard,20,0
+422578,145-O,M GREEN,Cocks Standard,0,0
+422579,145-O,PINK,Cocks Standard,0,0
+422580,145-O,WHITE,Cocks Standard,420,585
+422581,145-P,BURGUNDY,Cocks Standard,0,0
+422582,145-P,GREEN,Cocks Standard,0,0
+422583,145-P,IVORY,Cocks Standard,50,49
+422584,145-P,M GREEN,Cocks Standard,0,0
+422585,145-P,PINK,Cocks Standard,0,0
+422586,145-P,WHITE,Cocks Standard,74.67,216.67
+422587,145-PR,,Cocks Standard,0,0
+422588,145-Q,BURGUNDY,Cocks Standard,0,0
+422589,145-Q,GREEN,Cocks Standard,0,0
+422590,145-Q,IVORY,Cocks Standard,35.67,0
+422591,145-Q,M GREEN,Cocks Standard,0,0
+422592,145-Q,PINK,Cocks Standard,0,0
+422593,145-Q,WHITE,Cocks Standard,15.33,0
+422594,145-QAB,,Cocks Standard,7.67,0
+422595,145-QG,,Cocks Premium,7.67,0
+422596,145-QP,,Cocks Premium,23,11
+422597,145-QR,9,Cocks Premium,92,90
+422598,145-QW,,Cocks Premium,0,0
+422599,145-R,BURGUNDY,Cocks Standard,0,0
+422600,145-R,GREEN,Cocks Standard,0,0
+422601,145-R,IVORY,Cocks Standard,0,0
+422602,145-R,M GREEN,Cocks Standard,0,0
+422603,145-R,PINK,Cocks Standard,0,0
+422604,145-R,WHITE,Cocks Standard,0,0
+422605,145-RG,,Cocks Premium,7.67,7.67
+422606,145-RP,,Cocks Premium,0,0
+422607,145-RR,,Cocks Premium,15.33,38.33
+422608,145-RW,,Cocks Premium,0,0
+422609,145-S,BURGUNDY,Cocks Standard,0,0
+422610,145-S,GREEN,Cocks Standard,0,0
+422611,145-S,IVORY,Cocks Standard,43.33,9.33
+422612,145-S,M GREEN,Cocks Standard,0,0
+422613,145-S,PINK,Cocks Standard,0,0
+422614,145-S,WHITE,Cocks Standard,80,76
+422615,145-SG,,Cocks Premium,10,9
+422616,145-SP,,Cocks Premium,0,0
+422617,145-SR,,Cocks Premium,210,303
+422618,145-SW,,Cocks Premium,0,0
+422619,145-U,BURGUNDY,Cocks Standard,0,0
+422620,145-U,GREEN,Cocks Standard,0,0
+422621,145-U,IVORY,Cocks Standard,0,0
+422622,145-U,M GREEN,Cocks Standard,0,0
+422623,145-U,PINK,Cocks Standard,0,0
+422624,145-U,WHITE,Cocks Standard,38.33,25.33
+422625,145-UG,,Cocks Premium,0,0
+422626,145-UP,,Cocks Premium,0,0
+422627,145-UR,17,Cocks Premium,15.33,0.33
+422628,145-UW,,Cocks Premium,0,0
+422629,145-V,BURGUNDY,Cocks Standard,0,0
+422630,145-V,GREEN,Cocks Standard,0,0
+422631,145-V,IVORY,Cocks Standard,10,10
+422632,145-V,M GREEN,Cocks Standard,0,0
+422633,145-V,PINK,Cocks Standard,0,0
+422634,145-V,WHITE,Cocks Standard,0,0
+422635,145-VG,,Cocks Premium,0,0
+422636,145-VP,,Cocks Premium,0,0
+422637,145-VR,,Cocks Premium,20,0
+422638,145-VW,,Cocks Premium,0,0
+422639,1451,BURGUNDY,Cocks Standard,0,0
+422640,1451,GREEN,Cocks Standard,0,0
+422641,1451,IVORY,Cocks Standard,105,160
+422642,1451,M GREEN,Cocks Standard,0,0
+422643,1451,PINK,Cocks Standard,0,0
+422644,1451,WHITE,Cocks Standard,105,128
+422645,146,BURGUNDY,Cocks Standard,0,0
+422646,146,GREEN,Cocks Standard,0,0
+422647,146,IVORY,Cocks Standard,76,0
+422648,146,M GREEN,Cocks Standard,0,0
+422649,146,PINK,Cocks Standard,0,0
+422650,146,WHITE,Cocks Standard,13.33,0
+422651,146-A,WHITE,Cocks Standard,0,0
+422652,146-AB,,Cocks Standard,0,0
+422653,146-B,BURGUNDY,Unclassified,,0
+422654,146-B,GREEN,Unclassified,,0
+422655,146-B,IVORY,Unclassified,,0
+422656,146-B,IVORY,Unclassified,,0
+422657,146-B,M GREEN,Unclassified,,0
+422658,146-B,PINK,Unclassified,,0
+422659,146-B,WHITE,Unclassified,,0
+422660,146-B,WHITE,Unclassified,,0
+422661,146-BO,BURGUNDY,Unclassified,,0
+422662,146-BO,GREEN,Unclassified,,0
+422663,146-BO,IVORY,Unclassified,,0
+422664,146-BO,M GREEN,Unclassified,,0
+422665,146-BO,PINK,Unclassified,,0
+422666,146-BO,WHITE,Unclassified,,0
+422667,146-BO,WHITE,Unclassified,,0
+422668,146-BP,BURGUNDY,Cocks Standard,0,0
+422669,146-BP,GREEN,Cocks Standard,0,0
+422670,146-BP,IVORY,Cocks Standard,0,0
+422671,146-BP,M GREEN,Cocks Standard,0,0
+422672,146-BP,PINK,Cocks Standard,0,0
+422673,146-BP,WHITE,Cocks Standard,0,0
+422674,146-C,BURGUNDY,Cocks Standard,0,0
+422675,146-C,GREEN,Cocks Standard,0,0
+422676,146-C,IVORY,Cocks Standard,0,0
+422677,146-C,M GREEN,Cocks Standard,0,0
+422678,146-C,PINK,Cocks Standard,0,0
+422679,146-C,WHITE,Cocks Standard,21.33,11.33
+422680,146-DB,WHITE,Cocks Standard,0,0
+422681,146-E,BURGUNDY,Cocks Standard,0,0
+422682,146-E,GREEN,Cocks Standard,0,0
+422683,146-E,IVORY,Cocks Standard,0,0
+422684,146-E,M GREEN,Cocks Standard,0,0
+422685,146-E,PINK,Cocks Standard,0,0
+422686,146-E,WHITE,Cocks Standard,0,0
+422687,146-H,BURGUNDY,Cocks Standard,0,0
+422688,146-H,GREEN,Cocks Standard,0,0
+422689,146-H,IVORY,Cocks Standard,0,0
+422690,146-H,M GREEN,Cocks Standard,0,0
+422691,146-H,PINK,Cocks Standard,0,0
+422692,146-H,WHITE,Cocks Standard,0,0
+422693,146-HB,,Unclassified,,0
+422694,146-HB,WHITE,Unclassified,,0
+422695,146-HB,WHITE,Unclassified,,0
+422696,146-HG,,Cocks Premium,0,0
+422697,146-HP,,Cocks Premium,0,0
+422698,146-HR,,Cocks Premium,0,0
+422699,146-HW,,Cocks Premium,0,0
+422700,146-K,WHITE,Cocks Standard,0,0
+422701,146-LS,,Cocks Standard,0,0
+422702,146-LSB,BLUE,Cocks Standard,0,0
+422703,146-O,BURGUNDY,Cocks Standard,0,0
+422704,146-O,GREEN,Cocks Standard,0,0
+422705,146-O,IVORY,Cocks Standard,0,0
+422706,146-O,M GREEN,Cocks Standard,0,0
+422707,146-O,PINK,Cocks Standard,0,0
+422708,146-O,WHITE,Cocks Standard,21.33,0
+422709,146-P,BURGUNDY,Cocks Standard,0,0
+422710,146-P,GREEN,Cocks Standard,0,0
+422711,146-P,IVORY,Cocks Standard,0,0
+422712,146-P,M GREEN,Cocks Standard,0,0
+422713,146-P,PINK,Cocks Standard,0,0
+422714,146-P,WHITE,Cocks Standard,0,0
+422715,146-Q,IVORY,Accessorise,0,0
+422716,1461,BURGUNDY,Cocks Standard,0,0
+422717,1461,GREEN,Cocks Standard,0,0
+422718,1461,IVORY,Cocks Standard,0,0
+422719,1461,M GREEN,Cocks Standard,0,0
+422720,1461,PINK,Cocks Standard,0,0
+422721,1461,WHITE,Cocks Standard,0,0
+422722,147,BURGUNDY,Cocks Standard,0,0
+422723,147,GREEN,Cocks Standard,0,0
+422724,147,IVORY,Cocks Standard,3178.67,6603.67
+422725,147,M GREEN,Cocks Standard,0,0
+422726,147,PINK,Cocks Standard,0,0
+422727,147,WHITE,Cocks Standard,2835,3877
+422728,147-7E,,Cocks Premium,0,0
+422729,147-A,WHITE,Cocks Standard,10,0
+422730,147-AB,,Cocks Standard,0,0
+422731,147-ABQ,,Cocks Standard,0,0
+422732,147-AP,IVORY,Cocks Standard,90,62
+422733,147-AQ,WHITE,Cocks Standard,0,0
+422734,147-AS,IVORY,Cocks Standard,170,185
+422735,147-AS,WHITE,Cocks Standard,14,42
+422736,147-B,BURGUNDY,Cocks Standard,0,0
+422737,147-B,GREEN,Cocks Standard,0,0
+422738,147-B,IVORY,Cocks Standard,40,0
+422739,147-B,M GREEN,Cocks Standard,0,0
+422740,147-B,PINK,Cocks Standard,0,0
+422741,147-B,WHITE,Cocks Standard,170,197
+422742,147-BB,,Cocks Standard,0,0
+422743,147-BP,BURGUNDY,Cocks Standard,0,0
+422744,147-BP,GREEN,Cocks Standard,0,0
+422745,147-BP,IVORY,Cocks Standard,0,0
+422746,147-BP,M GREEN,Cocks Standard,0,0
+422747,147-BP,PINK,Cocks Standard,0,0
+422748,147-BP,WHITE,Cocks Standard,0,0
+422749,147-C,BURGUNDY,Cocks Standard,0,0
+422750,147-C,GREEN,Cocks Standard,0,0
+422751,147-C,IVORY,Cocks Standard,0,0
+422752,147-C,M GREEN,Cocks Standard,0,0
+422753,147-C,PINK,Cocks Standard,0,0
+422754,147-C,WHITE,Cocks Standard,670,1148
+422755,147-CQ,BURGUNDY,Cocks Standard,0,0
+422756,147-CQ,GREEN,Cocks Standard,0,0
+422757,147-CQ,IVORY,Cocks Standard,0,0
+422758,147-CQ,M GREEN,Cocks Standard,0,0
+422759,147-CQ,PINK,Cocks Standard,0,0
+422760,147-CQ,WHITE,Cocks Standard,30,28
+422761,147-D,IVORY,Cocks Standard,40,61
+422762,147-D,WHITE,Cocks Standard,71,72
+422763,147-DB,BLACK,Cocks Standard,140,301
+422764,147-DG,,Cocks Premium,0,0
+422765,147-DP,,Cocks Premium,12,0
+422766,147-DR,,Cocks Premium,170,512
+422767,147-DW,,Cocks Premium,0,30
+422768,147-E,BURGUNDY,Cocks Standard,0,0
+422769,147-E,GREEN,Cocks Standard,0,0
+422770,147-E,IVORY,Cocks Standard,0,0
+422771,147-E,M GREEN,Cocks Standard,0,0
+422772,147-E,PINK,Cocks Standard,0,0
+422773,147-E,WHITE,Cocks Standard,0.33,0
+422774,147-EB,IVORY,Cocks Standard,0,0
+422775,147-EB,WHITE,Cocks Standard,70,189
+422776,147-EQ,BURGUNDY,Cocks Standard,0,0
+422777,147-EQ,GREEN,Cocks Standard,0,0
+422778,147-EQ,IVORY,Cocks Standard,0,0
+422779,147-EQ,M GREEN,Cocks Standard,0,0
+422780,147-EQ,PINK,Cocks Standard,0,0
+422781,147-EQ,WHITE,Cocks Standard,0,0
+422782,147-H,BURGUNDY,Cocks Standard,0,0
+422783,147-H,GREEN,Cocks Standard,0,0
+422784,147-H,IVORY,Cocks Standard,0,0
+422785,147-H,M GREEN,Cocks Standard,0,0
+422786,147-H,PINK,Cocks Standard,0,0
+422787,147-H,WHITE,Cocks Standard,130,237
+422788,147-HG,,Cocks Premium,10,0
+422789,147-HP,,Cocks Premium,0,0
+422790,147-HQ,,Unclassified,,0
+422791,147-HQ,WHITE,Unclassified,,0
+422792,147-HQG,,Cocks Premium,0,0
+422793,147-HQP,,Cocks Premium,0,0
+422794,147-HQR,,Cocks Premium,0,0
+422795,147-HQW,,Cocks Premium,0,0
+422796,147-HR,,Cocks Premium,13.33,0
+422797,147-HW,,Cocks Premium,10,28
+422798,147-I,IVORY,Cocks Standard,40,0
+422799,147-I,WHITE,Cocks Standard,0,0
+422800,147-IG,,Cocks Premium,0,0
+422801,147-IP,,Cocks Premium,0,0
+422802,147-IQ,IVORY,Cocks Standard,0,0
+422803,147-IQ,WHITE,Cocks Standard,0,0
+422804,147-IQG,,Cocks Premium,0,0
+422805,147-IQP,,Cocks Premium,0,0
+422806,147-IQR,,Cocks Premium,0,0
+422807,147-IQW,,Cocks Premium,0,0
+422808,147-IR,,Cocks Premium,40,35
+422809,147-IW,,Cocks Premium,0,0
+422810,147-K,WHITE,Cocks Standard,0,0
+422811,147-KQ,WHITE,Cocks Standard,0,0
+422812,147-L,IVORY,Cocks Standard,0,0
+422813,147-L,WHITE,Cocks Standard,0,0
+422814,147-LG,,Cocks Premium,0,0
+422815,147-LP,,Cocks Premium,0,0
+422816,147-LQ,WHITE,Cocks Standard,0,0
+422817,147-LQG,,Cocks Premium,0,0
+422818,147-LQP,,Cocks Premium,0,0
+422819,147-LQR,,Cocks Premium,0,0
+422820,147-LQW,,Cocks Premium,10,0
+422821,147-LR,,Cocks Premium,0,0
+422822,147-LS,WHITE,Cocks Standard,0,0
+422823,147-LSB,BLUE,Cocks Standard,0,328
+422824,147-LSQ,,Cocks Standard,0,0
+422825,147-LSQB,BLUE,Cocks Standard,0,41
+422826,147-LW,,Cocks Premium,0,0
+422827,147-O,BURGUNDY,Cocks Standard,0,0
+422828,147-O,GREEN,Cocks Standard,0,0
+422829,147-O,IVORY,Cocks Standard,70,50
+422830,147-O,M GREEN,Cocks Standard,0,0
+422831,147-O,PINK,Cocks Standard,0,0
+422832,147-O,WHITE,Cocks Standard,253.33,299.33
+422833,147-OSQ,BURGUNDY,Cocks Standard,0,0
+422834,147-OSQ,GREEN,Cocks Standard,0,0
+422835,147-OSQ,IVORY,Cocks Standard,0,0
+422836,147-OSQ,M GREEN,Cocks Standard,0,0
+422837,147-OSQ,PINK,Cocks Standard,0,0
+422838,147-OSQ,WHITE,Cocks Standard,0,0
+422839,147-P,BURGUNDY,Cocks Standard,0,0
+422840,147-P,GREEN,Cocks Standard,0,0
+422841,147-P,IVORY,Cocks Standard,50,0
+422842,147-P,M GREEN,Cocks Standard,0,0
+422843,147-P,PINK,Cocks Standard,0,0
+422844,147-P,WHITE,Cocks Standard,20,0
+422845,147-PQ,BURGUNDY,Cocks Standard,0,0
+422846,147-PQ,GREEN,Cocks Standard,0,0
+422847,147-PQ,IVORY,Cocks Standard,0,0
+422848,147-PQ,M GREEN,Cocks Standard,0,0
+422849,147-PQ,PINK,Cocks Standard,0,0
+422850,147-PQ,WHITE,Cocks Standard,4,0
+422851,147-PR,,Cocks Premium,0,0
+422852,147-R,BURGUNDY,Cocks Standard,0,0
+422853,147-R,GREEN,Cocks Standard,0,0
+422854,147-R,IVORY,Cocks Standard,50,40
+422855,147-R,M GREEN,Cocks Standard,0,0
+422856,147-R,PINK,Cocks Standard,0,0
+422857,147-R,WHITE,Cocks Standard,10,0
+422858,147-RG,,Cocks Premium,34,19
+422859,147-RP,,Cocks Premium,0,0
+422860,147-RQ,,Unclassified,,0
+422861,147-RQ,IVORY,Unclassified,,0
+422862,147-RQ,WHITE,Unclassified,,0
+422863,147-RQG,,Cocks Premium,0,0
+422864,147-RQP,,Cocks Premium,0,0
+422865,147-RQR,,Cocks Premium,0,0
+422866,147-RQW,,Cocks Premium,0,0
+422867,147-RR,,Cocks Premium,10,7
+422868,147-RW,,Cocks Premium,0,0
+422869,147-S,IVORY,Cocks Standard,70,31
+422870,147-S,WHITE,Cocks Standard,120,116
+422871,147-SG,,Cocks Premium,0,0
+422872,147-SP,,Cocks Premium,0,0
+422873,147-SQ,BURGUNDY,Cocks Standard,0,0
+422874,147-SQ,GREEN,Cocks Standard,0,0
+422875,147-SQ,IVORY,Cocks Standard,10,5
+422876,147-SQ,M GREEN,Cocks Standard,0,0
+422877,147-SQ,PINK,Cocks Standard,0,0
+422878,147-SQ,WHITE,Cocks Standard,43.33,28.33
+422879,147-SR,,Cocks Premium,321,769
+422880,147-SW,,Cocks Premium,0,0
+422881,147-V,BURGUNDY,Cocks Standard,0,0
+422882,147-V,GREEN,Cocks Standard,0,0
+422883,147-V,IVORY,Cocks Standard,10,4
+422884,147-V,M GREEN,Cocks Standard,0,0
+422885,147-V,PINK,Cocks Standard,0,0
+422886,147-V,WHITE,Cocks Standard,0,0
+422887,147-VG,,Cocks Premium,0,0
+422888,147-VP,,Cocks Premium,0,0
+422889,147-VR,,Cocks Premium,20,0
+422890,147-VW,,Cocks Premium,0,0
+422891,1471,BURGUNDY,Cocks Standard,0,0
+422892,1471,GREEN,Cocks Standard,0,0
+422893,1471,IVORY,Cocks Standard,0,0
+422894,1471,M GREEN,Cocks Standard,0,0
+422895,1471,PINK,Cocks Standard,0,0
+422896,1471,WHITE,Cocks Standard,40,18
+422897,1471-Q,BURGUNDY,Cocks Standard,0,0
+422898,1471-Q,GREEN,Cocks Standard,0,0
+422899,1471-Q,IVORY,Cocks Standard,0,0
+422900,1471-Q,M GREEN,Cocks Standard,0,0
+422901,1471-Q,PINK,Cocks Standard,0,0
+422902,1471-Q,WHITE,Cocks Standard,0,0
+422903,148,BURGUNDY,Cocks Standard,0,0
+422904,148,GREEN,Cocks Standard,0,0
+422905,148,IVORY,Cocks Standard,0,0
+422906,148,M GREEN,Cocks Standard,0,0
+422907,148,PINK,Cocks Standard,0,0
+422908,148,WHITE,Cocks Standard,21.33,21.33
+422909,148-A,WHITE,Cocks Standard,0,0
+422910,148-AB,,Cocks Standard,0,0
+422911,148-B,BURGUNDY,Unclassified,,0
+422912,148-B,GREEN,Unclassified,,0
+422913,148-B,IVORY,Unclassified,,0
+422914,148-B,IVORY,Unclassified,,0
+422915,148-B,M GREEN,Unclassified,,0
+422916,148-B,PINK,Unclassified,,0
+422917,148-B,WHITE,Unclassified,,0
+422918,148-B,WHITE,Unclassified,,0
+422919,148-BO,BURGUNDY,Unclassified,,0
+422920,148-BO,GREEN,Unclassified,,0
+422921,148-BO,IVORY,Unclassified,,0
+422922,148-BO,M GREEN,Unclassified,,0
+422923,148-BO,PINK,Unclassified,,0
+422924,148-BO,WHITE,Unclassified,,0
+422925,148-BO,WHITE,Unclassified,,0
+422926,148-BP,BURGUNDY,Cocks Standard,0,0
+422927,148-BP,GREEN,Cocks Standard,0,0
+422928,148-BP,IVORY,Cocks Standard,0,0
+422929,148-BP,M GREEN,Cocks Standard,0,0
+422930,148-BP,PINK,Cocks Standard,0,0
+422931,148-BP,WHITE,Cocks Standard,0,0
+422932,148-C,,Cocks Premium,0,0
+422933,148-DB,WHITE,Cocks Standard,0,0
+422934,148-H,BURGUNDY,Cocks Standard,0,0
+422935,148-H,GREEN,Cocks Standard,0,0
+422936,148-H,IVORY,Cocks Standard,0,0
+422937,148-H,M GREEN,Cocks Standard,0,0
+422938,148-H,PINK,Cocks Standard,0,0
+422939,148-H,WHITE,Cocks Standard,0,0
+422940,148-HB,,Unclassified,,0
+422941,148-HB,WHITE,Unclassified,,0
+422942,148-HB,WHITE,Unclassified,,0
+422943,148-HG,,Cocks Premium,0,0
+422944,148-HP,,Cocks Premium,0,0
+422945,148-HR,,Cocks Premium,0,0
+422946,148-HW,,Cocks Premium,0,0
+422947,148-LS,,Cocks Standard,0,0
+422948,148-LSB,BLUE,Cocks Standard,0,0
+422949,148-O,BURGUNDY,Cocks Standard,0,0
+422950,148-O,GREEN,Cocks Standard,0,0
+422951,148-O,IVORY,Cocks Standard,0,0
+422952,148-O,M GREEN,Cocks Standard,0,0
+422953,148-O,PINK,Cocks Standard,0,0
+422954,148-O,WHITE,Cocks Standard,0,0
+422955,148-P,BURGUNDY,Cocks Standard,0,0
+422956,148-P,GREEN,Cocks Standard,0,0
+422957,148-P,IVORY,Cocks Standard,0,0
+422958,148-P,M GREEN,Cocks Standard,0,0
+422959,148-P,PINK,Cocks Standard,0,0
+422960,148-P,WHITE,Cocks Standard,0,0
+422961,148-Q,IVORY,Accessorise,0,0
+422962,1481,BURGUNDY,Cocks Standard,0,0
+422963,1481,GREEN,Cocks Standard,0,0
+422964,1481,IVORY,Cocks Standard,0,0
+422965,1481,M GREEN,Cocks Standard,0,0
+422966,1481,PINK,Cocks Standard,0,0
+422967,1481,WHITE,Cocks Standard,42.67,0
+422968,149-A,IVORY,Cocks Standard,0,0
+422969,149-A,WHITE,Cocks Standard,0,0
+422970,149-AB,,Cocks Standard,0,0
+422971,149-AP,IVORY,Cocks Standard,22,29
+422972,149-AS,IVORY,Cocks Standard,0,0
+422973,149-AS,WHITE,Cocks Standard,0,0
+422974,149-B,BURGUNDY,Cocks Standard,0,0
+422975,149-B,GREEN,Cocks Standard,0,0
+422976,149-B,IVORY,Cocks Standard,0,0
+422977,149-B,M GREEN,Cocks Standard,0,0
+422978,149-B,PINK,Cocks Standard,0,0
+422979,149-B,WHITE,Cocks Standard,0,0
+422980,149-E,IVORY,Cocks Standard,0,0
+422981,149-E,WHITE,Cocks Standard,0,0
+422982,149-EB,IVORY,Cocks Standard,0,0
+422983,149-EB,WHITE,Cocks Standard,198,568
+422984,149-LS,,Cocks Standard,0,0
+422985,149-LSB,BLUE,Cocks Standard,0,406
+422986,149-N,BURGUNDY,Cocks Standard,0,0
+422987,149-N,GREEN,Cocks Standard,0,0
+422988,149-N,IVORY,Cocks Standard,680,582
+422989,149-N,M GREEN,Cocks Standard,0,0
+422990,149-N,PINK,Cocks Standard,0,0
+422991,149-N,WHITE,Cocks Standard,970,1096
+422992,149-NP,BURGUNDY,Cocks Standard,0,0
+422993,149-NP,GREEN,Cocks Standard,0,0
+422994,149-NP,IVORY,Cocks Standard,3.33,0
+422995,149-NP,M GREEN,Cocks Standard,0,0
+422996,149-NP,PINK,Cocks Standard,0,0
+422997,149-NP,WHITE,Cocks Standard,43.33,24.33
+422998,149-O,BURGUNDY,Cocks Standard,0,0
+422999,149-O,GREEN,Cocks Standard,0,0
+423000,149-O,IVORY,Cocks Standard,270,260
+423001,149-O,M GREEN,Cocks Standard,0,0
+423002,149-O,PINK,Cocks Standard,0,0
+423003,149-O,WHITE,Cocks Standard,130.33,156.33
+423004,149-S,BURGUNDY,Cocks Standard,0,0
+423005,149-S,GREEN,Cocks Standard,0,0
+423006,149-S,IVORY,Cocks Standard,88,64
+423007,149-S,M GREEN,Cocks Standard,0,0
+423008,149-S,PINK,Cocks Standard,0,0
+423009,149-S,WHITE,Cocks Standard,88,181
+423010,149-SG,,Cocks Premium,22,0
+423011,149-SP,,Cocks Premium,110,270
+423012,149-SR,,Cocks Premium,68,132
+423013,149-SW,,Cocks Premium,0,0
+423014,149-V,BURGUNDY,Cocks Standard,0,0
+423015,149-V,GREEN,Cocks Standard,0,0
+423016,149-V,IVORY,Cocks Standard,0,0
+423017,149-V,M GREEN,Cocks Standard,0,0
+423018,149-V,PINK,Cocks Standard,0,0
+423019,149-V,WHITE,Cocks Standard,0,0
+423020,149-VG,,Cocks Premium,0,0
+423021,149-VP,112,Cocks Premium,88,67
+423022,149-VR,,Cocks Premium,0,0
+423023,149-VW,,Cocks Premium,0,0
+423024,1491,BURGUNDY,Cocks Standard,0,0
+423025,1491,GREEN,Cocks Standard,0,0
+423026,1491,IVORY,Cocks Standard,120,112
+423027,1491,M GREEN,Cocks Standard,0,0
+423028,1491,PINK,Cocks Standard,0,0
+423029,1491,WHITE,Cocks Standard,250,360
+423030,1491-C,BURGUNDY,Cocks Standard,0,0
+423031,1491-C,GREEN,Cocks Standard,0,0
+423032,1491-C,IVORY,Cocks Standard,0,0
+423033,1491-C,M GREEN,Cocks Standard,0,0
+423034,1491-C,PINK,Cocks Standard,0,0
+423035,1491-C,WHITE,Cocks Standard,980,1778
+423036,1491-H,BURGUNDY,Cocks Standard,0,0
+423037,1491-H,GREEN,Cocks Standard,0,0
+423038,1491-H,IVORY,Cocks Standard,100,190
+423039,1491-H,M GREEN,Cocks Standard,0,0
+423040,1491-H,PINK,Cocks Standard,0,0
+423041,1491-H,WHITE,Cocks Standard,490,384
+423042,1491-HG,,Cocks Premium,0,0
+423043,1491-HP,,Cocks Premium,0,0
+423044,1491-HR,,Cocks Premium,0,0
+423045,1491-HW,,Cocks Premium,0,0
+423046,1491-K,WHITE,Cocks Standard,440,710
+423047,150,BURGUNDY,Cocks Standard,0,0
+423048,150,GREEN,Cocks Standard,0,0
+423049,150,IVORY,Cocks Standard,46.67,28.67
+423050,150,M GREEN,Cocks Standard,0,0
+423051,150,PINK,Cocks Standard,0,0
+423052,150,WHITE,Cocks Standard,85.33,124.33
+423053,150-A,WHITE,Cocks Standard,0,0
+423054,150-AB,,Cocks Standard,0,0
+423055,150-C,BURGUNDY,Cocks Standard,0,0
+423056,150-C,GREEN,Cocks Standard,0,0
+423057,150-C,IVORY,Cocks Standard,0,0
+423058,150-C,M GREEN,Cocks Standard,0,0
+423059,150-C,PINK,Cocks Standard,0,0
+423060,150-C,WHITE,Cocks Standard,9.33,0
+423061,150-D,WHITE,Cocks Standard,0,1
+423062,150-DB,BLACK,Cocks Standard,9.33,3.33
+423063,150-DG,,Cocks Premium,0,0
+423064,150-DP,,Cocks Premium,0,0
+423065,150-DR,,Cocks Premium,4.67,0
+423066,150-DW,,Cocks Premium,0,14
+423067,150-E,BURGUNDY,Cocks Standard,0,0
+423068,150-E,GREEN,Cocks Standard,0,0
+423069,150-E,IVORY,Cocks Standard,0,0
+423070,150-E,M GREEN,Cocks Standard,0,0
+423071,150-E,PINK,Cocks Standard,0,0
+423072,150-E,WHITE,Cocks Standard,0.67,0
+423073,150-H,BURGUNDY,Cocks Standard,0,0
+423074,150-H,GREEN,Cocks Standard,0,0
+423075,150-H,IVORY,Cocks Standard,0,0
+423076,150-H,M GREEN,Cocks Standard,0,0
+423077,150-H,PINK,Cocks Standard,0,0
+423078,150-H,WHITE,Cocks Standard,9.33,7.33
+423079,150-HG,,Cocks Premium,0,0
+423080,150-HP,,Cocks Premium,0,0
+423081,150-HR,,Cocks Premium,0,0
+423082,150-HW,,Cocks Premium,0,0
+423083,150-I,IVORY,Cocks Standard,0,0
+423084,150-I,WHITE,Cocks Standard,4.67,0.67
+423085,150-IG,,Cocks Premium,0,0
+423086,150-IP,,Cocks Premium,0,0
+423087,150-IR,,Cocks Premium,0,0
+423088,150-IW,,Cocks Premium,0,0
+423089,150-K,WHITE,Cocks Standard,0,0
+423090,150-LS,,Cocks Standard,0,0
+423091,150-LSB,BLUE,Cocks Standard,0,0
+423092,150-O,BURGUNDY,Cocks Standard,0,0
+423093,150-O,GREEN,Cocks Standard,0,0
+423094,150-O,IVORY,Cocks Standard,0,0
+423095,150-O,M GREEN,Cocks Standard,0,0
+423096,150-O,PINK,Cocks Standard,0,0
+423097,150-O,WHITE,Cocks Standard,0,0
+423098,150-P,BURGUNDY,Cocks Standard,0,0
+423099,150-P,GREEN,Cocks Standard,0,0
+423100,150-P,IVORY,Cocks Standard,0,0
+423101,150-P,M GREEN,Cocks Standard,0,0
+423102,150-P,PINK,Cocks Standard,0,0
+423103,150-P,WHITE,Cocks Standard,0,0
+423104,150-Q,IVORY,Cocks Standard,9.33,6.33
+423105,150-Q,WHITE,Cocks Standard,9.67,0
+423106,150-QG,,Cocks Premium,0,0
+423107,150-QP,,Cocks Premium,0,0
+423108,150-QR,,Cocks Premium,9.33,4.33
+423109,150-QW,,Cocks Premium,0,0
+423110,150-R,IVORY,Cocks Standard,0,0
+423111,150-R,WHITE,Cocks Standard,0,0
+423112,150-RG,,Cocks Premium,4,0
+423113,150-RP,,Cocks Premium,0,0
+423114,150-RR,,Cocks Premium,0,0
+423115,150-RW,,Cocks Premium,0,0
+423116,150-U,WHITE,Cocks Standard,9.33,0
+423117,150-UG,,Cocks Premium,0,0
+423118,150-UP,,Cocks Premium,0,0
+423119,150-UR,,Cocks Premium,0,0
+423120,150-UW,,Cocks Premium,4.67,0
+423121,1501,BURGUNDY,Cocks Standard,0,0
+423122,1501,GREEN,Cocks Standard,0,0
+423123,1501,IVORY,Cocks Standard,0,0
+423124,1501,M GREEN,Cocks Standard,0,0
+423125,1501,PINK,Cocks Standard,0,0
+423126,1501,WHITE,Cocks Standard,0,0
+423127,151,GOLD,Ball Cock,13220,13360
+423128,151-S,GOLD,Ball Cock,3625,5597
+423129,151L,,Ball Cock,0,0
+423130,152,GOLD,Ball Cock,8902,8968
+423131,153,GOLD,Ball Cock,7090.33,7090.33
+423132,153-S,,Ball Cock,0,0
+423133,153-S,GOLD,Ball Cock,478.33,0
+423134,154,GOLD,Ball Cock,659,659
+423135,155,GOLD,Ball Cock,958,958
+423136,156,GOLD,Ball Cock,1150.33,1150.33
+423137,161,GOLD,Ball Cock,959.67,0
+423138,162,GOLD,Ball Cock,104,0
+423139,163,,Ball Cock,136.33,136.33
+423140,163,GOLD,Ball Cock,21,3852
+423141,164,GOLD,Ball Cock,0,81
+423142,165,,Ball Cock,16,16
+423143,165,GOLD,Ball Cock,3.33,641.33
+423144,166,GOLD,Ball Cock,35,758
+423145,167,,Ball Cock,437.33,437.33
+423146,167,SILVER,Ball Cock,0,0
+423147,168,,Ball Cock,70,70
+423148,168,SILVER,Ball Cock,0,0
+423149,169,,Ball Cock,166.67,166.67
+423150,169,SILVER,Ball Cock,0,0
+423151,170,,Ball Cock,10,10
+423152,170,SILVER,Ball Cock,0,0
+423153,171,,Ball Cock,3.33,3.33
+423154,171,SILVER,Ball Cock,0,0
+423155,172,,Ball Cock,0,0
+423156,172,SILVER,Ball Cock,0,0
+423157,173,BLUE,Ball Cock,0,0
+423158,173,GREEN,Ball Cock,97.33,8421.33
+423159,174,BLUE,Ball Cock,0,0
+423160,174,GREEN,Ball Cock,20,0
+423161,175,BLUE,Ball Cock,0,0
+423162,175,GREEN,Ball Cock,166.67,3778.67
+423163,177,BLUE,Ball Cock,0,0
+423164,177,GREEN,Ball Cock,22.33,860.33
+423165,178,BLUE,Ball Cock,0,0
+423166,178,GREEN,Ball Cock,45.33,867.33
+423167,180,IVORY,Faucets & Jetsprays & Shower,0,0
+423168,180,PINK,Faucets & Jetsprays & Shower,0,0
+423169,180,WHITE,Faucets & Jetsprays & Shower,0.33,0
+423170,180-A,IVORY,Faucets & Jetsprays & Shower,19.67,0
+423171,180-A,PINK,Faucets & Jetsprays & Shower,0,0
+423172,180-A,WHITE,Faucets & Jetsprays & Shower,22.33,0
+423173,180-B,IVORY,Faucets & Jetsprays & Shower,0,0
+423174,180-B,PINK,Faucets & Jetsprays & Shower,0,0
+423175,180-B,WHITE,Faucets & Jetsprays & Shower,0,0
+423176,181,IVORY,Faucets & Jetsprays & Shower,144,0
+423177,181,PINK,Faucets & Jetsprays & Shower,0,0
+423178,181,WHITE,Faucets & Jetsprays & Shower,488,232
+423179,181-C,BLUE,Faucets & Jetsprays & Shower,0,0
+423180,181-C,GREEN,Faucets & Jetsprays & Shower,0,0
+423181,181-C,IVORY,Faucets & Jetsprays & Shower,483.33,235.33
+423182,181-C,PINK,Faucets & Jetsprays & Shower,53.33,22.33
+423183,181-C,WHITE,Faucets & Jetsprays & Shower,2753.33,2660.33
+423184,1811,IVORY,Faucets & Jetsprays & Shower,0,0
+423185,1811,PINK,Faucets & Jetsprays & Shower,0,0
+423186,1811,WHITE,Faucets & Jetsprays & Shower,7.33,7.33
+423187,1811-C,IVORY,Faucets & Jetsprays & Shower,0,0
+423188,1811-C,PINK,Faucets & Jetsprays & Shower,0,0
+423189,1811-C,WHITE,Faucets & Jetsprays & Shower,0,0
+423190,1811N-C,IVORY,Faucets & Jetsprays & Shower,0,0
+423191,1811N-C,PINK,Faucets & Jetsprays & Shower,0,0
+423192,1811N-C,WHITE,Faucets & Jetsprays & Shower,0,0
+423193,1812,,Faucets & Jetsprays & Shower,0,0
+423194,1813,IVORY,Faucets & Jetsprays & Shower,14,0
+423195,1813,PINK,Faucets & Jetsprays & Shower,0,0
+423196,1813,WHITE,Faucets & Jetsprays & Shower,48.67,0
+423197,1813-B,IVORY,Faucets & Jetsprays & Shower,150,0
+423198,1813-B,PINK,Faucets & Jetsprays & Shower,0,0
+423199,1813-B,WHITE,Faucets & Jetsprays & Shower,1456.67,2475.67
+423200,1813-BG,GOLD,Faucets & Jetsprays & Shower,0,0
+423201,1813-BP,PEACH,Faucets & Jetsprays & Shower,20,0
+423202,1813-BR,R BLUE,Faucets & Jetsprays & Shower,10,0
+423203,1813-BW,,Faucets & Jetsprays & Shower,10,40
+423204,1813-C,BLUE,Faucets & Jetsprays & Shower,0,0
+423205,1813-C,IVORY,Faucets & Jetsprays & Shower,4110,6986
+423206,1813-C,PINK,Faucets & Jetsprays & Shower,200,318
+423207,1813-C,WHITE,Faucets & Jetsprays & Shower,2715.33,4265.33
+423208,1813-CG,,Faucets & Jetsprays & Shower,0,0
+423209,1813-CG,GOLD,Faucets & Jetsprays & Shower,10,0
+423210,1813-CP,,Faucets & Jetsprays & Shower,0,0
+423211,1813-CP,PINK,Faucets & Jetsprays & Shower,10,10
+423212,1813-CR,,Faucets & Jetsprays & Shower,0,0
+423213,1813-CR,R BLUE,Faucets & Jetsprays & Shower,100,366
+423214,1813-CW,,Faucets & Jetsprays & Shower,0,0
+423215,1813-CW,WINE,Faucets & Jetsprays & Shower,0,0
+423216,1813-G,GOLD,Faucets & Jetsprays & Shower,0,0
+423217,1813-P,,Faucets & Jetsprays & Shower,0,0
+423218,1813-R,R BLUE,Faucets & Jetsprays & Shower,0,0
+423219,1813-W,WINE,Faucets & Jetsprays & Shower,0,0
+423220,1814,IVORY,Faucets & Jetsprays & Shower,0,0
+423221,1814,PINK,Faucets & Jetsprays & Shower,0,0
+423222,1814,WHITE,Faucets & Jetsprays & Shower,0,0
+423223,1814-C,IVORY,Faucets & Jetsprays & Shower,80,0
+423224,1814-C,PINK,Faucets & Jetsprays & Shower,0,0
+423225,1814-C,WHITE,Faucets & Jetsprays & Shower,270,277
+423226,1814-CG,GOLD,Faucets & Jetsprays & Shower,30,21
+423227,1814-CP,PEACH,Faucets & Jetsprays & Shower,0,0
+423228,1814-CR,R BLUE,Faucets & Jetsprays & Shower,0,0
+423229,1814-CW,WHITE,Faucets & Jetsprays & Shower,0,0
+423230,1814-CW,WINE,Faucets & Jetsprays & Shower,0,0
+423231,1814-G,GOLD,Faucets & Jetsprays & Shower,0,0
+423232,1814-P,,Faucets & Jetsprays & Shower,0,0
+423233,1814-R,R BLUE,Faucets & Jetsprays & Shower,0,0
+423234,1814-W,,Faucets & Jetsprays & Shower,0,0
+423235,1814N-C,IVORY,Faucets & Jetsprays & Shower,20,0
+423236,1814N-C,PINK,Faucets & Jetsprays & Shower,0,0
+423237,1814N-C,WHITE,Faucets & Jetsprays & Shower,0,0
+423238,1814N-CG,,Faucets & Jetsprays & Shower,0,0
+423239,1814N-CP,WHITE,Faucets & Jetsprays & Shower,0,0
+423240,1814N-CR,,Faucets & Jetsprays & Shower,40,40
+423241,1814N-CW,,Faucets & Jetsprays & Shower,0,0
+423242,1815,IVORY,Faucets & Jetsprays & Shower,14,0
+423243,1815,PINK,Faucets & Jetsprays & Shower,0,0
+423244,1815,WHITE,Faucets & Jetsprays & Shower,14,0
+423245,1815-C,IVORY,Faucets & Jetsprays & Shower,153.33,90.33
+423246,1815-C,PINK,Faucets & Jetsprays & Shower,0,0
+423247,1815-C,WHITE,Faucets & Jetsprays & Shower,520,5
+423248,1816,IVORY,Faucets & Jetsprays & Shower,5.33,0
+423249,1816,PINK,Faucets & Jetsprays & Shower,0,0
+423250,1816,WHITE,Faucets & Jetsprays & Shower,0,0
+423251,1817,IVORY,Faucets & Jetsprays & Shower,14,0
+423252,1817,PINK,Faucets & Jetsprays & Shower,0,0
+423253,1817,WHITE,Faucets & Jetsprays & Shower,14,27
+423254,1817-C,IVORY,Faucets & Jetsprays & Shower,2270,5630
+423255,1817-C,PINK,Faucets & Jetsprays & Shower,0,0
+423256,1817-C,WHITE,Faucets & Jetsprays & Shower,2422.67,3799.67
+423257,182,,Faucets & Jetsprays & Shower,0,0
+423258,1821,IVORY,Faucets & Jetsprays & Shower,0,0
+423259,1821,PINK,Faucets & Jetsprays & Shower,0,0
+423260,1821,WHITE,Faucets & Jetsprays & Shower,21.33,0
+423261,1821-C,IVORY,Faucets & Jetsprays & Shower,704,1256
+423262,1821-C,PINK,Faucets & Jetsprays & Shower,0,0
+423263,1821-C,WHITE,Faucets & Jetsprays & Shower,984,1666
+423264,183,BLUE,Faucets & Jetsprays & Shower,0,0
+423265,183,GREEN,Faucets & Jetsprays & Shower,0,0
+423266,183,IVORY,Faucets & Jetsprays & Shower,1250.67,2976.67
+423267,183,PINK,Faucets & Jetsprays & Shower,130.67,210.67
+423268,183,WHITE,Faucets & Jetsprays & Shower,1326.67,858.67
+423269,183-G,GOLD,Faucets & Jetsprays & Shower,4.67,1.67
+423270,183-P,PEACH,Faucets & Jetsprays & Shower,4.67,11.67
+423271,183-R,R BLUE,Faucets & Jetsprays & Shower,56,196
+423272,183-W,WINE,Faucets & Jetsprays & Shower,112,83
+423273,1831,IVORY,Faucets & Jetsprays & Shower,70,80
+423274,1831,PINK,Faucets & Jetsprays & Shower,0,0
+423275,1831,WHITE,Faucets & Jetsprays & Shower,96.67,29.67
+423276,184,IVORY,Faucets & Jetsprays & Shower,0,0
+423277,184,PINK,Faucets & Jetsprays & Shower,0,0
+423278,184,WHITE,Faucets & Jetsprays & Shower,223,0
+423279,1841,IVORY,Faucets & Jetsprays & Shower,46.33,0
+423280,1841,PINK,Faucets & Jetsprays & Shower,0,0
+423281,1841,WHITE,Faucets & Jetsprays & Shower,0,0
+423282,1842,IVORY,Faucets & Jetsprays & Shower,5,0
+423283,1842,PINK,Faucets & Jetsprays & Shower,0,0
+423284,1842,WHITE,Faucets & Jetsprays & Shower,3.33,0
+423285,186,IVORY,Unclassified,,89
+423286,186,WHITE,Unclassified,,659
+423287,1861,IVORY,Unclassified,,0
+423288,1861,IVORY,Unclassified,,0
+423289,1861,WHITE,Unclassified,,0
+423290,1861,WHITE,Unclassified,,0
+423291,187,BLUE,Faucets & Jetsprays & Shower,7.33,0
+423292,187,GREEN,Faucets & Jetsprays & Shower,7.33,0
+423293,187,IVORY,Faucets & Jetsprays & Shower,9042,9885
+423294,187,PINK,Faucets & Jetsprays & Shower,242,216
+423295,187,WHITE,Faucets & Jetsprays & Shower,8707.67,12722.67
+423296,187-G,GOLD,Faucets & Jetsprays & Shower,22,19
+423297,187-P,PEACH,Faucets & Jetsprays & Shower,18,0
+423298,187-R,R BLUE,Faucets & Jetsprays & Shower,339.33,750.33
+423299,187-W,WINE,Faucets & Jetsprays & Shower,29.33,24.33
+423300,1871,IVORY,Faucets & Jetsprays & Shower,40,0
+423301,1871,PINK,Faucets & Jetsprays & Shower,0,0
+423302,1871,WHITE,Faucets & Jetsprays & Shower,530.67,866.67
+423303,1872,IVORY,Faucets & Jetsprays & Shower,0,0
+423304,1872,PINK,Faucets & Jetsprays & Shower,0,0
+423305,1872,WHITE,Faucets & Jetsprays & Shower,0,0
+423306,188,BLUE,Faucets & Jetsprays & Shower,0,0
+423307,188,GREEN,Faucets & Jetsprays & Shower,0,0
+423308,188,IVORY,Faucets & Jetsprays & Shower,865.33,1777.33
+423309,188,PINK,Faucets & Jetsprays & Shower,0,0
+423310,188,WHITE,Faucets & Jetsprays & Shower,2500.67,3699.67
+423311,188-G,GOLD,Faucets & Jetsprays & Shower,0,0
+423312,188-P,PEACH,Faucets & Jetsprays & Shower,7.33,0
+423313,188-R,R BLUE,Faucets & Jetsprays & Shower,36.67,0
+423314,188-W,WINE,Faucets & Jetsprays & Shower,0,0
+423315,1881,IVORY,Faucets & Jetsprays & Shower,29.33,106.33
+423316,1881,PINK,Faucets & Jetsprays & Shower,0,0
+423317,1881,WHITE,Faucets & Jetsprays & Shower,146.67,124.67
+423318,1882,IVORY,Faucets & Jetsprays & Shower,0,0
+423319,1882,PINK,Faucets & Jetsprays & Shower,0,0
+423320,1882,WHITE,Faucets & Jetsprays & Shower,0,0
+423321,189,IVORY,Faucets & Jetsprays & Shower,283.33,506.33
+423322,189,PINK,Faucets & Jetsprays & Shower,0,0
+423323,189,WHITE,Faucets & Jetsprays & Shower,935,1539
+423324,189-G,GOLD,Faucets & Jetsprays & Shower,0,0
+423325,189-P,,Faucets & Jetsprays & Shower,0,0
+423326,189-R,R BLUE,Faucets & Jetsprays & Shower,0,0
+423327,189-W,WINE,Faucets & Jetsprays & Shower,0,0
+423328,1891,IVORY,Faucets & Jetsprays & Shower,1.67,0
+423329,1891,PINK,Faucets & Jetsprays & Shower,0,0
+423330,1891,WHITE,Faucets & Jetsprays & Shower,176,299
+423331,1892,IVORY,Faucets & Jetsprays & Shower,0,0
+423332,1892,PINK,Faucets & Jetsprays & Shower,0,0
+423333,1892,WHITE,Faucets & Jetsprays & Shower,0,0
+423334,190,IVORY,Accessorise,3.33,0
+423335,190,WHITE,Accessorise,290.33,0
+423336,190-C,,Accessorise,0,0
+423337,191,IVORY,Accessorise,165,0
+423338,191,WHITE,Accessorise,273.33,0
+423339,191-A,,Accessorise,0,0
+423340,191-C,,Accessorise,0,0
+423341,192,IVORY,Accessorise,90,0
+423342,192,WHITE,Accessorise,81,0
+423343,193,,Accessorise,0,0
+423344,194,IVORY,Accessorise,112,0
+423345,194,WHITE,Accessorise,193.33,35.33
+423346,194-A,,Accessorise,0,0
+423347,194-G,,Accessorise,0,0
+423348,194-P,,Accessorise,0,0
+423349,194-R,,Accessorise,0,0
+423350,194-W,,Accessorise,0,0
+423351,195,IVORY,Accessorise,139.33,0
+423352,195,WHITE,Accessorise,806.33,1214.33
+423353,195-A,,Accessorise,0,0
+423354,195-C,,Accessorise,0,0
+423355,1951,IVORY,Accessorise,0,0
+423356,1951,WHITE,Accessorise,255.67,217.67
+423357,1951-A,,Accessorise,0,0
+423358,196,IVORY,Accessorise,41.33,0
+423359,196,WHITE,Accessorise,261.67,440.67
+423360,196-A,,Accessorise,0,0
+423361,196-IV,,Accessorise,0,0
+423362,1961,IVORY,Accessorise,28.67,0
+423363,1961,WHITE,Accessorise,139,0
+423364,197,IVORY,Accessorise,21.33,0
+423365,197,WHITE,Accessorise,82.67,101.67
+423366,198,IVORY,Accessorise,9.33,0
+423367,198,WHITE,Accessorise,42.33,0.33
+423368,198-A,,Accessorise,0,0
+423369,199,IVORY,Accessorise,120,74
+423370,199,WHITE,Accessorise,250,479
+423371,200,IVORY,Accessorise,270,0
+423372,200,WHITE,Accessorise,833.67,593.67
+423373,200-A,,Accessorise,0,0
+423374,201,IVORY,Accessorise,0,0
+423375,201,WHITE,Accessorise,0,0
+423376,202,IVORY,Unclassified,,0
+423377,202,WHITE,Unclassified,,0
+423378,221,IVORY,Accessorise,0,0
+423379,221,WHITE,Accessorise,0,0
+423380,222,IVORY,Accessorise,0,0
+423381,222,WHITE,Accessorise,0,0
+423382,225,IVORY,Accessorise,0,0
+423383,225,WHITE,Accessorise,0,0
+423384,231,IVORY,Accessorise,0,0
+423385,231,WHITE,Accessorise,0,0
+423386,232,IVORY,Accessorise,0,0
+423387,232,WHITE,Accessorise,0,0
+423388,233,IVORY,Accessorise,0,0
+423389,233,WHITE,Accessorise,0,0
+423390,300,WHITE,Accessorise,0,0
+423391,301,IVORY,Accessorise,0,0
+423392,301,WHITE,Accessorise,0,0
+423393,302,IVORY,Accessorise,0,0
+423394,302,WHITE,Accessorise,0,0
+423395,311,GOLD,Accessorise,0,0
+423396,312,GOLD,Accessorise,0,0
+423397,313,GOLD,Accessorise,6.67,6.67
+423398,314,GOLD,Accessorise,0,0
+423399,315,GOLD,Accessorise,0,0
+423400,316,GOLD,Accessorise,10,10
+423401,321,,P.V.C. Connections,2535,2750
+423402,321-K,,P.V.C. Connections,0,0
+423403,322-K,,P.V.C. Connections,0,0
+423404,323,,P.V.C. Connections,24365.51,0
+423405,323-HK,,P.V.C. Connections,0,0
+423406,323-K,,P.V.C. Connections,17400,16407
+423407,323-ZK,,P.V.C. Connections,0,0
+423408,324,,P.V.C. Connections,87475.5,68307.5
+423409,324-HK,,P.V.C. Connections,0,0
+423410,324-K,,P.V.C. Connections,15900,15286
+423411,324-ZK,,P.V.C. Connections,0,0
+423412,325,,P.V.C. Connections,12880.01,5101.01
+423413,325-HK,,P.V.C. Connections,0,0
+423414,325-K,,P.V.C. Connections,1350,1082
+423415,325-ZK,,P.V.C. Connections,0,0
+423416,326,,P.V.C. Connections,17475,8935
+423417,326-HK,,P.V.C. Connections,0,0
+423418,326-K,,P.V.C. Connections,2600,3052
+423419,326-ZK,,P.V.C. Connections,0,0
+423420,327,,Waste Pipes,9540,0
+423421,3271,,Waste Pipes,7595,11346
+423422,3272,,Waste Pipes,36756.5,13764.5
+423423,3272-B,,Waste Pipes,3775.01,3615.01
+423424,3272-C,,Waste Pipes,3350,238
+423425,3273,,Waste Pipes,25.01,0
+423426,3274,,Waste Pipes,650,832
+423427,3274-C,,Waste Pipes,0,0
+423428,3275,,Waste Pipes,300,67
+423429,3275-B,,Waste Pipes,200,0
+423430,3276,,Waste Pipes,0,0
+423431,328,,Waste Pipes,875.5,881.5
+423432,328 K,,P.V.C. Connections,0,0
+423433,328-ZK,,P.V.C. Connections,0,0
+423434,3281,,Waste Pipes,75,0
+423435,329,,Waste Pipes,4.01,0
+423436,330,,Waste Pipes,2.51,0
+423437,330-ZK,,P.V.C. Connections,0,0
+423438,331,IVORY,Accessorise,66.67,29.67
+423439,331,WHITE,Accessorise,238,439
+423440,332,IVORY,Accessorise,0,0
+423441,332,WHITE,Accessorise,0,0
+423442,332-ZK,,P.V.C. Connections,0,0
+423443,333,IVORY,Accessorise,11.33,0
+423444,333,WHITE,Accessorise,56,0
+423445,334,IVORY,Accessorise,0,0
+423446,334,WHITE,Accessorise,0,0
+423447,335,IVORY,Accessorise,0,0
+423448,335,WHITE,Accessorise,0,0
+423449,336,IVORY,Accessorise,0,0
+423450,336,WHITE,Accessorise,0,0
+423451,337,IVORY,Accessorise,66.67,0
+423452,337,WHITE,Accessorise,56.67,0
+423453,341,,Waste Pipes,6687.5,8041.5
+423454,342,,Waste Pipes,6635,0
+423455,343,,Waste Pipes,6015,6654
+423456,344,,Waste Pipes,4060.01,241.01
+423457,345,,Waste Pipes,1185,721
+423458,3451,,Waste Pipes,902,731
+423459,348-K,,P.V.C. Connections,0,0
+423460,350-K,,P.V.C. Connections,0,0
+423461,360,,Waste Pipes,1408.01,1819.01
+423462,361,,Waste Pipes,673.01,0
+423463,362,,Waste Pipes,550.5,433.5
+423464,363,,Waste Pipes,0,0
+423465,400-I,IVORY,Cocks Standard,4.67,0
+423466,400-I,WHITE,Cocks Standard,4.67,0
+423467,400-IG,,Cocks Premium,0,0
+423468,400-IP,,Cocks Premium,0,0
+423469,400-IR,,Cocks Premium,0,0
+423470,400-IW,,Cocks Premium,0,0
+423471,400-Q,BURGUNDY,Cocks Standard,0,0
+423472,400-Q,GREEN,Cocks Standard,0,0
+423473,400-Q,IVORY,Cocks Standard,18.67,12.67
+423474,400-Q,M GREEN,Cocks Standard,0,0
+423475,400-Q,PINK,Cocks Standard,0,0
+423476,400-Q,WHITE,Cocks Standard,28,28
+423477,400-QG,,Cocks Premium,0,0
+423478,400-QP,,Cocks Premium,0,0
+423479,400-QR,,Cocks Premium,18.67,16.67
+423480,400-QW,,Cocks Premium,0,0
+423481,400-R,BURGUNDY,Cocks Standard,0,0
+423482,400-R,GREEN,Cocks Standard,0,0
+423483,400-R,IVORY,Cocks Standard,4.67,0
+423484,400-R,M GREEN,Cocks Standard,0,0
+423485,400-R,PINK,Cocks Standard,0,0
+423486,400-R,WHITE,Cocks Standard,0,0
+423487,400-RG,,Cocks Premium,4.67,1.67
+423488,400-RP,,Cocks Premium,0,0
+423489,400-RR,,Cocks Premium,0,0
+423490,400-RW,,Cocks Premium,0,0
+423491,400-S,,Faucets & Jetsprays & Shower,0,0
+423492,411,,Cistern & Seat Cover,3.33,3.33
+423493,492-W,,Accessorise,28.33,28.33
+423494,493-W,,Accessorise,321.67,321.67
+423495,501,BLUE,Cistern & Seat Cover,0,0
+423496,501,GOLD,Cistern & Seat Cover,0,0
+423497,501,GREEN,Cistern & Seat Cover,10,0
+423498,501,IVORY,Cistern & Seat Cover,0,0
+423499,501,PINK,Cistern & Seat Cover,16.67,0
+423500,501,WHITE,Cistern & Seat Cover,2154,2816
+423501,501-N,BLUE,Cistern & Seat Cover,0,0
+423502,501-N,BURGUNDAY,Cistern & Seat Cover,0,0
+423503,501-N,GREEN,Cistern & Seat Cover,0,0
+423504,501-N,IVORY,Cistern & Seat Cover,0,0
+423505,501-N,PINK,Cistern & Seat Cover,0,0
+423506,501-N,WHITE,Cistern & Seat Cover,0,0
+423507,501-S,BLUE,Cistern & Seat Cover,0,0
+423508,501-S,BURGUNDAY,Cistern & Seat Cover,0,0
+423509,501-S,GREEN,Cistern & Seat Cover,0,0
+423510,501-S,IVORY,Cistern & Seat Cover,0,0
+423511,501-S,PINK,Cistern & Seat Cover,0,0
+423512,501-S,WHITE,Cistern & Seat Cover,0,0
+423513,502,BLUE,Cistern & Seat Cover,0,0
+423514,502,BURGUNDAY,Cistern & Seat Cover,0,0
+423515,502,GREEN,Cistern & Seat Cover,0,0
+423516,502,IVORY,Cistern & Seat Cover,0,0
+423517,502,PINK,Cistern & Seat Cover,0,0
+423518,502,WHITE,Cistern & Seat Cover,183.33,3.33
+423519,503,BLUE,Cistern & Seat Cover,0,0
+423520,503,BURGUNDAY,Cistern & Seat Cover,0,0
+423521,503,GREEN,Cistern & Seat Cover,0,0
+423522,503,IVORY,Cistern & Seat Cover,12.67,0
+423523,503,PINK,Cistern & Seat Cover,0,0
+423524,503,WHITE,Cistern & Seat Cover,170,0
+423525,503-N,BLUE,Cistern & Seat Cover,0,0
+423526,503-N,BURGUNDAY,Cistern & Seat Cover,0,0
+423527,503-N,GREEN,Cistern & Seat Cover,0,0
+423528,503-N,IVORY,Cistern & Seat Cover,0,0
+423529,503-N,PINK,Cistern & Seat Cover,0,0
+423530,503-N,WHITE,Cistern & Seat Cover,0,0
+423531,504,BLUE,Cistern & Seat Cover,0,0
+423532,504,BURGUNDAY,Cistern & Seat Cover,0,0
+423533,504,GREEN,Cistern & Seat Cover,0,0
+423534,504,IVORY,Cistern & Seat Cover,0,0
+423535,504,PINK,Cistern & Seat Cover,0,0
+423536,504,WHITE,Cistern & Seat Cover,6.67,6.67
+423537,505,BLUE,Cistern & Seat Cover,0,0
+423538,505,BURGUNDAY,Cistern & Seat Cover,0,0
+423539,505,GREEN,Cistern & Seat Cover,0,0
+423540,505,IVORY,Cistern & Seat Cover,0,0
+423541,505,PINK,Cistern & Seat Cover,0,0
+423542,505,WHITE,Cistern & Seat Cover,0,0
+423543,506,BLUE,Cistern & Seat Cover,0,0
+423544,506,BURGUNDAY,Cistern & Seat Cover,0,0
+423545,506,GREEN,Cistern & Seat Cover,0,0
+423546,506,IVORY,Cistern & Seat Cover,0,0
+423547,506,PINK,Cistern & Seat Cover,0,0
+423548,506,WHITE,Cistern & Seat Cover,56.67,0
+423549,507,BLUE,Cistern & Seat Cover,0,0
+423550,507,BURGUNDAY,Cistern & Seat Cover,0,0
+423551,507,GREEN,Cistern & Seat Cover,0,0
+423552,507,IVORY,Cistern & Seat Cover,0,0
+423553,507,PINK,Cistern & Seat Cover,0,0
+423554,507,WHITE,Cistern & Seat Cover,66.67,92.67
+423555,508,BLUE,Cistern & Seat Cover,0,0
+423556,508,BURGUNDAY,Cistern & Seat Cover,0,0
+423557,508,GREEN,Cistern & Seat Cover,0,0
+423558,508,IVORY,Cistern & Seat Cover,0,0
+423559,508,PINK,Cistern & Seat Cover,0,0
+423560,508,WHITE,Cistern & Seat Cover,140,180
+423561,511,BLUE,Cistern & Seat Cover,0,0
+423562,511,BURGUNDAY,Cistern & Seat Cover,0,0
+423563,511,GREEN,Cistern & Seat Cover,0,0
+423564,511,IVORY,Cistern & Seat Cover,0,0
+423565,511,PINK,Cistern & Seat Cover,0,0
+423566,511,WHITE,Cistern & Seat Cover,163.33,669.33
+423567,512,BLUE,Cistern & Seat Cover,0,0
+423568,512,BURGUNDAY,Cistern & Seat Cover,0,0
+423569,512,GREEN,Cistern & Seat Cover,0,0
+423570,512,IVORY,Cistern & Seat Cover,0,0
+423571,512,PINK,Cistern & Seat Cover,0,0
+423572,512,WHITE,Cistern & Seat Cover,0,15
+423573,513,BLUE,Cistern & Seat Cover,93.33,0
+423574,513,BURGUNDAY,Cistern & Seat Cover,0,0
+423575,513,GREEN,Cistern & Seat Cover,0,0
+423576,513,IVORY,Cistern & Seat Cover,0,0
+423577,513,PINK,Cistern & Seat Cover,243.33,0
+423578,513,WHITE,Cistern & Seat Cover,3415.33,5792.33
+423579,513-EWC,,Cistern & Seat Cover,846.67,846.67
+423580,514,BLUE,Cistern & Seat Cover,0,0
+423581,514,BURGUNDAY,Cistern & Seat Cover,0,0
+423582,514,GREEN,Cistern & Seat Cover,0,0
+423583,514,IVORY,Cistern & Seat Cover,0,0
+423584,514,PINK,Cistern & Seat Cover,0,0
+423585,514,WHITE,Cistern & Seat Cover,0,0
+423586,514-T,IVORY,Cistern & Seat Cover,0,0
+423587,514-T,WHITE,Cistern & Seat Cover,18.67,9.67
+423588,515,BLUE,Cistern & Seat Cover,0,0
+423589,515,BURGUNDAY,Cistern & Seat Cover,0,0
+423590,515,GREEN,Cistern & Seat Cover,0,0
+423591,515,IVORY,Cistern & Seat Cover,0,0
+423592,515,PINK,Cistern & Seat Cover,0,0
+423593,515,WHITE,Cistern & Seat Cover,10,0
+423594,516,BLUE,Cistern & Seat Cover,0,0
+423595,516,BURGUNDAY,Cistern & Seat Cover,0,0
+423596,516,GREEN,Cistern & Seat Cover,0,0
+423597,516,IVORY,Cistern & Seat Cover,30,0
+423598,516,PINK,Cistern & Seat Cover,86.67,0
+423599,516,WHITE,Cistern & Seat Cover,916.67,405.67
+423600,516-S,WHITE,Cistern & Seat Cover,0,0
+423601,517,BLUE,Cistern & Seat Cover,0,0
+423602,517,BURGUNDAY,Cistern & Seat Cover,0,0
+423603,517,GREEN,Cistern & Seat Cover,5,4
+423604,517,IVORY,Cistern & Seat Cover,1.67,0
+423605,517,PINK,Cistern & Seat Cover,15,0
+423606,517,WHITE,Cistern & Seat Cover,180,149
+423607,518,IVORY,Cistern & Seat Cover,0,0
+423608,518,WHITE,Cistern & Seat Cover,206.33,206.33
+423609,520,,Faucets & Jetsprays & Shower,0,0
+423610,520N,,Faucets & Jetsprays & Shower,0,0
+423611,521,IVORY,Faucets & Jetsprays & Shower,214.67,165.67
+423612,521,PINK,Faucets & Jetsprays & Shower,0,0
+423613,521,WHITE,Faucets & Jetsprays & Shower,342,410
+423614,5211,IVORY,Faucets & Jetsprays & Shower,17.33,0
+423615,5211,PINK,Faucets & Jetsprays & Shower,0,0
+423616,5211,WHITE,Faucets & Jetsprays & Shower,271.67,453.67
+423617,5211N,,Faucets & Jetsprays & Shower,0,0
+423618,522,IVORY,Faucets & Jetsprays & Shower,22.67,0
+423619,522,PINK,Faucets & Jetsprays & Shower,0,0
+423620,522,WHITE,Faucets & Jetsprays & Shower,96,84
+423621,5221,IVORY,Faucets & Jetsprays & Shower,8,0
+423622,5221,PINK,Faucets & Jetsprays & Shower,0,0
+423623,5221,WHITE,Faucets & Jetsprays & Shower,112,46
+423624,5221N,,Faucets & Jetsprays & Shower,0,0
+423625,550-F,,Cabinet,0,0
+423626,551,IVORY,Cabinet,12,0
+423627,551,WHITE,Cabinet,668,520
+423628,551-F,,Cabinet,0,0
+423629,551-F,IVORY,Cabinet,2,0
+423630,551-F,WHITE,Cabinet,14,0
+423631,552,IVORY,Accessorise,0,0
+423632,552,WHITE,Accessorise,6.67,0
+423633,553,,Cabinet,0,0
+423634,553,IVORY,Cabinet,0,0
+423635,553,WHITE,Cabinet,0,0
+423636,553-F,,Cabinet,0,0
+423637,553-F,IVORY,Cabinet,0,0
+423638,553-F,WHITE,Cabinet,0,0
+423639,554,,Cabinet,0,0
+423640,554,IVORY,Cabinet,1.33,0
+423641,554,WHITE,Cabinet,4,0
+423642,554-F,,Cabinet,0,0
+423643,555,,Cabinet,0,0
+423644,555,IVORY,Cabinet,2,3
+423645,555,WHITE,Cabinet,1.67,0
+423646,555-F,,Cabinet,0,0
+423647,555-F,IVORY,Cabinet,2.67,0
+423648,555-F,WHITE,Cabinet,44,0
+423649,556,,Cabinet,0,0
+423650,556,IVORY,Cabinet,1.33,0.33
+423651,556,WHITE,Cabinet,2.33,0
+423652,557,,Cabinet,0,0
+423653,557,IVORY,Cabinet,2.67,0
+423654,557,WHITE,Cabinet,1.33,0
+423655,557-F,IVORY,Cabinet,0,0
+423656,557-F,WHITE,Cabinet,0,1
+423657,571,IVORY,Accessorise,5,0
+423658,571,WHITE,Accessorise,32,32
+423659,572,IVORY,Accessorise,0,0
+423660,572,WHITE,Accessorise,38,19
+423661,575,IVORY,Accessorise,0,0
+423662,575,WHITE,Accessorise,0,0
+423663,661,,Cabinet,0,0
+423664,661,IVORY,Cabinet,1.33,0
+423665,661,WHITE,Cabinet,6.67,0
+423666,662,,Cabinet,0,0
+423667,662,IVORY,Cabinet,0,0
+423668,662,WHITE,Cabinet,322,412
+423669,663,,Cabinet,0,0
+423670,663,IVORY,Cabinet,0,0
+423671,663,WHITE,Cabinet,10.67,9.67
+423672,664-M,,Cabinet,0,0
+423673,664-M,IVORY,Cabinet,0,0
+423674,664-M,WHITE,Cabinet,4,0
+423675,665,,Cabinet,0,0
+423676,665,IVORY,Cabinet,0,0
+423677,665,WHITE,Cabinet,25,46
+423678,666,,Cabinet,0,0
+423679,666,IVORY,Cabinet,0,0
+423680,666,WHITE,Cabinet,5,7
+423681,667,,Cabinet,0,0
+423682,667,IVORY,Cabinet,4,0
+423683,667,WHITE,Cabinet,168.67,325.67
+423684,701,BLUE,Cistern & Seat Cover,206.67,120.67
+423685,701,BURGUNDAY,Cistern & Seat Cover,0,0
+423686,701,GREEN,Cistern & Seat Cover,36.67,0
+423687,701,IVORY,Cistern & Seat Cover,36.67,6.67
+423688,701,PINK,Cistern & Seat Cover,653.33,693.33
+423689,701,WHITE,Cistern & Seat Cover,12004.33,21428.33
+423690,701-N,BLUE,Cistern & Seat Cover,0,0
+423691,701-N,BURGUNDAY,Cistern & Seat Cover,0,0
+423692,701-N,GREEN,Cistern & Seat Cover,0,0
+423693,701-N,IVORY,Cistern & Seat Cover,0,0
+423694,701-N,PINK,Cistern & Seat Cover,0,0
+423695,701-N,WHITE,Cistern & Seat Cover,36.67,82.67
+423696,702,BLUE,Cistern & Seat Cover,0,0
+423697,702,BURGUNDAY,Cistern & Seat Cover,0,0
+423698,702,GREEN,Cistern & Seat Cover,0,0
+423699,702,IVORY,Cistern & Seat Cover,0,0
+423700,702,PINK,Cistern & Seat Cover,0,0
+423701,702,WHITE,Cistern & Seat Cover,33.33,0
+423702,703,BLUE,Cistern & Seat Cover,0,0
+423703,703,BURGUNDAY,Cistern & Seat Cover,0,0
+423704,703,GREEN,Cistern & Seat Cover,0,0
+423705,703,IVORY,Cistern & Seat Cover,0,0
+423706,703,PINK,Cistern & Seat Cover,0,0
+423707,703,WHITE,Cistern & Seat Cover,16.67,0
+423708,704,BLUE,Cistern & Seat Cover,0,0
+423709,704,BURGUNDAY,Cistern & Seat Cover,0,0
+423710,704,GREEN,Cistern & Seat Cover,0,0
+423711,704,IVORY,Cistern & Seat Cover,23.33,33.33
+423712,704,PINK,Cistern & Seat Cover,0,0
+423713,704,WHITE,Cistern & Seat Cover,2978,5272
+423714,705,BLUE,Cistern & Seat Cover,0,0
+423715,705,BURGUNDAY,Cistern & Seat Cover,0,0
+423716,705,GREEN,Cistern & Seat Cover,0,0
+423717,705,IVORY,Cistern & Seat Cover,20,10
+423718,705,PINK,Cistern & Seat Cover,0,0
+423719,705,WHITE,Cistern & Seat Cover,406.67,487.67
+423720,706,BLUE,Cistern & Seat Cover,0,0
+423721,706,BURGUNDAY,Cistern & Seat Cover,0,0
+423722,706,GREEN,Cistern & Seat Cover,0,0
+423723,706,IVORY,Cistern & Seat Cover,0,0
+423724,706,PINK,Cistern & Seat Cover,0,0
+423725,706,WHITE,Cistern & Seat Cover,0,0
+423726,708,BLUE,Cistern & Seat Cover,0,0
+423727,708,BURGUNDAY,Cistern & Seat Cover,0,0
+423728,708,GREEN,Cistern & Seat Cover,0,0
+423729,708,IVORY,Cistern & Seat Cover,0,0
+423730,708,PINK,Cistern & Seat Cover,0,0
+423731,708,WHITE,Cistern & Seat Cover,6.67,0
+423732,721,IVORY,Cistern & Seat Cover,0,0
+423733,721,WHITE,Cistern & Seat Cover,168.33,327.33
+423734,722,BLUE,Cistern & Seat Cover,0,0
+423735,722,BURGUNDAY,Cistern & Seat Cover,0,0
+423736,722,GREEN,Cistern & Seat Cover,0,0
+423737,722,IVORY,Cistern & Seat Cover,0,0
+423738,722,PINK,Cistern & Seat Cover,0,0
+423739,722,WHITE,Cistern & Seat Cover,0,0
+423740,723,BLUE,Cistern & Seat Cover,0,0
+423741,723,BURGUNDAY,Cistern & Seat Cover,0,0
+423742,723,GREEN,Cistern & Seat Cover,0,0
+423743,723,IVORY,Cistern & Seat Cover,0,0
+423744,723,PINK,Cistern & Seat Cover,0,0
+423745,723,WHITE,Cistern & Seat Cover,26.67,0
+423746,724,BLUE,Cistern & Seat Cover,0,0
+423747,724,BURGUNDAY,Cistern & Seat Cover,0,0
+423748,724,GREEN,Cistern & Seat Cover,0,0
+423749,724,IVORY,Cistern & Seat Cover,0,0
+423750,724,PINK,Cistern & Seat Cover,0,0
+423751,724,WHITE,Cistern & Seat Cover,3.33,0
+423752,725,BLUE,Cistern & Seat Cover,0,0
+423753,725,BURGUNDAY,Cistern & Seat Cover,0,0
+423754,725,GREEN,Cistern & Seat Cover,0,0
+423755,725,IVORY,Cistern & Seat Cover,0,0
+423756,725,PINK,Cistern & Seat Cover,0,0
+423757,725,WHITE,Cistern & Seat Cover,13.33,0
+423758,B-151,,Ball Cock,0,0
+423759,B-152,,Ball Cock,0,0
+423760,B-153,,Ball Cock,0,0
+423761,B-161,,Ball Cock,0,0
+423762,B-162,,Ball Cock,0,0
+423763,B-163,,Ball Cock,0,0
+423764,B-167,,Ball Cock,0,0
+423765,B-168,,Ball Cock,0,0
+423766,B-169,,Ball Cock,0,0
+423767,B-173,,Ball Cock,0,0
+423768,B-174,,Ball Cock,0,0
+423769,B-175,,Ball Cock,0,0
+423770,BEA-44A,,Accessorise,0,0
+423771,BEA-47A,,Accessorise,0,0
+423772,BEA-47AB,,Accessorise,0,0
+423773,BEA-84,,Faucets & Jetsprays & Shower,0,0
+423774,BEA-84B,WHITE,Faucets & Jetsprays & Shower,0,0
+423775,BEA-84T,WHITE,Faucets & Jetsprays & Shower,0,0
+423776,CB-02,IVORY,Accessorise,0,0
+423777,CB-02,WHITE,Accessorise,56.67,112.67
+423778,CF-01,IVORY,Accessorise,0,0
+423779,CF-01,WHITE,Accessorise,100.33,111.33
+423780,CF-03,,Accessorise,25,25
+423781,CF-03,IVORY,Accessorise,0,0
+423782,CF-03,WHITE,Accessorise,13.33,0
+423783,CH-01,WHITE,Accessorise,366.67,366.67
+423784,CNS-15,,Accessorise,70,70
+423785,CNS-20,,Accessorise,6.67,6.67
+423786,CS-01,IVORY,Accessorise,0,0
+423787,CS-01,WHITE,Accessorise,490,490
+423788,DB-01,IVORY,Accessorise,0,0
+423789,DB-01,WHITE,Accessorise,53.33,166.33
+423790,DB-02,IVORY,Accessorise,0,0
+423791,DB-02,WHITE,Accessorise,373.67,797.67
+423792,DB-02 L,,Accessorise,0,0
+423793,DB-04,IVORY,Accessorise,0,0
+423794,DB-04,WHITE,Accessorise,0,0
+423795,DF-01,,Accessorise,0,0
+423796,DF-01,IVORY,Accessorise,0,0
+423797,DF-01,WHITE,Accessorise,43.33,23.33
+423798,EPT-01,,Accessorise,916.67,386.67
+423799,H-1,IVORY,Accessorise,0,0
+423800,H-1,WHITE,Accessorise,0,0
+423801,H-2,IVORY,Accessorise,0,0
+423802,H-2,WHITE,Accessorise,0,0
+423803,H-3,IVORY,Accessorise,0,0
+423804,H-3,WHITE,Accessorise,0,0
+423805,H-4,IVORY,Accessorise,0,0
+423806,H-4,WHITE,Accessorise,0,0
+423807,H-5,IVORY,Accessorise,0,0
+423808,H-5,WHITE,Accessorise,0,0
+423809,H-86,IVORY,Faucets & Jetsprays & Shower,0,0
+423810,H-86,PINK,Faucets & Jetsprays & Shower,0,0
+423811,H-86,WHITE,Faucets & Jetsprays & Shower,0,0
+423812,H-87,IVORY,Faucets & Jetsprays & Shower,0,0
+423813,H-87,PINK,Faucets & Jetsprays & Shower,0,0
+423814,H-87,WHITE,Faucets & Jetsprays & Shower,0,0
+423815,H-88,IVORY,Faucets & Jetsprays & Shower,0,0
+423816,H-88,PINK,Faucets & Jetsprays & Shower,0,0
+423817,H-88,WHITE,Faucets & Jetsprays & Shower,0,0
+423818,HF-190,IVORY,Faucets & Jetsprays & Shower,106.33,0
+423819,HF-190,WHITE,Faucets & Jetsprays & Shower,669,1837
+423820,HF-191,IVORY,Faucets & Jetsprays & Shower,19.33,0
+423821,HF-191,WHITE,Faucets & Jetsprays & Shower,112,222
+423822,I-151,,Ball Cock,12,12
+423823,I-152,,Ball Cock,28.33,28.33
+423824,I-153,,Ball Cock,6.67,6.67
+423825,I-155,,Ball Cock,5,5
+423826,I-161,,Ball Cock,0,0
+423827,I-162,,Ball Cock,0,0
+423828,I-163,,Ball Cock,0,0
+423829,I-164,,Ball Cock,0,0
+423830,I-167,,Ball Cock,0,0
+423831,I-168,,Ball Cock,0,0
+423832,I-169,,Ball Cock,0,0
+423833,I-171,-,Ball Cock,0,0
+423834,I-173,-,Ball Cock,0,0
+423835,I-174,-,Ball Cock,0,0
+423836,I-175,-,Ball Cock,0,0
+423837,I-177,-,Ball Cock,0,0
+423838,LB-01,IVORY,Accessorise,0,0
+423839,LB-01,WHITE,Accessorise,3323.33,1462.33
+423840,LF-152,,Accessorise,67.67,240.67
+423841,LF-153,,Accessorise,337,554
+423842,LF-154,,Accessorise,147.33,241.33
+423843,LF-155,,Accessorise,302.33,553.33
+423844,LF-156,,Accessorise,114.33,275.33
+423845,LFP-156,,Accessorise,0,0
+423846,N-151,,Ball Cock,0,0
+423847,N-152,,Ball Cock,0,0
+423848,N-153,,Ball Cock,0,0
+423849,P-121,,Cocks Standard,5634.67,8587.67
+423850,P-124,,Cocks Standard,4145,6275
+423851,P-144,,Cocks Standard,3932.67,4215.67
+423852,PD-18,IVORY,Accessorise,0,0
+423853,PD-18,WHITE,Accessorise,22.67,20.67
+423854,PH-1,,Accessorise,0,0
+423855,PH-2,,Accessorise,100,150
+423856,PI-18,IVORY,Accessorise,0,0
+423857,PI-18,WHITE,Accessorise,0,0
+423858,PP-01,,Accessorise,0,0
+423859,PP-02,,Accessorise,0,0
+423860,PQ-18,IVORY,Accessorise,0,0
+423861,PQ-18,WHITE,Accessorise,0,114
+423862,PR-18,IVORY,Accessorise,0,0
+423863,PR-18,WHITE,Accessorise,42.67,40.67
+423864,PS-121,,Cocks Standard,3035.33,5493.33
+423865,PS-124,,Cocks Standard,2726.33,4286.33
+423866,PS-144,,Cocks Standard,2468.67,3518.67
+423867,PTA-1,,Accessorise,38.33,19.33
+423868,PTA-12,,Accessorise,75,53
+423869,PTA-13,,Accessorise,67.67,22.67
+423870,PTA-14,,Accessorise,279.67,247.67
+423871,PTA-15,,Accessorise,312,140
+423872,PTA-17,,Accessorise,4.33,0
+423873,PTA-18,,Accessorise,214,172
+423874,PTA-2,,Accessorise,13.33,0
+423875,PTA-21,,Cocks Standard,0,0
+423876,PTA-22,,Cocks Standard,20.67,20.67
+423877,PTA-25,,Faucets & Jetsprays & Shower,14.67,0
+423878,PTA-26,,Faucets & Jetsprays & Shower,236,32
+423879,PTA-27,,Faucets & Jetsprays & Shower,0,0
+423880,PTA-3,,Accessorise,123.33,31.33
+423881,PTA-32,,Faucets & Jetsprays & Shower,0.67,0
+423882,PTA-33,,Faucets & Jetsprays & Shower,16.33,16.33
+423883,PTA-34,,Faucets & Jetsprays & Shower,0,0
+423884,PTA-36,,Faucets & Jetsprays & Shower,16.67,9.67
+423885,PTA-4,,Accessorise,1.67,0
+423886,PTA-44,,Faucets & Jetsprays & Shower,7.33,0
+423887,PTA-48,,Cabinet,162,42
+423888,PTA-49,,Cabinet,204.33,264.33
+423889,PTA-5,,Accessorise,55.33,0
+423890,PTA-50,,Cabinet,16.67,16.67
+423891,PTA-53,,Ball Cock,739.67,230.67
+423892,PTA-54,,Ball Cock,1185,1358
+423893,PTA-55,,Ball Cock,243.33,75.33
+423894,PTA-56,,Ball Cock,8.33,0
+423895,PTA-57,,Ball Cock,19.33,0
+423896,PTA-58,,Ball Cock,17,0
+423897,PTA-59,,Waste Pipes,328.5,92.5
+423898,PTA-6,,Accessorise,32.67,0
+423899,PTA-60,,Waste Pipes,39,0
+423900,PTA-61,,Waste Pipes,867.5,1002.5
+423901,PTA-62,,Waste Pipes,1081,572
+423902,PTA-63,,Waste Pipes,212,0
+423903,PTA-64,,Waste Pipes,454.5,0
+423904,PTA-65,,P.V.C. Connections,118.5,0
+423905,PTA-66,,P.V.C. Connections,10,8
+423906,PTA-67,,P.V.C. Connections,1930.5,1568.5
+423907,PTA-68,,P.V.C. Connections,1447.5,1344.5
+423908,PTA-69,,P.V.C. Connections,94.01,0
+423909,PTA-7,,Accessorise,0,0
+423910,PTA-70,,P.V.C. Connections,117.5,0
+423911,PTA-71,,Cistern & Seat Cover,193,155
+423912,PTA-72,,Cistern & Seat Cover,85.67,49.67
+423913,PTA-73,,Cistern & Seat Cover,72.33,89.33
+423914,PTA-74,,Cistern & Seat Cover,22.33,22.33
+423915,PTA-76,,Cocks Premium,58.67,208.67
+423916,PTA-77,,Cocks Premium,0,0
+423917,PTA-78,,Cistern & Seat Cover,252,242
+423918,PTA-79,,Cistern & Seat Cover,186.33,60.33
+423919,PTA-80,,Cistern & Seat Cover,49.33,44.33
+423920,PTA-81,,Cistern & Seat Cover,0,0
+423921,PTA-82,,Cistern & Seat Cover,63.33,0
+423922,PTA-83,,Cistern & Seat Cover,21,0
+423923,PTA-84,,Cistern & Seat Cover,80.67,61.67
+423924,PTA-85,,Cistern & Seat Cover,20,20
+423925,PTA-9,,Faucets & Jetsprays & Shower,1.67,0
+423926,SB-01,WHITE,Accessorise,33.33,33.33
+423927,SF-01,,Accessorise,0,0
+423928,SP-02,IVORY,Accessorise,0,0
+423929,SP-02,WHITE,Accessorise,350,510
+

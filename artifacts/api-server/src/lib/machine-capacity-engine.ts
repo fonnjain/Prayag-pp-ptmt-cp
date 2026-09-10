@@ -16,7 +16,7 @@
  *
  * AGRI Pipe has no dedicated machine — only flex machines (MC3, MC4, MC5).
  *
- * Items with noBomWeight=true or weightKg=0 are unconstrained (no kg to schedule)
+ * Items with noBomKg=true or totalKg=0 are unconstrained (no kg to schedule)
  * when weekly release assigned them a week. Pending-only items without a release
  * week remain explicit unfulfillable residuals instead of disappearing.
  *
@@ -33,11 +33,13 @@
 
 import type { PlumbingMachineCapacity } from "@workspace/db";
 import type { CalcPlanItem } from "./calc";
+import { componentDemand } from "./ptmt-pass2-engine";
 import { isSunday } from "./working-days";
 
 export type PlanItemForCascade = CalcPlanItem & {
-  weightKg?: number;
-  noBomWeight?: boolean;
+  kgPerPiece?: number;
+  totalKg?: number;
+  noBomKg?: boolean;
   machineW1: number;
   machineW2: number;
   machineW3: number;
@@ -46,6 +48,24 @@ export type PlanItemForCascade = CalcPlanItem & {
   machineWeek: 1 | 2 | 3 | 4 | null;
   machineUnfulfillable: boolean;
 };
+
+function assertTotalKgUnit(item: PlanItemForCascade): void {
+  if (
+    item.noBomKg
+    || item.maxProduction <= 0
+    || item.kgPerPiece == null
+    || item.kgPerPiece <= 0
+    || (item.totalKg ?? 0) <= 0
+  ) return;
+  const expectedTotalKg = Math.round(item.maxProduction * item.kgPerPiece * 100) / 100;
+  if (Math.abs((item.totalKg ?? 0) - expectedTotalKg) > 0.01) {
+    throw new Error(
+      `Unit mismatch at cascade boundary for ${item.itemCode}: expected totalKg ` +
+      `(kg for the full row), received ${item.totalKg} for ${item.maxProduction} pieces; ` +
+      `kgPerPiece=${item.kgPerPiece} implies totalKg=${expectedTotalKg}.`,
+    );
+  }
+}
 
 export interface MachineWeekUtilisation {
   machineId: string;
@@ -88,6 +108,23 @@ export function calendarWorkingDaysInWeek(
 
 function coverKey(cover: number | "OS"): number {
   return cover === "OS" ? Infinity : cover;
+}
+
+function priorityComponents(item: PlanItemForCascade): { dummy: number; orders: number; buffer: number } {
+  return componentDemand({
+    category: item.category,
+    pendingCurrent: item.pendingOrder,
+    pendingLastMonth: item.pendingOrderLastMonth,
+    temporaryPlan: item.maxProduction,
+  });
+}
+
+function itemPriority(item: PlanItemForCascade, residual: number): number {
+  const components = priorityComponents(item);
+  const allocated = Math.max(item.maxProduction - residual, 0);
+  if (allocated < components.dummy - 1e-9) return 0;
+  if (allocated < components.dummy + components.orders - 1e-9) return 1;
+  return 2;
 }
 
 function getPoolForCategory(category: string): "PIPE" | "MOULDING" | "SOLVENT" {
@@ -196,10 +233,11 @@ export function runMachineCascade(
   const unfulfillable: MachineCascadeResult["unfulfillable"] = [];
 
   for (const item of items) {
+    assertTotalKgUnit(item);
     const pool = getPoolForCategory(item.category);
-    const kg   = item.weightKg ?? 0;
+    const totalKg = item.totalKg ?? 0;
 
-    if (pool === "SOLVENT" || kg === 0 || item.maxProduction <= 0) {
+    if (pool === "SOLVENT" || totalKg === 0 || item.maxProduction <= 0) {
       // Unconstrained: copy desired weekly split directly.
       item.machineW1 = item.w1 ?? 0;
       item.machineW2 = item.w2 ?? 0;
@@ -232,8 +270,27 @@ export function runMachineCascade(
       }
     }
 
-    // Sort by cover ascending (most urgent first).
-    eligible.sort((a, b) => coverKey(a.cover) - coverKey(b.cover));
+    // Match PTMT's component priority: dummy first, current orders second,
+    // then buffer by lowest cover. Residual tracking means an item moves to
+    // the next component priority only after its higher-priority quantity has
+    // actually been placed.
+    eligible.sort((a, b) => {
+      const aResidual = residualPcs.get(a) ?? 0;
+      const bResidual = residualPcs.get(b) ?? 0;
+      const priorityDelta = itemPriority(a, aResidual) - itemPriority(b, bResidual);
+      if (priorityDelta !== 0) return priorityDelta;
+
+      if (itemPriority(a, aResidual) < 2) {
+        const quantityDelta = bResidual - aResidual;
+        if (quantityDelta !== 0) return quantityDelta;
+      } else {
+        const coverDelta = coverKey(a.cover) - coverKey(b.cover);
+        if (coverDelta !== 0) return coverDelta;
+      }
+      const itemDelta = a.itemCode.localeCompare(b.itemCode);
+      if (itemDelta !== 0) return itemDelta;
+      return a.colour.localeCompare(b.colour);
+    });
 
     for (const item of eligible) {
       let rem = residualPcs.get(item) ?? 0;
@@ -241,8 +298,8 @@ export function runMachineCascade(
 
       const pool     = getPoolForCategory(item.category);
       const material = getMaterialFromCategory(item.category);
-      const kg       = item.weightKg ?? 0;
-      const kgPerPiece = kg / item.maxProduction; // > 0 (guarded above)
+      const totalKg   = item.totalKg ?? 0;
+      const kgPerPiece = totalKg / item.maxProduction; // > 0 (guarded above)
 
       const key = `machineW${w}` as "machineW1" | "machineW2" | "machineW3" | "machineW4";
 

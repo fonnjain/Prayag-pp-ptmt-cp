@@ -16,11 +16,9 @@ import {
 } from "@/components/ui/table";
 import { formatMonthLabel } from "@/lib/month";
 import { cn } from "@/lib/utils";
-import { FileSpreadsheet, RefreshCw } from "lucide-react";
+import { FileSpreadsheet } from "lucide-react";
 import { exportXlsx } from "@/lib/excel";
-import { useToast } from "@/hooks/use-toast";
-import { MonthEmptyState } from "@/components/month-empty-state";
-import { useCreateTemporaryPlan } from "@/hooks/use-create-temporary-plan";
+import { ProductionPlanState } from "@/components/production-plan-state";
 
 function ragBadge(pct: number | null | undefined): string {
   if (pct === null || pct === undefined) return "";
@@ -96,20 +94,6 @@ export default function SummaryPage() {
   const { month, isMonthAvailable, isAvailableMonthsLoading } = useMonth();
   const { segment } = useSegment();
   const { data, isLoading, isError } = useGetPlanSummary({ month, segment });
-  const { createTemporaryPlan, isPending: isCreatingTemporaryPlan } = useCreateTemporaryPlan();
-  const { toast } = useToast();
-
-  function handleRunPlan() {
-    createTemporaryPlan(
-      { month, segment },
-      {
-        onSuccess: (run) =>
-          toast({ title: "Temporary Plan frozen", description: `Run #${run.id} is a demand-true snapshot for ${formatMonthLabel(month)}.` }),
-        onError: () =>
-          toast({ title: "Failed to create run", description: "Check that all data sources are available.", variant: "destructive" }),
-      },
-    );
-  }
   const { data: itemsData, isLoading: itemsLoading } = useListPlanItems(
     { month, segment },
     { query: { staleTime: 5 * 60 * 1000 } as any },
@@ -137,6 +121,8 @@ export default function SummaryPage() {
   const grandUnscheduled = weeklyTotals.reduce((s, t) => s + t.unscheduled, 0);
 
   const weekly = weeklyRaw as any;
+  const availability = (summary as any)?.availability;
+  const hasProductionPlan = availability?.status === "production";
 
   // Build lookup: category → { w1Pct, w2Pct, w3Pct, w4Pct }
   type WeekPcts = { w1Pct: number | null; w2Pct: number | null; w3Pct: number | null; w4Pct: number | null };
@@ -165,15 +151,7 @@ export default function SummaryPage() {
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold">Summary — {formatMonthLabel(month)}</h2>
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={handleRunPlan}
-               disabled={isCreatingTemporaryPlan}
-            >
-              <RefreshCw className={cn("h-4 w-4 mr-2", isCreatingTemporaryPlan && "animate-spin")} />
-               {isCreatingTemporaryPlan ? "Creating Temporary Plan…" : "Run Plan now"}
-            </Button>
-            {!showMonthEmpty && !isLoading && !isError && (
+            {hasProductionPlan && !isLoading && !isError && (
               <Button variant="outline" size="sm" onClick={() => exportXlsx(`plan-summary-${month}`, [
                 { name: "Summary", rows: categories.map((cat) => {
                   const wt = weeklyTotals.find((t) => t.category === cat.category);
@@ -203,18 +181,20 @@ export default function SummaryPage() {
         </div>
 
         {isLoading && <p className="text-sm text-gray-500">Loading summary...</p>}
+        {!isLoading && !isError && hasProductionPlan && availability && (
+          <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+            Summary source: <strong>Production Plan #{availability.runId}</strong> · type {availability.planType} · status {availability.runStatus}
+            {availability.asOfAt ? ` · as of ${new Date(availability.asOfAt).toLocaleString()}` : ""}
+          </div>
+        )}
         {isError && !showMonthEmpty && (
           <p className="text-sm text-red-600">
             Could not load the summary. Make sure the required data sources are uploaded/synced.
           </p>
         )}
 
-        {showMonthEmpty ? (
-           <MonthEmptyState
-             segment={segment}
-             onCreateTemporaryPlan={handleRunPlan}
-             isCreatingTemporaryPlan={isCreatingTemporaryPlan}
-           />
+        {!isLoading && !isError && !hasProductionPlan ? (
+          <ProductionPlanState month={month} segment={segment} availability={availability} />
         ) : !isLoading && !isError && (
           <Card>
             <CardContent className="pt-4 overflow-x-auto">
@@ -254,7 +234,7 @@ export default function SummaryPage() {
                             href={`/category/${categorySlug(cat.category)}`}
                             className="text-primary hover:underline"
                           >
-                            REPORT {idx + 1} — {cat.category}
+                            {segment === "PTMT" ? `REPORT ${idx + 1}` : "MATERIAL"} — {cat.category}
                           </Link>
                         </TableCell>
                         <TableCell className="text-right">
@@ -274,7 +254,7 @@ export default function SummaryPage() {
                     );
                   })}
                   <TableRow className="font-semibold border-t-2">
-                    <TableCell>Total (Reports 1–7)</TableCell>
+                    <TableCell>{segment === "PTMT" ? "Total (Reports 1–9)" : "Total (MATERIAL tabs)"}</TableCell>
                     <TableCell className="text-right">
                       {grandMin.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                     </TableCell>

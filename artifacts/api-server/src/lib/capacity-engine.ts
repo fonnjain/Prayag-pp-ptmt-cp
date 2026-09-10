@@ -6,6 +6,7 @@ import { buildPlanItems } from "../routes/plan";
 import { logger } from "./logger";
 import { countWorkingDaysInMonth } from "./working-days";
 import { selectPtmtCapacityWindow } from "./ptmt-pass2-engine";
+import { normalizeProductionCode } from "./production-code";
 
 const THIN_DATA_THRESHOLD = 10;
 
@@ -274,8 +275,9 @@ export async function computeCategoryCapacity(trailingDays = 90, segment = "PTMT
   const catByKey = new Map<string, string>();
   const catByCode = new Map<string, string>();
   for (const item of itemRows) {
-    catByKey.set(`${item.itemCode}::${item.colour}`, item.category);
-    if (!catByCode.has(item.itemCode)) catByCode.set(item.itemCode, item.category);
+    const normalizedCode = normalizeProductionCode(item.itemCode);
+    catByKey.set(`${normalizedCode}::${item.colour}`, item.category);
+    if (!catByCode.has(normalizedCode)) catByCode.set(normalizedCode, item.category);
   }
 
   const catDateQty = new Map<string, Map<string, number>>();
@@ -285,8 +287,8 @@ export async function computeCategoryCapacity(trailingDays = 90, segment = "PTMT
       const workbookCategory = segment === "PTMT" ? specialPtmtCategory(row.group) : null;
       const category =
         workbookCategory ??
-        catByKey.get(`${row.itemCode}::${row.colour}`) ??
-        catByCode.get(row.itemCode) ??
+        catByKey.get(`${normalizeProductionCode(row.itemCode)}::${row.colour}`) ??
+        catByCode.get(normalizeProductionCode(row.itemCode)) ??
         row.group;
       if (!category) continue;
       // Only accumulate data for categories that belong to this segment

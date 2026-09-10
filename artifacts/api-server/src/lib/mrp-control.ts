@@ -31,6 +31,8 @@ const OPEN_SOURCE_QUESTION_CODES = [
   "324-K", "323-K", "PH-01", "PH-02",
   "PTA-18", "PTA-78", "PTA-15", "PTA-84", "PTA-50", "PTA-12", "PTA-3",
 ];
+const WORKING_DAY_EXPECTATION_QUESTION =
+  "Business question for Prayag: should a first-of-month PTMT plan use the prior month's worked-Sunday pattern as an expected capacity basis, or only Sundays observed in the current month? August 2026 had four worked Sundays; the system currently uses only current-month observed Sundays.";
 const PRODUCT_REQUIRED_HEADERS = ["item_code", "division", "series", "product_name", "mrp", "effective_date"];
 const COLOUR_PRICE_HEADERS = ["mrp_ivory", "mrp_white_with_jet", "mrp_pink_green_blue"];
 const UPSTREAM_DISCONTINUED_API_COVERAGE = {
@@ -573,7 +575,7 @@ export async function getMrpReport() {
          held: seriesReview.filter((row) => row.status === "held"),
          all: seriesReview,
        },
-      readyToSendQuestion: `Please confirm the authoritative source, planning category, and capacity treatment for these 11 July-demand codes absent from both the MRP and rate list: ${OPEN_SOURCE_QUESTION_CODES.join(", ")}. Also confirm the MRP capacity treatment for P.V.C. Connections, Waste Pipes, Collapsible Waste Pipes, Special Cock, and Showers Sets before PTMT planning is released.`,
+       readyToSendQuestion: `Please confirm the authoritative source, planning category, and capacity treatment for these 11 July-demand codes absent from both the MRP and rate list: ${OPEN_SOURCE_QUESTION_CODES.join(", ")}. Also confirm the MRP capacity treatment for P.V.C. Connections, Waste Pipes, Collapsible Waste Pipes, Special Cock, and Showers Sets before PTMT planning is released. ${WORKING_DAY_EXPECTATION_QUESTION}`,
     },
   };
 }

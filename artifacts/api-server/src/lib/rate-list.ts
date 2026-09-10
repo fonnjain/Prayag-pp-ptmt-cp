@@ -10,8 +10,14 @@ import {
   type ItemMaster,
   type MasterProduct,
 } from "@workspace/db";
-import { normalizeMrpSeries, resolveMrpClassification, type MrpClassificationRow } from "./mrp-classification";
-import { fetchRateListSheetRows } from "./sheets";
+import {
+  deriveMrpPlanningCategory,
+  normalizeMrpSeries,
+  resolveMrpClassification,
+  type MrpClassificationRow,
+} from "./mrp-classification";
+import { getPrayagCategoryEvidence, type PrayagPlanningCategory } from "./prayag-category-evidence";
+import { fetchPtmtReportRoster, fetchRateListSheetRows, normalizeCodeStrict, type PtmtReportRosterRow } from "./sheets";
 import { logger } from "./logger";
 
 export const RATE_LIST_UPLOAD_KIND = "rate_list";
@@ -29,6 +35,39 @@ export type EffectivePtmtRosterItem = ItemMaster & {
   rosterSource: "workbook" | "rate-list" | "catalogue" | "mrp";
   rateListName?: string | null;
   rateListRange?: string | null;
+  mrpSeries?: string | null;
+  planningCategorySource?: "prayag-planning-tabs" | "mrp" | "rate-list" | "catalogue" | "workbook";
+};
+
+export function buildPtmtReportRoster(rows: PtmtReportRosterRow[]): EffectivePtmtRosterItem[] {
+  return rows.map((row, index) => ({
+    id: -1 * (index + 1),
+    segment: "PTMT",
+    category: row.category,
+    itemCode: normalizeRateListCode(row.itemCode),
+    colour: row.colour.trim(),
+    classificationStatus: "classified",
+    classificationSource: "workbook",
+    classificationNote: `PTMT ${row.report} roster row; REPORT tabs are authoritative at code/colour grain.`,
+    rosterSource: "workbook",
+    rateListName: null,
+    rateListRange: null,
+    mrpSeries: null,
+    planningCategorySource: "workbook",
+  })) as EffectivePtmtRosterItem[];
+}
+
+export type PtmtRosterRawSpellingCollisionEntry = {
+  rawCode: string;
+  colour: string;
+  category: string;
+  entryPath: EffectivePtmtRosterItem["rosterSource"];
+  demand: number | null;
+};
+
+export type PtmtRosterRawSpellingCollision = {
+  strictKey: string;
+  entries: PtmtRosterRawSpellingCollisionEntry[];
 };
 
 export type RateListReconciliation = {
@@ -50,6 +89,40 @@ export type RateListCoverageReport = {
   legacyReconciliation: RateListReconciliation | null;
   explainedExclusions: Array<{ code: string; quantity: number }>;
   remainingReviewCodes: Array<{ code: string; quantity: number }>;
+};
+
+export type PlumbingRosterPlanningRow = {
+  itemCode: string;
+  category: string;
+};
+
+export type PlumbingRosterMrpRow = MrpClassificationRow & {
+  rowType?: "product" | "discontinued";
+  discontinued?: boolean;
+  productName?: string | null;
+};
+
+export type PlumbingRosterCoverageEntry = {
+  code: string;
+  planningCategory: string | null;
+  effectiveCategory: string | null;
+  categorySource: "prayag-planning-tabs" | "mrp" | "unclassified";
+  mrpSeries: string | null;
+  mrpDerivedCategory: string | null;
+  mrpDivision: string | null;
+  mrpStatus: "active" | "discontinued" | null;
+  productName: string | null;
+};
+
+export type PlumbingRosterCoverageReport = {
+  rosterCodeCount: number;
+  mrpCodeCount: number;
+  bothCodeCount: number;
+  mrpOnlyCodeCount: number;
+  rosterOnlyCodeCount: number;
+  both: PlumbingRosterCoverageEntry[];
+  mrpOnly: PlumbingRosterCoverageEntry[];
+  rosterOnly: PlumbingRosterCoverageEntry[];
 };
 
 export type RateListRangeAudit = {
@@ -297,6 +370,68 @@ function isReviewedCatalogueProduct(row: MasterProduct): boolean {
   return row.segment === "PTMT" && Boolean(row.planningCategory?.trim());
 }
 
+/**
+ * H2r guard: strict-code collisions are only noteworthy when they contain
+ * distinct raw code spellings. Multiple colours of one raw code are valid
+ * roster variants and must not be reported.
+ *
+ * Demand is deliberately supplied by the caller rather than read here. Roster
+ * construction is also used before a new plan exists, so it has no legitimate
+ * #2419 context to query. A caller with a frozen plan can provide demand keyed
+ * by ptmtRosterDemandKey without coupling roster identity to a historical run.
+ */
+export function ptmtRosterDemandKey(itemCode: string, colour: string): string {
+  return `${itemCode}\u0000${colour}`;
+}
+
+export function findPtmtRawSpellingCollisions(
+  roster: EffectivePtmtRosterItem[],
+  demandByItem?: ReadonlyMap<string, number>,
+): PtmtRosterRawSpellingCollision[] {
+  const byStrictKey = new Map<string, EffectivePtmtRosterItem[]>();
+  for (const row of roster) {
+    const strictKey = normalizeCodeStrict(row.itemCode);
+    if (!strictKey) continue;
+    const rows = byStrictKey.get(strictKey) ?? [];
+    rows.push(row);
+    byStrictKey.set(strictKey, rows);
+  }
+
+  return [...byStrictKey.entries()]
+    .map(([strictKey, rows]) => {
+      const rawSpellings = new Set(rows.map((row) => row.itemCode));
+      if (rawSpellings.size < 2) return null;
+      return {
+        strictKey,
+        entries: rows.map((row) => ({
+          rawCode: row.itemCode,
+          colour: row.colour,
+          category: row.category,
+          entryPath: row.rosterSource,
+          demand: demandByItem?.get(ptmtRosterDemandKey(row.itemCode, row.colour)) ?? null,
+        })),
+      };
+    })
+    .filter((collision): collision is PtmtRosterRawSpellingCollision => collision !== null)
+    .sort((a, b) => a.strictKey.localeCompare(b.strictKey));
+}
+
+function warnOnPtmtRawSpellingCollisions(
+  roster: EffectivePtmtRosterItem[],
+): void {
+  const collisions = findPtmtRawSpellingCollisions(roster);
+  for (const collision of collisions) {
+    logger.warn(
+      {
+        strictKey: collision.strictKey,
+        entries: collision.entries,
+        demandSource: "not available at roster construction; supply a frozen-plan demand map when reporting plan demand",
+      },
+      "H2r PTMT roster raw-spelling collision detected; warning only",
+    );
+  }
+}
+
 function buildEffectivePtmtRosterWithClassifier(
   itemRows: ItemMaster[],
   rateRows: RateListRow[],
@@ -304,9 +439,15 @@ function buildEffectivePtmtRosterWithClassifier(
   classifyRateRow: (row: RateListRow) => string = rateListPlanningCategory,
   mrpRows: MrpClassificationRow[] = [],
   modelCategories: ReadonlySet<string> = new Set<string>(),
+  usePrayagEvidence = false,
 ): EffectivePtmtRosterItem[] {
   const rateByCode = rateListByCode(rateRows);
   const mrpByCode = new Map(mrpRows.map((row) => [normalizeRateListCode(row.itemCode), row]));
+  const prayagEvidence = usePrayagEvidence ? getPrayagCategoryEvidence() : null;
+  const isAmbiguousPrayagCode = (code: string): boolean =>
+    prayagEvidence?.ambiguousCodes.includes(code) ?? false;
+  const prayagCategoryFor = (code: string): PrayagPlanningCategory | undefined =>
+    isAmbiguousPrayagCode(code) ? undefined : prayagEvidence?.codeToCategory.get(code);
   const represented = new Set<string>();
   const result: EffectivePtmtRosterItem[] = [];
 
@@ -322,8 +463,16 @@ function buildEffectivePtmtRosterWithClassifier(
     const mrpClassification = mrp
       ? resolveMrpClassification(mrp, fallbackCategory, modelCategories, rangeCategory)
       : null;
-    const category = mrpClassification?.category ?? fallbackCategory;
-    const status = mrpClassification?.status ?? (row.classificationStatus === "classified" && row.category !== "Unclassified"
+    const prayagAmbiguous = isAmbiguousPrayagCode(code);
+    const prayagCategory = prayagCategoryFor(code);
+    const category = prayagAmbiguous
+      ? "Unclassified"
+      : prayagCategory ?? mrpClassification?.category ?? fallbackCategory;
+    const status = prayagAmbiguous
+      ? "unclassified"
+      : prayagCategory
+      ? "classified"
+      : mrpClassification?.status ?? (row.classificationStatus === "classified" && row.category !== "Unclassified"
       ? row.classificationStatus
       : category === "Unclassified" ? "unclassified" : "classified");
     result.push({
@@ -331,13 +480,23 @@ function buildEffectivePtmtRosterWithClassifier(
       itemCode: code,
       category,
       classificationStatus: status,
-      classificationSource: mrpClassification?.source ?? (rate ? "rate-list" : (row.classificationSource ?? "workbook")),
-      classificationNote: mrpClassification?.note ?? (rate
+      classificationSource: prayagAmbiguous || prayagCategory ? "prayag-planning-tabs" : mrpClassification?.source ?? (rate ? "rate-list" : (row.classificationSource ?? "workbook")),
+      classificationNote: prayagAmbiguous
+        ? `AMBIGUOUS_IN_SOURCE: Prayag planning tabs assign this code to ${prayagEvidence?.rawCategoryByCode.get(code) ?? "multiple categories"}; retained as Unclassified.`
+        : prayagCategory
+        ? `Prayag planning tab: ${prayagEvidence?.rawCategoryByCode.get(code) ?? prayagCategory}. MRP series retained: ${mrp?.series ?? "not present"}.`
+        : mrpClassification?.note ?? (rate
         ? `Rate list: ${rate.rangeName}${category === "Unclassified" ? " (category review required)" : ""}`
         : row.classificationNote),
       rosterSource: rate ? "rate-list" : "workbook",
       rateListName: rate?.name ?? null,
       rateListRange: rate?.rangeName ?? null,
+      mrpSeries: mrp?.series ?? null,
+      planningCategorySource: prayagAmbiguous || prayagCategory ? "prayag-planning-tabs" : mrpClassification?.source === "mrp"
+        ? "mrp"
+        : rate ? "rate-list" : row.classificationSource === "catalogue" || row.classificationSource === "workbook"
+          ? row.classificationSource
+          : "workbook",
     });
     represented.add(code);
   }
@@ -348,38 +507,32 @@ function buildEffectivePtmtRosterWithClassifier(
     if (!isReviewedCatalogueProduct(row)) continue;
     const code = normalizeRateListCode(row.itemCode);
     if (represented.has(code)) continue;
+    const prayagAmbiguous = isAmbiguousPrayagCode(code);
+    const prayagCategory = prayagCategoryFor(code);
+    const mrpClassification = resolveMrpClassification(
+      mrpByCode.get(code),
+      row.planningCategory!.trim(),
+      modelCategories,
+      null,
+    );
     result.push({
       id: -1 * (result.length + 1),
       segment: "PTMT",
-      category: resolveMrpClassification(
-        mrpByCode.get(code),
-        row.planningCategory!.trim(),
-        modelCategories,
-        null,
-      ).category,
+      category: prayagAmbiguous ? "Unclassified" : prayagCategory ?? mrpClassification.category,
       itemCode: code,
       colour: "",
-      classificationStatus: resolveMrpClassification(
-        mrpByCode.get(code),
-        row.planningCategory!.trim(),
-        modelCategories,
-        null,
-      ).status,
-      classificationSource: resolveMrpClassification(
-        mrpByCode.get(code),
-        row.planningCategory!.trim(),
-        modelCategories,
-        null,
-      ).source === "mrp" ? "mrp" : "catalogue",
-      classificationNote: resolveMrpClassification(
-        mrpByCode.get(code),
-        row.planningCategory!.trim(),
-        modelCategories,
-        null,
-      ).note ?? "Reviewed catalogue product promoted into the governed PTMT roster.",
+      classificationStatus: prayagAmbiguous ? "unclassified" : prayagCategory ? "classified" : mrpClassification.status,
+      classificationSource: prayagAmbiguous || prayagCategory ? "prayag-planning-tabs" : mrpClassification.source === "mrp" ? "mrp" : "catalogue",
+      classificationNote: prayagAmbiguous
+        ? `AMBIGUOUS_IN_SOURCE: Prayag planning tabs assign this code to ${prayagEvidence?.rawCategoryByCode.get(code) ?? "multiple categories"}; retained as Unclassified.`
+        : prayagCategory
+        ? `Prayag planning tab: ${prayagEvidence?.rawCategoryByCode.get(code) ?? prayagCategory}. MRP series retained: ${mrpByCode.get(code)?.series ?? "not present"}.`
+        : mrpClassification.note ?? "Reviewed catalogue product promoted into the governed PTMT roster.",
       rosterSource: "catalogue",
       rateListName: null,
       rateListRange: null,
+      mrpSeries: mrpByCode.get(code)?.series ?? null,
+      planningCategorySource: prayagCategory ? "prayag-planning-tabs" : mrpClassification.source === "mrp" ? "mrp" : "catalogue",
     });
     represented.add(code);
   }
@@ -400,18 +553,26 @@ function buildEffectivePtmtRosterWithClassifier(
       null,
     );
     if (classification.status !== "classified" || !classification.category) continue;
+    const prayagAmbiguous = isAmbiguousPrayagCode(code);
+    const prayagCategory = prayagCategoryFor(code);
     result.push({
       id: -1 * (result.length + 1),
       segment: "PTMT",
-      category: classification.category,
+      category: prayagAmbiguous ? "Unclassified" : prayagCategory ?? classification.category,
       itemCode: code,
       colour: "",
-      classificationStatus: classification.status,
-      classificationSource: "mrp",
-      classificationNote: classification.note ?? `MRP-only approved identity: ${row.series}.`,
+      classificationStatus: prayagAmbiguous ? "unclassified" : prayagCategory ? "classified" : classification.status,
+      classificationSource: prayagAmbiguous || prayagCategory ? "prayag-planning-tabs" : "mrp",
+      classificationNote: prayagAmbiguous
+        ? `AMBIGUOUS_IN_SOURCE: Prayag planning tabs assign this code to ${prayagEvidence?.rawCategoryByCode.get(code) ?? "multiple categories"}; retained as Unclassified.`
+        : prayagCategory
+        ? `Prayag planning tab: ${prayagEvidence?.rawCategoryByCode.get(code) ?? prayagCategory}. MRP series retained: ${row.series}.`
+        : classification.note ?? `MRP-only approved identity: ${row.series}.`,
       rosterSource: "mrp",
       rateListName: null,
       rateListRange: null,
+      mrpSeries: row.series,
+      planningCategorySource: prayagCategory ? "prayag-planning-tabs" : "mrp",
     });
     represented.add(code);
   }
@@ -426,24 +587,37 @@ function buildEffectivePtmtRosterWithClassifier(
       modelCategories,
       classifyRateRow(row),
     );
+    const prayagAmbiguous = isAmbiguousPrayagCode(row.code);
+    const prayagCategory = prayagCategoryFor(row.code);
     result.push({
       id: -1 * (result.length + 1),
       segment: "PTMT",
-      category: classification.category,
+      category: prayagAmbiguous ? "Unclassified" : prayagCategory ?? classification.category,
       itemCode: row.code,
       colour: "",
-      classificationStatus: classification.status,
-      classificationSource: classification.source,
-      classificationNote: classification.note
+      classificationStatus: prayagAmbiguous ? "unclassified" : prayagCategory ? "classified" : classification.status,
+      classificationSource: prayagAmbiguous || prayagCategory ? "prayag-planning-tabs" : classification.source,
+      classificationNote: prayagAmbiguous
+        ? `AMBIGUOUS_IN_SOURCE: Prayag planning tabs assign this code to ${prayagEvidence?.rawCategoryByCode.get(row.code) ?? "multiple categories"}; retained as Unclassified.`
+        : prayagCategory
+        ? `Prayag planning tab: ${prayagEvidence?.rawCategoryByCode.get(row.code) ?? prayagCategory}. MRP series retained: ${mrpByCode.get(row.code)?.series ?? "not present"}.`
+        : classification.note
         ?? `Rate list: ${row.rangeName}${classification.category === "Unclassified" ? " (category review required)" : ""}`,
       rosterSource: "rate-list",
       rateListName: row.name,
       rateListRange: row.rangeName,
+      mrpSeries: mrpByCode.get(row.code)?.series ?? null,
+      planningCategorySource: prayagCategory ? "prayag-planning-tabs" : classification.source,
     });
     represented.add(row.code);
   }
 
-  return result.sort((a, b) => a.itemCode.localeCompare(b.itemCode) || a.colour.localeCompare(b.colour));
+  const sorted = result.sort((a, b) => a.itemCode.localeCompare(b.itemCode) || a.colour.localeCompare(b.colour));
+  // H2r intentionally warns without changing roster content. This becomes
+  // fatal only after the canonical-key decision resolves the seven current
+  // groups; do not merge, deduplicate, or drop rows here.
+  warnOnPtmtRawSpellingCollisions(sorted);
+  return sorted;
 }
 
 export function buildEffectivePtmtRoster(
@@ -460,7 +634,101 @@ export function buildEffectivePtmtRoster(
     rateListPlanningCategory,
     mrpRows,
     modelCategories,
+    false,
   );
+}
+
+function uniqueSorted(values: Iterable<string>): string[] {
+  return [...new Set([...values].map((value) => value.trim()).filter(Boolean))].sort();
+}
+
+function planningCategoryFromRows(rows: PlumbingRosterPlanningRow[]): string | null {
+  const categories = uniqueSorted(rows.map((row) => row.category));
+  if (categories.length === 0) return null;
+  return categories.length === 1 ? categories[0]! : `AMBIGUOUS: ${categories.join(" | ")}`;
+}
+
+/**
+ * Compare the current Prayag Plumbing planning-tab roster with the authoritative
+ * MRP Pipes & Fittings division. This is intentionally a read model: it reports
+ * the exact delta before the MRP-only rows are allowed into plan construction.
+ *
+ * Category precedence is explicit:
+ *   1. planning-tab material × type when a code is in the current roster
+ *   2. MRP series crosswalk for an MRP-only code
+ *   3. unresolved remains visible rather than guessed
+ */
+export function buildPlumbingRosterCoverage(
+  planningRows: PlumbingRosterPlanningRow[],
+  mrpRows: PlumbingRosterMrpRow[],
+): PlumbingRosterCoverageReport {
+  const planningByCode = new Map<string, PlumbingRosterPlanningRow[]>();
+  for (const row of planningRows) {
+    const code = normalizeCodeStrict(row.itemCode);
+    if (!code) continue;
+    const rows = planningByCode.get(code) ?? [];
+    rows.push({ ...row, itemCode: normalizeRateListCode(row.itemCode) });
+    planningByCode.set(code, rows);
+  }
+
+  const mrpByCode = new Map<string, PlumbingRosterMrpRow[]>();
+  for (const row of mrpRows) {
+    if (row.division.trim() !== "Pipes & Fittings") continue;
+    const code = normalizeCodeStrict(row.itemCode);
+    if (!code) continue;
+    const rows = mrpByCode.get(code) ?? [];
+    rows.push({ ...row, itemCode: normalizeRateListCode(row.itemCode) });
+    mrpByCode.set(code, rows);
+  }
+
+  const allCodes = uniqueSorted([...planningByCode.keys(), ...mrpByCode.keys()]);
+  const entryFor = (code: string): PlumbingRosterCoverageEntry => {
+    const planning = planningByCode.get(code) ?? [];
+    const mrp = mrpByCode.get(code) ?? [];
+    const planningCategory = planningCategoryFromRows(planning);
+    const derivedCategories = uniqueSorted(
+      mrp.map((row) => deriveMrpPlanningCategory(row.itemCode, row.division, row.series).category ?? ""),
+    );
+    const mrpDerivedCategory = derivedCategories.length === 1
+      ? derivedCategories[0]!
+      : derivedCategories.length > 1
+        ? `AMBIGUOUS: ${derivedCategories.join(" | ")}`
+        : null;
+    const effectiveCategory = planningCategory ?? mrpDerivedCategory;
+    return {
+      code: planning[0]?.itemCode ?? mrp[0]?.itemCode ?? code,
+      planningCategory,
+      effectiveCategory,
+      categorySource: planningCategory
+        ? "prayag-planning-tabs"
+        : mrpDerivedCategory
+          ? "mrp"
+          : "unclassified",
+      mrpSeries: uniqueSorted(mrp.map((row) => row.series)).join(" | ") || null,
+      mrpDerivedCategory,
+      mrpDivision: uniqueSorted(mrp.map((row) => row.division)).join(" | ") || null,
+      mrpStatus: mrp.length === 0
+        ? null
+        : mrp.some((row) => row.rowType !== "discontinued" && !row.discontinued)
+          ? "active"
+          : "discontinued",
+      productName: mrp.find((row) => row.productName)?.productName ?? null,
+    };
+  };
+
+  const bothCodes = allCodes.filter((code) => planningByCode.has(code) && mrpByCode.has(code));
+  const mrpOnlyCodes = allCodes.filter((code) => mrpByCode.has(code) && !planningByCode.has(code));
+  const rosterOnlyCodes = allCodes.filter((code) => planningByCode.has(code) && !mrpByCode.has(code));
+  return {
+    rosterCodeCount: planningByCode.size,
+    mrpCodeCount: mrpByCode.size,
+    bothCodeCount: bothCodes.length,
+    mrpOnlyCodeCount: mrpOnlyCodes.length,
+    rosterOnlyCodeCount: rosterOnlyCodes.length,
+    both: bothCodes.map(entryFor),
+    mrpOnly: mrpOnlyCodes.map(entryFor),
+    rosterOnly: rosterOnlyCodes.map(entryFor),
+  };
 }
 
 function buildCodeReconciliation(
@@ -563,6 +831,18 @@ export function buildRateListCategorySplit(
 }
 
 export async function getEffectivePtmtRoster(): Promise<EffectivePtmtRosterItem[]> {
+  try {
+    const reportRows = await fetchPtmtReportRoster();
+    if (reportRows.length > 0) {
+      return buildPtmtReportRoster(reportRows);
+    }
+  } catch (err) {
+    // Keep the legacy sources as an explicit recovery path for connector
+    // outages. A successful REPORT read always wins and is never merged with
+    // category-tab/rate-list identities.
+    logger.warn({ err: String(err) }, "PTMT REPORT 1-9 roster unavailable; using legacy reference-data recovery path");
+  }
+
   const [itemRows, rateRows, catalogueRows, mrpSource, bufferRows] = await Promise.all([
     db.select().from(itemMasterTable).where(eq(itemMasterTable.segment, "PTMT")),
     loadRateListRows(),
@@ -594,6 +874,7 @@ export async function getEffectivePtmtRoster(): Promise<EffectivePtmtRosterItem[
     rateListPlanningCategory,
     mrpRows,
     new Set(bufferRows.map((row) => row.name)),
+    true,
   );
 }
 
@@ -656,9 +937,11 @@ export async function getRateListReport() {
     rateListPlanningCategory,
     mrpRows,
     new Set(bufferRows.map((row) => row.name)),
+    true,
   );
   const rateCodes = new Set(rateRows.map((row) => row.code));
   const effectiveRosterCodes = new Set(afterRoster.map((row) => normalizeRateListCode(row.itemCode)));
+  const prayagEvidence = getPrayagCategoryEvidence();
   const ptmtItemCodes = new Set(
     itemRows
       .filter((row) => row.segment === "PTMT")
@@ -715,5 +998,19 @@ export async function getRateListReport() {
       explainedExclusions,
       remainingReviewCodes: reconciliation?.unmatchedCodes ?? [],
     } satisfies RateListCoverageReport : null,
+    prayagPlanningEvidence: {
+      status: prayagEvidence.status,
+      sourcePath: prayagEvidence.sourcePath,
+      mappedCodeCount: prayagEvidence.codeToCategory.size,
+      sharedRowCount: prayagEvidence.sharedRowCount,
+      sourceCategoryCount: prayagEvidence.rawCategoryByCode.size,
+      unknownCategories: prayagEvidence.unknownCategories,
+      appOnlyCodes: prayagEvidence.appOnlyCodes,
+      appOnlyRowCount: prayagEvidence.appOnlyRowCount,
+      appOnlyMrpSeries: prayagEvidence.appOnlyCodes.map((code) => ({
+        code,
+        series: mrpRows.find((row) => normalizeRateListCode(row.itemCode) === code)?.series ?? null,
+      })),
+    },
   };
 }

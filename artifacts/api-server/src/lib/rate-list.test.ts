@@ -5,13 +5,18 @@ import path from "node:path";
 import * as XLSX from "xlsx";
 import {
   buildEffectivePtmtRoster,
+  buildPtmtReportRoster,
+  buildPlumbingRosterCoverage,
   buildRateListCategorySplit,
   buildRateListReconciliation,
   buildRateListRangeAudit,
+  findPtmtRawSpellingCollisions,
   normalizeRateListCode,
   parseRateListRows,
+  ptmtRosterDemandKey,
   rateListPlanningCategory,
 } from "./rate-list";
+import { parsePtmtReportRows } from "./sheets";
 import { extractRateListRows } from "../routes/uploads";
 
 function rate(code: string, rangeName = "New Range") {
@@ -39,6 +44,30 @@ test("rate-list parser canonicalises codes and rejects empty recognised files", 
   assert.throws(
     () => extractRateListRows(workbook),
     /no recognised code rows/i,
+  );
+});
+
+test("PTMT REPORT roster parser preserves report grain and blank-colour fallback", () => {
+  const reportRows = parsePtmtReportRows(
+    [
+      ["Item Code", "Colour", "Qty"],
+      ["A-101", "WHITE", "10"],
+      ["A-102", "", "20"],
+      ["TOTAL", "", "30"],
+    ],
+    "REPORT 2",
+    "Cocks Premium",
+  );
+  assert.deepEqual(reportRows, [
+    { itemCode: "A-101", colour: "WHITE", category: "Cocks Premium", report: "REPORT 2" },
+    { itemCode: "A-102", colour: "", category: "Cocks Premium", report: "REPORT 2" },
+  ]);
+  assert.deepEqual(
+    buildPtmtReportRoster(reportRows).map((row) => [row.itemCode, row.colour, row.category, row.rosterSource]),
+    [
+      ["A-101", "WHITE", "Cocks Premium", "workbook"],
+      ["A-102", "", "Cocks Premium", "workbook"],
+    ],
   );
 });
 
@@ -146,6 +175,112 @@ test("effective PTMT roster preserves workbook variants and adds rate-list ident
     [["101", "WHITE", "rate-list"], ["324-K", "", "rate-list"]],
   );
   assert.equal(roster.find((row) => row.itemCode === "324-K")?.classificationStatus, "unclassified");
+});
+
+test("Plumbing roster coverage reports both, MRP-only, and roster-only with planning-tab precedence", () => {
+  const report = buildPlumbingRosterCoverage(
+    [
+      { itemCode: "CP-1", category: "CPVC Fitting" },
+      { itemCode: "ROSTER-ONLY", category: "UPVC Pipe" },
+      { itemCode: "AMB", category: "SWR Pipe" },
+      { itemCode: "AMB", category: "SWR Fitting" },
+    ],
+    [
+      { itemCode: "CP-1", division: "Pipes & Fittings", series: "CPVC Fittings" },
+      { itemCode: "MRP-ONLY", division: "Pipes & Fittings", series: "UPVC Pipe" },
+      { itemCode: "AMB", division: "Pipes & Fittings", series: "SWR Fittings" },
+      { itemCode: "OTHER", division: "PTMT & Plastic Fittings", series: "Cocks Standard" },
+    ],
+  );
+  assert.deepEqual(
+    [report.bothCodeCount, report.mrpOnlyCodeCount, report.rosterOnlyCodeCount],
+    [2, 1, 1],
+  );
+  assert.equal(report.both.find((row) => row.code === "CP-1")?.effectiveCategory, "CPVC Fitting");
+  assert.equal(report.both.find((row) => row.code === "CP-1")?.categorySource, "prayag-planning-tabs");
+  assert.equal(report.mrpOnly[0]?.effectiveCategory, "UPVC Pipe");
+  assert.equal(report.rosterOnly[0]?.effectiveCategory, "UPVC Pipe");
+});
+
+test("H2r reports distinct raw spellings but ignores colour variants", () => {
+  const roster = [
+    {
+      id: 1,
+      segment: "PTMT",
+      category: "Cocks Standard",
+      itemCode: "1231-F",
+      colour: "WHITE",
+      classificationStatus: "classified",
+      classificationSource: "rate-list",
+      classificationNote: null,
+      rosterSource: "rate-list",
+    },
+    {
+      id: 2,
+      segment: "PTMT",
+      category: "Cocks Standard",
+      itemCode: "1231-F",
+      colour: "IVORY",
+      classificationStatus: "classified",
+      classificationSource: "rate-list",
+      classificationNote: null,
+      rosterSource: "rate-list",
+    },
+    {
+      id: 3,
+      segment: "PTMT",
+      category: "Cocks Standard",
+      itemCode: "1231F",
+      colour: "",
+      classificationStatus: "classified",
+      classificationSource: "rate-list",
+      classificationNote: null,
+      rosterSource: "rate-list",
+    },
+  ] as any;
+  const demandByItem = new Map([
+    [ptmtRosterDemandKey("1231-F", "WHITE"), 115],
+    [ptmtRosterDemandKey("1231-F", "IVORY"), 0],
+    [ptmtRosterDemandKey("1231F", ""), 0],
+  ]);
+
+  assert.deepEqual(findPtmtRawSpellingCollisions(roster, demandByItem), [{
+    strictKey: "1231F",
+    entries: [
+      { rawCode: "1231-F", colour: "WHITE", category: "Cocks Standard", entryPath: "rate-list", demand: 115 },
+      { rawCode: "1231-F", colour: "IVORY", category: "Cocks Standard", entryPath: "rate-list", demand: 0 },
+      { rawCode: "1231F", colour: "", category: "Cocks Standard", entryPath: "rate-list", demand: 0 },
+    ],
+  }]);
+});
+
+test("H2r does not report a strict-key group with one raw spelling", () => {
+  const roster = [
+    {
+      id: 1,
+      segment: "PTMT",
+      category: "Cocks Standard",
+      itemCode: "132-T",
+      colour: "IVORY",
+      classificationStatus: "classified",
+      classificationSource: "rate-list",
+      classificationNote: null,
+      rosterSource: "rate-list",
+    },
+    {
+      id: 2,
+      segment: "PTMT",
+      category: "Cocks Standard",
+      itemCode: "132-T",
+      colour: "WHITE",
+      classificationStatus: "classified",
+      classificationSource: "rate-list",
+      classificationNote: null,
+      rosterSource: "rate-list",
+    },
+  ] as any;
+
+  assert.deepEqual(findPtmtRawSpellingCollisions(roster), []);
 });
 
 test("effective PTMT roster bridges only approved Luxor and Glory MRP-only identities", () => {

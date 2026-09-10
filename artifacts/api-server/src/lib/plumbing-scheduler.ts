@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { countWorkingDaysInMonth, countWorkingDaysInWeek } from "./working-days";
+import { normalizeProductionCode } from "./production-code";
 
 export const PLUMBING_SCHEDULE_KINDS = ["pipe", "fitting"] as const;
 export type PlumbingScheduleKind = (typeof PLUMBING_SCHEDULE_KINDS)[number];
@@ -12,6 +13,34 @@ export interface PlumbingScheduleDemand {
   material: string;
   qty_pcs: number;
   weight_kg_per_piece?: number;
+}
+
+export interface PlumbingScheduleCoverageItem {
+  item_code: string;
+  raw_code?: string;
+  requested_pcs: number;
+  status: string;
+  [key: string]: unknown;
+}
+
+export interface PlumbingScheduleDataLimited {
+  item_code: string;
+  raw_code?: string;
+  requested_pcs?: number;
+  reasons?: string[];
+  reason_text?: string[];
+  [key: string]: unknown;
+}
+
+export interface PlumbingScheduleDemandReconciliation {
+  submitted_requested_pcs: number;
+  schedulable_requested_pcs?: number;
+  data_limited_requested_pcs?: number;
+  capacity_limited_gross_pcs?: number;
+  modelled_gross_pcs?: number;
+  scheduled_gross_pcs?: number;
+  units?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 export interface PlumbingScheduleUnfinished {
@@ -27,6 +56,12 @@ export interface PlumbingScheduleResult {
   kind: PlumbingScheduleKind;
   blocks: unknown[];
   weekly_fill: unknown[];
+  coverage: {
+    items: PlumbingScheduleCoverageItem[];
+    [key: string]: unknown;
+  };
+  data_limited: PlumbingScheduleDataLimited[];
+  demand_reconciliation: PlumbingScheduleDemandReconciliation;
   unfinished: PlumbingScheduleUnfinished[];
   week_days: number[];
   total_capacity_hrs: number;
@@ -37,6 +72,8 @@ export interface PlumbingScheduleResult {
   total_unfinished_pcs: number;
   total_unfinished_kg: number;
   total_unfinished_hours: number;
+  total_data_limited_pcs: number;
+  total_data_limited_kg: number | null;
   total_downtime_hours_lost: number;
   total_downtime_machine_days: number;
   unfinished_capability: Array<{
@@ -64,6 +101,12 @@ export interface PlumbingScheduleBatch {
   segment: "Plumbing";
   week_days: number[];
   worked_sunday_dates: string[];
+  working_days_provenance: {
+    total_days: number;
+    week_days: number[];
+    worked_sunday_dates: string[];
+    source: "sunday-aware-calendar";
+  };
   materials: string[];
   demand: {
     pieces: number;
@@ -92,11 +135,20 @@ export interface PlumbingScheduleBatch {
     qty_pcs: number;
     reason: string;
   }>;
+  data_limited: Array<{
+    kind: PlumbingScheduleKind;
+    item_code: string;
+    material: string;
+    qty_pcs: number;
+    reason: string;
+  }>;
+  data_limited_pieces: number;
   results: PlumbingScheduleResult[];
   merged: {
     blocks: unknown[];
     weekly_fill: unknown[];
     unfinished: PlumbingScheduleUnfinished[];
+    data_limited: PlumbingScheduleBatch["data_limited"];
     totals: {
       capacity_hrs: number;
       scheduled_hrs: number;
@@ -109,6 +161,7 @@ export interface PlumbingScheduleBatch {
       unfinished_pcs: number;
       unfinished_kg: number;
       unfinished_hours: number;
+      data_limited_pcs: number;
     };
   };
 }
@@ -201,6 +254,109 @@ function asArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+function asObject(value: unknown, label: string): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Machine scheduler returned an invalid ${label}`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function responseItemCode(row: Record<string, unknown>, label: string): string {
+  const code = String(row.item_code ?? row.raw_code ?? "").trim();
+  if (!code) throw new Error(`Machine scheduler returned a ${label} row without item_code`);
+  return code;
+}
+
+function reasonText(row: PlumbingScheduleDataLimited): string {
+  const reasons = [
+    ...(Array.isArray(row.reasons) ? row.reasons : []),
+    ...(Array.isArray(row.reason_text) ? row.reason_text : []),
+  ].map((reason) => String(reason).trim()).filter(Boolean);
+  const direct = String(row.reason ?? row.message ?? "").trim();
+  if (direct) reasons.push(direct);
+  return [...new Set(reasons)].join("; ") || "Scheduler data limited";
+}
+
+function assertSchedulerContract(
+  raw: Record<string, unknown>,
+  requestedKind: PlumbingScheduleKind,
+  demand: PlumbingScheduleDemand[],
+  weekDays: number[],
+): {
+  coverage: { items: PlumbingScheduleCoverageItem[]; [key: string]: unknown };
+  dataLimited: PlumbingScheduleDataLimited[];
+  demandReconciliation: PlumbingScheduleDemandReconciliation;
+} {
+  const coverageRaw = asObject(raw.coverage, "coverage");
+  const coverageValues = coverageRaw.items;
+  if (!Array.isArray(coverageValues)) {
+    throw new Error(`Machine scheduler ${requestedKind} response is missing coverage.items`);
+  }
+  const coverageItems = coverageValues.map((value) => {
+    const row = asObject(value, "coverage item");
+    const itemCode = responseItemCode(row, "coverage");
+    return {
+      ...row,
+      item_code: itemCode,
+      requested_pcs: numberField(row.requested_pcs ?? row.qty_pcs),
+      status: String(row.status ?? ""),
+    };
+  });
+  const submittedCodes = demand.map((item) => normalizeProductionCode(item.item_code));
+  const coveredCodes = coverageItems.map((item) => normalizeProductionCode(item.item_code));
+  if (
+    coveredCodes.length !== submittedCodes.length ||
+    coveredCodes.some((code, index) => code !== submittedCodes[index])
+  ) {
+    throw new Error(
+      `Machine scheduler ${requestedKind} coverage.items does not preserve every submitted line in request order: ` +
+      `submitted=${JSON.stringify(submittedCodes)} covered=${JSON.stringify(coveredCodes)}`,
+    );
+  }
+
+  const dataLimitedValues = raw.data_limited;
+  if (!Array.isArray(dataLimitedValues)) {
+    throw new Error(`Machine scheduler ${requestedKind} response is missing data_limited`);
+  }
+  const dataLimited = dataLimitedValues.map((value) => {
+    const row = asObject(value, "data-limited");
+    const itemCode = responseItemCode(row, "data-limited");
+    if (!submittedCodes.includes(normalizeProductionCode(itemCode))) {
+      throw new Error(`Machine scheduler returned data_limited for an unsubmitted item ${itemCode}`);
+    }
+    return { ...row, item_code: itemCode } as PlumbingScheduleDataLimited;
+  });
+
+  const demandReconciliation = asObject(
+    raw.demand_reconciliation,
+    "demand_reconciliation",
+  ) as PlumbingScheduleDemandReconciliation;
+  const submittedRequestedPcs = demand.reduce((sum, item) => sum + item.qty_pcs, 0);
+  if (
+    !Number.isFinite(numberField(demandReconciliation.submitted_requested_pcs)) ||
+    Math.abs(numberField(demandReconciliation.submitted_requested_pcs) - submittedRequestedPcs) > 1e-6
+  ) {
+    throw new Error(
+      `Machine scheduler ${requestedKind} demand reconciliation mismatch: ` +
+      `submitted=${submittedRequestedPcs} echoed=${String(demandReconciliation.submitted_requested_pcs)}`,
+    );
+  }
+
+  const paramsUsed = asObject(raw.params_used, "params_used");
+  const paramsWeekDays = asArray(paramsUsed.week_days).map(numberField);
+  if (JSON.stringify(paramsWeekDays) !== JSON.stringify(weekDays)) {
+    throw new Error(
+      `Machine scheduler params_used.week_days=${JSON.stringify(paramsWeekDays)} instead of ${JSON.stringify(weekDays)}`,
+    );
+  }
+
+  return {
+    coverage: { ...coverageRaw, items: coverageItems },
+    dataLimited,
+    demandReconciliation,
+  };
+}
+
 function normalizeMachineId(value: string): string {
   return value.trim().toUpperCase()
     .replace(/\([^)]*\)/g, "")
@@ -220,12 +376,19 @@ function parseScheduleResult(
   raw: Record<string, unknown>,
   requestedKind: PlumbingScheduleKind,
   demand: PlumbingScheduleDemand[],
+  weekDays: number[],
   weightByCode: Map<string, number>,
   machineLockedOut?: Map<string, boolean>,
 ): PlumbingScheduleResult {
   if (raw.kind !== requestedKind) {
     throw new Error(`Machine scheduler returned kind=${String(raw.kind)} for requested kind=${requestedKind}`);
   }
+  const { coverage, dataLimited, demandReconciliation } = assertSchedulerContract(
+    raw,
+    requestedKind,
+    demand,
+    weekDays,
+  );
   const unfinished = asArray(raw.unfinished).map((value) => {
     if (!value || typeof value !== "object") throw new Error("Machine scheduler returned an invalid unfinished row");
     const row = value as Record<string, unknown>;
@@ -241,8 +404,23 @@ function parseScheduleResult(
   const demandKg = demand.every((item) => weightByCode.has(item.item_code))
     ? demand.reduce((sum, item) => sum + item.qty_pcs * (weightByCode.get(item.item_code) ?? 0), 0)
     : null;
-  const scheduledPcs = Math.max(0, demandPieces - unfinishedPcs);
-  const scheduledKg = demandKg === null ? null : Math.max(0, demandKg - unfinishedKg);
+  const dataLimitedCodes = new Set(
+    dataLimited.map((row) => normalizeProductionCode(row.item_code)),
+  );
+  const dataLimitedPcs = demand.reduce(
+    (sum, item) => dataLimitedCodes.has(normalizeProductionCode(item.item_code)) ? sum + item.qty_pcs : sum,
+    0,
+  );
+  const dataLimitedKg = demandKg === null
+    ? null
+    : demand.reduce(
+      (sum, item) => dataLimitedCodes.has(normalizeProductionCode(item.item_code))
+        ? sum + item.qty_pcs * (weightByCode.get(item.item_code) ?? 0)
+        : sum,
+      0,
+    );
+  const scheduledPcs = Math.max(0, demandPieces - dataLimitedPcs - unfinishedPcs);
+  const scheduledKg = demandKg === null ? null : Math.max(0, demandKg - (dataLimitedKg ?? 0) - unfinishedKg);
   const machineFill = new Map<string, {
     capacity_hours: number;
     scheduled_hours: number;
@@ -306,6 +484,9 @@ function parseScheduleResult(
     kind: requestedKind,
     blocks: asArray(raw.blocks),
     weekly_fill: asArray(raw.weekly_fill),
+    coverage,
+    data_limited: dataLimited,
+    demand_reconciliation: demandReconciliation,
     unfinished,
     week_days: asArray(raw.week_days).map(numberField),
     total_capacity_hrs: numberField(raw.total_capacity_hrs),
@@ -316,6 +497,8 @@ function parseScheduleResult(
     total_unfinished_pcs: unfinishedPcs,
     total_unfinished_kg: unfinishedKg,
     total_unfinished_hours: unfinishedHours,
+    total_data_limited_pcs: dataLimitedPcs,
+    total_data_limited_kg: dataLimitedKg,
     total_downtime_hours_lost: optionalNumberField(raw, ["downtime_hours_lost", "downtime_hours", "downtime_hrs"]) ?? 0,
     total_downtime_machine_days: optionalNumberField(raw, ["downtime_machine_days", "downtime_days"]) ?? 0,
     unfinished_capability: unfinishedCapability,
@@ -357,6 +540,37 @@ async function callSchedule(
     throw new Error(`Machine scheduler returned non-JSON HTTP ${response.status}`);
   }
   if (!response.ok) {
+    // The scheduler can return a structured 422 when every submitted line is
+    // data-limited. Preserve that contract so the caller can report the rows
+    // instead of converting them into a generic upstream failure.
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      (parsed as Record<string, unknown>).coverage !== undefined
+    ) {
+      const structuredBody = parsed as Record<string, unknown>;
+      const normalizedStructuredBody: Record<string, unknown> = {
+        ...structuredBody,
+        // Structured all-data-limited responses use HTTP 422 and omit the
+        // normal success envelope. The request is the authoritative source
+        // for these omitted echo fields.
+        kind: structuredBody.kind ?? kind,
+        week_days: structuredBody.week_days ?? weekDays,
+        params_used: structuredBody.params_used ?? { week_days: weekDays },
+      };
+      const structuredResult = parseScheduleResult(
+        normalizedStructuredBody,
+        kind,
+        demand,
+        weekDays,
+        weightByCode,
+        machineLockedOut,
+      );
+      if (JSON.stringify(structuredResult.week_days) !== JSON.stringify(weekDays)) {
+        throw new Error(`Machine scheduler echoed week_days=${JSON.stringify(structuredResult.week_days)} instead of ${JSON.stringify(weekDays)}`);
+      }
+      return structuredResult;
+    }
     const detail = parsed && typeof parsed === "object" ? JSON.stringify(parsed) : body;
     const upstreamMessage = parsed && typeof parsed === "object" && typeof (parsed as Record<string, unknown>).message === "string"
       ? (parsed as Record<string, unknown>).message as string
@@ -373,7 +587,7 @@ async function callSchedule(
     throw new Error(`Machine scheduler HTTP ${response.status}: ${detail.slice(0, 1000)}`);
   }
   if (!parsed || typeof parsed !== "object") throw new Error("Machine scheduler returned an invalid response");
-  const result = parseScheduleResult(parsed as Record<string, unknown>, kind, demand, weightByCode, machineLockedOut);
+  const result = parseScheduleResult(parsed as Record<string, unknown>, kind, demand, weekDays, weightByCode, machineLockedOut);
   if (JSON.stringify(result.week_days) !== JSON.stringify(weekDays)) {
     throw new Error(`Machine scheduler echoed week_days=${JSON.stringify(result.week_days)} instead of ${JSON.stringify(weekDays)}`);
   }
@@ -444,8 +658,29 @@ export async function runPlumbingSchedule(args: {
     ? sentDemand.reduce((sum, item) => sum + item.qty_pcs * (args.weightByCode.get(item.item_code) ?? 0), 0)
     : null;
   const unfinished = results.flatMap((result) => result.unfinished);
+  const dataLimited = results.flatMap((result) => {
+    const demandByCode = new Map(
+      sentDemandByKind[result.kind].map((item) => [normalizeProductionCode(item.item_code), item]),
+    );
+    return result.data_limited.map((row) => {
+      const submitted = demandByCode.get(normalizeProductionCode(row.item_code));
+      return {
+        kind: result.kind,
+        item_code: row.item_code,
+        material: String(row.material ?? submitted?.material ?? ""),
+        qty_pcs: submitted?.qty_pcs ?? numberField(row.requested_pcs),
+        reason: reasonText(row),
+      };
+    });
+  });
   const scheduledPieces = results.reduce((sum, result) => sum + result.total_scheduled_pcs, 0);
-  const scheduledKg = demandKg === null ? null : Math.max(0, demandKg - unfinished.reduce((sum, row) => sum + numberField(row.remaining_kg), 0));
+  const dataLimitedPieces = results.reduce((sum, result) => sum + result.total_data_limited_pcs, 0);
+  const dataLimitedKg = results.every((result) => result.total_data_limited_kg !== null)
+    ? results.reduce((sum, result) => sum + (result.total_data_limited_kg ?? 0), 0)
+    : null;
+  const scheduledKg = demandKg === null
+    ? null
+    : Math.max(0, demandKg - (dataLimitedKg ?? 0) - unfinished.reduce((sum, row) => sum + numberField(row.remaining_kg), 0));
   const totalCapacity = results.reduce((sum, result) => sum + result.total_capacity_hrs, 0);
   const totalScheduledHours = results.reduce((sum, result) => sum + result.total_scheduled_hrs, 0);
   const totalIdleHours = results.reduce((sum, result) => sum + result.total_idle_hrs, 0);
@@ -461,6 +696,12 @@ export async function runPlumbingSchedule(args: {
     segment: "Plumbing",
     week_days: weekDays,
     worked_sunday_dates: [...new Set(args.workedSundayDates)].sort(),
+    working_days_provenance: {
+      total_days: weekDays.reduce((sum, days) => sum + days, 0),
+      week_days: weekDays,
+      worked_sunday_dates: [...new Set(args.workedSundayDates)].sort(),
+      source: "sunday-aware-calendar",
+    },
     materials,
     demand: { pieces: demandPieces, item_count: sentDemand.length, kg: demandKg },
     scheduled: { pieces: scheduledPieces, kg: scheduledKg, hours: totalScheduledHours },
@@ -471,11 +712,14 @@ export async function runPlumbingSchedule(args: {
     downtime_machine_days: totalDowntimeMachineDays,
     unallocated_hours: totalCapacity - totalScheduledHours - totalIdleHours,
     unroutable,
+    data_limited: dataLimited,
+    data_limited_pieces: dataLimitedPieces,
     results,
     merged: {
       blocks: results.flatMap((result) => result.blocks),
       weekly_fill: results.flatMap((result) => result.weekly_fill),
       unfinished,
+      data_limited: dataLimited,
       totals: {
         capacity_hrs: totalCapacity,
         scheduled_hrs: totalScheduledHours,
@@ -488,6 +732,7 @@ export async function runPlumbingSchedule(args: {
         unfinished_pcs: unfinishedPcs,
         unfinished_kg: unfinishedKg,
         unfinished_hours: unfinishedHours,
+        data_limited_pcs: dataLimitedPieces,
       },
     },
   };
@@ -534,13 +779,46 @@ function allocateCorrectiveWeeks(
   return result as [number, number, number, number];
 }
 
+type CorrectiveWeekBucket = {
+  days: number;
+  originalWeek: 1 | 2 | 3 | 4;
+};
+
+function expandCorrectiveWeekDays(
+  weeks: PlumbingCorrectiveWeek[],
+): { requestWeekDays: number[]; requestToOriginalWeek: Array<1 | 2 | 3 | 4> } | null {
+  const buckets: CorrectiveWeekBucket[] = weeks.map((week) => ({
+    days: week.workingDays,
+    originalWeek: week.originalWeek,
+  }));
+  while (buckets.length < 4) {
+    const splitIndex = [...buckets.keys()]
+      .reverse()
+      .find((index) => (buckets[index]?.days ?? 0) >= 2);
+    if (splitIndex === undefined) return null;
+    const bucket = buckets[splitIndex]!;
+    const leftDays = Math.floor(bucket.days / 2);
+    const rightDays = bucket.days - leftDays;
+    buckets.splice(
+      splitIndex,
+      1,
+      { days: leftDays, originalWeek: bucket.originalWeek },
+      { days: rightDays, originalWeek: bucket.originalWeek },
+    );
+  }
+  return {
+    requestWeekDays: buckets.map((bucket) => bucket.days),
+    requestToOriginalWeek: buckets.map((bucket) => bucket.originalWeek),
+  };
+}
+
 /**
  * Run the machine scheduler for a corrective window.
  *
- * The external contract numbers its returned weeks from one, regardless of
- * which original month weeks were sent. Therefore a request for original W3/W4
- * with week_days [4, 9] has originalWeeks=[3,4], weekOffset=2, and raw W1/W2
- * are normalized here to original W3/W4 before any caller sees allocations.
+ * The external contract requires exactly four positive weekly values. A
+ * corrective window can contain fewer original calendar weeks, so the final
+ * open week is split into additional scheduler buckets while preserving the
+ * total days and mapping every returned bucket back to its original week.
  */
 export async function runPlumbingCorrectiveSchedule(args: {
   month: string;
@@ -551,6 +829,7 @@ export async function runPlumbingCorrectiveSchedule(args: {
 }): Promise<PlumbingCorrectiveSchedule> {
   const originalWeeks = args.weeks.map((week) => week.originalWeek);
   const weekDays = args.weeks.map((week) => week.workingDays);
+  const expandedCalendar = expandCorrectiveWeekDays(args.weeks);
   const subOnePieceExcluded: PlumbingCorrectiveSubOnePieceExclusion[] = [];
   const candidatePipeRows = args.demandByKind.pipe.length;
   const candidateFittingRows = args.demandByKind.fitting.length;
@@ -605,6 +884,21 @@ export async function runPlumbingCorrectiveSchedule(args: {
   if (originalWeeks.some((week, index) => week !== originalWeeks[0]! + index)) {
     throw new Error(`Corrective Plumbing weeks must be contiguous: ${originalWeeks.join(",")}`);
   }
+  if (!expandedCalendar) {
+    return {
+      batchId: randomUUID(),
+      month: args.month,
+      segment: "Plumbing",
+      originalWeeks,
+      weekOffset: originalWeeks[0]! - 1,
+      weekDays,
+      payloadAudit: payloadAudit(),
+      results: [],
+      allocations: [],
+      unroutable: [],
+    };
+  }
+  const requestWeekDays = expandedCalendar.requestWeekDays;
 
   const allDemand = PLUMBING_SCHEDULE_KINDS.flatMap((kind) => filteredDemandByKind[kind]);
   if (allDemand.length === 0) {
@@ -635,7 +929,7 @@ export async function runPlumbingCorrectiveSchedule(args: {
       try {
         results.push(await callSchedule(
           args.month,
-          weekDays,
+          requestWeekDays,
           kind,
           sentDemandByKind[kind],
           args.weightByCode,
@@ -664,23 +958,34 @@ export async function runPlumbingCorrectiveSchedule(args: {
   }
 
   const unfinishedByCode = new Map<string, number>();
+  const dataLimitedByCode = new Map<string, number>();
   const hoursByCode = new Map<string, [number, number, number, number]>();
   for (const result of results) {
+    const demandByCode = new Map(
+      sentDemandByKind[result.kind].map((item) => [normalizeProductionCode(item.item_code), item]),
+    );
     for (const unfinished of result.unfinished) {
-      const code = String(unfinished.item_code ?? "").trim();
+      const code = normalizeProductionCode(String(unfinished.item_code ?? ""));
       if (!code) continue;
       unfinishedByCode.set(code, (unfinishedByCode.get(code) ?? 0) + Math.max(0, numberField(unfinished.remaining_pcs)));
+    }
+    for (const dataLimited of result.data_limited) {
+      const code = normalizeProductionCode(String(dataLimited.item_code ?? ""));
+      if (!code) continue;
+      const submitted = demandByCode.get(code);
+      const quantity = submitted?.qty_pcs ?? numberField(dataLimited.requested_pcs);
+      dataLimitedByCode.set(code, (dataLimitedByCode.get(code) ?? 0) + Math.max(0, quantity));
     }
     for (const raw of result.blocks) {
       if (!raw || typeof raw !== "object") continue;
       const block = raw as Record<string, unknown>;
       if (block.is_idle === true) continue;
-      const code = String(block.item_code ?? block.raw_code ?? block.itemCode ?? "").trim();
+      const code = normalizeProductionCode(String(block.item_code ?? block.raw_code ?? block.itemCode ?? ""));
       if (!code) continue;
-      const localWeek = correctiveLocalWeek(block, weekDays);
+      const localWeek = correctiveLocalWeek(block, requestWeekDays);
       const hours = Math.max(0, numberField(block.planned_hours ?? block.planned_hrs ?? block.hours));
       const values = hoursByCode.get(code) ?? [0, 0, 0, 0];
-      values[originalWeeks[localWeek - 1]! - 1] += hours;
+      values[expandedCalendar.requestToOriginalWeek[localWeek - 1]! - 1] += hours;
       hoursByCode.set(code, values);
     }
   }
@@ -688,17 +993,30 @@ export async function runPlumbingCorrectiveSchedule(args: {
   const allocations: PlumbingCorrectiveAllocation[] = [];
   for (const kind of PLUMBING_SCHEDULE_KINDS) {
     for (const demand of sentDemandByKind[kind]) {
+      const demandCode = normalizeProductionCode(demand.item_code);
       const unfinishedPieces = Math.min(
         Math.max(0, demand.qty_pcs),
-        unfinishedByCode.get(demand.item_code) ?? 0,
+        unfinishedByCode.get(demandCode) ?? 0,
       );
-      const scheduledPieces = Math.max(0, Math.round(demand.qty_pcs - unfinishedPieces));
+      const dataLimitedPieces = Math.min(
+        Math.max(0, demand.qty_pcs - unfinishedPieces),
+        dataLimitedByCode.get(demandCode) ?? 0,
+      );
+      const scheduledPieces = Math.max(
+        0,
+        Math.round(demand.qty_pcs - unfinishedPieces - dataLimitedPieces),
+      );
       const weeks = allocateCorrectiveWeeks(
         scheduledPieces,
-        hoursByCode.get(demand.item_code) ?? [0, 0, 0, 0],
+        hoursByCode.get(demandCode) ?? [0, 0, 0, 0],
         demand.item_code,
       );
-      allocations.push({ itemCode: demand.item_code, scheduledPieces, unfinishedPieces, weeks });
+      allocations.push({
+        itemCode: demand.item_code,
+        scheduledPieces,
+        unfinishedPieces,
+        weeks,
+      });
     }
   }
 

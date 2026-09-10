@@ -6,6 +6,24 @@ import {
   runPlumbingCorrectiveSchedule,
 } from "./plumbing-scheduler";
 
+function contractFields(body: Record<string, unknown>, dataLimited: unknown[] = []): Record<string, unknown> {
+  const demand = Array.isArray(body.demand) ? body.demand as Array<Record<string, unknown>> : [];
+  return {
+    coverage: {
+      items: demand.map((item) => ({
+        item_code: item.item_code,
+        requested_pcs: item.qty_pcs,
+        status: "schedulable",
+      })),
+    },
+    data_limited: dataLimited,
+    demand_reconciliation: {
+      submitted_requested_pcs: demand.reduce((sum, item) => sum + Number(item.qty_pcs ?? 0), 0),
+    },
+    params_used: { week_days: body.week_days },
+  };
+}
+
 test("Plumbing calendar includes observed worked Sundays in the four buckets", () => {
   assert.deepEqual(
     buildPlumbingWeekDays("2026-08", ["2026-08-09", "2026-08-16", "2026-08-23"]),
@@ -25,6 +43,7 @@ test("Plumbing scheduler sends pipe then fitting with an identical calendar and 
     return new Response(JSON.stringify({
       kind,
       week_days: body.week_days,
+      ...contractFields(body),
       blocks: [{ kind }],
       weekly_fill: [{
         machine: kind === "pipe" ? "M/C-1" : "C04(U-250)",
@@ -86,6 +105,68 @@ test("Plumbing scheduler sends pipe then fitting with an identical calendar and 
   }
 });
 
+test("Plumbing parser keeps coverage data-limited rows out of scheduled pieces", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.PRAYAG_PLANT_API_KEY;
+  process.env.PRAYAG_PLANT_API_KEY = "test-key";
+  globalThis.fetch = (async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    const demand = body.demand as Array<Record<string, unknown>>;
+    const limited = body.kind === "pipe"
+      ? [{ item_code: "DL-1", requested_pcs: 7, reasons: ["missing BOM"] }]
+      : [];
+    return new Response(JSON.stringify({
+      kind: body.kind,
+      week_days: body.week_days,
+      ...contractFields(body, limited),
+      blocks: demand
+        .filter((item) => item.item_code !== "DL-1")
+        .map((item) => ({ item_code: item.item_code, week: 1, planned_hours: 1 })),
+      weekly_fill: [],
+      unfinished: [],
+      total_capacity_hrs: 100,
+      total_scheduled_hrs: 30,
+      total_idle_hrs: 70,
+      downtime_hours_lost: 0,
+      downtime_machine_days: 0,
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+
+  try {
+    const result = await runPlumbingSchedule({
+      month: "2026-09",
+      workedSundayDates: [],
+      demandByKind: {
+        pipe: [
+          { item_code: "DL-1", material: "CPVC", qty_pcs: 7 },
+          { item_code: "P-1", material: "CPVC", qty_pcs: 10 },
+        ],
+        fitting: [{ item_code: "F-1", material: "UPVC", qty_pcs: 20 }],
+      },
+      weightByCode: new Map(),
+    });
+
+    assert.deepEqual(result.week_days, [6, 6, 6, 8]);
+    assert.equal(result.working_days_provenance.total_days, 26);
+    assert.equal(result.data_limited_pieces, 7);
+    assert.equal(result.scheduled.pieces, 30);
+    assert.equal(result.unfinished.pieces, 0);
+    assert.deepEqual(result.data_limited, [{
+      kind: "pipe",
+      item_code: "DL-1",
+      material: "CPVC",
+      qty_pcs: 7,
+      reason: "missing BOM",
+    }]);
+    assert.equal(result.results[0]!.total_scheduled_pcs, 10);
+    assert.equal(result.results[0]!.total_data_limited_pcs, 7);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.PRAYAG_PLANT_API_KEY;
+    else process.env.PRAYAG_PLANT_API_KEY = originalKey;
+  }
+});
+
 test("corrective scheduler persists and applies the original-week offset", async () => {
   const originalFetch = globalThis.fetch;
   const originalKey = process.env.PRAYAG_PLANT_API_KEY;
@@ -97,6 +178,7 @@ test("corrective scheduler persists and applies the original-week offset", async
     return new Response(JSON.stringify({
       kind: body.kind,
       week_days: body.week_days,
+      ...contractFields(body),
       blocks: [{
         item_code: "P-1",
         week: 1,
@@ -126,9 +208,10 @@ test("corrective scheduler persists and applies the original-week offset", async
       weightByCode: new Map([["P-1", 0.4]]),
     });
 
-    assert.deepEqual(requests.map((request) => request.week_days), [[4, 9]]);
+    assert.deepEqual(requests.map((request) => request.week_days), [[4, 4, 2, 3]]);
     assert.equal(result.weekOffset, 2);
     assert.deepEqual(result.originalWeeks, [3, 4]);
+    assert.deepEqual(result.weekDays, [4, 9]);
     assert.deepEqual(result.allocations[0]!.weeks, [0, 0, 100, 0]);
   } finally {
     globalThis.fetch = originalFetch;
@@ -148,6 +231,7 @@ test("corrective scheduler floors payload quantities and reports sub-one-piece e
     return new Response(JSON.stringify({
       kind: body.kind,
       week_days: body.week_days,
+      ...contractFields(body),
       blocks: [{ item_code: "P-1", week: 1, planned_hours: 1 }],
       weekly_fill: [],
       unfinished: [],

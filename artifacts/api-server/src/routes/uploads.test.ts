@@ -10,6 +10,7 @@ import {
 import {
   extractPendingRows,
   extractRows,
+  detectUploadSourcePeriod,
   PendingSheetSelectionError,
   SheetSelectionError,
   selectPendingSheet,
@@ -39,6 +40,10 @@ test("upload periods map source filenames to the planning month", () => {
   assert.equal(
     inferUploadPlanningMonth("pending_orders", "DATA.xlsx", new Date("2026-08-27T00:00:00Z")),
     "2026-08",
+  );
+  assert.equal(
+    inferUploadPlanningMonth("pending_orders", "DATA.xlsx", new Date("2026-08-27T00:00:00Z"), null, null, false),
+    null,
   );
   assert.equal(
     inferUploadPlanningMonth("pending_orders", "DATA.xlsx", new Date("2026-08-27T00:00:00Z"), "2026-09"),
@@ -205,6 +210,59 @@ test("renamed two-tab stock workbooks choose the largest content match", () => {
   ]);
 });
 
+test("plumbing FG stock prefers the canonical FG Sheet when matching tabs tie", () => {
+  const workbook = workbookWithSheets([
+    {
+      name: "Last moth pending items",
+      rows: [
+        ["Item Code", "Item Name", "Category", "Net Stock"],
+        ["PENDING-1", "PIPE", "CPVC-PIPE", 41],
+      ],
+    },
+    {
+      name: "F.G Sheet",
+      rows: [
+        ["Item Code", "Item Name", "Category", "Net Stock"],
+        ["STOCK-1", "PIPE", "CPVC-PIPE", 41],
+      ],
+    },
+  ]);
+  const selected = selectedSheetForUpload(workbook, "plumbing_fg_stock");
+  assert.equal(selected.name, "F.G Sheet");
+  assert.match(selected.selectionRule ?? "", /preferred FG Sheet/);
+  assert.deepEqual(extractRows(workbook, "plumbing_fg_stock"), [
+    { "Item Code": "STOCK-1", "Item Name": "PIPE", Category: "CPVC-PIPE", "Net Stock": 41 },
+  ]);
+});
+
+test("plumbing FG stock ignores a Pending Prod sibling when FG Stock has a later header row", () => {
+  const workbook = workbookWithSheets([
+    {
+      name: "FG Stock",
+      rows: [
+        [null, null, null],
+        ["August 2026", null, null],
+        ["TOTAL", null, 100],
+        ["Item Code", "Item Name", "Category", "Net Stock"],
+        ["STOCK-1", "PIPE", "CPVC-PIPE", 41],
+      ],
+    },
+    {
+      name: "Pending Prod.",
+      rows: [
+        ["Item Code", "Item Name", "Category", "Net Stock"],
+        ["PENDING-1", "PIPE", "CPVC-PIPE", -9],
+      ],
+    },
+  ]);
+  const selected = selectedSheetForUpload(workbook, "plumbing_fg_stock");
+  assert.equal(selected.name, "FG Stock");
+  assert.equal(selected.headerRowIndex, 3);
+  assert.deepEqual(extractRows(workbook, "plumbing_fg_stock"), [
+    { "Item Code": "STOCK-1", "Item Name": "PIPE", Category: "CPVC-PIPE", "Net Stock": 41 },
+  ]);
+});
+
 test("renamed two-tab pending workbooks choose the smallest content match", () => {
   const workbook = workbookWithSheets([
     {
@@ -242,5 +300,45 @@ test("period detection handles day-stamped filenames and SAP tab periods", () =>
   assert.equal(
     inferUploadPlanningMonth("last_month_pending", "F.G. Stock SEP 01 2026.xlsx", new Date("2026-09-05T00:00:00Z")),
     "2026-10",
+  );
+});
+
+test("period detection prefers dates printed in workbook content over upload time", () => {
+  const workbook = workbookWithSheets([
+    {
+      name: "FG Stock",
+      rows: [
+        ["Stock as on 1st August 2026"],
+        ["Item Code", "Item Name", "Category", "Net Stock"],
+        ["PL-1", "PIPE", "CPVC-PIPE", 10],
+      ],
+    },
+  ]);
+  const selected = selectedSheetForUpload(workbook, "plumbing_fg_stock");
+  assert.equal(
+    detectUploadSourcePeriod(workbook, selected, "DATA.xlsx", "plumbing_fg_stock"),
+    "2026-08",
+  );
+});
+
+test("a Plumbing stock sheet without required headers throws instead of reading fixed column R", () => {
+  const workbook = workbookWithSheets([
+    {
+      name: "FG Stock",
+      rows: [
+        ["Item Code", "Item Name", "Category", "Closing Stock"],
+        ["PL-1", "PIPE", "CPVC-PIPE", 10],
+      ],
+    },
+  ]);
+  assert.throws(
+    () => extractRows(workbook, "plumbing_fg_stock"),
+    (error: unknown) => {
+      assert.ok(error instanceof SheetSelectionError);
+      assert.equal(error.code, "PLUMBING_FG_STOCK_HEADERS_NOT_FOUND");
+      assert.match(error.message, /Worksheet "FG Stock" was scanned through row/);
+      assert.match(error.message, /headers found:/);
+      return true;
+    },
   );
 });

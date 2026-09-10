@@ -73,6 +73,7 @@ const PLUMBING_CATS_ORDER = [
   "UPVC Pipe", "UPVC Fitting", "UPVC Solvent",
   "SWR Pipe",  "SWR Fitting",  "SWR Solvent",
   "AGRI Pipe", "AGRI Fitting", "AGRI Solvent",
+  "HDPE Pipe",
 ];
 
 const CORRECTIVE_EXTRA_COLUMNS: Partial<ExcelJS.Column>[] = [
@@ -937,7 +938,7 @@ async function buildCorrectiveReferenceExcel(
       orders: typeof orderValue === "number" ? orderValue : 0,
       buffer: Math.max(Number(item.bufferReqRev ?? 0) - Number(item.stockNow ?? 0), 0),
       material: null,
-      weightKg: null,
+      totalKg: null,
       urgencyRank: null,
       releaseWeek: item.newWeek,
       w1: Number(item.w1Rev ?? 0),

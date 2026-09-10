@@ -90,8 +90,8 @@ test("unclassified items produce a nullable buffer and demand-only plan", () => 
   }, "Unclassified", null);
 
   assert.equal(item.bufferReq, null);
-  assert.equal(item.minProduction, 1000);
-  assert.equal(item.maxProduction, 1000);
+  assert.equal(item.minProduction, 0);
+  assert.equal(item.maxProduction, 0);
 });
 
 function weeklyItem(

@@ -12,12 +12,16 @@ import {
   type MasterProduct,
 } from "@workspace/db";
 import { pendingOrderTotalsFromRows } from "./sheets";
+import { fetchPlumbingPlanData } from "./sheets";
 import {
+  buildPlumbingRosterCoverage,
   normalizeRateListCode,
   loadRateListRows,
   rateListPlanningCategory,
+  type PlumbingRosterMrpRow,
 } from "./rate-list";
 import { resolveMrpClassification, type MrpClassificationRow } from "./mrp-classification";
+import { getPrayagCategoryEvidence } from "./prayag-category-evidence";
 
 export const MASTER_PRODUCT_SOURCE = "competition-analysis";
 export const CATALOGUE_PAGE_SIZE = 200;
@@ -116,7 +120,7 @@ export type SegmentCoverage = {
 };
 
 export type ProductClassificationStatus = "classified" | "unclassified" | "ambiguous";
-export type ProductClassificationSource = "workbook" | "rate-list" | "catalogue" | "seed" | "mrp" | null;
+export type ProductClassificationSource = "workbook" | "rate-list" | "catalogue" | "seed" | "mrp" | "prayag-planning-tabs" | null;
 
 export type ProductListRow = {
   key: string;
@@ -129,6 +133,7 @@ export type ProductListRow = {
   status: ProductClassificationStatus;
   source: ProductClassificationSource;
   note: string | null;
+  mrpSeries: string | null;
   inCatalogue: boolean;
   inPlanningWorkbook: boolean;
   lastSeenProductionMonth: string | null;
@@ -196,6 +201,7 @@ export async function getProducts(input: {
     ))
     : [];
   const mrpByCode = new Map(mrpRows.map((row) => [normalizeCatalogueCode(row.itemCode), row]));
+  const prayagEvidence = getPrayagCategoryEvidence();
   const modelCategories = new Set(buffers.map((row) => row.name));
   const pendingCurrent = pendingOrderTotalsFromRows((pendingFile[0]?.rows ?? []) as Record<string, unknown>[], input.segment);
   const pendingLast = pendingOrderTotalsFromRows((lastMonthFile[0]?.rows ?? []) as Record<string, unknown>[], input.segment);
@@ -227,8 +233,11 @@ export async function getProducts(input: {
     const mrpClassification = input.segment === "PTMT"
       ? resolveMrpClassification(mrpByCode.get(code), fallbackCategory, modelCategories, rangeCategory)
       : null;
-    const category = mrpClassification?.category ?? fallbackCategory;
-    const resolvedStatus = mrpClassification?.status ?? (retainsWorkbookClassification
+    const prayagCategory = prayagEvidence.codeToCategory.get(code);
+    const category = prayagCategory ?? mrpClassification?.category ?? fallbackCategory;
+    const resolvedStatus = prayagCategory
+      ? "classified"
+      : mrpClassification?.status ?? (retainsWorkbookClassification
       ? status
       : category === "Unclassified" ? "unclassified" : "classified");
     const pendingQuantity = pendingCurrent.exact.get(`${code}::${(colour ?? "").trim().toUpperCase()}`)
@@ -243,16 +252,21 @@ export async function getProducts(input: {
       division: catalogue?.division ?? null,
       category,
       status: resolvedStatus,
-      source: mrpClassification?.source === "mrp"
+      source: prayagCategory
+        ? "prayag-planning-tabs"
+        : mrpClassification?.source === "mrp"
         ? "mrp"
         : rateByCode.has(code)
         ? "rate-list"
         : item.classificationSource === "workbook" || item.classificationSource === "catalogue" || item.classificationSource === "seed"
           ? item.classificationSource
         : null,
-      note: mrpClassification?.note ?? (rate
+      note: prayagCategory
+        ? `Prayag planning tab: ${prayagEvidence.rawCategoryByCode.get(code) ?? prayagCategory}. MRP series retained: ${mrpByCode.get(code)?.series ?? "not present"}.`
+        : mrpClassification?.note ?? (rate
         ? `Rate list: ${rate.rangeName}${category === "Unclassified" ? "; category review required." : "."}`
         : item.classificationNote ?? null),
+      mrpSeries: mrpByCode.get(code)?.series ?? null,
       inCatalogue: Boolean(catalogue),
       inPlanningWorkbook: true,
       lastSeenProductionMonth: null,
@@ -281,7 +295,8 @@ export async function getProducts(input: {
         source: "rate-list" as const,
         note: null,
       };
-    const category = classification.category;
+    const prayagCategory = prayagEvidence.codeToCategory.get(code);
+    const category = prayagCategory ?? classification.category;
     rows.push({
       key: productKey(input.segment, code, null, category),
       segment: input.segment,
@@ -290,11 +305,14 @@ export async function getProducts(input: {
       productName: rate.name || catalogue?.productName || null,
       division: catalogue?.division ?? null,
       category,
-      status: classification.status,
-      source: classification.source,
-      note: classification.note ?? (category === "Unclassified"
+      status: prayagCategory ? "classified" : classification.status,
+      source: prayagCategory ? "prayag-planning-tabs" : classification.source,
+      note: prayagCategory
+        ? `Prayag planning tab: ${prayagEvidence.rawCategoryByCode.get(code) ?? prayagCategory}. MRP series retained: ${mrpByCode.get(code)?.series ?? "not present"}.`
+        : classification.note ?? (category === "Unclassified"
         ? `Rate list: ${rate.rangeName}; category review required.`
         : `Rate list: ${rate.rangeName}.`),
+      mrpSeries: mrpByCode.get(code)?.series ?? null,
       inCatalogue: Boolean(catalogue),
       inPlanningWorkbook: false,
       lastSeenProductionMonth: null,
@@ -318,8 +336,9 @@ export async function getProducts(input: {
         source: "rate-list" as const,
         note: null,
       };
-    const category = classification.category;
-    const status = classification.status;
+    const prayagCategory = prayagEvidence.codeToCategory.get(code);
+    const category = prayagCategory ?? classification.category;
+    const status = prayagCategory ? "classified" : classification.status;
     rows.push({
       key: productKey(input.segment, code, null, category),
       segment: input.segment,
@@ -329,8 +348,11 @@ export async function getProducts(input: {
       division: catalogue.division,
       category,
       status,
-      source: classification.source === "mrp" ? "mrp" : catalogue.planningCategory ? "catalogue" : null,
-      note: classification.note ?? (catalogue.planningCategory ? "Catalogue classification; not yet in the planning roster." : "Catalogue product has no reviewed planning category."),
+      source: prayagCategory ? "prayag-planning-tabs" : classification.source === "mrp" ? "mrp" : catalogue.planningCategory ? "catalogue" : null,
+      note: prayagCategory
+        ? `Prayag planning tab: ${prayagEvidence.rawCategoryByCode.get(code) ?? prayagCategory}. MRP series retained: ${mrpByCode.get(code)?.series ?? "not present"}.`
+        : classification.note ?? (catalogue.planningCategory ? "Catalogue classification; not yet in the planning roster." : "Catalogue product has no reviewed planning category."),
+      mrpSeries: mrpByCode.get(code)?.series ?? null,
       inCatalogue: true,
       inPlanningWorkbook: false,
       lastSeenProductionMonth: null,
@@ -414,6 +436,58 @@ export function normalizeCatalogueCode(value: unknown): string {
 
 export function mapCatalogueDivision(division: string): CataloguePlanningSegment | null {
   return DIVISION_SEGMENTS[division] ?? REVIEWED_COMBINED_DIVISION_SEGMENTS[division] ?? null;
+}
+
+export async function getPlumbingRosterCoverage(month: string) {
+  const [source] = await db.select({
+    id: mrpControlSourcesTable.id,
+    sourceFilename: mrpControlSourcesTable.sourceFilename,
+    sourceSha256: mrpControlSourcesTable.sourceSha256,
+    importedAt: mrpControlSourcesTable.importedAt,
+  }).from(mrpControlSourcesTable)
+    .orderBy(desc(mrpControlSourcesTable.importedAt))
+    .limit(1);
+  if (!source) throw new Error("No authoritative MRP source has been imported.");
+
+  const [planningRows, mrpRows] = await Promise.all([
+    fetchPlumbingPlanData(month),
+    db.select({
+      itemCode: mrpControlRowsTable.itemCode,
+      division: mrpControlRowsTable.division,
+      series: mrpControlRowsTable.series,
+      rowType: mrpControlRowsTable.rowType,
+      discontinued: mrpControlRowsTable.discontinued,
+      productName: mrpControlRowsTable.productName,
+    }).from(mrpControlRowsTable).where(and(
+      eq(mrpControlRowsTable.sourceId, source.id),
+      eq(mrpControlRowsTable.segment, "Plumbing"),
+      eq(mrpControlRowsTable.isLoadable, true),
+      inArray(mrpControlRowsTable.rowType, ["product", "discontinued"]),
+    )),
+  ]);
+
+  const coverage = buildPlumbingRosterCoverage(
+    planningRows
+      .filter((row) => row.type !== null)
+      .map((row) => ({ itemCode: row.itemCode, category: row.category })),
+    mrpRows as PlumbingRosterMrpRow[],
+  );
+  return {
+    month,
+    source: {
+      id: source.id,
+      filename: source.sourceFilename,
+      sha256: source.sourceSha256,
+      importedAt: source.importedAt,
+      division: "Pipes & Fittings",
+    },
+    planningTabs: {
+      rowCount: planningRows.filter((row) => row.type !== null).length,
+      codeCount: coverage.rosterCodeCount,
+    },
+    coverage,
+    note: "Coverage is reported before Plumbing plan construction is wired to the MRP-augmented roster. Planning-tab material × type is authoritative for codes in both; MRP series crosswalk is used only to label MRP-only rows.",
+  };
 }
 
 export function catalogueDivisionStatus(

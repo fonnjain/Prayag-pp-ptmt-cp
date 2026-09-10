@@ -1,0 +1,112 @@
+strict_key,source_count,raw_code_count,sources,raw_codes,current_admitted_variant_count,rate_list_variant_count,run2419_demand
+1231F,4,2,item_master|mrp|prayag|rate_list,1231-F|1231F,2,2,0
+129I,4,2,item_master|mrp|prayag|rate_list,129-I|129I,2,2,0
+129QW,4,2,item_master|mrp|prayag|rate_list,129-QW|129QW,2,2,0
+130C,4,2,item_master|mrp|prayag|rate_list,130-C|130C,2,2,115
+1322U,2,2,mrp|rate_list,132-2U|1322-U,2,1,0
+132I,4,2,item_master|mrp|prayag|rate_list,132-I|132I,2,2,0
+132T,4,2,item_master|mrp|prayag|rate_list,132-T|132T,2,2,6099.67
+133NEW,4,2,item_master|mrp|prayag|rate_list,133-NEW|133NEW,2,2,136
+322K,2,2,mrp|rate_list,322-K|322K,2,1,0
+323K,2,2,mrp|rate_list,323-K|323K,2,1,16407
+324K,2,2,mrp|rate_list,324-K|324K,2,1,15286
+325K,2,2,mrp|rate_list,325-K|325K,2,1,1082
+326K,2,2,mrp|rate_list,326-K|326K,2,1,3052
+348K,2,2,mrp|rate_list,348-K|348K,2,1,0
+492B,1,2,rate_list,492-B|492B,2,2,0
+493B,1,2,rate_list,493-B|493B,2,2,0
+501N,4,2,item_master|mrp|prayag|rate_list,501-N|501N,2,1,0
+501S,4,2,item_master|mrp|prayag|rate_list,501-S|501S,2,1,0
+503N,4,2,item_master|mrp|prayag|rate_list,503-N|503N,2,1,0
+5254S,1,2,rate_list,5254-S|5254S,2,2,0
+701N,4,2,item_master|mrp|prayag|rate_list,701-N|701N,2,1,82.67
+7305F,1,2,rate_list,7305 F|7305-F,2,2,0
+7892NONOFFN,1,2,rate_list,7892 N-ON-OFF-N|7892N-ON-OFF-N,2,2,0
+7903F,1,2,rate_list,7903 F|7903-F,2,2,0
+7916F,1,2,rate_list,7916 F|7916-F,2,2,0
+7918F,1,2,rate_list,7918 F|7918-F,2,2,0
+7950F,1,2,rate_list,7950 F|7950-F,2,2,0
+7952F,1,2,rate_list,7952-F|7952F,2,2,0
+7965F,1,2,rate_list,7965 F|7965-F,2,2,0
+7970F,1,2,rate_list,7970 F|7970-F,2,2,0
+7992F,1,2,rate_list,7992 F|7992F,2,2,0
+7992FN,1,2,rate_list,7992 F-N|7992F-N,2,2,0
+7992FONOFFN,1,2,rate_list,7992 F-ON-OFF-N|7992F-ON-OFF-N,2,2,0
+7995F,1,2,rate_list,7995 F|7995-F,2,2,0
+7998F,1,2,rate_list,7998-F|7998F,2,2,0
+9392NN,1,2,rate_list,9392 N-N|9392N-N,2,2,0
+BB79F,1,2,rate_list,BB-79 F|BB-79F,2,2,0
+BB93N,1,3,rate_list,BB-93-N|BB-93N|BB93-N,3,3,0
+BCT04S,1,2,rate_list,BCT-04S|BCT04S,2,2,0
+BCT05S,1,2,rate_list,BCT-05S|BCT05S,2,2,0
+BH73,1,2,rate_list,BH 73|BH-73,2,2,0
+BH79,1,2,rate_list,BH 79|BH-79,2,2,0
+C5211,1,2,rate_list,C 5211|C5211,2,2,0
+CNS15,3,2,item_master|prayag|rate_list,CNS 15|CNS-15,2,2,70
+CSS79F,1,2,rate_list,CSS 79F|CSS-79F,2,2,0
+D5151,1,2,rate_list,D 5151|D-5151,2,2,0
+D5516,1,2,rate_list,D 5516|D-5516,2,2,0
+D5751,1,2,rate_list,D 5751|D-5751,2,2,0
+DB02L,3,2,mrp|prayag|rate_list,DB-02 L|DB-02L,2,1,0
+DB523INONOFFN,1,2,rate_list,DB-52-3 IN-ON-OFF-N|DB-52-3IN-ON-OFF-N,2,2,0
+DB533INN,1,2,rate_list,DB-53-3 IN-N|DB-53-3IN-N,2,2,0
+DB533INONOFFN,1,2,rate_list,DB-53-3 IN-ON-OFF-N|DB-53-3IN-ON-OFF-N,2,2,0
+DB663IN,1,2,rate_list,DB-66-3 IN|DB-66-3IN,2,2,0
+DB663INONOFF,1,2,rate_list,DB-66-3 IN-ON-OFF|DB-66-3IN ON-OFF,2,2,0
+DB683INONOFFN,1,2,rate_list,DB-68-3 IN-ON-OFF-N|DB-68-3IN-ON-OFF-N,2,2,0
+DB713INN,1,2,rate_list,DB-71 3 IN-N|DB-71-3 IN-N,2,2,0
+DB713INONOFFN,1,3,rate_list,DB-71-3 IN-ON-OFF-N|DB-71-3-IN-ON-OFF-N|DB-71-3IN-ON-OFF-N,3,3,0
+DB71H,1,2,rate_list,DB-71-H|DB-71H,2,2,0
+DB78NHN,1,2,rate_list,DB-78 N-H-N|DB-78N-H-N,2,2,0
+DB78ONOFF,1,2,rate_list,DB-78 ON-OFF|DB-78-ON-OFF,2,2,0
+DB78S,1,2,rate_list,DB-78-S|DB78S,2,2,0
+DB79F3INN,1,2,rate_list,DB-79 F-3 IN-N|DB-79F-3IN-N,2,2,0
+DB79F3INONOFFN,1,2,rate_list,DB-79 F-3 IN-ON-OFF-N|DB-79F-3IN-ON-OFF-N,2,2,0
+DB79FH,1,3,rate_list,DB-79 F-H|DB-79F-H|DB-79FH,3,3,0
+DB79FHN,1,2,rate_list,DB-79 F-H-N|DB-79F-H-N,2,2,0
+DB79FHONOFFN,1,2,rate_list,DB-79 F-H-ON-OFF-N|DB-79F-H-ON-OFF-N,2,2,0
+DB79FN,1,2,rate_list,DB-79 F-N|DB-79F-N,2,2,0
+DB79HONOFFN,1,2,rate_list,DB-79-H-ON-OFF-N|DB79-H-ON-OFF-N,2,2,0
+DB79ONOFF,1,2,rate_list,DB-79 ON-OFF|DB-79-ON-OFF,2,2,0
+DB813INONOFFN,1,2,rate_list,DB-81-3 IN-ON-OFF-N|DB-81-3IN-ON-OFF-N,2,2,0
+DB873INONOFFN,1,2,rate_list,DB-87-3 IN-ON-OFF-N|DB-87-3IN-ON-OFF-N,2,2,0
+DB87ONOFF,1,2,rate_list,DB-87 ON-OFF|DB-87ON-OFF,2,2,0
+DB903INONOFFN,1,2,rate_list,DB-90-3 IN-ON-OFF-N|DB-90-3IN-ON-OFF-N,2,2,0
+DB90H,1,2,rate_list,DB-90-H|DB-90H,2,2,0
+DB93N,1,2,rate_list,DB-93-N|DB-93N,2,2,0
+DBP66,1,2,rate_list,DB-P66|DBP-66,2,2,0
+DPH79F,1,2,rate_list,DPH-79F|DPH79F,2,2,0
+P6650,1,2,rate_list,P-6650|P6650,2,2,0
+P6870,1,2,rate_list,P-6870|P6870,2,2,0
+PD3INN,1,2,rate_list,PD-3 IN-N|PD-3IN-N,2,2,0
+PD3INONOFFN,1,2,rate_list,PD-3 IN-ON-OFF-N|PD-3IN-ON-OFF-N,2,2,0
+PIS02,1,2,rate_list,PIS 02|PIS-02,2,2,0
+PIS02H,1,3,rate_list,PIS 02H|PIS-02 H|PIS-02H,3,3,0
+PIS06,1,2,rate_list,PIS 06|PIS-06,2,2,0
+PIS06H,1,3,rate_list,PIS 06H|PIS-06 H|PIS-06H,3,3,0
+PIS08,1,2,rate_list,PIS 08|PIS-08,2,2,0
+PIS08H,1,3,rate_list,PIS 08H|PIS-08 H|PIS-08H,3,3,0
+PIS09,1,2,rate_list,PIS 09|PIS-09,2,2,0
+PIS09H,1,3,rate_list,PIS 09H|PIS-09 H|PIS-09H,3,3,0
+PIS10,1,2,rate_list,PIS 10|PIS-10,2,2,0
+PIS10H,1,3,rate_list,PIS 10 H|PIS 10H|PIS-10 H,3,3,0
+PIS11H,1,2,rate_list,PIS-11 H|PIS-11H,2,2,0
+PIS12,1,2,rate_list,PIS 12|PIS-12,2,2,0
+PIS12H,1,3,rate_list,PIS 12H|PIS-12 H|PIS-12H,3,3,0
+PIS14H,1,2,rate_list,PIS-14 H|PIS-14H,2,2,0
+PIS16,1,2,rate_list,PIS 16|PIS-16,2,2,0
+PIS16H,1,2,rate_list,PIS-16 H|PIS-16H,2,2,0
+PIS18,1,2,rate_list,PIS 18|PIS-18,2,2,0
+PIS18H,1,3,rate_list,PIS 18H|PIS-18 H|PIS-18H,3,3,0
+PIS20H,1,2,rate_list,PIS-20 H|PIS-20H,2,2,0
+PIS26,1,2,rate_list,PIS 26|PIS-26,2,2,0
+PIS28,1,2,rate_list,PIS 28|PIS-28,2,2,0
+PIS50,1,2,rate_list,PIS 50|PIS-50,2,2,0
+PIS50H,1,2,rate_list,PIS-50 H|PIS-50H,2,2,0
+PIS75H,1,2,rate_list,PIS-75 H|PIS-75H,2,2,0
+PIS80H,1,2,rate_list,PIS-80 H|PIS-80H,2,2,0
+PR139,1,2,rate_list,PR-139|PR139,2,2,0
+PR144,1,2,rate_list,PR-144|PR144,2,2,0
+PR244,1,2,rate_list,PR-244|PR244,2,2,0
+PR444,1,2,rate_list,PR-444|PR444,2,2,0
+PR544,1,2,rate_list,PR-544|PR544,2,2,0

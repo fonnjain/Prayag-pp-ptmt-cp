@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,8 @@ import { useToast } from "@/hooks/use-toast";
 import { formatMonthLabel } from "@/lib/month";
 import { cn, fmtDateTime } from "@/lib/utils";
 import { DateInput } from "@/components/date-input";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   useListPlanRuns,
   useCreatePlanRun,
@@ -41,7 +43,9 @@ import {
 import { useSegment } from "@/contexts/segment-context";
 import { useMonth } from "@workspace/month-filter";
 import { MonthEmptyState } from "@/components/month-empty-state";
-import { Trash2, GitCompare, Activity, Download } from "lucide-react";
+import { Trash2, GitCompare, Activity, Download, Gauge, RefreshCw, ShieldAlert } from "lucide-react";
+import { useRerunTemporaryPlan } from "@/hooks/use-rerun-temporary-plan";
+import { useAuth } from "@/contexts/auth-context";
 
 const HIGH_MONTHLY_P90_CV_PCT = 25;
 
@@ -68,11 +72,22 @@ function planRunErrorDetails(error: unknown): { title: string; description: stri
 function statusColor(status: string) {
   return status === "finalized"
     ? "bg-green-100 text-green-800"
+    : status === "superseded"
+      ? "bg-slate-100 text-slate-700"
     : "bg-amber-100 text-amber-800";
 }
 
 function fmt(n: number) {
   return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function fmtFittedDate(value: string | Date) {
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function fmtDelta(n: number) {
@@ -106,6 +121,19 @@ type RunDetail = {
   run: PlanRunSummary;
   items: { itemCode: string; colour: string; category: string; minProduction: number; demandPlan?: number; productionPlan: number; feasibilityStatus?: string }[];
 };
+
+type Pass2Basis = {
+  workingDays?: number;
+  workedSundayDates?: string[];
+};
+
+function workingDayBasisLabel(pass2: Pass2Basis | null | undefined): string | null {
+  if (!pass2 || typeof pass2.workingDays !== "number") return null;
+  const workedSundayCount = Array.isArray(pass2.workedSundayDates) ? pass2.workedSundayDates.length : 0;
+  return workedSundayCount === 0
+    ? `Fitted against ${pass2.workingDays} working days · no Sundays worked yet this month`
+    : `Fitted against ${pass2.workingDays} working days · ${workedSundayCount} worked Sunday${workedSundayCount === 1 ? "" : "s"} this month`;
+}
 
 function MultiRunCompare({ ids, onClose }: { ids: number[]; onClose: () => void }) {
   const sorted = [...ids].sort((a, b) => a - b);
@@ -495,10 +523,22 @@ function Pass2AuditView({ runId, onClose }: { runId: number; onClose: () => void
                 <p className="font-semibold tabular-nums">{fmt(Number(audit.invariants.cannotBeMadeTotal))}</p>
               </div>
               <div className="rounded-md border px-3 py-2">
-                <p className="text-[11px] text-muted-foreground">Calendar</p>
+                <p className="text-[11px] text-muted-foreground">Working-day basis</p>
                 <p className="font-semibold tabular-nums">{audit.workingDays} days</p>
-                <p className="text-[10px] text-muted-foreground">{audit.workedSundayDates.length} worked Sundays</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {audit.workedSundayDates.length === 0
+                    ? "No Sundays worked yet this month"
+                    : `${audit.workedSundayDates.length} worked Sunday${audit.workedSundayDates.length === 1 ? "" : "s"}`}
+                </p>
               </div>
+            </div>
+            <div className="rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+              {workingDayBasisLabel(audit)}
+              {audit.workedSundayDates.length > 0 && (
+                <span className="ml-1 text-xs text-sky-700">
+                  ({audit.workedSundayDates.join(", ")})
+                </span>
+              )}
             </div>
             <div className="flex flex-wrap gap-1.5">
               {["conservation", "weeklyCapacity", "weeklySum", "dummyPriority", "temporaryPlanUnchanged"].map((name) => (
@@ -595,18 +635,27 @@ export default function RunsPage() {
   const { month, isMonthAvailable, isAvailableMonthsLoading } = useMonth();
   const { segment } = useSegment();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
   const { data, isLoading, refetch } = useListPlanRuns({ month, segment });
   const createRun = useCreatePlanRun();
   const finalizeRun = useFinalizePlanRun();
   const deleteRun = useDeletePlanRun();
+  const { rerunTemporaryPlan, isPending: isRerunningTemporary } = useRerunTemporaryPlan();
   const [compareIds, setCompareIds] = useState<number[] | null>(null);
   const [driftRunId, setDriftRunId] = useState<number | null>(null);
   const [auditRunId, setAuditRunId] = useState<number | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [supersedeRun, setSupersedeRun] = useState<PlanRunSummary | null>(null);
+  const [supersedeReason, setSupersedeReason] = useState("");
+  const [supersedeConfirmation, setSupersedeConfirmation] = useState("");
+  const [isSuperseding, setIsSuperseding] = useState(false);
   const [planType, setPlanType] = useState<"temporary" | "production">("temporary");
   const [temporaryRunId, setTemporaryRunId] = useState("");
   const [creatingPlan, setCreatingPlan] = useState(false);
+  const [fittingRunId, setFittingRunId] = useState<number | null>(null);
+  const [rerunningRunId, setRerunningRunId] = useState<number | null>(null);
   const [effectiveFrom, setEffectiveFrom] = useState(() => {
     const today = new Date().toISOString().slice(0, 10);
     return today.slice(0, 7) === month ? today : `${month}-01`;
@@ -614,6 +663,9 @@ export default function RunsPage() {
 
   const runs = (data as unknown as PlanRunSummary[] | undefined) ?? [];
   const temporaryRuns = runs.filter((run) => run.planType === "temporary" && run.status === "finalized");
+  const finalizedProductionRun = runs.find(
+    (run) => run.planType === "production" && run.status === "finalized",
+  );
   const showMonthEmpty = !isAvailableMonthsLoading && !isMonthAvailable;
 
   useEffect(() => {
@@ -668,6 +720,131 @@ export default function RunsPage() {
         onSettled: () => setCreatingPlan(false),
       },
     );
+  };
+
+  const handleFitToCapacity = (temporaryId: number) => {
+    setFittingRunId(temporaryId);
+    createRun.mutate(
+      {
+        data: {
+          month,
+          segment,
+          effectiveFrom,
+          planType: "production",
+          temporaryRunId: temporaryId,
+        },
+      },
+      {
+        onSuccess: (rawProductionRun) => {
+          const productionRun = rawProductionRun as unknown as PlanRunSummary;
+          toast({
+            title: "Production Plan fitted to capacity",
+            description: `Production Plan #${productionRun.id} was created from Temporary Plan #${temporaryId}.`,
+          });
+          refetch();
+          void queryClient.invalidateQueries({
+            predicate: (query) => {
+              const key = query.queryKey[0];
+              return typeof key === "string" && (key === "/api/plan" || key.startsWith("/api/plan/"));
+            },
+          });
+          setAuditRunId(productionRun.id);
+        },
+        onError: (error) => {
+          const details = planRunErrorDetails(error);
+          toast({
+            ...details,
+            title: details.title === "Failed to freeze plan" ? "Failed to fit plan" : details.title,
+            variant: "destructive",
+          });
+        },
+        onSettled: () => setFittingRunId(null),
+      },
+    );
+  };
+
+  const handleRerunTemporary = (run: PlanRunSummary) => {
+    setRerunningRunId(run.id);
+    rerunTemporaryPlan(
+      { month, segment, supersedesRunId: run.id },
+      {
+        onSuccess: (newRun) => {
+          setRerunningRunId(null);
+          toast({
+            title: "Draft Temporary Plan created",
+            description: `Run #${newRun.id} uses current inputs. Summary will not change until a Production Plan is fitted and finalized.`,
+          });
+          refetch();
+        },
+        onError: (error) => {
+          setRerunningRunId(null);
+          const details = planRunErrorDetails(error);
+          toast({ ...details, title: "Temporary rerun failed", variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const closeSupersedeDialog = (force = false) => {
+    if (isSuperseding && !force) return;
+    setSupersedeRun(null);
+    setSupersedeReason("");
+    setSupersedeConfirmation("");
+  };
+
+  const handleSupersede = async () => {
+    if (!supersedeRun || supersedeRun.temporaryRunId == null) return;
+    const expectedConfirmation = `SUPERSEDE #${supersedeRun.id} + #${supersedeRun.temporaryRunId}`;
+    if (supersedeReason.trim().length < 10) {
+      toast({
+        title: "Reason required",
+        description: "Enter at least 10 characters explaining why this baseline is being abandoned.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (supersedeConfirmation.trim() !== expectedConfirmation) {
+      toast({
+        title: "Confirmation does not match",
+        description: `Type ${expectedConfirmation} exactly to confirm the two runs.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSuperseding(true);
+    try {
+      const response = await fetch(
+        `${import.meta.env.BASE_URL}api/plan/runs/${supersedeRun.id}/supersede`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            reason: supersedeReason.trim(),
+            confirmation: supersedeConfirmation.trim(),
+          }),
+        },
+      );
+      const body = await response.json().catch(() => ({})) as { message?: string; error?: string };
+      if (!response.ok) {
+        throw new Error(body.message ?? body.error ?? "The baseline could not be superseded.");
+      }
+      toast({
+        title: "Baseline superseded",
+        description: `Production Plan #${supersedeRun.id} and Temporary Plan #${supersedeRun.temporaryRunId} remain preserved and are now marked SUPERSEDED.`,
+      });
+      closeSupersedeDialog(true);
+      await refetch();
+    } catch (error) {
+      toast({
+        title: "Supersession failed",
+        description: error instanceof Error ? error.message : "The baseline could not be superseded.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSuperseding(false);
+    }
   };
 
   const handleDownload = async (id: number, planType: string) => {
@@ -871,6 +1048,10 @@ export default function RunsPage() {
                 </TableHeader>
                 <TableBody>
                   {runs.map((run) => (
+                   (() => {
+                     const pass2 = (run as unknown as { pass2?: Pass2Basis | null }).pass2;
+                     const basisLabel = workingDayBasisLabel(pass2);
+                     return (
                     <TableRow
                       key={run.id}
                       className={cn(selectedIds.has(run.id) && "bg-blue-50")}
@@ -905,14 +1086,60 @@ export default function RunsPage() {
                               <strong>Source warning:</strong> {run.planStatusReason}
                             </div>
                           )}
+                           {basisLabel && (
+                             <div className="max-w-64 text-[10px] leading-tight text-sky-700" title={basisLabel}>
+                               {basisLabel}
+                             </div>
+                           )}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">{fmt(run.grandMinTotal)}</TableCell>
                       <TableCell className="text-right">{fmt((run as any).grandDemandTotal ?? run.grandMaxTotal)}</TableCell>
-                      <TableCell className="text-right">{(run as any).grandFittedTotal == null ? "—" : fmt((run as any).grandFittedTotal)}</TableCell>
+                      <TableCell className="text-right">
+                        {(run as any).grandFittedTotal == null ? (
+                          <span
+                            className="cursor-help text-gray-400"
+                            title="Executable appears once fitted to capacity."
+                          >
+                            —
+                          </span>
+                        ) : fmt((run as any).grandFittedTotal)}
+                      </TableCell>
                       <TableCell className="text-sm text-gray-500">{run.note ?? "—"}</TableCell>
                       <TableCell>
                         <div className="flex gap-1.5 justify-end">
+                              {run.planType === "temporary" && run.status === "finalized" && run.segment === "PTMT" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1 border-sky-300 text-sky-700 hover:bg-sky-50"
+                                  onClick={() => handleFitToCapacity(run.id)}
+                                  disabled={createRun.isPending || fittingRunId !== null}
+                                >
+                                  <Gauge className="h-3.5 w-3.5" />
+                                  {fittingRunId === run.id ? "Fitting…" : `Fit #${run.id} to Capacity`}
+                                </Button>
+                              )}
+                              {run.planType === "temporary" && run.status === "finalized" && (
+                                finalizedProductionRun ? (
+                                  <div className="max-w-72 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] leading-tight text-slate-700">
+                                    Production Plan #{finalizedProductionRun.id} was fitted on{" "}
+                                    {fmtFittedDate(finalizedProductionRun.createdAt)}. The month&apos;s baseline is set —
+                                    use Recompute to update it.
+                                  </div>
+                                ) : (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-1 border-amber-300 text-amber-800 hover:bg-amber-50"
+                                    onClick={() => handleRerunTemporary(run)}
+                                    disabled={isRerunningTemporary || creatingPlan || fittingRunId !== null}
+                                  >
+                                    <RefreshCw className={cn("h-3.5 w-3.5", rerunningRunId === run.id && "animate-spin")} />
+                                    {rerunningRunId === run.id ? "Rerunning…" : "Re-run Temporary"}
+                                  </Button>
+                                )
+                              )}
                               {run.planType === "production" && run.temporaryRunId != null && (
                                 <Button
                                   variant="outline"
@@ -922,6 +1149,21 @@ export default function RunsPage() {
                                 >
                                   <Activity className="h-3.5 w-3.5" />
                                   Audit
+                                </Button>
+                              )}
+                              {user?.role === "admin"
+                                && run.planType === "production"
+                                && run.status === "finalized"
+                                && run.temporaryRunId != null && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1 border-red-300 text-red-700 hover:bg-red-50"
+                                  onClick={() => setSupersedeRun(run)}
+                                  disabled={isSuperseding}
+                                >
+                                  <ShieldAlert className="h-3.5 w-3.5" />
+                                  Supersede baseline
                                 </Button>
                               )}
                           <Button
@@ -955,6 +1197,8 @@ export default function RunsPage() {
                         </div>
                       </TableCell>
                     </TableRow>
+                     );
+                   })()
                   ))}
                 </TableBody>
               </Table>
@@ -992,6 +1236,66 @@ export default function RunsPage() {
               {deleteRun.isPending
                 ? "Deleting…"
                 : `Delete ${selectedIds.size > 1 ? `${selectedIds.size} runs` : "run"}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={supersedeRun !== null}
+        onOpenChange={(open) => { if (!open) closeSupersedeDialog(); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Supersede this baseline?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm">
+                <p>
+                  This deliberately marks Production Plan #{supersedeRun?.id} and its parent
+                  Temporary Plan #{supersedeRun?.temporaryRunId} as <strong>SUPERSEDED</strong>.
+                </p>
+                <p>
+                  Nothing is deleted, and both runs&apos; frozen inputs and results are preserved.
+                  This is separate from the normal Re-run action.
+                </p>
+                <div className="space-y-2">
+                  <label htmlFor="supersede-reason" className="font-medium text-foreground">
+                    Required reason
+                  </label>
+                  <Textarea
+                    id="supersede-reason"
+                    value={supersedeReason}
+                    onChange={(event) => setSupersedeReason(event.target.value)}
+                    placeholder="Explain why this baseline must be abandoned."
+                    maxLength={2000}
+                    disabled={isSuperseding}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label htmlFor="supersede-confirmation" className="font-medium text-foreground">
+                    Type{" "}
+                    <code>SUPERSEDE #{supersedeRun?.id} + #{supersedeRun?.temporaryRunId}</code>
+                    {" "}to confirm
+                  </label>
+                  <Input
+                    id="supersede-confirmation"
+                    value={supersedeConfirmation}
+                    onChange={(event) => setSupersedeConfirmation(event.target.value)}
+                    placeholder={`SUPERSEDE #${supersedeRun?.id ?? ""} + #${supersedeRun?.temporaryRunId ?? ""}`}
+                    disabled={isSuperseding}
+                  />
+                </div>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSuperseding}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={(event) => { event.preventDefault(); void handleSupersede(); }}
+              disabled={isSuperseding}
+            >
+              {isSuperseding ? "Superseding…" : "Mark both runs SUPERSEDED"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

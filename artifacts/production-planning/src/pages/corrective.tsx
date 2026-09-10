@@ -419,6 +419,7 @@ const PLUMBING_CATEGORY_ORDER = [
   "AGRI Pipe",
   "AGRI Fitting",
   "AGRI Solvent",
+  "HDPE Pipe",
 ];
 
 function RevisedReleaseTable({

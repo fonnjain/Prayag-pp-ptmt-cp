@@ -127,7 +127,7 @@ const REPORT_TAB_CATEGORIES: Record<string, string> = {
   "REPORT 1": "Cocks Standard",
   "REPORT 2": "Cocks Premium",
   "REPORT 3": "Faucets & Jetsprays & Shower",
-  "REPORT 4": "Accessories",
+  "REPORT 4": "Accessorise",
   "REPORT 5": "Cistern & Seat Cover",
   "REPORT 6": "Cabinet",
   "REPORT 7": "Ball Cock",
@@ -707,7 +707,7 @@ router.get("/ops/config", (_req, res): void => {
 // Source for E/F/G: CODE WISE SALE 25-26 (not the item-wise sheet which is FY24-25 only)
 const MGMT_CATEGORY_ORDER = [
   "Cocks Standard","Cocks Premium","Faucets & Jetsprays & Shower",
-  "Accessories","Cistern & Seat Cover","Cabinet","Ball Cock",
+  "Accessorise","Cistern & Seat Cover","Cabinet","Ball Cock",
 ];
 const FM_NAMES = ["Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec","Jan","Feb","Mar"];
 const CAL_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];

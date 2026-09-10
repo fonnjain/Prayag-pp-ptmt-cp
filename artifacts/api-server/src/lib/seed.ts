@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import * as XLSX from "xlsx";
-import { eq } from "drizzle-orm";
-import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, correctivePlanRunsTable, uploadedFilesTable } from "@workspace/db";
+import { and, eq } from "drizzle-orm";
+import { db, bufferCategoriesTable, itemMasterTable, syncSourcesTable, plantConfigsTable, plantSourceConfigsTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, correctivePlanRunsTable, uploadedFilesTable, plumbingBomOverridesTable } from "@workspace/db";
 import { logger } from "./logger";
 import { SHEET_LABELS, normalizeCode, normalizeColour } from "./sheets";
 import { seedBootstrapAdmins } from "./user-auth";
@@ -21,6 +21,11 @@ const DEFAULT_BUFFER_CATEGORIES: { name: string; multiplier: number }[] = [
   { name: "P.V.C. Connections", multiplier: 1.5 },
   { name: "Waste Pipes", multiplier: 1.5 },
 ];
+
+const PTMT_APPROVED_OVERRIDES: Record<string, number> = {
+  "P.V.C. Connections": 1.5,
+  "Waste Pipes": 1.5,
+};
 
 function findSeedCsvPath(): string {
   const candidates = [
@@ -67,6 +72,48 @@ function findRateListCsvPath(): string | null {
   return null;
 }
 
+function findPlumbingBomOverridesCsvPath(): string {
+  const candidates = [
+    path.resolve(process.cwd(), "lib/db/seed-data/plumbing_bom_overrides.csv"),
+    path.resolve(process.cwd(), "../../lib/db/seed-data/plumbing_bom_overrides.csv"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      readFileSync(candidate, "utf-8");
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error(`Plumbing BOM override seed data not found. Tried: ${candidates.join(", ")}`);
+}
+
+async function seedPlumbingBomOverrides(): Promise<void> {
+  const csvPath = findPlumbingBomOverridesCsvPath();
+  const [, ...lines] = readFileSync(csvPath, "utf-8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0);
+  const rows = lines.map((line) => {
+    const [itemCode, kgPerPiece, category, piecesRecovered] = line.split(",");
+    return {
+      itemCode: itemCode!.trim().toUpperCase(),
+      kgPerPiece: kgPerPiece!.trim(),
+      category: category!.trim(),
+      piecesRecovered: piecesRecovered!.trim(),
+      source: "Prayag plant app BOM, seeded 1 Sep 2026 from a source last modified 20 July 2026",
+      sourceLastModified: "2026-07-20",
+      seededOn: "2026-09-01",
+    };
+  });
+  if (rows.length !== 47) {
+    throw new Error(`Expected 47 approved Plumbing BOM overrides, found ${rows.length}`);
+  }
+  await db.insert(plumbingBomOverridesTable)
+    .values(rows)
+    .onConflictDoNothing({ target: plumbingBomOverridesTable.itemCode });
+  logger.info({ inserted: rows.length, source: rows[0]?.source }, "Seeded approved Plumbing BOM overrides");
+}
+
 async function seedRateList(): Promise<void> {
   const existing = await db.select({ id: uploadedFilesTable.id })
     .from(uploadedFilesTable)
@@ -103,10 +150,27 @@ async function seedBufferCategories(): Promise<void> {
     .select({ segment: bufferCategoriesTable.segment, name: bufferCategoriesTable.name })
     .from(bufferCategoriesTable);
   const existingKeys = new Set(existing.map((row) => `${row.segment}:${row.name}`));
-  const missing = DEFAULT_BUFFER_CATEGORIES.filter((category) => !existingKeys.has(`PTMT:${category.name}`));
-  if (missing.length === 0) return;
-  await db.insert(bufferCategoriesTable).values(missing);
-  logger.info({ count: missing.length }, "Seeded missing buffer categories");
+  const missing = DEFAULT_BUFFER_CATEGORIES
+    .filter((category) => !existingKeys.has(`PTMT:${category.name}`))
+    .map((category) => ({
+      ...category,
+      ...(PTMT_APPROVED_OVERRIDES[category.name] === undefined
+        ? {}
+        : { overrideMultiplier: PTMT_APPROVED_OVERRIDES[category.name] }),
+    }));
+  if (missing.length > 0) {
+    await db.insert(bufferCategoriesTable).values(missing);
+    logger.info({ count: missing.length }, "Seeded missing buffer categories");
+  }
+
+  for (const [name, overrideMultiplier] of Object.entries(PTMT_APPROVED_OVERRIDES)) {
+    await db.update(bufferCategoriesTable)
+      .set({ overrideMultiplier })
+      .where(and(
+        eq(bufferCategoriesTable.segment, "PTMT"),
+        eq(bufferCategoriesTable.name, name),
+      ));
+  }
 }
 
 async function seedItemMaster(): Promise<void> {
@@ -194,7 +258,7 @@ const DEFAULT_WEEKLY_RELEASE_BANDS: {
 ];
 
 // Plumbing weekly release bands: W1 < 0.3 ≤ W2 < 0.5 ≤ W3 < 0.8 ≤ W4 < 99.
-// All 12 Plumbing categories share the same thresholds (uniform priority ranking).
+// All 13 Plumbing categories share the same thresholds (uniform priority ranking).
 // W4 upper = 99 so items with high cover (even many months of stock) are still scheduled.
 const PLUMBING_WEEKLY_RELEASE_BANDS: {
   segment: string;
@@ -208,6 +272,7 @@ const PLUMBING_WEEKLY_RELEASE_BANDS: {
   "UPVC Pipe", "UPVC Fitting", "UPVC Solvent",
   "SWR Pipe",  "SWR Fitting",  "SWR Solvent",
   "AGRI Pipe", "AGRI Fitting", "AGRI Solvent",
+  "HDPE Pipe",
 ].map((categoryName) => ({
   segment: "Plumbing",
   categoryName,
@@ -320,6 +385,7 @@ export async function ensureSeedData(): Promise<void> {
   await seedBootstrapAdmins();
   await seedBufferCategories();
   await seedItemMaster();
+  await seedPlumbingBomOverrides();
   await seedRateList();
   await seedSyncSources();
   await seedPlantSourceConfigs();

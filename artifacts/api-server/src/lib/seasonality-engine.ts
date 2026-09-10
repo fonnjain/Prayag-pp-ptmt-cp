@@ -64,12 +64,13 @@ const THIN_THRESHOLD = 100;
 /** Avg monthly units below this → "thin" data quality (Plumbing) */
 export const PLUMBING_THIN_THRESHOLD = 3000;
 
-/** All 12 Plumbing categories: material × type */
+/** All 13 Plumbing categories from the MATERIAL-tab roster. */
 export const ALL_PLUMBING_CATEGORIES = [
   "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
   "UPVC Pipe", "UPVC Fitting", "UPVC Solvent",
   "SWR Pipe",  "SWR Fitting",  "SWR Solvent",
   "AGRI Pipe", "AGRI Fitting", "AGRI Solvent",
+  "HDPE Pipe",
 ] as const;
 
 // ─── Types ───────────────────────────────────────────────────────────────────

@@ -20,6 +20,9 @@ export interface CalcPlanItem {
   itemCode: string;
   colour: string;
   category: string;
+  itemName?: string | null;
+  sourceRole?: string | null;
+  unmappedReason?: string | null;
   avg3MoSale: number;
   stock: number;
   stockNeedsReview: boolean;
@@ -196,11 +199,14 @@ export function computeItemPlan(
   // guessed buffer is allowed to enter the plan.
   const bufferReq = bufferMultiplier == null ? null : round(avg3MoSale * bufferMultiplier);
   const confirmedDemand = round(Math.max(source.pendingOrderLastMonth + source.pendingOrder, 0));
+  const unresolvedDemandAfterStock = category === "Unclassified"
+    ? Math.max(round(confirmedDemand - Math.max(source.stock, 0)), 0)
+    : confirmedDemand;
   const minProduction = bufferMultiplier == null
-    ? confirmedDemand
+    ? unresolvedDemandAfterStock
     : round(Math.max(avg3MoSale - source.stock, 0));
   const maxProduction = bufferMultiplier == null
-    ? confirmedDemand
+    ? unresolvedDemandAfterStock
     : round(Math.max(bufferReq! - source.stock + source.pendingOrderLastMonth + source.pendingOrder, 0));
   const cover: number | "OS" = avg3MoSale > 0 ? round(source.stock / avg3MoSale) : "OS";
 

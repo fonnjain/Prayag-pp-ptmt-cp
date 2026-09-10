@@ -5,6 +5,7 @@ import {
   useListWeeklyReleaseBands,
   useUpdateWeeklyReleaseBand,
   useListBufferCategories,
+  useGetPlanSummary,
   type PlanItem,
   type WeeklyReleaseBand,
   type BufferCategory,
@@ -13,6 +14,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { categorySlug } from "@/lib/category-slug";
 import { useSegment } from "@/contexts/segment-context";
 import { useMonth } from "@workspace/month-filter";
+import { ProductionPlanState } from "@/components/production-plan-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -167,6 +169,8 @@ export default function CategoryPage() {
     { month, segment, category: category ?? "" },
     { query: { enabled: Boolean(category) && !isHeldWastePipes } as any },
   );
+  const { data: summaryData } = useGetPlanSummary({ month, segment });
+  const availability = (summaryData as any)?.availability;
 
   const { data: bandsData } = useListWeeklyReleaseBands(
     { segment, ...(({} as any)) },
@@ -192,6 +196,7 @@ export default function CategoryPage() {
   const unscheduledCount = items.filter((i) => i.week === null && i.maxProduction > 0 && i.cover !== "OS").length;
   const osCount = items.filter((i) => i.cover === "OS" && i.maxProduction > 0).length;
   const showMonthEmpty = !isAvailableMonthsLoading && !isMonthAvailable;
+  const showNeutral = availability && availability.status !== "production";
 
   const handleExport = () => {
     if (weeklyView) {
@@ -287,8 +292,8 @@ export default function CategoryPage() {
           </div>
         </div>
 
-        {showMonthEmpty ? (
-          <MonthEmptyState segment={segment} />
+        {showMonthEmpty || showNeutral ? (
+          <ProductionPlanState month={month} segment={segment} availability={availability} />
         ) : !isLoading && !isError && (
           <div className="flex flex-wrap gap-2 text-sm">
             {weeklyView ? (

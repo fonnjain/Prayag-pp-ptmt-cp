@@ -85,6 +85,54 @@ export const PLUMBING_PENDING_PLAN_CLAMP_LOSS = 4_824;
 export const PLUMBING_CATEGORIES = PLUMBING_GOLDEN.map((g) => g.cat);
 
 /**
+ * September 2026 source reconciliation targets from Prayag's MATERIAL tabs.
+ * These are reporting targets, not executable-plan goldens and must not be used
+ * to fit capacity or rewrite the historical July/August regression snapshots.
+ */
+export const SEPTEMBER_PLUMBING_SOURCE_TARGETS: Array<{ category: string; items: number; target: number }> = [
+  { category: "CPVC Fitting", items: 244, target: 578_244 },
+  { category: "CPVC Pipe", items: 40, target: 127_924 },
+  { category: "CPVC Solvent", items: 9, target: 21_874 },
+  { category: "UPVC Fitting", items: 242, target: 709_370 },
+  { category: "UPVC Pipe", items: 52, target: 85_328 },
+  { category: "UPVC Solvent", items: 30, target: 476 },
+  { category: "SWR Fitting", items: 134, target: 215_344 },
+  { category: "SWR Pipe", items: 160, target: 60_263 },
+  { category: "SWR Solvent", items: 3, target: 1_013 },
+  { category: "AGRI Fitting", items: 82, target: 56_217 },
+  { category: "AGRI Pipe", items: 123, target: 10_378 },
+  { category: "AGRI Solvent", items: 1, target: 0 },
+  { category: "HDPE Pipe", items: 16, target: 0 },
+];
+export const SEPTEMBER_PLUMBING_SOURCE_TOTAL = 1_866_432;
+
+export const SEPTEMBER_PTMT_TARGET_SNAPSHOT = {
+  readDate: "2026-09-09",
+  multiplierSet:
+    "1.0x default; Accessorise 1.5x; Ball Cock ROD/BODY/BALL 1.5x, BALL COCK and blank sub-types 1.0x",
+  comparisonReports: 7,
+  comparisonTotal: 597_023,
+} as const;
+
+export const SEPTEMBER_PTMT_SOURCE_TARGETS: Array<{
+  report: string;
+  category: string;
+  rows: number;
+  target: number | null;
+  targetStatus: "available" | "not-produced-by-prayag";
+}> = [
+  { report: "REPORT 1", category: "Cocks Standard", rows: 2_066, target: 368_345, targetStatus: "available" },
+  { report: "REPORT 2", category: "Cocks Premium", rows: 602, target: 20_866, targetStatus: "available" },
+  { report: "REPORT 3", category: "Faucets & Jetsprays & Shower", rows: 185, target: 70_756, targetStatus: "available" },
+  { report: "REPORT 4", category: "Accessorise", rows: 205, target: 38_420, targetStatus: "available" },
+  { report: "REPORT 5", category: "Cistern & Seat Cover", rows: 187, target: 38_813, targetStatus: "available" },
+  { report: "REPORT 6", category: "Cabinet", rows: 51, target: 1_325, targetStatus: "available" },
+  { report: "REPORT 7", category: "Ball Cock", rows: 55, target: 58_498, targetStatus: "available" },
+  { report: "REPORT 8", category: "P.V.C. Connections", rows: 29, target: null, targetStatus: "not-produced-by-prayag" },
+  { report: "REPORT 9", category: "Waste Pipes", rows: 46, target: null, targetStatus: "not-produced-by-prayag" },
+];
+
+/**
  * Category-level buffer multiplier defaults.
  * These are the DB fallback values (used when an item's sheet cell is blank).
  * They also serve as the "Suggested" starting value shown in the Buffer UI.
@@ -161,6 +209,7 @@ export const PTMT_MULTIPLIER_GOLDEN: Array<{ cat: string; multiplier: number }> 
   { cat: "Cabinet",                      multiplier: 1.2 },
   { cat: "Ball Cock",                    multiplier: 1.5 },
   { cat: "P.V.C. Connections",           multiplier: 1.5 },
+  { cat: "Waste Pipes",                  multiplier: 1.5 },
 ];
 
 /** PTMT grand-total benchmarks.  Tolerance ±0.1% — tight enough to catch a single dropped item. */
@@ -459,10 +508,94 @@ export type GoldenIntegrityCheck = {
   actual: number;
   delta: number;
   pass: boolean;
+  quarantine?: {
+    status: "never-passed";
+    introducedCommit: "c06af76";
+    family: "weekly self-sum" | "replan snapshot";
+  };
 };
 
 const goldenSum = <T>(rows: T[], value: (row: T) => number): number =>
   rows.reduce((sum, row) => sum + value(row), 0);
+
+/**
+ * PB9.2 fixture quarantine. These assertions remain active and are returned by
+ * the integrity endpoint; the metadata only tells the regression runner not to
+ * count a known, never-passed fixture inconsistency as a live-plan failure.
+ *
+ * Do not add a golden value here to make a check pass. The observed/expected
+ * values are computed by getGoldenIntegrityChecks below and remain visible.
+ */
+const NEVER_PASSED_GOLDEN_QUARANTINE: Record<
+  string,
+  { status: "never-passed"; introducedCommit: "c06af76"; family: "weekly self-sum" | "replan snapshot" }
+> = {
+  "plumbing-pieces-total": {
+    status: "never-passed",
+    introducedCommit: "c06af76",
+    family: "weekly self-sum",
+  },
+  "plumbing-weekly-category-CPVC Fitting": {
+    status: "never-passed",
+    introducedCommit: "c06af76",
+    family: "weekly self-sum",
+  },
+  "plumbing-weekly-category-UPVC Pipe": {
+    status: "never-passed",
+    introducedCommit: "c06af76",
+    family: "weekly self-sum",
+  },
+  "plumbing-weekly-category-AGRI Pipe": {
+    status: "never-passed",
+    introducedCommit: "c06af76",
+    family: "weekly self-sum",
+  },
+  "plumbing-weekly-category-AGRI Fitting": {
+    status: "never-passed",
+    introducedCommit: "c06af76",
+    family: "weekly self-sum",
+  },
+  "plumbing-weekly-plant-w1": {
+    status: "never-passed",
+    introducedCommit: "c06af76",
+    family: "weekly self-sum",
+  },
+  "plumbing-weekly-plant-w2": {
+    status: "never-passed",
+    introducedCommit: "c06af76",
+    family: "weekly self-sum",
+  },
+  "plumbing-weekly-plant-w4": {
+    status: "never-passed",
+    introducedCommit: "c06af76",
+    family: "weekly self-sum",
+  },
+  "plumbing-replan-identity-SWR Pipe": {
+    status: "never-passed",
+    introducedCommit: "c06af76",
+    family: "replan snapshot",
+  },
+  "plumbing-replan-identity-AGRI Pipe": {
+    status: "never-passed",
+    introducedCommit: "c06af76",
+    family: "replan snapshot",
+  },
+  "plumbing-replan-identity-AGRI Fitting": {
+    status: "never-passed",
+    introducedCommit: "c06af76",
+    family: "replan snapshot",
+  },
+  "plumbing-replan-remaining-total": {
+    status: "never-passed",
+    introducedCommit: "c06af76",
+    family: "replan snapshot",
+  },
+  "plumbing-replan-shortfall-total": {
+    status: "never-passed",
+    introducedCommit: "c06af76",
+    family: "replan snapshot",
+  },
+};
 
 /**
  * Validate the frozen baselines before using them as regression expectations.
@@ -487,6 +620,9 @@ export function getGoldenIntegrityChecks(): GoldenIntegrityCheck[] {
     actual,
     delta: actual - expected,
     pass: actual === expected,
+    ...(NEVER_PASSED_GOLDEN_QUARANTINE[id]
+      ? { quarantine: NEVER_PASSED_GOLDEN_QUARANTINE[id] }
+      : {}),
   });
 
   add(

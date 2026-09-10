@@ -142,5 +142,101 @@
     "title": "Next operating priorities",
     "description": "The next priorities strengthen Plumbing reconciliation, staleness protection, independent evidence approval, and end-to-end scheduling.",
     "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b119",
+    "position": 19,
+    "filepath": "src/pages/slides/Slide19.tsx",
+    "title": "The web app is a two-surface operating system",
+    "description": "Production Planning and Production Monitoring expose the full route-level operating surface.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b120",
+    "position": 20,
+    "filepath": "src/pages/slides/Slide20.tsx",
+    "title": "The app is built around visible truth, not silent assumptions",
+    "description": "Verified capabilities, explicit controls, and held decisions define the current operating position.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b121",
+    "position": 21,
+    "filepath": "src/pages/slides/Slide21.tsx",
+    "title": "Start with a governed context",
+    "description": "Authentication, month, and segment establish the operating context before calculation.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b122",
+    "position": 22,
+    "filepath": "src/pages/slides/Slide22.tsx",
+    "title": "Source intake follows a contract",
+    "description": "PTMT and Plumbing inputs are selected by structure, period, identity, and reconciliation rules.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b123",
+    "position": 23,
+    "filepath": "src/pages/slides/Slide23.tsx",
+    "title": "PTMT planning keeps item and colour identity",
+    "description": "PTMT plan construction joins catalogue, history, stock, pending, and buffer evidence at the item-colour grain.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b124",
+    "position": 24,
+    "filepath": "src/pages/slides/Slide24.tsx",
+    "title": "Plumbing planning is family-led and workbook-backed",
+    "description": "Plumbing maps source rows into twelve canonical categories with explicit stock and solvent semantics.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b125",
+    "position": 25,
+    "filepath": "src/pages/slides/Slide25.tsx",
+    "title": "Every plan row answers a different question",
+    "description": "Demand, executable production, residual, and weekly release are kept as separate quantities.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b126",
+    "position": 26,
+    "filepath": "src/pages/slides/Slide26.tsx",
+    "title": "Capacity is evidence plus execution",
+    "description": "Category capacity and machine scheduling form two distinct layers of the operating model.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b127",
+    "position": 27,
+    "filepath": "src/pages/slides/Slide27.tsx",
+    "title": "Monitoring moves from plant signal to action",
+    "description": "Monitoring moves through observation, comparison, explanation, and operational response.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b128",
+    "position": 28,
+    "filepath": "src/pages/slides/Slide28.tsx",
+    "title": "Corrective work is a controlled fork, not an overwrite",
+    "description": "Corrective runs cite a baseline, rebuild against current evidence, and retain supersession lineage.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b129",
+    "position": 29,
+    "filepath": "src/pages/slides/Slide29.tsx",
+    "title": "The Plumbing scheduler path is real, direct, and explicit",
+    "description": "The machine-contract audit confirms the live upstream path, persisted August evidence, and explicit failure boundary.",
+    "speakerNotes": ""
+  },
+  {
+    "id": "9f2a3b10-7c16-4d4e-8ed4-0d1a48a3b130",
+    "position": 30,
+    "filepath": "src/pages/slides/Slide30.tsx",
+    "title": "From workbook to action",
+    "description": "The operating model serves planners, operations, leadership, and audit with one evidence language.",
+    "speakerNotes": ""
   }
 ]

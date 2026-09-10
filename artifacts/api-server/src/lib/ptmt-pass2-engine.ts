@@ -212,7 +212,9 @@ function key(item: PtmtPass2InputItem): string {
   return `${item.itemCode}::${item.colour}::${item.category}`;
 }
 
-function componentDemand(item: PtmtPass2InputItem): { dummy: number; orders: number; buffer: number } {
+export function componentDemand(
+  item: Pick<PtmtPass2InputItem, "category" | "pendingCurrent" | "pendingLastMonth" | "temporaryPlan">,
+): { dummy: number; orders: number; buffer: number } {
   const total = roundQuantity(item.temporaryPlan);
   const dummy = Math.min(total, roundQuantity(item.pendingLastMonth));
   const orders = Math.min(Math.max(total - dummy, 0), roundQuantity(item.pendingCurrent));

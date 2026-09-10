@@ -5,6 +5,8 @@ import {
   planRunResultsTable,
   planRunsTable,
   planScheduleResultsTable,
+  plumbingMachineCapacityTable,
+  weeklyReleaseBandsTable,
 } from "@workspace/db";
 import type { CalcPlanItem, PlanSummaryResult } from "./calc";
 import { summarizePlan } from "./calc";
@@ -17,6 +19,10 @@ import {
   applyPlumbingScheduleToFrozenRows,
   type PersistedPlumbingScheduleRow,
 } from "./plumbing-schedule-export";
+import {
+  addPlumbingAchievabilitySheets,
+  buildPlumbingAchievability,
+} from "./plumbing-achievability-export";
 
 export type FrozenExportRun = typeof planRunsTable.$inferSelect;
 
@@ -32,6 +38,11 @@ export function frozenRows(
   const orderedInputs = [...inputs].sort((a, b) => a.id - b.id);
   return orderedResults.map((result, index) => {
     const input = orderedInputs[index];
+    const provenance = result as typeof result & {
+      itemName?: string | null;
+      sourceRole?: string | null;
+      unmappedReason?: string | null;
+    };
     const dummy = Math.max(input?.pendingLastMonth ?? 0, 0);
     const orders = Math.max(input?.pendingCurrent ?? 0, 0);
     const buffer = result.bufferReq == null ? 0 : Math.max(result.bufferReq - (input?.stock ?? 0), 0);
@@ -39,6 +50,11 @@ export function frozenRows(
       itemCode: result.itemCode,
       colour: result.colour,
       category: result.category,
+      itemName: provenance.itemName ?? null,
+      sourceRole: provenance.sourceRole ?? null,
+      unmappedReason: provenance.unmappedReason ?? null,
+      dataLimited: result.dataLimited ?? false,
+      dataLimitedReason: result.dataLimitedReason ?? null,
       avg3MoSale: input?.avg3MoSale ?? 0,
       stock: input?.stock ?? 0,
       pendingCurrent: input?.pendingCurrent ?? 0,
@@ -52,7 +68,7 @@ export function frozenRows(
       orders,
       buffer,
       material: result.material,
-      weightKg: result.weightKg,
+      totalKg: result.totalKg,
       urgencyRank: result.urgencyRank,
       releaseWeek: result.releaseWeek,
       w1: result.w1,
@@ -140,6 +156,9 @@ export function frozenRowsAsCalcItems(rows: FrozenPlanRow[]): CalcPlanItem[] {
     itemCode: row.itemCode,
     colour: row.colour,
     category: row.category,
+    itemName: row.itemName,
+    sourceRole: row.sourceRole,
+    unmappedReason: row.unmappedReason,
     avg3MoSale: row.avg3MoSale,
     stock: row.stock,
     stockNeedsReview: false,
@@ -149,7 +168,7 @@ export function frozenRowsAsCalcItems(rows: FrozenPlanRow[]): CalcPlanItem[] {
     pendingOrderLastMonth: row.pendingLastMonth,
     pendingOrder: row.pendingCurrent,
     order: row.pendingCurrent,
-    weightKg: row.weightKg ?? 0,
+    totalKg: row.totalKg ?? 0,
     achievementPct: null,
     cover: row.avg3MoSale > 0 ? row.stock / row.avg3MoSale : "OS",
     week: row.releaseWeek as 1 | 2 | 3 | 4 | null,
@@ -178,5 +197,16 @@ export async function exportFrozenRunExcel(
   const { rows, temporaryRows } = planType === "production"
     ? await loadProductionExportRows(run)
     : { rows: await loadFrozenRows(run), temporaryRows: [] };
-  return exportFrozenPlanExcel(run.month, planType, rows, temporaryRows);
+  let appendSheets;
+  if (run.segment === "Plumbing" && planType === "temporary") {
+    const [machines, bands] = await Promise.all([
+      db.select().from(plumbingMachineCapacityTable).where(eq(plumbingMachineCapacityTable.segment, "Plumbing")),
+      db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
+    ]);
+    const analysis = buildPlumbingAchievability(run.month, rows, machines, bands);
+    appendSheets = (workbook: import("exceljs").Workbook) => {
+      addPlumbingAchievabilitySheets(workbook, analysis);
+    };
+  }
+  return exportFrozenPlanExcel(run.month, planType, rows, temporaryRows, run.factorsJson, appendSheets);
 }

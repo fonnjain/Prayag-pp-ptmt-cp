@@ -9,7 +9,7 @@ const CATEGORY_ORDER = [
   "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
   "UPVC Pipe", "UPVC Fitting", "UPVC Solvent",
   "SWR Pipe",  "SWR Fitting",  "SWR Solvent",
-  "AGRI Pipe", "AGRI Fitting", "AGRI Solvent",
+  "AGRI Pipe", "AGRI Fitting", "AGRI Solvent", "HDPE Pipe",
 ];
 
 function fmtN(n: number | null | undefined) {

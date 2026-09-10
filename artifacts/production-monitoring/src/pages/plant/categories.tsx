@@ -2,6 +2,7 @@ import { useGetPlantBundle, getGetPlantBundleQueryKey, type PlantBundle } from "
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
+import { MonitoringUnavailable } from "@/components/monitoring-unavailable";
 
 function pct(n: number | null | undefined) { return n !== null && n !== undefined ? `${n.toFixed(1)}%` : "–"; }
 function fmt(n: number | null | undefined) { return n !== null && n !== undefined ? Math.round(n).toLocaleString() : "–"; }
@@ -29,6 +30,9 @@ export default function PlantCategories({ month, selectedCategory }: { month: st
   if (isLoading) return <div className="flex items-center justify-center h-64 text-muted-foreground">Loading...</div>;
   if (!data) return <div className="text-red-500 p-4">Failed to load plant data.</div>;
   const bundle = data as unknown as PlantBundle;
+  if ((bundle as any).targetsAvailable === false) {
+    return <MonitoringUnavailable month={month} reason={(bundle as any).unavailableReason} />;
+  }
 
   const { categories: allCategories, context, plant } = bundle;
   const categories = selectedCategory

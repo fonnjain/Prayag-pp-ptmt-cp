@@ -78,6 +78,7 @@ const PLUMBING_CATEGORIES = [
   "UPVC Pipe", "UPVC Fitting", "UPVC Solvent",
   "SWR Pipe", "SWR Fitting", "SWR Solvent",
   "AGRI Pipe", "AGRI Fitting", "AGRI Solvent",
+  "HDPE Pipe",
 ];
 
 // ─── User controls (top-right of header) ─────────────────────────────────────

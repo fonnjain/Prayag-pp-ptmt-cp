@@ -40,8 +40,12 @@ export class SheetSelectionError extends Error {
     readonly code: string,
     readonly sheets: SheetSelectionDiagnostic[],
     readonly expected: string,
+    detail?: string,
   ) {
-    super(`No ${expected} worksheet was found. ${expected} must be identified by its required columns or an accepted worksheet name.`);
+    super(
+      `No ${expected} worksheet was found. ${expected} must be identified by its required columns or an accepted worksheet name.` +
+      (detail ? ` ${detail}` : ""),
+    );
     this.name = "SheetSelectionError";
   }
 }
@@ -107,16 +111,25 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
     res.status(400).json({ error: "Could not parse the uploaded Excel file" });
     return;
   }
-  const sourcePeriod = raw === "pending_orders"
-    ? monthInUploadFilename(selectedSheet.name)
-    : monthInUploadFilename(req.file.originalname);
+  const sourcePeriod = detectUploadSourcePeriod(workbook, selectedSheet, req.file.originalname, raw);
   const period = inferUploadPlanningMonth(
     raw,
     req.file.originalname,
     new Date(),
     requestedPeriod || null,
     sourcePeriod,
+    false,
   );
+  if (!period) {
+    res.status(400).json({
+      error: "UPLOAD_PERIOD_REQUIRED",
+      message:
+        "The planning period could not be determined from the workbook or filename. " +
+        "Provide an explicit period in YYYY-MM format; upload time is not used to assign a planning month.",
+      detectedSourcePeriod: sourcePeriod,
+    });
+    return;
+  }
   const quantityTotals: Record<string, number> = {};
   for (const row of rows) {
     const rawSegment = String(row.Segment ?? "").trim().toUpperCase();
@@ -134,8 +147,8 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
     selectionRule: selectedSheet.selectionRule ?? "content-based selection",
     sourceDataRowCount: selectedSheet.dataRowCount ?? rows.length,
     detectedSourcePeriod: sourcePeriod,
-    detectedPlanningPeriod: inferUploadPlanningMonth(raw, req.file.originalname, new Date(), null, sourcePeriod),
-    periodBasis: requestedPeriod ? "explicit-upload-period" : sourcePeriod ? "workbook-or-filename-period" : "upload-date",
+    detectedPlanningPeriod: inferUploadPlanningMonth(raw, req.file.originalname, new Date(), null, sourcePeriod, false),
+    periodBasis: requestedPeriod ? "explicit-upload-period" : "workbook-or-filename-period",
     quantityTotals,
   };
 
@@ -179,7 +192,17 @@ router.post("/uploads/:kind", upload.single("file"), async (req, res): Promise<v
   });
 });
 
-const HEADER_HINTS = ["item code", "item no.", "old item code", "colour", "color", "qty", "balance_qty", "segment"];
+const HEADER_HINTS = [
+  "item code",
+  "item no.",
+  "old item code",
+  "colour",
+  "color",
+  "qty",
+  "balance_qty",
+  "net stock",
+  "segment",
+];
 
 /**
  * Locates the real header row within the first few rows of a sheet. Some
@@ -210,6 +233,38 @@ function inspectSheet(sheet: XLSX.WorkSheet, name: string): PendingSheetDiagnost
     .filter((row) => (row ?? []).some((cell) => cell !== null && cell !== undefined && cell !== ""))
     .length;
   return { name, headerRowIndex, headers, dataRowCount };
+}
+
+/**
+ * Prefer a date printed inside the selected workbook sheet, then the sheet
+ * name, then the filename. Upload time is deliberately not a source-period
+ * signal: it describes when a file arrived, not which month it represents.
+ */
+export function detectUploadSourcePeriod(
+  workbook: XLSX.WorkBook,
+  selectedSheet: SheetSelectionDiagnostic,
+  filename: string,
+  kind: string,
+): string | null {
+  const sheet = workbook.Sheets[selectedSheet.name];
+  if (sheet) {
+    const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null });
+    for (const row of raw.slice(0, 15)) {
+      for (const cell of row ?? []) {
+        const detected = monthInUploadFilename(String(cell ?? ""));
+        if (detected) return detected;
+      }
+    }
+  }
+
+  const fromSheetName = monthInUploadFilename(selectedSheet.name);
+  if (fromSheetName) return fromSheetName;
+
+  // `kind` is intentionally part of this helper's contract so callers cannot
+  // accidentally replace the content-first order with timestamp logic for one
+  // upload type. The period shift remains centralized in inferUploadPlanningMonth.
+  void kind;
+  return monthInUploadFilename(filename);
 }
 
 function sheetToObjects(sheet: XLSX.WorkSheet): Record<string, unknown>[] {
@@ -268,6 +323,7 @@ type SheetSelectionSpec = {
   hasRequiredHeaders: (headers: string[]) => boolean;
   isAcceptedName: (name: string) => boolean;
   preference?: "largest" | "smallest";
+  preferredNames?: RegExp[];
   selectionRule?: string;
 };
 
@@ -276,11 +332,18 @@ function selectSheet(workbook: XLSX.WorkBook, spec: SheetSelectionSpec): SheetSe
   const contentSheets = diagnostics.filter((sheet) => spec.hasRequiredHeaders(sheet.headers));
   if (contentSheets.length > 0) {
     const candidates = [...contentSheets];
-    if (spec.preference === "largest") {
-      candidates.sort((a, b) => (b.dataRowCount ?? 0) - (a.dataRowCount ?? 0));
-    } else if (spec.preference === "smallest") {
-      candidates.sort((a, b) => (a.dataRowCount ?? 0) - (b.dataRowCount ?? 0));
-    }
+    candidates.sort((a, b) => {
+      if (spec.preferredNames && spec.preferredNames.length > 0) {
+        const aRank = spec.preferredNames.findIndex((pattern) => pattern.test(a.name));
+        const bRank = spec.preferredNames.findIndex((pattern) => pattern.test(b.name));
+        const preferredDelta = (aRank < 0 ? Number.MAX_SAFE_INTEGER : aRank)
+          - (bRank < 0 ? Number.MAX_SAFE_INTEGER : bRank);
+        if (preferredDelta !== 0) return preferredDelta;
+      }
+      if (spec.preference === "largest") return (b.dataRowCount ?? 0) - (a.dataRowCount ?? 0);
+      if (spec.preference === "smallest") return (a.dataRowCount ?? 0) - (b.dataRowCount ?? 0);
+      return 0;
+    });
     const selected = candidates[0]!;
     selected.selectionRule = spec.selectionRule ?? "required headers";
     return selected;
@@ -506,12 +569,14 @@ export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<strin
       hasRequiredHeaders: hasPlumbingStockHeader,
       isAcceptedName: (name) =>
         /^fg\s*stock$/i.test(name) || /fg.stock/i.test(name) || /stock/i.test(name),
+      preferredNames: [/^f\.?\s*g\.?\s*sheet$/i, /^fg\s*stock$/i],
+      selectionRule: "Item Code + Net Stock headers; preferred FG Sheet/FG Stock worksheet",
     });
     const sheet = workbook.Sheets[sheetSelection.name]!;
     const raw = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: null });
 
     // Locate header row: the first row containing both "Item Code" and "Net Stock" headers
-    let headerIdx = 0;
+    let headerIdx = -1;
     for (let i = 0; i < Math.min(15, raw.length); i++) {
       const cells = (raw[i] ?? []).map((c) => String(c ?? "").trim().toLowerCase());
       if (cells.some((c) => /item\s*code/i.test(c)) && cells.some((c) => /net\s*stock/i.test(c))) {
@@ -519,27 +584,46 @@ export function extractRows(workbook: XLSX.WorkBook, kind: string): Record<strin
         break;
       }
     }
+    if (headerIdx < 0) {
+      const headersFound = [...new Set(
+        raw.slice(0, 15).flatMap((row) => (row ?? [])
+          .map((cell) => String(cell ?? "").trim())
+          .filter(Boolean)),
+      )].slice(0, 20);
+      throw new SheetSelectionError(
+        "PLUMBING_FG_STOCK_HEADERS_NOT_FOUND",
+        [sheetSelection],
+        "Plumbing FG stock with Item Code and Net Stock headers",
+        `Worksheet "${sheetSelection.name}" was scanned through row ${Math.min(15, raw.length)}; ` +
+        `headers found: ${headersFound.join(", ") || "(none)"}.`,
+      );
+    }
 
     const headers = (raw[headerIdx] ?? []).map((h) => String(h ?? "").trim());
-    // Resolve column indices from headers — fall back to fixed A/B/C/R positions if not found
-    const iCode = Math.max(0, headers.findIndex((h) => /item\s*code/i.test(h)));
-    const iName = headers.findIndex((h) => /item.*(name|desc)/i.test(h)) >= 0
-      ? headers.findIndex((h) => /item.*(name|desc)/i.test(h))
-      : 1; // Column B
-    const iCat  = headers.findIndex((h) => /^cat(egory)?$/i.test(h)) >= 0
-      ? headers.findIndex((h) => /^cat(egory)?$/i.test(h))
-      : 2; // Column C
-    const iNet  = headers.findIndex((h) => /net\s*stock/i.test(h)) >= 0
-      ? headers.findIndex((h) => /net\s*stock/i.test(h))
-      : 17; // Column R
+    // Resolve every source column from the detected header row. Never fall
+    // back to fixed positions: a renamed layout must fail instead of turning
+    // an out-of-range read into a plausible all-zero upload.
+    const iCode = headers.findIndex((h) => /item\s*code/i.test(h));
+    const iName = headers.findIndex((h) => /item.*(name|desc)/i.test(h));
+    const iCat = headers.findIndex((h) => /^cat(egory)?$/i.test(h));
+    const iNet = headers.findIndex((h) => /net\s*stock/i.test(h));
+    if (iCode < 0 || iNet < 0) {
+      throw new SheetSelectionError(
+        "PLUMBING_FG_STOCK_HEADERS_NOT_FOUND",
+        [sheetSelection],
+        "Plumbing FG stock with Item Code and Net Stock headers",
+        `Worksheet "${sheetSelection.name}" was scanned through row ${Math.min(15, raw.length)}; ` +
+        `headers found: ${headers.join(", ") || "(none)"}.`,
+      );
+    }
 
     const out: Record<string, unknown>[] = [];
     for (let i = headerIdx + 1; i < raw.length; i++) {
       const row = raw[i] ?? [];
       const itemCode = String(row[iCode] ?? "").trim();
       if (!itemCode || /^total$/i.test(itemCode)) continue;
-      const itemName = String(row[iName] ?? "").trim();
-      const category = String(row[iCat] ?? "").trim();
+      const itemName = iName >= 0 ? String(row[iName] ?? "").trim() : "";
+      const category = iCat >= 0 ? String(row[iCat] ?? "").trim() : "";
       const netStockRaw = row[iNet];
       const netStock =
         typeof netStockRaw === "number"
@@ -599,7 +683,8 @@ export function selectedSheetForUpload(
       expected: "Plumbing FG stock",
       hasRequiredHeaders: hasPlumbingStockHeader,
       isAcceptedName: (name) => /^fg\s*stock$/i.test(name) || /fg.stock/i.test(name) || /stock/i.test(name),
-      selectionRule: "Item Code + Net Stock headers",
+      preferredNames: [/^f\.?\s*g\.?\s*sheet$/i, /^fg\s*stock$/i],
+      selectionRule: "Item Code + Net Stock headers; preferred FG Sheet/FG Stock worksheet",
     });
   }
   const firstName = workbook.SheetNames[0];

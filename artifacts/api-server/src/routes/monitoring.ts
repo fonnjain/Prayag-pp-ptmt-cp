@@ -41,8 +41,8 @@ async function loadWeightMap(): Promise<ItemWeightMap> {
   const rows = await db.select().from(itemWeightsTable);
   const map = new Map<string, number>();
   for (const row of rows) {
-    if (row.weightKg === null) continue;
-    map.set(`${row.itemCode.trim().toUpperCase()}::${row.colour.trim().toUpperCase()}`, Number(row.weightKg));
+    if (row.kgPerPiece === null) continue;
+    map.set(`${row.itemCode.trim().toUpperCase()}::${row.colour.trim().toUpperCase()}`, Number(row.kgPerPiece));
   }
   return {
     get(itemCode: string, colour: string) {
@@ -666,7 +666,7 @@ router.get("/monitoring/weights", async (_req, res): Promise<void> => {
 });
 
 router.put("/monitoring/weights", async (req, res): Promise<void> => {
-  const { itemCode, colour, weightKg } = req.body ?? {};
+  const { itemCode, colour, kgPerPiece } = req.body ?? {};
   if (!itemCode) {
     res.status(400).json({ error: "itemCode is required" });
     return;
@@ -679,13 +679,13 @@ router.put("/monitoring/weights", async (req, res): Promise<void> => {
   if (existing) {
     await db
       .update(itemWeightsTable)
-      .set({ weightKg: weightKg === null || weightKg === undefined ? null : String(weightKg) })
+      .set({ kgPerPiece: kgPerPiece === null || kgPerPiece === undefined ? null : String(kgPerPiece) })
       .where(eq(itemWeightsTable.id, existing.id));
   } else {
     await db.insert(itemWeightsTable).values({
       itemCode,
       colour: normalizedColour,
-      weightKg: weightKg === null || weightKg === undefined ? null : String(weightKg),
+      kgPerPiece: kgPerPiece === null || kgPerPiece === undefined ? null : String(kgPerPiece),
     });
   }
   res.json({ ok: true });

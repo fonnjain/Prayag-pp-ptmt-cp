@@ -351,21 +351,21 @@ function ItemWeightsTab() {
   
   const [itemCode, setItemCode] = useState("");
   const [colour, setColour] = useState("");
-  const [weightKg, setWeightKg] = useState("");
+  const [kgPerPiece, setKgPerPiece] = useState("");
 
   const handleUpsert = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!itemCode || !colour) return;
     
     upsertWeight.mutate(
-      { data: { itemCode, colour, weightKg: weightKg ? parseFloat(weightKg) : null } },
+      { data: { itemCode, colour, kgPerPiece: kgPerPiece ? parseFloat(kgPerPiece) : null } },
       {
         onSuccess: () => {
           toast({ title: "Item weight saved", description: `${itemCode} (${colour}) updated.` });
           refetch();
           setItemCode("");
           setColour("");
-          setWeightKg("");
+          setKgPerPiece("");
         },
         onError: () => {
           toast({ title: "Failed to save item weight", variant: "destructive" });
@@ -391,8 +391,8 @@ function ItemWeightsTab() {
             <Input id="colour" value={colour} onChange={e => setColour(e.target.value)} required placeholder="e.g. PTMT" />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="weightKg">Weight (kg)</Label>
-            <Input id="weightKg" type="number" step="0.0001" value={weightKg} onChange={e => setWeightKg(e.target.value)} placeholder="0.05" />
+            <Label htmlFor="kgPerPiece">Kg per piece</Label>
+            <Input id="kgPerPiece" type="number" step="0.0001" value={kgPerPiece} onChange={e => setKgPerPiece(e.target.value)} placeholder="0.05" />
           </div>
           <Button type="submit" disabled={upsertWeight.isPending}>
             {upsertWeight.isPending ? "Saving..." : "Add / Update"}
@@ -413,7 +413,7 @@ function ItemWeightsTab() {
                 <TableRow key={w.id}>
                   <TableCell className="font-medium">{w.itemCode}</TableCell>
                   <TableCell>{w.colour}</TableCell>
-                  <TableCell className="text-right font-mono">{w.weightKg || "Not set"}</TableCell>
+                  <TableCell className="text-right font-mono">{w.kgPerPiece || "Not set"}</TableCell>
                 </TableRow>
               ))}
               {(!weights || weights.length === 0) && (

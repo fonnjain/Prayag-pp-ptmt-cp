@@ -1,7 +1,13 @@
 import { Router, type IRouter } from "express";
-import { db, bufferCategoriesTable, categoryCapacityTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, planRunInputSnapshotsTable, pendingReadSnapshotsTable, correctivePlanRunsTable, plantMonthSnapshotsTable, planScheduleResultsTable, plumbingMachineCapacityTable } from "@workspace/db";
-import { and, asc, eq, desc, ne, sql } from "drizzle-orm";
-import { buildPlanItems, loadLatestUploadSnapshotByKind, type UploadRowsSnapshot, handlePlanError } from "./plan";
+import { db, bufferCategoriesTable, categoryCapacityTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, planRunInputSnapshotsTable, pendingReadSnapshotsTable, correctivePlanRunsTable, plantMonthSnapshotsTable, planScheduleResultsTable, plumbingMachineCapacityTable, planRunSupersessionsTable } from "@workspace/db";
+import { and, asc, eq, desc, ne, sql, isNull } from "drizzle-orm";
+import {
+  buildPlanInputTrace,
+  buildPlanItems,
+  loadLatestUploadSnapshotByKind,
+  type UploadRowsSnapshot,
+  handlePlanError,
+} from "./plan";
 import { getMrpPlanningGate } from "../lib/mrp-control";
 import {
   fetchPlumbingBomWeights,
@@ -36,7 +42,11 @@ import { exportTimestamp } from "../lib/export-filename";
 import { loadStoredDailyActualsForSegment } from "../lib/plant-ingestion";
 import { isSunday } from "../lib/working-days";
 import { runPtmtPass2, type PtmtPass2Result, PtmtPass2InputError } from "../lib/ptmt-pass2-engine";
-import { runPlumbingSchedule, PLUMBING_SCHEDULE_KINDS, type PlumbingScheduleDemand } from "../lib/plumbing-scheduler";
+import {
+  runPlumbingSchedule,
+  PLUMBING_SCHEDULE_KINDS,
+  type PlumbingScheduleDemand,
+} from "../lib/plumbing-scheduler";
 
 const router: IRouter = Router();
 
@@ -197,6 +207,7 @@ function makeSummary(run: typeof planRunsTable.$inferSelect, items: typeof planR
     segment: run.segment,
     planType: run.planType,
     temporaryRunId: run.temporaryRunId ?? null,
+    supersedesRunId: run.supersedesRunId ?? null,
     asOfAt: run.asOfAt,
     status: run.status,
     effectiveFrom: run.effectiveFrom ?? null,
@@ -242,10 +253,20 @@ function frozenRows(
     const dummy = Math.max(input?.pendingLastMonth ?? 0, 0);
     const orders = Math.max(input?.pendingCurrent ?? 0, 0);
     const buffer = result.bufferReq == null ? 0 : Math.max(result.bufferReq - (input?.stock ?? 0), 0);
+    const provenance = result as typeof result & {
+      itemName?: string | null;
+      sourceRole?: string | null;
+      unmappedReason?: string | null;
+    };
     return {
       itemCode: result.itemCode,
       colour: result.colour,
       category: result.category,
+      itemName: provenance.itemName ?? null,
+      sourceRole: provenance.sourceRole ?? null,
+      unmappedReason: provenance.unmappedReason ?? null,
+      dataLimited: result.dataLimited ?? false,
+      dataLimitedReason: result.dataLimitedReason ?? null,
       avg3MoSale: input?.avg3MoSale ?? 0,
       stock: input?.stock ?? 0,
       pendingCurrent: input?.pendingCurrent ?? 0,
@@ -259,7 +280,7 @@ function frozenRows(
       orders,
       buffer,
       material: result.material,
-      weightKg: result.weightKg,
+      totalKg: result.totalKg,
       urgencyRank: result.urgencyRank,
       releaseWeek: result.releaseWeek,
       w1: result.w1,
@@ -290,6 +311,35 @@ export function parseStatusReasonInput(
   return { ok: true, reason };
 }
 
+function formatFittedDate(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function temporaryRerunClosedMessage(productionRun: {
+  id: number;
+  createdAt: Date | string;
+}): string {
+  return `Production Plan #${productionRun.id} was fitted on ${formatFittedDate(productionRun.createdAt)}. The month's baseline is set — use Recompute to update it.`;
+}
+
+export function temporaryRerunBlock(productionRun: {
+  id: number;
+  createdAt: Date | string;
+} | undefined): { error: "TEMPORARY_RERUN_CLOSED"; message: string; productionRunId: number } | null {
+  if (!productionRun) return null;
+  return {
+    error: "TEMPORARY_RERUN_CLOSED",
+    message: temporaryRerunClosedMessage(productionRun),
+    productionRunId: productionRun.id,
+  };
+}
+
 /** POST /api/plan/runs — create a draft run, snapshot all inputs & computed results */
 router.post("/plan/runs", async (req, res): Promise<void> => {
   const {
@@ -299,6 +349,7 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
     effectiveFrom: effectiveFromRaw,
     planType: planTypeRaw,
     temporaryRunId: temporaryRunIdRaw,
+    supersedesRunId: supersedesRunIdRaw,
   } = req.body ?? {};
 
   // Normalise segment casing the same way GET /plan does, then validate.
@@ -323,13 +374,70 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
 
   const planType = planTypeRaw === "temporary" ? "temporary" : "production";
   const temporaryRunId = temporaryRunIdRaw == null ? null : Number(temporaryRunIdRaw);
+  const supersedesRunId = supersedesRunIdRaw == null ? null : Number(supersedesRunIdRaw);
   if (temporaryRunIdRaw != null && (temporaryRunId === null || !Number.isInteger(temporaryRunId) || temporaryRunId <= 0)) {
     res.status(400).json({ error: "temporaryRunId must be a positive integer" });
     return;
   }
+  if (supersedesRunIdRaw != null && (supersedesRunId === null || !Number.isInteger(supersedesRunId) || supersedesRunId <= 0)) {
+    res.status(400).json({ error: "supersedesRunId must be a positive integer" });
+    return;
+  }
+  if (supersedesRunId != null && planType !== "temporary") {
+    res.status(400).json({ error: "Only a Temporary Plan can supersede another run" });
+    return;
+  }
+  let runNote = typeof note === "string" ? note.trim() || null : null;
   if (planType === "temporary" && temporaryRunId != null) {
     res.status(400).json({ error: "A Temporary Plan cannot have a temporaryRunId lineage" });
     return;
+  }
+  if (planType === "temporary" && supersedesRunId != null) {
+    const [productionBaseline] = await db
+      .select({ id: planRunsTable.id, createdAt: planRunsTable.createdAt })
+      .from(planRunsTable)
+      .where(and(
+        eq(planRunsTable.month, month),
+        eq(planRunsTable.segment, segment),
+        eq(planRunsTable.planType, "production"),
+        eq(planRunsTable.status, "finalized"),
+      ))
+      .orderBy(desc(planRunsTable.id))
+      .limit(1);
+    const rerunBlock = temporaryRerunBlock(productionBaseline);
+    if (rerunBlock) {
+      res.status(422).json(rerunBlock);
+      return;
+    }
+    const [supersededRun] = await db.select({
+      id: planRunsTable.id,
+      month: planRunsTable.month,
+      segment: planRunsTable.segment,
+      planType: planRunsTable.planType,
+      status: planRunsTable.status,
+    }).from(planRunsTable).where(eq(planRunsTable.id, supersedesRunId));
+    if (!supersededRun || supersededRun.planType !== "temporary") {
+      res.status(400).json({ error: `Temporary Plan #${supersedesRunId} was not found` });
+      return;
+    }
+    if (supersededRun.month !== month || supersededRun.segment !== segment) {
+      res.status(400).json({ error: "The superseded Temporary Plan must use the same month and segment" });
+      return;
+    }
+    // A deliberate baseline supersession marks the old Temporary Plan as
+    // superseded before the replacement is created. Keep that frozen run
+    // usable as lineage while still rejecting drafts as rerun sources.
+    if (supersededRun.status !== "finalized" && supersededRun.status !== "superseded") {
+      res.status(422).json({
+        error: "SUPERSEDED_TEMPORARY_PLAN_NOT_FINALIZED",
+        message: `Temporary Plan #${supersedesRunId} must be finalized or already superseded before it can be rerun.`,
+        supersedesRunId,
+      });
+      return;
+    }
+    runNote = runNote
+      ? `${runNote} | Re-run of Temporary Plan #${supersedesRunId}`
+      : `Re-run of Temporary Plan #${supersedesRunId}`;
   }
   if (planType === "production" && segment === "PTMT" && temporaryRunId == null) {
     res.status(400).json({
@@ -341,13 +449,13 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
   if (planType === "production" && segment === "PTMT") {
     const mrpGate = await getMrpPlanningGate();
     if (mrpGate.held) {
-      res.status(422).json({
-        error: "PTMT_MRP_APPROVAL_REQUIRED",
-        message: `PTMT Production planning is held by authoritative MRP controls (source ${mrpGate.sourceId ?? "latest"}): ${mrpGate.reason}`,
-        month,
-        segment,
-      });
-      return;
+      // A Production Plan fitted from a finalized Temporary Plan is already
+      // a frozen, auditable snapshot. Allow the plant to issue/finalize it
+      // while MRP review is pending, but carry the hold into the run note so
+      // the exception is visible in Run History and exports.
+      const approvalNote =
+        `MRP approval pending (source ${mrpGate.sourceId ?? "latest"}): ${mrpGate.reason}`;
+      runNote = runNote ? `${runNote} | ${approvalNote}` : approvalNote;
     }
   }
   if (planType === "production" && temporaryRunId != null) {
@@ -550,7 +658,7 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
           ...snapshot.diagnostics,
           pendingPlan: pendingPlanDiagnosticsFromParsedRows(
             pendingRowsForSnapshot(segment, snapshot.sourceRole, snapshot.rawRows),
-            planItems,
+            planItems.filter((item) => item.unmappedReason == null),
             { sourceRole: snapshot.sourceRole },
           ),
         },
@@ -560,6 +668,24 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
       return;
     }
   }
+
+  const traceCapturedAt = new Date().toISOString();
+  pendingSnapshotPayloads = pendingSnapshotPayloads.map((snapshot) => {
+    const pendingPlan = snapshot.diagnostics.pendingPlan;
+    if (!pendingPlan) return snapshot;
+    return {
+      ...snapshot,
+      diagnostics: {
+        ...snapshot.diagnostics,
+        planTrace: buildPlanInputTrace(
+          pendingPlan,
+          planItems,
+          snapshot.sourceUploadId,
+          traceCapturedAt,
+        ),
+      },
+    };
+  });
 
   // Guard against silent zero-item runs. A zero result is indistinguishable
   // from a legitimate empty result and could be cited as a corrective baseline,
@@ -608,6 +734,11 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
     itemCode: item.itemCode,
     colour: item.colour,
     category: item.category,
+    itemName: item.itemName ?? null,
+    sourceRole: item.sourceRole ?? null,
+    unmappedReason: item.unmappedReason ?? null,
+    dataLimited: false,
+    dataLimitedReason: null,
     // Omit nullable buffer requirements so Postgres stores NULL for unresolved
     // classifications rather than forcing a fake zero buffer.
     bufferReq: item.bufferReq ?? undefined,
@@ -631,7 +762,7 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
         ? "not-scheduled"
         : item.maxProduction > 0 ? "fitted" : "not-scheduled",
     material: segment === "Plumbing" ? item.category.split(" ")[0] ?? null : null,
-    weightKg: (item as { weightKg?: number }).weightKg ?? null,
+    totalKg: (item as { totalKg?: number }).totalKg ?? null,
     urgencyRank: item.pendingOrderLastMonth > 0 ? 1 : item.pendingOrder > 0 ? 2 : 3,
     // Temporary Plans are demand-true snapshots, not a floor release plan.
     releaseWeek: planType === "temporary" ? null : item.week,
@@ -662,11 +793,12 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
         segment,
         planType,
         temporaryRunId,
+        supersedesRunId,
         effectiveFrom,
         status: "draft",
         weeklyReleaseVersion: planType === "temporary" ? 0 : 1,
         factorsJson,
-        note: note ?? null,
+        note: runNote,
         pass2Json: pass2Summary ? pass2Summary as unknown as Record<string, unknown> : null,
       })
       .returning();
@@ -729,6 +861,16 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
     });
     return createdRun;
   });
+
+  if (supersedesRunId !== null) {
+    await db
+      .update(planRunSupersessionsTable)
+      .set({ supersedingRunId: run.id })
+      .where(and(
+        eq(planRunSupersessionsTable.temporaryRunId, supersedesRunId),
+        isNull(planRunSupersessionsTable.supersedingRunId),
+      ));
+  }
 
   const summary = makeSummary(run, resultValues as any);
   res.status(201).json(summary);
@@ -854,6 +996,11 @@ router.get("/plan/runs/:id", async (req, res): Promise<void> => {
       itemCode: r.itemCode,
       colour: r.colour,
       category: r.category,
+      itemName: r.itemName ?? null,
+      sourceRole: r.sourceRole ?? null,
+      unmappedReason: r.unmappedReason ?? null,
+      dataLimited: r.dataLimited ?? false,
+      dataLimitedReason: r.dataLimitedReason ?? null,
       avg3MoSale: inp?.avg3MoSale ?? 0,
       stock: inp?.stock ?? 0,
       pendingCurrent: inp?.pendingCurrent ?? 0,
@@ -869,7 +1016,7 @@ router.get("/plan/runs/:id", async (req, res): Promise<void> => {
       orders,
       buffer,
       material: r.material,
-      weightKg: r.weightKg,
+       totalKg: r.totalKg,
       urgencyRank: r.urgencyRank,
       releaseWeek: r.releaseWeek,
       w1: r.w1,
@@ -970,7 +1117,7 @@ router.get("/plan/runs/:id/schedule-request", async (req, res): Promise<void> =>
       sourceRunId: run.id,
       sourcePlanType: run.planType,
       lineageTemporaryRunId: run.temporaryRunId ?? null,
-      fields: ["itemCode", "colour", "quantity", "material", "weightKg", "category", "urgencyRank"],
+       fields: ["itemCode", "colour", "quantity", "material", "totalKg", "category", "urgencyRank"],
     },
     items: results
       .filter((item) => item.productionPlan > 0)
@@ -979,7 +1126,7 @@ router.get("/plan/runs/:id/schedule-request", async (req, res): Promise<void> =>
         colour: item.colour,
         quantity: Math.round(item.productionPlan),
         material: item.material ?? item.category.split(" ")[0] ?? null,
-        weightKg: item.weightKg,
+         totalKg: item.totalKg,
         category: item.category,
         urgencyRank: item.urgencyRank ?? 3,
       })),
@@ -1023,6 +1170,17 @@ router.post("/plan/runs/:id/schedule", async (req, res): Promise<void> => {
         .filter((actual: { qty: number; date: string }) => actual.qty > 0 && isSunday(actual.date))
         .map((actual: { qty: number; date: string }) => actual.date),
     )];
+    if (run.month === "2026-09") {
+      const septemberDays = [6, 6, 6, 8];
+      if (workedSundayDates.length > 0) {
+        throw new Error(
+          `September 2026 scheduler basis is fixed at 26 working days; observed Sunday dates would change it: ${workedSundayDates.join(", ")}`,
+        );
+      }
+      if (septemberDays.reduce((sum, days) => sum + days, 0) !== 26) {
+        throw new Error("September 2026 working-day calendar must total 26 days");
+      }
+    }
     const demandByKind: Record<"pipe" | "fitting", PlumbingScheduleDemand[]> = { pipe: [], fitting: [] };
     const weightByCode = new Map<string, number>();
     const normalizedBomWeights = new Map<string, number>(
@@ -1068,6 +1226,7 @@ router.post("/plan/runs/:id/schedule", async (req, res): Promise<void> => {
         month: run.month,
         kind: result.kind,
         week_days: schedule.week_days,
+        working_days_provenance: schedule.working_days_provenance,
         demand: demandByKind[result.kind].filter((item) => !schedule.unroutable.some((row) => row.kind === result.kind && row.item_code === item.item_code)),
       },
     ]));
@@ -1110,6 +1269,12 @@ router.post("/plan/runs/:id/schedule", async (req, res): Promise<void> => {
       if (code) unfinishedByCode.set(code, (unfinishedByCode.get(code) ?? 0) + Math.max(0, Number(unfinished.remaining_pcs ?? 0)));
     }
     const unroutableCodes = new Set(schedule.unroutable.map((row) => normalizeCodeStrict(row.item_code)));
+    const dataLimitedByKey = new Map(
+      schedule.data_limited.map((row) => [
+        `${row.kind}::${normalizeCodeStrict(row.item_code)}`,
+        row,
+      ]),
+    );
     for (const item of runResults) {
       const demand = Math.max(0, Math.round(item.demandPlan ?? item.productionPlan));
       if (demand <= 0) continue;
@@ -1119,6 +1284,22 @@ router.post("/plan/runs/:id/schedule", async (req, res): Promise<void> => {
             productionPlan: demand,
             cannotBeMade: 0,
             feasibilityStatus: "fitted",
+            dataLimited: false,
+            dataLimitedReason: null,
+          })
+          .where(eq(planRunResultsTable.id, item.id));
+        continue;
+      }
+      const kind = item.category.endsWith("Pipe") ? "pipe" : "fitting";
+      const dataLimited = dataLimitedByKey.get(`${kind}::${normalizeCodeStrict(item.itemCode)}`);
+      if (dataLimited) {
+        await db.update(planRunResultsTable)
+          .set({
+            productionPlan: 0,
+            cannotBeMade: 0,
+            feasibilityStatus: "data-limited",
+            dataLimited: true,
+            dataLimitedReason: dataLimited.reason,
           })
           .where(eq(planRunResultsTable.id, item.id));
         continue;
@@ -1130,6 +1311,8 @@ router.post("/plan/runs/:id/schedule", async (req, res): Promise<void> => {
         .set({
           productionPlan: scheduled,
           cannotBeMade: residual,
+          dataLimited: false,
+          dataLimitedReason: null,
           feasibilityStatus: residual > 0 || unroutableCodes.has(normalizeCodeStrict(item.itemCode))
             ? "unfulfillable"
             : "fitted",
@@ -1272,12 +1455,162 @@ router.patch("/plan/runs/:id/status-reason", loadSession, requireAdmin, async (r
   res.json(makeSummary(updated, results));
 });
 
+/** POST /api/plan/runs/:id/supersede — deliberate admin-only baseline abandonment */
+router.post("/plan/runs/:id/supersede", loadSession, requireAdmin, async (req, res): Promise<void> => {
+  const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const id = Number(rawId);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: "Invalid plan run id" });
+    return;
+  }
+
+  const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+  if (reason.length < 10 || reason.length > 2000) {
+    res.status(400).json({ error: "A reason between 10 and 2000 characters is required" });
+    return;
+  }
+
+  const [run] = await db.select().from(planRunsTable).where(eq(planRunsTable.id, id));
+  if (!run) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+  if (run.planType !== "production" || run.status !== "finalized" || run.temporaryRunId == null) {
+    res.status(422).json({
+      error: "INVALID_SUPERSESSION_TARGET",
+      message: "Only a finalized Production Plan with a parent Temporary Plan can be superseded.",
+    });
+    return;
+  }
+
+  const [temporaryRun] = await db
+    .select()
+    .from(planRunsTable)
+    .where(eq(planRunsTable.id, run.temporaryRunId));
+  if (!temporaryRun || temporaryRun.planType !== "temporary" || temporaryRun.status !== "finalized") {
+    res.status(422).json({
+      error: "INVALID_SUPERSESSION_PARENT",
+      message: `Production Plan #${run.id} does not have a finalized parent Temporary Plan.`,
+    });
+    return;
+  }
+
+  const expectedConfirmation = `SUPERSEDE #${run.id} + #${temporaryRun.id}`;
+  if (req.body?.confirmation !== expectedConfirmation) {
+    res.status(400).json({
+      error: "CONFIRMATION_REQUIRED",
+      message: `Type "${expectedConfirmation}" to confirm which runs will be superseded.`,
+      expectedConfirmation,
+    });
+    return;
+  }
+
+  const [existing] = await db
+    .select()
+    .from(planRunSupersessionsTable)
+    .where(eq(planRunSupersessionsTable.productionRunId, run.id));
+  if (existing) {
+    res.status(409).json({
+      error: "ALREADY_SUPERSEDED",
+      message: `Production Plan #${run.id} was already superseded.`,
+      supersessionId: existing.id,
+      supersedingRunId: existing.supersedingRunId,
+    });
+    return;
+  }
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      const [supersededProduction] = await tx
+        .update(planRunsTable)
+        .set({ status: "superseded" })
+        .where(and(eq(planRunsTable.id, run.id), eq(planRunsTable.status, "finalized")))
+        .returning();
+      if (!supersededProduction) {
+        throw new Error("Production Plan changed before supersession could be recorded.");
+      }
+
+      const [supersededTemporary] = await tx
+        .update(planRunsTable)
+        .set({ status: "superseded" })
+        .where(and(eq(planRunsTable.id, temporaryRun.id), eq(planRunsTable.status, "finalized")))
+        .returning();
+      if (!supersededTemporary) {
+        throw new Error("Parent Temporary Plan changed before supersession could be recorded.");
+      }
+
+      const [audit] = await tx
+        .insert(planRunSupersessionsTable)
+        .values({
+          month: run.month,
+          segment: run.segment,
+          productionRunId: run.id,
+          temporaryRunId: temporaryRun.id,
+          reason,
+          requestedByUserId: req.sessionUser!.id,
+          requestedByEmail: req.sessionUser!.email,
+        })
+        .returning();
+      return { audit, supersededProduction, supersededTemporary };
+    });
+
+    const [supersededProductionResults, supersededTemporaryResults] = await Promise.all([
+      db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, result.supersededProduction.id)),
+      db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, result.supersededTemporary.id)),
+    ]);
+
+    res.json({
+      action: "superseded",
+      supersession: {
+        id: result.audit.id,
+        month: result.audit.month,
+        segment: result.audit.segment,
+        productionRunId: result.audit.productionRunId,
+        temporaryRunId: result.audit.temporaryRunId,
+        reason: result.audit.reason,
+        requestedByUserId: result.audit.requestedByUserId,
+        requestedByEmail: result.audit.requestedByEmail,
+        createdAt: result.audit.createdAt,
+        supersedingRunId: result.audit.supersedingRunId,
+      },
+      runs: [
+        makeSummary(result.supersededProduction, supersededProductionResults),
+        makeSummary(result.supersededTemporary, supersededTemporaryResults),
+      ],
+    });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && (error as { code?: string }).code === "23505") {
+      res.status(409).json({
+        error: "ALREADY_SUPERSEDED",
+        message: `Production Plan #${run.id} was superseded by another admin request.`,
+      });
+      return;
+    }
+    req.log.error({ err: error, runId: run.id }, "Plan run supersession failed");
+    res.status(500).json({ error: "SUPERSESSION_FAILED", message: "The supersession was not recorded." });
+  }
+});
+
 /** DELETE /api/plan/runs/:id — permanently delete a run and all its data */
 router.delete("/plan/runs/:id", async (req, res): Promise<void> => {
   const id = Number(req.params.id);
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
   const [run] = await db.select().from(planRunsTable).where(eq(planRunsTable.id, id));
   if (!run) { res.status(404).json({ error: "Run not found" }); return; }
+  const supersession = await db
+    .select({ id: planRunSupersessionsTable.id })
+    .from(planRunSupersessionsTable)
+    .where(eq(planRunSupersessionsTable.productionRunId, id));
+  const supersededAsParent = await db
+    .select({ id: planRunSupersessionsTable.id })
+    .from(planRunSupersessionsTable)
+    .where(eq(planRunSupersessionsTable.temporaryRunId, id));
+  if (supersession.length > 0 || supersededAsParent.length > 0) {
+    res.status(409).json({
+      error: `Plan run #${id} is part of a supersession record and cannot be deleted.`,
+    });
+    return;
+  }
 
   // A plan run cited by a corrective run is an immutable audit reference —
   // deleting it would erase the "measured against" citation from history.

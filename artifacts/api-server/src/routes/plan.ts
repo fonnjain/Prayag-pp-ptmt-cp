@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
 import { exportTimestamp } from "../lib/export-filename";
 import { db, itemMasterTable, bufferCategoriesTable, ptmtBufferMultipliersTable, uploadedFilesTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, planRunsTable, planRunResultsTable, plantMonthSnapshotsTable } from "@workspace/db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
@@ -39,6 +40,7 @@ import {
   type PlumbingSheet3Row,
   type PendingOrderRow,
 } from "../lib/sheets";
+import type { PendingPlanDiagnostics, PendingPlanResolutionRow } from "../lib/input-diagnostics";
 import { logger } from "../lib/logger";
 import { reviewedBufferMultiplier } from "../lib/master-products";
 import { getMrpPlanningGate } from "../lib/mrp-control";
@@ -47,6 +49,7 @@ import { buildElapsedProductionDays } from "../lib/plant-engine";
 import { resolvePlantMonthLifecycle, resolveWorkingDays } from "../lib/plant-lifecycle";
 import { exportPlanPdf } from "../lib/pdf-export";
 import { exportWeeklyReleaseExcel } from "../lib/weekly-excel-export";
+import { exportWeeklyReleasePdf } from "../lib/weekly-pdf-export";
 import {
   exportFrozenProductionPdf,
   exportFrozenRunExcel,
@@ -123,6 +126,10 @@ import {
   PTMT_TOLERANCE,
   PTMT_CATEGORY_GOLDEN,
   PTMT_MULTIPLIER_GOLDEN,
+  SEPTEMBER_PLUMBING_SOURCE_TARGETS,
+  SEPTEMBER_PLUMBING_SOURCE_TOTAL,
+  SEPTEMBER_PTMT_TARGET_SNAPSHOT,
+  SEPTEMBER_PTMT_SOURCE_TARGETS,
   getGoldenIntegrityChecks,
   PLUMBING_MON_W1_MAPPED,
   PLUMBING_MON_W2_MAPPED,
@@ -237,11 +244,24 @@ async function requireUploadRows(kind: string, fileLabel: string, month?: string
 /** Maps plan-path errors to HTTP responses: 422 for named input failures. */
 export function handlePlanError(res: Response, err: unknown): void {
   const pendingReadCaptureId = res.locals?.pendingReadCaptureId;
+  const validationChecks = res.locals?.validationChecks as PlanCheckResult[] | undefined;
   const withCaptureId = (body: Record<string, unknown>): Record<string, unknown> =>
     pendingReadCaptureId ? { ...body, pendingReadCaptureId } : body;
+  const withValidationChecks = (body: Record<string, unknown>): Record<string, unknown> => {
+    const response = withCaptureId(body);
+    if (!validationChecks || validationChecks.length === 0) return response;
+    const failCount = validationChecks.filter((check) => !check.pass).length;
+    return {
+      ...response,
+      allPass: failCount === 0,
+      passCount: validationChecks.length - failCount,
+      failCount,
+      checks: validationChecks,
+    };
+  };
   if (err instanceof UpstreamTimeoutError) {
     const provider = err.provider === "google-drive" ? "Google Drive" : "Google Sheets";
-    res.status(504).set("Retry-After", "5").json(withCaptureId({
+    res.status(504).set("Retry-After", "5").json(withValidationChecks({
       error: err.code,
       message: `${provider} did not respond in time while loading planning data. Retry shortly.`,
       upstreamErrorType: err.upstreamErrorType,
@@ -250,7 +270,7 @@ export function handlePlanError(res: Response, err: unknown): void {
     return;
   }
   if (err instanceof PlumbingInputUnreadableError) {
-    res.status(422).json(withCaptureId({
+    res.status(422).json(withValidationChecks({
       error: err.code,
       month: err.month,
       workbookId: err.workbookId,
@@ -260,7 +280,7 @@ export function handlePlanError(res: Response, err: unknown): void {
     return;
   }
   if (err instanceof MissingUploadError || err instanceof PlanningInputError || err instanceof PlanningIsolationError) {
-    res.status(422).json(withCaptureId({
+    res.status(422).json(withValidationChecks({
       error: err instanceof PlanningInputError && err.code ? err.code : err.message,
       ...(err instanceof PlanningInputError && err.code ? { message: err.message } : {}),
       kind: err.name,
@@ -271,7 +291,7 @@ export function handlePlanError(res: Response, err: unknown): void {
     return;
   }
   if (err instanceof LivePendingReadError) {
-    res.status(503).json(withCaptureId({
+    res.status(503).json(withValidationChecks({
       error: err.code,
       message: err.message,
       diagnostics: err.diagnostics,
@@ -493,6 +513,166 @@ type ReviewedPendingExclusionPolicy = {
   rationale: string;
 };
 
+type ReviewedStockExclusionPolicy = {
+  maxUnmatchedQuantity: number;
+  reviewedFingerprint: string;
+  rationale: string;
+};
+
+type StockExclusionRow = {
+  segment: string;
+  sourceRole: "stock";
+  code: string;
+  colour: string;
+  description: string;
+  quantity: number;
+  disposition: "excluded";
+  reason: "NO_ROSTER_MATCH";
+};
+
+type StockJoinDiagnostics = {
+  sourceQuantity: number;
+  joinedQuantity: number;
+  unmatchedQuantity: number;
+  unmatchedRowCount: number;
+  unmatchedRows: StockExclusionRow[];
+  fingerprint: string;
+};
+
+const REVIEWED_STOCK_EXCLUSION_POLICY: Record<string, ReviewedStockExclusionPolicy> = {
+  // Upload #8 is the June source feeding the July regression baseline.
+  "Plumbing:stock:2026-07": {
+    maxUnmatchedQuantity: 115_000,
+    reviewedFingerprint: "6701309d97e1fb41fd78a9e1b12d4cea63f09378b9db22b0ee52f70a47baca93",
+    rationale:
+      "Reviewed upload #8 July planning source: sourcePositive=638950, joined=536962, " +
+      "unmatched=101988 across 143 rows; ceiling=115000 provides rounded headroom, " +
+      "while a changed exclusion fingerprint requires review.",
+  },
+  // Upload #13 is the July source feeding the August plan. The ceiling is
+  // deliberately rounded above the observed 110,462 pieces rather than copied
+  // from it, leaving limited room for ordinary inventory movement while still
+  // refusing a materially different roster boundary.
+  "Plumbing:stock:2026-08": {
+    maxUnmatchedQuantity: 125_000,
+    reviewedFingerprint: "67d4e72dc927928583c56fc4fa1aa9d700f44264923d52d9affbb900cbed437d",
+    rationale:
+      "Reviewed upload #13 August planning source: sourcePositive=705934, joined=595472, " +
+      "unmatched=110462 across 154 rows; ceiling=125000 provides rounded headroom, " +
+      "while a changed exclusion fingerprint requires review.",
+  },
+  "Plumbing:stock:2026-09": {
+    maxUnmatchedQuantity: 150_000,
+    reviewedFingerprint: "6486ffb7c99490aeb082659845d536ac0687c503cffaa006b2bd30ef732c7058",
+    rationale:
+      "Reviewed September unmatched positive stock is 136446 of 905004 (15.1%), " +
+      "against July's 14.4% and August's 15.6%. The proportion is stable; the " +
+      "absolute rise is source growth of 199070 pieces. Ceiling=150000 provides " +
+      "headroom comparable to the existing July and August ceilings. All 175 " +
+      "unmatched rows fail on item code and are products absent from Prayag's " +
+      "September planning workbook. The approved fingerprint is owned by this " +
+      "gating path: it hashes the eight-field row tuples after JSON-text sorting " +
+      "and joins them with actual LF separators. The earlier 06ea fingerprint " +
+      "used literal backslash-n separators in a read-only diagnostic and was " +
+      "not the guard's serialization.",
+  },
+};
+
+function stockExclusionFingerprint(rows: StockExclusionRow[]): string {
+  const canonical = [...rows]
+    .map((row) => [
+      row.segment,
+      row.sourceRole,
+      row.code,
+      row.colour,
+      row.description,
+      row.quantity,
+      row.disposition,
+      row.reason,
+    ])
+    .sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)))
+    .map((row) => JSON.stringify(row))
+    .join("\n");
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+function plumbingStockJoinDiagnostics(
+  rows: Record<string, unknown>[],
+  roster: Iterable<{ itemCode: string }>,
+): StockJoinDiagnostics {
+  const rosterCodes = new Set([...roster].map((item) => normalizeCode(item.itemCode)));
+  const unmatchedByCode = new Map<string, StockExclusionRow>();
+  let sourceQuantity = 0;
+  let joinedQuantity = 0;
+  for (const row of rows) {
+    const code = String(row["Item Code"] ?? "").trim();
+    const netStock = typeof row["Net Stock"] === "number"
+      ? row["Net Stock"] as number
+      : Number(String(row["Net Stock"] ?? "").replace(/,/g, "")) || 0;
+    if (!code || netStock <= 0) continue;
+    sourceQuantity += netStock;
+    if (rosterCodes.has(normalizeCode(code))) {
+      joinedQuantity += netStock;
+      continue;
+    }
+    const key = normalizeCode(code);
+    const existing = unmatchedByCode.get(key);
+    if (existing) existing.quantity += netStock;
+    else {
+      unmatchedByCode.set(key, {
+        segment: "Plumbing",
+        sourceRole: "stock",
+        code,
+        colour: "",
+        description: String(row["Item Name"] ?? "").trim(),
+        quantity: netStock,
+        disposition: "excluded",
+        reason: "NO_ROSTER_MATCH",
+      });
+    }
+  }
+  const unmatchedRows = [...unmatchedByCode.values()].sort((a, b) =>
+    normalizeCode(a.code).localeCompare(normalizeCode(b.code)),
+  );
+  const unmatchedQuantity = unmatchedRows.reduce((sum, row) => sum + row.quantity, 0);
+  return {
+    sourceQuantity,
+    joinedQuantity,
+    unmatchedQuantity,
+    unmatchedRowCount: unmatchedRows.length,
+    unmatchedRows,
+    fingerprint: stockExclusionFingerprint(unmatchedRows),
+  };
+}
+
+function reviewedStockExclusionPolicy(
+  segment: "Plumbing",
+  month: string,
+): ReviewedStockExclusionPolicy | undefined {
+  return REVIEWED_STOCK_EXCLUSION_POLICY[`${segment}:stock:${month}`];
+}
+
+function assertReviewedStockJoin(
+  month: string,
+  diagnostics: StockJoinDiagnostics,
+): void {
+  const policy = reviewedStockExclusionPolicy("Plumbing", month);
+  const policyDetail = policy
+    ? `reviewedLimits=(unmatched<=${policy.maxUnmatchedQuantity}, fingerprint=${policy.reviewedFingerprint}; ${policy.rationale})`
+    : "reviewedLimits=missing";
+  const exceedsPolicy = !policy
+    || diagnostics.unmatchedQuantity > policy.maxUnmatchedQuantity + 0.01
+    || (diagnostics.unmatchedQuantity > 0.01 && diagnostics.fingerprint !== policy.reviewedFingerprint);
+  if (exceedsPolicy) {
+    throw new PlanningInputError(
+      `Plumbing stock join reconciliation failed for ${month}: ` +
+      `source=${diagnostics.sourceQuantity}, joined=${diagnostics.joinedQuantity}, ` +
+      `unmatched=${diagnostics.unmatchedQuantity}, rows=${diagnostics.unmatchedRowCount}, ` +
+      `fingerprint=${diagnostics.fingerprint}, ${policyDetail}. Refusing to build a partial stock plan.`,
+    );
+  }
+}
+
 /**
  * Explicitly reviewed exclusion ceilings for the current uploaded source set.
  *
@@ -547,6 +727,7 @@ function assertPendingJoinIdentity(
   expectedSourceQuantity?: number,
   policy?: ReviewedPendingExclusionPolicy,
   inputDiagnostics?: PlanningInputDiagnostics,
+  options: { allowUnmapped?: boolean } = {},
 ): void {
   const identity = diagnostics.reconciliation;
   const sourceMismatch = expectedSourceQuantity === undefined
@@ -556,12 +737,14 @@ function assertPendingJoinIdentity(
     ? `, reviewedLimits=(unmatched<=${policy.maxUnmatchedQuantity}, resolutionLoss<=${policy.maxResolutionLossQuantity}, fingerprint=${policy.reviewedFingerprint}; ${policy.rationale})`
     : ", reviewedLimits=missing";
   const actualFingerprint = pendingExclusionFingerprint(diagnostics);
+  const allowUnmapped = options.allowUnmapped === true;
   const exceedsReviewedLimit = policy !== undefined
     && (
-      diagnostics.unmatchedQuantity > policy.maxUnmatchedQuantity + 0.01
+      (!allowUnmapped && diagnostics.unmatchedQuantity > policy.maxUnmatchedQuantity + 0.01)
       || diagnostics.resolutionLossQuantity > policy.maxResolutionLossQuantity + 0.01
       || (
-        diagnostics.unmatchedQuantity + diagnostics.resolutionLossQuantity > 0.01
+        !allowUnmapped
+        && diagnostics.unmatchedQuantity + diagnostics.resolutionLossQuantity > 0.01
         && actualFingerprint !== policy.reviewedFingerprint
       )
     );
@@ -586,6 +769,59 @@ function assertPendingJoinIdentity(
   }
 }
 
+export type PlumbingUnmappedPendingItem = {
+  itemCode: string;
+  colour: string;
+  itemName: string;
+  pendingOrder: number;
+  pendingOrderLastMonth: number;
+  sourceRole: string;
+  reason: PendingPlanResolutionRow["reason"];
+};
+
+/**
+ * Keep an unmatched pending row visible as a real plan item instead of
+ * treating it as an accepted exclusion. Current and last-month rows for the
+ * same code/colour are deliberately coalesced so stock is netted once per
+ * identity while both source roles remain visible in the provenance field.
+ */
+export function aggregatePlumbingUnmappedPendingRows(
+  diagnostics: PendingPlanDiagnostics[],
+): PlumbingUnmappedPendingItem[] {
+  const byIdentity = new Map<string, PlumbingUnmappedPendingItem>();
+  for (const diagnostic of diagnostics) {
+    for (const row of diagnostic.unmatchedRows) {
+      const aliasedCode = normalizeCode(applyPendingOrderAlias(row.code, row.colour).code);
+      const colour = row.colour.trim();
+      const key = `${aliasedCode}::${colour.toUpperCase()}`;
+      const existing = byIdentity.get(key);
+      if (existing) {
+        if (row.sourceRole === "pending_current") existing.pendingOrder += row.quantity;
+        if (row.sourceRole === "pending_last_month") existing.pendingOrderLastMonth += row.quantity;
+        if (!existing.sourceRole.split(",").includes(row.sourceRole)) {
+          existing.sourceRole = `${existing.sourceRole},${row.sourceRole}`;
+        }
+        if (row.description && !existing.itemName.split(" / ").includes(row.description)) {
+          existing.itemName = `${existing.itemName} / ${row.description}`;
+        }
+        continue;
+      }
+      byIdentity.set(key, {
+        itemCode: aliasedCode,
+        colour,
+        itemName: row.description,
+        pendingOrder: row.sourceRole === "pending_current" ? row.quantity : 0,
+        pendingOrderLastMonth: row.sourceRole === "pending_last_month" ? row.quantity : 0,
+        sourceRole: row.sourceRole,
+        reason: row.reason,
+      });
+    }
+  }
+  return [...byIdentity.values()].sort(
+    (a, b) => a.itemCode.localeCompare(b.itemCode) || a.colour.localeCompare(b.colour),
+  );
+}
+
 /**
  * The source-to-roster diagnostic and the actual plan rows must consume the
  * same quantity. This catches a quieter failure mode where diagnostics report
@@ -597,7 +833,9 @@ function assertPlanUsesPendingJoin(
   items: PlanItemWithBom[],
   field: "pendingOrder" | "pendingOrderLastMonth",
 ): void {
-  const planPendingQuantity = items.reduce((sum, item) => sum + item[field], 0);
+  const planPendingQuantity = items
+    .filter((item) => item.unmappedReason == null)
+    .reduce((sum, item) => sum + item[field], 0);
   const residual = diagnostics.planResolvedQuantity - planPendingQuantity;
   if (!Number.isFinite(residual) || Math.abs(residual) > 0.01) {
     throw new PlanningInputError(
@@ -672,9 +910,9 @@ function hasEntry(totals: DualTotals, itemCode: string, colour: string, isSingle
 
 /**
  * Plan item augmented with Plumbing BOM weight fields and machine-cascade output.
- * weightKg/noBomWeight and machine* fields are present for Plumbing items only.
- *   weightKg    = maxProduction × weight_per_pcs (from BOM sheet); 0 when no BOM entry.
- *   noBomWeight = true when item has no BOM weight entry (must be flagged, never silently dropped).
+ * totalKg/noBomKg and machine* fields are present for Plumbing items only.
+ *   totalKg    = maxProduction × kg_per_piece (from BOM sheet); 0 when no BOM entry.
+ *   noBomKg = true when item has no BOM kg/piece entry (must be flagged, never silently dropped).
  *   machineW1..W4      = machine-feasible release quantities (re-timed from cover-band desired).
  *   assignedMachineId  = machine the item was scheduled on (null = unconstrained).
  *   machineWeek        = week the machine cascade assigned this item to (null = unfulfillable).
@@ -683,9 +921,10 @@ function hasEntry(totals: DualTotals, itemCode: string, colour: string, isSingle
  */
 export type PlanItemWithBom = ReturnType<typeof computeItemPlan> & {
   material?: string;
-  weightKg?: number;
+  kgPerPiece?: number;
+  totalKg?: number;
   temporaryPlan?: number;
-  noBomWeight?: boolean;
+  noBomKg?: boolean;
   machineW1?: number;
   machineW2?: number;
   machineW3?: number;
@@ -694,6 +933,59 @@ export type PlanItemWithBom = ReturnType<typeof computeItemPlan> & {
   machineWeek?: 1 | 2 | 3 | 4 | null;
   machineUnfulfillable?: boolean;
 };
+
+export type PlanInputTrace = {
+  exclusionFingerprint: string;
+  rosterItemCount: number;
+  sourceUploadId: number | null;
+  capturedAt: string;
+};
+
+/**
+ * Persist the small set of provenance values needed to reconstruct which
+ * roster/source boundary a plan or validation run actually observed.
+ */
+export function buildPlanInputTrace(
+  diagnostics: PendingPlanDiagnostics,
+  items: PlanItemWithBom[],
+  sourceUploadId: number | null,
+  capturedAt: string,
+): PlanInputTrace {
+  return {
+    exclusionFingerprint: pendingExclusionFingerprint(diagnostics),
+    rosterItemCount: items.filter((item) => item.unmappedReason == null).length,
+    sourceUploadId,
+    capturedAt,
+  };
+}
+
+/**
+ * The diagnostics prove that unmatched pending was retained as evidence. This
+ * second check proves that the actual visible Unclassified rows carry the same
+ * quantities, so a future routing branch cannot pass by retaining evidence
+ * while dropping it from the plan output.
+ */
+export function assertPlumbingUnclassifiedPendingConservation(
+  items: PlanItemWithBom[],
+  currentDiagnostics: PendingPlanDiagnostics,
+  lastMonthDiagnostics: PendingPlanDiagnostics,
+): void {
+  const unclassifiedItems = items.filter((item) => item.category === "Unclassified");
+  const unclassifiedPending = unclassifiedItems.reduce((sum, item) => sum + item.pendingOrder, 0);
+  const unclassifiedDummy = unclassifiedItems.reduce((sum, item) => sum + item.pendingOrderLastMonth, 0);
+  const pendingDifference = unclassifiedPending - currentDiagnostics.unmatchedQuantity;
+  const dummyDifference = unclassifiedDummy - lastMonthDiagnostics.unmatchedQuantity;
+
+  if (Math.abs(pendingDifference) > 0.01 || Math.abs(dummyDifference) > 0.01) {
+    throw new PlanningInputError(
+      "Plumbing Unclassified pending conservation failed: " +
+      `unclassifiedPending=${unclassifiedPending}, unmatchedPendingEvidence=${currentDiagnostics.unmatchedQuantity}, ` +
+      `pendingDifference=${pendingDifference}; ` +
+      `unclassifiedDummy=${unclassifiedDummy}, unmatchedLastMonthEvidence=${lastMonthDiagnostics.unmatchedQuantity}, ` +
+      `dummyDifference=${dummyDifference}. Refusing to build a partially routed plan.`,
+    );
+  }
+}
 
 type PlanBuildOptions = {
   /**
@@ -748,14 +1040,15 @@ export async function preparePlumbingValidationEvidence(
     colour: ["Colour", "Color", "COLOR", "COLUOR"],
     quantity: ["Bal. Qty", "Bal.Qty", "Balance Qty", "Balance_Qty"],
   }, { source: "Pending order / report · Plumbing" });
+  const rosterItems = items.filter((item) => item.unmappedReason == null);
   const livePendingPlanDiagnostics = pendingPlanDiagnosticsFromParsedRows(
     pendingTotals.pendingRows ?? [],
-    items,
+    rosterItems,
     { sourceRole: "pending_current" },
   );
   const pendingCoverage = pendingCoverageFromParsedRows(
     pendingTotals.pendingRows ?? [],
-    items.map((item) => item.itemCode),
+    rosterItems.map((item) => item.itemCode),
   );
   const pendingDiagnostics = {
     ...sourcePendingDiagnostics,
@@ -863,7 +1156,8 @@ export function buildPtmtPlanItemsForValidation({
  *
  *   Buffer Req (per item) = Avg3Mo × multiplier (CPVC 1.5, UPVC 1.5, AGRI 1.5, SWR 1.0)
  *
- *   ONE formula for ALL 12 Plumbing categories (CPVC / UPVC / SWR / AGRI):
+ *   ONE formula for every governed Plumbing category (the historical fixture
+ *   has 12; the September MATERIAL roster also includes HDPE Pipe):
  *     Production Required = max( (Buffer − Stock) + PendingLM + Pending , 0 )
  *   Category total = sum of per-item values.
  *
@@ -971,6 +1265,8 @@ async function buildPlumbingPlanItemsInner(
       colour: "",
       category: `${row.material} ${row.type}`,
     }));
+  const plumbingStockDiagnostics = plumbingStockJoinDiagnostics(fgStockRows, plumbingRoster);
+  assertReviewedStockJoin(month, plumbingStockDiagnostics);
   const plumbingCurrentPendingDiagnostics = pendingPlanDiagnosticsFromParsedRows(
     pendingTotals.pendingRows ?? [],
     plumbingRoster,
@@ -984,6 +1280,7 @@ async function buildPlumbingPlanItemsInner(
       ? undefined
       : reviewedPendingExclusionPolicy("Plumbing", "pending_current", month),
     { pendingAtPlan: pendingTotals.diagnostics },
+    { allowUnmapped: true },
   );
   const plumbingLastMonthPendingRows = pendingRowsFromInput(fgStockRows, {
     segment: "Plumbing",
@@ -1003,6 +1300,8 @@ async function buildPlumbingPlanItemsInner(
     plumbingLastMonthPendingDiagnostics,
     totalByCode({ exact: new Map(), byCode: pendingLmMap }),
     reviewedPendingExclusionPolicy("Plumbing", "pending_last_month", month),
+    undefined,
+    { allowUnmapped: true },
   );
   const plumbingCurrentPendingByRoster = pendingTotalsByRosterItem(
     pendingTotals.pendingRows ?? pendingRowsFromTotals(pendingTotals, "Plumbing"),
@@ -1053,7 +1352,7 @@ async function buildPlumbingPlanItemsInner(
 
   // Type comes directly from the workbook per-row type column.
   // Rows without a type tag (~3 per tab) are dropped.
-  const items: PlanItemWithBom[] = workbookRows
+  const rosterItems: PlanItemWithBom[] = workbookRows
     .map((row): PlanItemWithBom | null => {
       const code = normalizeCode(row.itemCode);
 
@@ -1103,19 +1402,50 @@ async function buildPlumbingPlanItemsInner(
         ? currentMultiplier
         : projection ?? (override ?? row.sheetMultiplier ?? bufferDefaultMap.get(resolvedCategory) ?? 1);
 
-      // One formula for all 12 Plumbing categories: max((Buffer − Stock) + PendingLM + Pending, 0).
+      // One formula for every governed Plumbing category:
+      // max((Buffer − Stock) + PendingLM + Pending, 0).
       // AGRI: columns located by header name — the AGRI tab's own cell formula transposes Stock
       // and Buffer, so our header-name mapping intentionally differs from the source sheet figures.
        const effectiveMultiplier = effectivePlumbingBufferMultiplier(code, multiplier);
       const computed = computeItemPlan(source, resolvedCategory, effectiveMultiplier);
 
       // BOM weight — ~3% of items may have no BOM entry; flag them, never drop or guess.
-      const weightPcs = bomWeights.get(code);
-      const noBomWeight = weightPcs === undefined;
-      const weightKg = noBomWeight ? 0 : Math.round(computed.maxProduction * weightPcs! * 100) / 100;
-      return { ...computed, weightKg, noBomWeight };
+      const kgPerPiece = bomWeights.get(code);
+      const noBomKg = kgPerPiece === undefined;
+      const totalKg = noBomKg ? 0 : Math.round(computed.maxProduction * kgPerPiece! * 100) / 100;
+      return { ...computed, kgPerPiece, totalKg, noBomKg };
     })
     .filter((item): item is PlanItemWithBom => item !== null);
+
+  const unmappedPendingItems: PlanItemWithBom[] = aggregatePlumbingUnmappedPendingRows([
+    plumbingCurrentPendingDiagnostics,
+    plumbingLastMonthPendingDiagnostics,
+  ]).map((unmapped) => {
+    const source: ItemSourceRow = {
+      itemCode: unmapped.itemCode,
+      colour: unmapped.colour,
+      avg3MoSaleTotal3Mo: 0,
+      stock: stockMap.get(unmapped.itemCode) ?? 0,
+      stockNeedsReview: false,
+      pendingOrderLastMonth: unmapped.pendingOrderLastMonth,
+      pendingOrder: unmapped.pendingOrder,
+      order: 0,
+    };
+    const computed = computeItemPlan(source, "Unclassified", null);
+    return {
+      ...computed,
+      itemName: unmapped.itemName || "Unmapped pending item",
+      sourceRole: unmapped.sourceRole,
+      unmappedReason: unmapped.reason,
+      material: "Unclassified",
+      totalKg: 0,
+      noBomKg: true,
+    };
+  });
+
+  // Matched workbook roster rows remain in their existing categories. Only
+  // pending identities with no roster candidate enter Unclassified.
+  const items: PlanItemWithBom[] = [...rosterItems, ...unmappedPendingItems];
 
   assertPlanUsesPendingJoin(
     "Plumbing current pending",
@@ -1128,6 +1458,11 @@ async function buildPlumbingPlanItemsInner(
     plumbingLastMonthPendingDiagnostics,
     items,
     "pendingOrderLastMonth",
+  );
+  assertPlumbingUnclassifiedPendingConservation(
+    items,
+    plumbingCurrentPendingDiagnostics,
+    plumbingLastMonthPendingDiagnostics,
   );
   annotateWeeklyRelease(items, bandsByCategory);
 
@@ -1402,8 +1737,7 @@ router.get("/plan", async (req, res): Promise<void> => {
     // rebuild them from today's uploads/live workbooks: those inputs may have
     // advanced, been replaced, or be unavailable while the frozen month is
     // still expected to be viewable.
-    const frozenRun = await getLatestFinalizedRun(month, normSegment, "production")
-      ?? await getLatestFinalizedRun(month, normSegment, "temporary");
+    const frozenRun = await getLatestFinalizedRun(month, normSegment, "production");
     if (frozenRun) {
       const rows = await loadHistoricalReportingRows(frozenRun);
       const items = frozenRowsAsCalcItems(rows) as unknown as PlanItemWithBom[];
@@ -1411,10 +1745,10 @@ router.get("/plan", async (req, res): Promise<void> => {
       res.json(filtered);
       return;
     }
-    const items = await buildPlanItems(month, normSegment);
-    await annotateLiveOrders(items, month, normSegment); // display-only, sheet-outage tolerant
-    const filtered = category ? items.filter((i) => i.category === category) : items;
-    res.json(filtered);
+    // Category planning is deliberately neutral until a capacity-fitted
+    // Production run has been issued. Temporary demand and live rebuilds are
+    // still available from Plan Runs, not from this operational surface.
+    res.json([]);
   } catch (err) {
     handlePlanError(res, err);
   }
@@ -1551,6 +1885,43 @@ router.get("/plan/export/weekly-excel", async (req, res): Promise<void> => {
   }
 });
 
+router.get("/plan/export/weekly-pdf", async (req, res): Promise<void> => {
+  const month = String(req.query.month ?? "");
+  if (!month) {
+    res.status(400).json({ error: "month is required" });
+    return;
+  }
+  const rawSegment = String(req.query.segment ?? "PTMT");
+  const segment = rawSegment.toLowerCase() === "plumbing" ? "Plumbing" : rawSegment;
+  const startedAt = Date.now();
+  try {
+    const run = await getLatestFinalizedRun(month, segment, "production");
+    if (!run) {
+      res.status(422).json({
+        error: "NO_FINALIZED_PRODUCTION_PLAN",
+        message: `No finalized capacity-fitted Production Plan exists for ${segment} ${month}.`,
+      });
+      return;
+    }
+    const { rows } = await loadProductionExportRows(run);
+    const sourceDescription = segment === "Plumbing"
+      ? "finalized Plumbing machine-app schedule; item pieces distributed by non-idle block-hours within each scheduler week"
+      : "finalized PTMT Pass 2 capacity fit";
+    const buffer = await exportWeeklyReleasePdf(month, rows, sourceDescription);
+    logger.info({ month, segment, renderMs: Date.now() - startedAt }, "plan/export/weekly-pdf complete");
+    const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Weekly_Release_Plan_${month}_${exportTimestamp()}.pdf"`);
+    res.send(buffer);
+  } catch (err) {
+    if (err instanceof PlumbingScheduleExportError || err instanceof WeeklyExportInvariantError) {
+      res.status(422).json({ error: err.code, message: err.message });
+      return;
+    }
+    handlePlanError(res, err);
+  }
+});
+
 /**
  * BOM data-quality report for Plumbing: lists items whose maxProduction > 0
  * but have no BOM weight entry. These must be flagged (shown as 0 kg) and
@@ -1567,7 +1938,7 @@ router.get("/plan/bom-quality", async (req, res): Promise<void> => {
     handlePlanError(res, err);
     return;
   }
-  const missing = items.filter((i) => i.noBomWeight && (i.maxProduction ?? 0) > 0);
+  const missing = items.filter((i) => i.noBomKg && (i.maxProduction ?? 0) > 0);
   const missingPcs = missing.reduce((s, i) => s + (i.maxProduction ?? 0), 0);
   const totalPcs = items.reduce((s, i) => s + (i.maxProduction ?? 0), 0);
   const missingPct = totalPcs > 0 ? Math.round(missingPcs / totalPcs * 10000) / 100 : 0;
@@ -2072,20 +2443,16 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     await requireUploadSnapshot("pending_orders", "Current Pending Orders", month);
   }
 
-  type CheckResult = {
-    name: string;
-    expected: number;
-    actual: number;
-    pass: boolean;
+  type CheckResult = PlanCheckResult & {
     /** Advisory: check passed but sits outside the comfort band — surface amber in UI. */
     warn?: boolean;
-    tolerance?: string;
   };
 
   // ── PLUMBING self-check ────────────────────────────────────────────────────
   if (segment === "Plumbing") {
     let items: PlanItemWithBom[];
     let fgStockRows: Record<string, unknown>[];
+    let fgStockSnapshot: UploadRowsSnapshot;
     let pendingTotals: DualTotals;
     let pendingUploadSnapshot: UploadRowsSnapshot;
     let pendingDiagnostics: ReturnType<typeof diagnoseInputRows>;
@@ -2098,16 +2465,17 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     if (!livePendingCapture.totals) throw livePendingCapture.error;
     try {
       pendingTotals = livePendingCapture.totals;
-      [items, fgStockRows, bufferRows, bandRows, sheet3Rows] = await Promise.all([
+      [items, fgStockSnapshot, bufferRows, bandRows, sheet3Rows] = await Promise.all([
         buildPlanItems(month, "Plumbing", {
           allowUnreviewedCurrentPending: true,
           pendingTotalsOverride: pendingTotals,
         }),
-        loadLatestUploadRowsByKind("plumbing_fg_stock", month),
+        loadLatestUploadSnapshotByKind("plumbing_fg_stock", month),
         db.select().from(bufferCategoriesTable).where(eq(bufferCategoriesTable.segment, "Plumbing")),
         db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
         fetchPlumbingSheet3Production(month),
       ]);
+      fgStockRows = fgStockSnapshot.rows;
     } catch (err) {
       if (err instanceof PlumbingInputUnreadableError) {
         handlePlanError(res, err);
@@ -2138,6 +2506,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
       );
       pendingDiagnostics = liveEvidence.pendingDiagnostics;
       const { livePendingPlanDiagnostics, pendingCoverage, pendingBaseline } = liveEvidence;
+      const rosterItems = items.filter((item) => item.unmappedReason == null);
       const fgPendingRows = pendingRowsFromInput(fgStockRows, {
         segment: "Plumbing",
         codeKeys: ["Item Code"],
@@ -2148,7 +2517,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
       });
       pendingLastMonthAtPlan = pendingPlanDiagnosticsFromParsedRows(
         fgPendingRows,
-        items,
+        rosterItems,
         { sourceRole: "pending_last_month" },
       );
       const fgPendingTotal = fgPendingRows.reduce((sum, row) => sum + row.qty, 0);
@@ -2156,7 +2525,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
       const pendingAtPlanTotals = pendingOrderTotalsFromRows(pendingUploadSnapshot.rows, "Plumbing");
       const pendingAtPlanPlanDiagnostics = pendingPlanDiagnosticsFromParsedRows(
         pendingAtPlanTotals.pendingRows ?? [],
-        items,
+        rosterItems,
         { sourceRole: "pending_current" },
       );
       pendingAtPlanDiagnostics = {
@@ -2412,16 +2781,19 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     }
 
     // ── 3. Segment isolation ───────────────────────────────────────────────
-    const plumbingCategories = new Set(items.map((i) => i.category));
+    const isPlumbingCategory = (category: string) =>
+      ["CPVC", "UPVC", "SWR", "AGRI", "HDPE"].some((material) => category.startsWith(material));
+    const plumbingCategories = new Set(items.filter((i) => isPlumbingCategory(i.category)).map((i) => i.category));
     const distinctCatCount = plumbingCategories.size;
+    const expectedPlumbingCategoryCount = month === "2026-09" ? 13 : 12;
     checks.push({
-      name: "ISOLATION · Plumbing category count = 12",
-      expected: 12,
+      name: `ISOLATION · Plumbing category count = ${expectedPlumbingCategoryCount}`,
+      expected: expectedPlumbingCategoryCount,
       actual: distinctCatCount,
-      pass: distinctCatCount === 12,
+      pass: distinctCatCount === expectedPlumbingCategoryCount,
     });
     const nonPlumbing = [...plumbingCategories].filter(
-      (c) => !["CPVC", "UPVC", "SWR", "AGRI"].some((m) => c.startsWith(m)),
+      (c) => !isPlumbingCategory(c),
     );
     checks.push({
       name: "ISOLATION · No non-Plumbing categories in plan",
@@ -2490,7 +2862,9 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     // Catches the pipe-block-skipped bug (codeCol mismatch) and row-truncation bugs immediately.
     // Expected counts verified against live workbook: CPVC 293/296, UPVC 324/327,
     // SWR 297/300, AGRI 206/209 (remaining rows are blanks or untyped).
-    const PLUMBING_ITEM_COUNTS: Array<{ cat: string; expected: number }> = [
+    const PLUMBING_ITEM_COUNTS: Array<{ cat: string; expected: number }> = month === "2026-09"
+      ? SEPTEMBER_PLUMBING_SOURCE_TARGETS.map((row) => ({ cat: row.category, expected: row.items }))
+      : [
       { cat: "CPVC Pipe",    expected: 40  },
       { cat: "CPVC Fitting", expected: 244 },
       { cat: "CPVC Solvent", expected: 9   },
@@ -2527,9 +2901,9 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     let totalScheduledPcs = 0;
     for (const item of items) {
       const bom = item as PlanItemWithBom;
-      const kg = bom.weightKg ?? 0;
+      const kg = bom.totalKg ?? 0;
       kgByCategory.set(item.category, (kgByCategory.get(item.category) ?? 0) + kg);
-      if (bom.noBomWeight) totalNoBomPcs += item.maxProduction;
+      if (bom.noBomKg) totalNoBomPcs += item.maxProduction;
       totalScheduledPcs += item.maxProduction;
     }
 
@@ -2681,6 +3055,41 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     const categoryTotals: Record<string, number> = {};
     for (const [cat, total] of byCategory.entries()) categoryTotals[cat] = roundInt(total);
     for (const { cat } of PLUMBING_GOLDEN) if (!(cat in categoryTotals)) categoryTotals[cat] = 0;
+    const plumbingSourceComparison = month === "2026-09"
+      ? {
+        source: "MATERIAL tabs (CPVC, UPVC, SWR, AGRI, HDPE)",
+        roster: {
+          expectedItems: SEPTEMBER_PLUMBING_SOURCE_TARGETS.reduce((sum, row) => sum + row.items, 0),
+          expectedGroups: SEPTEMBER_PLUMBING_SOURCE_TARGETS.length,
+          actualItems: items.filter((item) => isPlumbingCategory(item.category)).length,
+          actualGroups: new Set(items.map((item) => item.category)).size,
+        },
+        groups: SEPTEMBER_PLUMBING_SOURCE_TARGETS.map((row) => {
+          const actual = roundInt(byCategory.get(row.category) ?? 0);
+          const difference = actual - row.target;
+          return {
+            group: row.category,
+            actual,
+            target: row.target,
+            difference,
+            differencePct: row.target === 0 ? (difference === 0 ? 0 : null) : difference / row.target,
+            actualItems: itemsByCategory.get(row.category) ?? 0,
+            targetItems: row.items,
+          };
+        }),
+        actualTotal: roundInt(items
+          .filter((item) => isPlumbingCategory(item.category))
+          .reduce((sum, item) => sum + item.maxProduction, 0)),
+        targetTotal: SEPTEMBER_PLUMBING_SOURCE_TOTAL,
+        displayedGroupTargetTotal: SEPTEMBER_PLUMBING_SOURCE_TARGETS.reduce((sum, row) => sum + row.target, 0),
+        targetTotalDifferenceFromDisplayedGroups:
+          SEPTEMBER_PLUMBING_SOURCE_TOTAL - SEPTEMBER_PLUMBING_SOURCE_TARGETS.reduce((sum, row) => sum + row.target, 0),
+        unmapped: {
+          items: items.filter((item) => item.category === "Unclassified").length,
+          pieces: roundInt(byCategory.get("Unclassified") ?? 0),
+        },
+      }
+      : null;
 
     // ── 8. Monitoring actuals vs frozen golden values (28 checks) ────────────
     // Folded so /plan/validate?segment=Plumbing covers all 163 checks in one call.
@@ -2856,6 +3265,37 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
       };
     }
 
+    if (pendingReadCaptureId !== null) {
+      const traceCapturedAt = new Date().toISOString();
+      const planTrace: Record<string, ReturnType<typeof buildPlanInputTrace>> = {};
+      if (pendingAtPlanDiagnostics.pendingPlan) {
+        planTrace.pending_current = buildPlanInputTrace(
+          pendingAtPlanDiagnostics.pendingPlan,
+          items,
+          pendingUploadSnapshot.id,
+          traceCapturedAt,
+        );
+      }
+      planTrace.pending_last_month = buildPlanInputTrace(
+        pendingLastMonthAtPlan,
+        items,
+        fgStockSnapshot.id,
+        traceCapturedAt,
+      );
+      if (pendingDiagnostics.pendingPlan) {
+        planTrace.pending_current_live = buildPlanInputTrace(
+          pendingDiagnostics.pendingPlan,
+          items,
+          null,
+          traceCapturedAt,
+        );
+      }
+      await updatePendingReadSnapshotDiagnostics(pendingReadCaptureId, {
+        ...pendingDiagnostics,
+        planTrace,
+      });
+    }
+
     const allPass = checks.every((c) => c.pass);
     const failCount = checks.filter((c) => !c.pass).length;
     res.json({
@@ -2867,6 +3307,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
       failCount,
       checks,
       categoryTotals,
+      sourceComparison: plumbingSourceComparison,
       machineFeasible,
       inputDiagnostics: {
         pending: pendingDiagnostics,
@@ -2907,6 +3348,26 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
   ]);
 
   const checks: CheckResult[] = [];
+  res.locals.validationChecks = checks;
+  for (const { cat, multiplier: expectedMult } of PTMT_MULTIPLIER_GOLDEN) {
+    const row = bufferRows.find((buffer) => buffer.name === cat);
+    const actualOverride = row?.overrideMultiplier ?? -1;
+    checks.push({
+      name: `PTMT · ${cat} · Override locked ×${expectedMult}`,
+      expected: expectedMult,
+      actual: actualOverride,
+      pass: actualOverride === expectedMult,
+      tolerance: "exact",
+    });
+    const actualApplied = row?.multiplier ?? -1;
+    checks.push({
+      name: `PTMT · ${cat} · Applied ×${expectedMult}`,
+      expected: expectedMult,
+      actual: actualApplied,
+      pass: Math.abs(actualApplied - expectedMult) < 0.001,
+      tolerance: "exact",
+    });
+  }
   const pendingDiagnostics = pendingTotals.diagnostics ?? diagnoseInputRows([], {
     code: ["Old ERP Code", "Item Code", "Item No."],
     colour: ["Colour", "Color", "COLOR", "COLUOR"],
@@ -3284,37 +3745,56 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     tolerance: "reported",
   });
 
-  // ── Applied multiplier lock (exact match) ───────────────────────────────────
-  // Catches any recompute that lets Suggested silently replace the business multiplier.
-  // Applied = multiplier column in the DB (set to override when present; seed ensures
-  // all 7 categories have the override locked at startup).
-  const bufferByName = new Map<string, { multiplier: number; overrideMultiplier: number | null }>(
-    bufferRows.map((b) => [b.name, { multiplier: b.multiplier, overrideMultiplier: b.overrideMultiplier ?? null }]),
-  );
-  for (const { cat, multiplier: expectedMult } of PTMT_MULTIPLIER_GOLDEN) {
-    const row = bufferByName.get(cat);
-    const actualOverride = row?.overrideMultiplier ?? -1;
-    const overridePass = actualOverride === expectedMult;
-    checks.push({
-      name: `PTMT · ${cat} · Override locked ×${expectedMult}`,
-      expected: expectedMult,
-      actual: actualOverride,
-      pass: overridePass,
-      tolerance: "exact",
-    });
-    const actualApplied = row?.multiplier ?? -1;
-    const appliedPass = Math.abs(actualApplied - expectedMult) < 0.001;
-    checks.push({
-      name: `PTMT · ${cat} · Applied ×${expectedMult}`,
-      expected: expectedMult,
-      actual: actualApplied,
-      pass: appliedPass,
-      tolerance: "exact",
-    });
-  }
-
   const allPass = checks.every((c) => c.pass);
   const failCount = checks.filter((c) => !c.pass).length;
+  const ptmtSourceTotals = new Map<string, number>();
+  for (const category of planItems) {
+    ptmtSourceTotals.set(category.category, (ptmtSourceTotals.get(category.category) ?? 0) + category.maxProduction);
+  }
+  const ptmtSourceCounts = new Map<string, number>();
+  for (const row of itemRows) {
+    ptmtSourceCounts.set(row.category, (ptmtSourceCounts.get(row.category) ?? 0) + 1);
+  }
+  const ptmtSourceComparison = month === "2026-09"
+    ? {
+      source: "REPORT 1-9 at item-code/colour grain; blank colour falls back to code-only",
+      roster: {
+        expectedRows: SEPTEMBER_PTMT_SOURCE_TARGETS.reduce((sum, row) => sum + row.rows, 0),
+        actualRows: itemRows.length,
+        reports: SEPTEMBER_PTMT_SOURCE_TARGETS.length,
+        blankColourRows: itemRows.filter((row) => !row.colour.trim()).length,
+      },
+      reports: SEPTEMBER_PTMT_SOURCE_TARGETS.map((row) => {
+        const actual = Math.round(ptmtSourceTotals.get(row.category) ?? 0);
+        const difference = row.target === null ? null : actual - row.target;
+        return {
+          report: row.report,
+          category: row.category,
+          actual,
+          target: row.target,
+          targetStatus: row.targetStatus,
+          targetReadDate: SEPTEMBER_PTMT_TARGET_SNAPSHOT.readDate,
+          multiplierSet: SEPTEMBER_PTMT_TARGET_SNAPSHOT.multiplierSet,
+          difference,
+          differencePct: row.target === null || row.target === 0 || difference === null
+            ? null
+            : difference / row.target,
+          actualRows: ptmtSourceCounts.get(row.category) ?? 0,
+          targetRows: row.rows,
+        };
+      }),
+      comparison: {
+        reports: SEPTEMBER_PTMT_TARGET_SNAPSHOT.comparisonReports,
+        targetTotal: SEPTEMBER_PTMT_TARGET_SNAPSHOT.comparisonTotal,
+        actualTotal: Math.round(
+          SEPTEMBER_PTMT_SOURCE_TARGETS
+            .filter((row) => row.target !== null)
+            .reduce((sum, row) => sum + (ptmtSourceTotals.get(row.category) ?? 0), 0),
+        ),
+      },
+      note: "Reports 8 and 9 are not produced by Prayag and have no target. All other differences are reported as input differences, not classification verdicts.",
+    }
+    : null;
 
   res.json({
     month,
@@ -3324,6 +3804,7 @@ async function validatePlanRoute(req: Request, res: Response): Promise<void> {
     passCount: checks.length - failCount,
     failCount,
     checks,
+    sourceComparison: ptmtSourceComparison,
     itemCoverage: {
       sourceNotInPlan: sourceNotInPlanCodes.sort((a, b) => b.stock - a.stock).slice(0, 50),
       sourceNotInPlanCount: sourceNotInPlanCodes.length,
@@ -3851,19 +4332,19 @@ router.get("/plan/summary", async (req, res): Promise<void> => {
     // Prefer the immutable finalized run for historical reporting. Rebuilding
     // a past month from current inputs can fail on the MRP gate or a missing
     // live workbook, and would make an otherwise available snapshot spin.
-    const latestRun = await getLatestFinalizedRun(month, segment, "production")
-      ?? await getLatestFinalizedRun(month, segment, "temporary");
+    const latestRun = await getLatestFinalizedRun(month, segment, "production");
+    const temporaryRun = latestRun ? undefined : await getLatestFinalizedRun(month, segment, "temporary");
     const frozenRows = latestRun ? await loadHistoricalReportingRows(latestRun) : null;
     const items = frozenRows
       ? frozenRowsAsCalcItems(frozenRows) as unknown as PlanItemWithBom[]
-      : await buildPlanItems(month, segment);
+      : [];
     // Full summarizePlan result (used by summary page)
     const planSummary = summarizePlan(items);
     // Per-category kg accumulator (Plumbing BOM weight)
     const catKg = new Map<string, number>();
     let totalKg = 0;
     for (const item of items) {
-      const kg = Math.round((item as any).weightKg ?? 0);
+      const kg = Math.round((item as any).totalKg ?? 0);
       totalKg += kg;
       catKg.set(item.category, (catKg.get(item.category) ?? 0) + kg);
     }
@@ -3902,7 +4383,33 @@ router.get("/plan/summary", async (req, res): Promise<void> => {
     res.json({
       month,
       segment,
-      inputProvenance: await getPlanInputProvenance(month, segment),
+      inputProvenance: latestRun ? await getPlanInputProvenance(month, segment) : {},
+      availability: latestRun
+        ? {
+          status: "production",
+          message: `Finalized Production Plan #${latestRun.id}`,
+          runId: latestRun.id,
+          planType: latestRun.planType,
+          runStatus: latestRun.status,
+          asOfAt: latestRun.asOfAt.toISOString(),
+        }
+        : temporaryRun
+          ? {
+            status: "temporary-unfitted",
+            message: `Temporary Plan #${temporaryRun.id} exists but has not been fitted to capacity and finalized as Production.`,
+            runId: temporaryRun.id,
+            planType: temporaryRun.planType,
+            runStatus: temporaryRun.status,
+            asOfAt: temporaryRun.asOfAt.toISOString(),
+          }
+          : {
+            status: "no-plan",
+            message: `No finalized Production Plan exists for ${segment} ${month}.`,
+            runId: null,
+            planType: null,
+            runStatus: null,
+            asOfAt: null,
+          },
       // production-planning summary page fields
       grandMinTotal: planSummary.grandMinTotal,
       grandMaxTotal: Math.round(grandDemandTotal),

@@ -60,7 +60,7 @@ type PlanItem = {
   w3: number;
   w4: number;
   produced: number;
-  weightKgPerPiece: number | null;
+  kgPerPiece: number | null;
   machines: string[] | null;
   machineHrs: number | null;
 };
@@ -271,7 +271,7 @@ async function readLocalProjection(month: string, segment: PlantSegment): Promis
       releaseWeek: row.releaseWeek == null ? null : n(row.releaseWeek),
       w1: n(row.w1), w2: n(row.w2), w3: n(row.w3), w4: n(row.w4),
       produced: n(actualByKey.get(itemKey(code, colour)) ?? actualByCode.get(normalizeCodeStrict(code))),
-      weightKgPerPiece: uploadItem && requestedPcs > 0 ? n(uploadItem.requestedKg) / requestedPcs : null,
+      kgPerPiece: uploadItem && requestedPcs > 0 ? n(uploadItem.requestedKg) / requestedPcs : null,
       machines: uploadItem?.machines ? uploadItem.machines.split(/[,/]+/).map((v) => v.trim()).filter(Boolean) : null,
       machineHrs: uploadItem ? n(uploadItem.machineHrs) : null,
     };

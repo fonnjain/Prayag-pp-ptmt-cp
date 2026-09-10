@@ -574,8 +574,8 @@ async function loadFinalizedTargets(month: string, segment: MonitoringSegment = 
   const [run] = await db
     .select()
     .from(planRunsTable)
-    .where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, segment), eq(planRunsTable.status, "finalized")))
-    .orderBy(sql`CASE WHEN ${planRunsTable.planType} = 'production' THEN 0 ELSE 1 END`, desc(planRunsTable.id))
+    .where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, segment), eq(planRunsTable.status, "finalized"), eq(planRunsTable.planType, "production")))
+    .orderBy(desc(planRunsTable.id))
     .limit(1);
   if (!run) return null;
   const [results, versionTimeline] = await Promise.all([
@@ -636,7 +636,7 @@ async function hasFinalizedTargets(month: string, segment: MonitoringSegment = "
   const [run] = await db
     .select({ id: planRunsTable.id })
     .from(planRunsTable)
-    .where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, segment), eq(planRunsTable.status, "finalized")))
+    .where(and(eq(planRunsTable.month, month), eq(planRunsTable.segment, segment), eq(planRunsTable.status, "finalized"), eq(planRunsTable.planType, "production")))
     .orderBy(desc(planRunsTable.id))
     .limit(1);
   if (!run) return false;
@@ -785,7 +785,12 @@ async function loadSavedSnapshot(month: string, segment: MonitoringSegment = "PT
       eq(plantMonthSnapshotsTable.segment, segment),
       eq(plantMonthSnapshotsTable.planStatus, "monitoring"),
     ));
-  return snapshot ?? null;
+  if (!snapshot) return null;
+  const sourceInfo = snapshotPayload(snapshot).sourceInfoJson;
+  if (isRecord(sourceInfo) && sourceInfo.targetBasis === "demand") {
+    return null;
+  }
+  return snapshot;
 }
 
 export async function backfillPlantSnapshotProvenance(
@@ -989,6 +994,11 @@ export async function computeLifecyclePlantMonitoring(
   const fetchActuals = dependencies.fetchActuals ?? (
     (selectedMonth, options) => fetchSegmentActuals(selectedMonth, segment, options)
   );
+  const finalizedForOpen = await loadFinalizedTargets(month, segment);
+  if (lifecycle.state === "open" && !finalizedForOpen) {
+    const bundle = emptyBundle(month, lifecycle, config, "unavailable", `Targets unavailable — no finalized ${segment} Production Plan was issued for this month.`);
+    return { bundle, weekly: buildWeekly(month, [], [], [], config.snapshotDate, lifecycle) };
+  }
   let targets: PlantTargetRow[];
   let planItems: WeeklyInputPlanItem[] = [];
   let alertPlanItems: CalcPlanItem[] | undefined;
@@ -1057,29 +1067,44 @@ export async function computeLifecyclePlantMonitoring(
     } else {
       actuals = await fetchActuals(month, {});
     }
-    const effectiveMonth = actualSourceMonth;
-    const liveItems = await buildPlanItems(effectiveMonth, segment);
-    alertPlanItems = liveItems;
-    versionTimeline = await fetchMonitoringPlanTimeline(effectiveMonth, segment);
-    const latestVersion = versionTimeline.at(-1);
-    targets = latestVersion ? latestVersion.targets.map((item) => ({
+    const finalized = finalizedForOpen;
+    if (!finalized) {
+      const bundle = emptyBundle(month, lifecycle, config, "unavailable", `Targets unavailable — no finalized ${segment} Production Plan was issued for this month.`);
+      return { bundle, weekly: buildWeekly(month, actuals, [], [], config.snapshotDate, lifecycle) };
+    }
+    targets = finalized.targets;
+    planItems = finalized.planItems;
+    alertPlanItems = finalized.planItems.map((item) => ({
       itemCode: item.itemCode,
       colour: item.colour,
       category: item.category,
-      maxPcs: item.maxPcs,
-      minPcs: item.minPcs,
-    })) : liveItems.map((item) => ({
-      itemCode: item.itemCode,
-      colour: item.colour,
-      category: item.category,
-      maxPcs: item.maxProduction,
-      minPcs: item.minProduction,
+      avg3MoSale: 0,
+      stock: 0,
+      stockNeedsReview: false,
+      bufferReq: null,
+      minProduction: item.maxProduction,
+      maxProduction: item.maxProduction,
+      pendingOrderLastMonth: 0,
+      pendingOrder: 0,
+      order: 0,
+      totalKg: 0,
+      achievementPct: null,
+      cover: "OS" as const,
+      week: null,
+      w1: item.w1,
+      w2: item.w2,
+      w3: item.w3,
+      w4: item.w4,
     }));
-    planItems = liveItems;
+    versionTimeline = finalized.versionTimeline;
     sourceInfo = {
-      targetSource: versionTimeline.length ? "issued_plan_timeline" : "live_plan",
+      targetSource: "finalized_plan_run",
+      targetBasis: finalized.targetBasis,
+      planRunId: finalized.run.id,
+      planAsOfAt: finalized.run.asOfAt.toISOString(),
       actualSourceMonth,
       actualSourceWarning,
+      weeklyTargetSource: finalized.weeklyTargetSource,
       planVersions: versionTimeline.map((version) => ({
         kind: version.kind,
         sourceId: version.sourceId,
@@ -1096,10 +1121,8 @@ export async function computeLifecyclePlantMonitoring(
     const bundle = emptyBundle(month, lifecycle, config, "unavailable", "Targets unavailable — no plan targets were found for this month.");
     return { bundle, weekly: buildWeekly(month, actuals, [], [], config.snapshotDate, lifecycle) };
   }
-  const effectiveMonth = actualSourceMonth;
-  const effectiveLifecycle = actualSourceMonth === month
-    ? lifecycle
-    : resolvePlantMonthLifecycle(effectiveMonth, now);
+  const effectiveMonth = month;
+  const effectiveLifecycle = lifecycle;
   const { bundle, snapshotDate } = await buildReadyBundle(
     effectiveMonth,
     actuals,

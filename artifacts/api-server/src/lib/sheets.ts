@@ -1,8 +1,9 @@
 import { ReplitConnectors } from "@replit/connectors-sdk";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { db, workbookConfigTable } from "@workspace/db";
+import { db, workbookConfigTable, plumbingBomOverridesTable } from "@workspace/db";
 import { and, eq } from "drizzle-orm";
 import { logger } from "./logger";
+import { normalizeProductionCode } from "./production-code";
 import {
   diagnoseInputRows,
   type InputReadDiagnostics,
@@ -92,6 +93,7 @@ export const PLANNING_SHEET_READ_ALLOWLIST = [
   "fetchPlumbingBomWeights",
   "fetchLivePendingOrderTotals",
   "fetchRateList",
+  "fetchPtmtReportRoster",
 ] as const;
 
 function runInAllowedReadScope<T>(fetcher: string, fn: () => Promise<T>): Promise<T> {
@@ -895,9 +897,11 @@ export function getOrderType(row: Record<string, unknown>): string {
  * production codes to plan item codes — never for plan-to-plan deduplication
  * (which must preserve hyphens to match BOM / item-master keys).
  */
-export function normalizeCodeStrict(code: unknown): string {
-  return String(code ?? "").trim().toUpperCase().replace(/[-\s.]/g, "");
-}
+/**
+ * Backward-compatible export for existing callers. The implementation lives
+ * in production-code.ts so every production-to-plan join uses one rule.
+ */
+export { normalizeProductionCode as normalizeCodeStrict };
 
 /**
  * Dual totals map: `exact` keys on itemKey(code,colour) for items that have real
@@ -956,6 +960,98 @@ function rowsToObjects(values: string[][]): Record<string, string>[] {
 export async function fetchAvg3MoSaleTotals(month: string): Promise<DualTotals> {
   // ALLOW-LISTED for planning: sales-history avg-3-month figures only.
   return runInAllowedReadScope("fetchAvg3MoSaleTotals", () => fetchAvg3MoSaleTotalsInner(month));
+}
+
+export const PTMT_REPORT_TAB_CATEGORIES: Readonly<Record<string, string>> = {
+  "REPORT 1": "Cocks Standard",
+  "REPORT 2": "Cocks Premium",
+  "REPORT 3": "Faucets & Jetsprays & Shower",
+  "REPORT 4": "Accessorise",
+  "REPORT 5": "Cistern & Seat Cover",
+  "REPORT 6": "Cabinet",
+  "REPORT 7": "Ball Cock",
+  "REPORT 8": "P.V.C. Connections",
+  "REPORT 9": "Waste Pipes",
+};
+
+export type PtmtReportRosterRow = {
+  itemCode: string;
+  colour: string;
+  category: string;
+  report: string;
+  sourceWorkbookId?: string;
+};
+
+export const EXPECTED_PTMT_REPORT_ROWS = 3_426;
+
+function normalizedSheetHeader(value: unknown): string {
+  return String(value ?? "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+export function parsePtmtReportRows(values: string[][], report: string, category: string): PtmtReportRosterRow[] {
+  const headerRowIndex = values.findIndex((row) => {
+    const headers = row.map(normalizedSheetHeader);
+    return headers.includes("ITEMCODE");
+  });
+  if (headerRowIndex < 0) return [];
+
+  const header = values[headerRowIndex] ?? [];
+  const codeColumn = header.findIndex((cell) => normalizedSheetHeader(cell) === "ITEMCODE");
+  const colourColumn = header.findIndex((cell) => {
+    const normalized = normalizedSheetHeader(cell);
+    return normalized === "COLOR" || normalized === "COLOUR";
+  });
+  if (codeColumn < 0) return [];
+
+  return values.slice(headerRowIndex + 1).flatMap((row) => {
+    const itemCode = String(row[codeColumn] ?? "").trim();
+    if (!itemCode || /^TOTAL$/i.test(itemCode) || /^GRAND\s*TOTAL$/i.test(itemCode)) return [];
+    return [{
+      itemCode,
+      // REPORT 2 deliberately has blank colours. Keeping the blank value is
+      // what lets pending/stock resolution fall back to code-only.
+      colour: colourColumn >= 0 ? String(row[colourColumn] ?? "").trim() : "",
+      category,
+      report,
+    }];
+  });
+}
+
+/**
+ * The governed PTMT roster is the nine REPORT tabs, not the category tabs.
+ * REPORT 1 and most reports are code+colour; REPORT 2 is intentionally
+ * code-only with blank colour cells.
+ */
+export async function fetchPtmtReportRoster(): Promise<PtmtReportRosterRow[]> {
+  return runInAllowedReadScope("fetchPtmtReportRoster", async () => {
+    const tabs = await listTabs(SHEET_IDS.ptmtAnuj);
+    const reportTabs = Object.keys(PTMT_REPORT_TAB_CATEGORIES)
+      .map((report) => tabs.find((tab) => normalizedSheetHeader(tab) === normalizedSheetHeader(report)))
+      .filter((tab): tab is string => Boolean(tab));
+    const rows: PtmtReportRosterRow[] = [];
+    for (const tab of reportTabs) {
+      const report = Object.keys(PTMT_REPORT_TAB_CATEGORIES).find(
+        (candidate) => normalizedSheetHeader(candidate) === normalizedSheetHeader(tab),
+      )!;
+      const values = await throttledGetTabValues(SHEET_IDS.ptmtAnuj, tab, "A1:Z50000");
+      rows.push(...parsePtmtReportRows(values, report, PTMT_REPORT_TAB_CATEGORIES[report]!)
+        .map((row) => ({ ...row, sourceWorkbookId: SHEET_IDS.ptmtAnuj })));
+    }
+    if (rows.length === 0) {
+      throw new Error(`PTMT REPORT 1-9 roster has no recognised item rows in ${SHEET_IDS.ptmtAnuj}`);
+    }
+    logger.info(
+      {
+        reports: reportTabs.length,
+        rows: rows.length,
+        expectedRows: EXPECTED_PTMT_REPORT_ROWS,
+        rowCountMatches: rows.length === EXPECTED_PTMT_REPORT_ROWS,
+        blankColourRows: rows.filter((row) => !row.colour).length,
+      },
+      "PTMT REPORT 1-9 roster loaded at item-code/colour grain",
+    );
+    return rows;
+  });
 }
 
 async function fetchAvg3MoSaleTotalsInner(month: string): Promise<DualTotals> {
@@ -1200,7 +1296,19 @@ async function fetchPlumbingBomWeightsInner(now: number): Promise<Map<string, nu
   }
 
   _bomWeightsCache = { weights, expires: now + 15 * 60 * 1000 };
-  logger.info({ combinedCount, newCount, total: weights.size }, "Plumbing BOM weights merged");
+  const overrides = await db.select().from(plumbingBomOverridesTable);
+  let overrideCount = 0;
+  for (const override of overrides) {
+    const code = String(override.itemCode ?? "").trim().toUpperCase();
+    const kgPerPiece = Number(override.kgPerPiece);
+    // Additive-only: a live-sheet exact key remains authoritative.
+    if (code && kgPerPiece > 0 && !weights.has(code)) {
+      weights.set(code, kgPerPiece);
+      overrideCount++;
+    }
+  }
+  _bomWeightsCache = { weights, expires: now + 15 * 60 * 1000 };
+  logger.info({ combinedCount, newCount, overrideCount, total: weights.size }, "Plumbing BOM weights merged");
   return weights;
 }
 
@@ -1272,7 +1380,7 @@ async function readPlumbingSheet3Production(
     if (!d) { unparseableDates++; continue; }
     if (d.getFullYear() !== year || d.getMonth() + 1 !== mon) continue;
     const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    rows.push({ dateStr, rawCode: codeRaw, normCode: normalizeCodeStrict(codeRaw), qty });
+    rows.push({ dateStr, rawCode: codeRaw, normCode: normalizeProductionCode(codeRaw), qty });
   }
 
   // Date-format guard: ANY production row (code + positive qty) whose date we
@@ -1905,7 +2013,8 @@ function normItemType(raw: string): "Pipe" | "Fitting" | "Solvent" | null {
   return null;
 }
 
-export const PLUMBING_MATERIALS = ["CPVC", "UPVC", "SWR", "AGRI"] as const;
+export const PLUMBING_MATERIALS = ["CPVC", "UPVC", "SWR", "AGRI", "HDPE"] as const;
+const PLUMBING_CORE_MATERIALS = ["CPVC", "UPVC", "SWR", "AGRI"] as const;
 
 /** Normalize display punctuation/spacing so "CPVC PIPE" and " cpvc_pipe " compare alike. */
 export function normalizePlumbingTabName(tab: string): string {
@@ -1940,6 +2049,10 @@ function typeFromPlumbingTab(tab: string): "Pipe" | "Fitting" | "Solvent" | null
   if (normalized.endsWith("FITTING") || normalized.endsWith("FITTINGS") || normalized.endsWith("FT")) return "Fitting";
   if (normalized.endsWith("PIPE") || normalized.endsWith("PIPES")) return "Pipe";
   return null;
+}
+
+function defaultTypeFromPlumbingMaterial(material: string): "Pipe" | "Fitting" | "Solvent" | null {
+  return material.toUpperCase() === "HDPE" ? "Pipe" : null;
 }
 
 const MONTH_NUMBER_BY_NAME: Record<string, number> = {
@@ -2084,7 +2197,7 @@ async function fetchPlumbingPlanDataInner(month: string): Promise<PlumbingPlanRo
   let tabs: string[] = [];
   for (const candidateId of [...new Set([dbId, hardcodedId, ...driveIds].filter(Boolean) as string[])]) {
     const candidateTabs = await listTabs(candidateId);
-    const hasMaterialTab = PLUMBING_MATERIALS.some((m) =>
+    const hasMaterialTab = PLUMBING_CORE_MATERIALS.some((m) =>
       candidateTabs.some((t) => t.toUpperCase().includes(m)),
     );
     if (hasMaterialTab) {
@@ -2120,7 +2233,7 @@ async function fetchPlumbingPlanDataInner(month: string): Promise<PlumbingPlanRo
   };
 
   const masterTab = tabs.find((tab) => normalizePlumbingTabName(tab) === "MASTER");
-  const hasPlainMaterialTab = PLUMBING_MATERIALS.every((material) =>
+  const hasPlainMaterialTab = PLUMBING_CORE_MATERIALS.every((material) =>
     tabs.some((tab) => normalizePlumbingTabName(tab) === normalizePlumbingTabName(material)),
   );
   if (masterTab && !hasPlainMaterialTab) {
@@ -2144,7 +2257,13 @@ async function fetchPlumbingPlanDataInner(month: string): Promise<PlumbingPlanRo
     }
   }
 
-  for (const material of PLUMBING_MATERIALS) {
+  // HDPE is part of the September 2026 authoritative source roster. Keep
+  // historical four-material workbooks on their prior 12-category contract,
+  // even when an older workbook happens to contain an incidental HDPE tab.
+  const materialsToParse = month === "2026-09"
+    ? PLUMBING_MATERIALS
+    : PLUMBING_CORE_MATERIALS;
+  for (const material of materialsToParse) {
     // Prefer the plain "CPVC" / "UPVC" / "SWR" / "AGRI" tab over compound variants
     // like "CPVC TOP ITEM" that contain only the top-100 rows and no type column.
     // Priority: (1) exact case-insensitive match, (2) contains material but NOT "TOP ITEM",
@@ -2287,7 +2406,7 @@ async function fetchPlumbingPlanDataInner(month: string): Promise<PlumbingPlanRo
         }
       }
 
-      const tabType = typeFromPlumbingTab(tab);
+      const tabType = typeFromPlumbingTab(tab) ?? defaultTypeFromPlumbingMaterial(material);
       logger.info(
         { material, tab, headerRowIdx, codeCol, typeCol, tabType, multiplierCol, avg3moCol, avg3moMonthCols,
           header: header.slice(0, 20) },
@@ -2355,7 +2474,7 @@ async function fetchPlumbingPlanDataInner(month: string): Promise<PlumbingPlanRo
     }
   }
 
-  const missingMaterials = PLUMBING_MATERIALS.filter((material) => !parsedMaterials.has(material));
+  const missingMaterials = PLUMBING_CORE_MATERIALS.filter((material) => !parsedMaterials.has(material));
   if (missingMaterials.length > 0 || result.length === 0) {
     const materialLikeTabs = tabs.filter(looksLikePlumbingMaterialTab);
     const reportedTabs = [...new Set([...skippedTabs, ...materialLikeTabs])];

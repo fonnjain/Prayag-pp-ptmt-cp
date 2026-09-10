@@ -517,7 +517,7 @@ export function computeCapByCategory(
  * Rebuilds the "as issued" baseline from an immutable plan run snapshot.
  * Weekly release (week/w1–w4) is re-derived from the frozen plan numbers using
  * the CURRENT weekly release bands (bands are configuration, not plan data).
- * weightKg is not part of the frozen snapshot, so kg figures are 0 for frozen
+ * totalKg is not part of the frozen snapshot, so kg figures are 0 for frozen
  * baselines — acceptable: kg fields are a Plumbing display aid, and the frozen
  * baseline path is primarily a PTMT month-issuance feature.
  */
@@ -555,7 +555,7 @@ async function loadFrozenBaselineItems(
       maxProduction: r.productionPlan,
       temporaryPlan: r.temporaryPlan,
       material: r.material ?? (segment === "Plumbing" ? r.category.split(" ")[0] : undefined),
-      weightKg: r.weightKg ?? undefined,
+      totalKg: r.totalKg ?? undefined,
       pendingOrderLastMonth: inp?.pendingLastMonth ?? 0,
       pendingOrder: inp?.pendingCurrent ?? 0,
       order: 0,
@@ -829,8 +829,8 @@ async function runCorrectiveReplanInternal(
 
     const remainingToProduce = round(Math.max(planRev - producedToDate, 0));
 
-    // P6: kg per piece (Plumbing only; weightKg = maxProduction × kgPerPiece)
-    const kgPerPiece = orig.maxProduction > 0 ? ((orig.weightKg ?? 0) / orig.maxProduction) : 0;
+    // P6: kg per piece (Plumbing only; totalKg = maxProduction × kgPerPiece)
+    const kgPerPiece = orig.maxProduction > 0 ? ((orig.totalKg ?? 0) / orig.maxProduction) : 0;
     const kgRev = round(planRev * kgPerPiece);
     const remainingKg = round(remainingToProduce * kgPerPiece);
 
@@ -1011,24 +1011,24 @@ async function runCorrectiveReplanInternal(
         item.cannotBeMadeReason = "UNSUPPORTED_PLUMBING_CATEGORY";
         continue;
       }
-      const weightPerPiece = originalByKey.get(itemKey(item.itemCode, item.colour))?.weightKg;
+      const totalKg = originalByKey.get(itemKey(item.itemCode, item.colour))?.totalKg;
       const originalPlan = originalByKey.get(itemKey(item.itemCode, item.colour))?.maxProduction ?? 0;
-      if (!weightPerPiece || originalPlan <= 0) {
+      if (!totalKg || originalPlan <= 0) {
         item.cannotBeMade = item.remainingToProduce;
         item.cannotBeMadeReason = "NO_BOM_WEIGHT";
         continue;
       }
-      const weight = weightPerPiece / originalPlan;
+      const kgPerPiece = totalKg / originalPlan;
       const demand = {
         item_code: item.itemCode,
         material: item.category.split(" ")[0]!,
         // Preserve fractional plan quantities until the scheduler adapter
         // applies the integer piece boundary and records exclusions.
         qty_pcs: item.remainingToProduce,
-        weight_kg_per_piece: weight,
+        weight_kg_per_piece: kgPerPiece,
       };
       demandByKind[kind].push(demand);
-      weightByCode.set(item.itemCode, weight);
+      weightByCode.set(item.itemCode, kgPerPiece);
     }
 
     plumbingSchedule = await runPlumbingCorrectiveSchedule({

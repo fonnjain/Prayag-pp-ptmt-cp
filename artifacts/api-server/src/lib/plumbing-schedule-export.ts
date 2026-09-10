@@ -98,6 +98,29 @@ function addUnfinished(
   }
 }
 
+function dataLimitedReason(row: JsonObject): string {
+  const reasons = [
+    ...(Array.isArray(row.reasons) ? row.reasons : []),
+    ...(Array.isArray(row.reason_text) ? row.reason_text : []),
+  ].map((reason) => String(reason).trim()).filter(Boolean);
+  const direct = String(row.reason ?? row.message ?? "").trim();
+  if (direct) reasons.push(direct);
+  return [...new Set(reasons)].join("; ") || "Scheduler data limited";
+}
+
+function addDataLimited(
+  target: Map<string, string>,
+  kind: "pipe" | "fitting",
+  resultJson: JsonObject,
+): void {
+  for (const raw of asArray(resultJson.data_limited)) {
+    const row = asObject(raw);
+    if (!row) continue;
+    const code = normalizeCode(row.item_code ?? row.raw_code ?? row.itemCode);
+    if (code) target.set(`${kind}::${code}`, dataLimitedReason(row));
+  }
+}
+
 function addBlockHours(
   target: Map<string, [number, number, number, number]>,
   row: PersistedPlumbingScheduleRow,
@@ -180,18 +203,28 @@ export function applyPlumbingScheduleToFrozenRows(
 ): FrozenPlanRow[] {
   const byKind = scheduleRowsByKind(schedules);
   const sentByCode = new Map<string, Set<string>>();
+  const dataLimitedByCode = new Map<string, string>();
   const unfinishedByCode = new Map<string, number>();
   const hoursByCode = new Map<string, [number, number, number, number]>();
 
   for (const kind of ["pipe", "fitting"] as const) {
     const schedule = byKind.get(kind)!;
     sentByCode.set(kind, requestCodes(schedule));
+    addDataLimited(dataLimitedByCode, kind, schedule.resultJson);
     addUnfinished(unfinishedByCode, schedule.resultJson);
     addBlockHours(hoursByCode, schedule);
   }
 
   return rows.map((row) => {
-    const originalPlan = Math.max(0, row.productionPlan);
+    const isPipe = row.category.endsWith("Pipe");
+    const isFitting = row.category.endsWith("Fitting");
+    const kind = isPipe ? "pipe" : isFitting ? "fitting" : null;
+    const limitedReason = kind
+      ? dataLimitedByCode.get(`${kind}::${normalizeCode(row.itemCode)}`)
+      : undefined;
+    const originalPlan = limitedReason
+      ? Math.max(0, row.productionPlan, row.temporaryPlan)
+      : Math.max(0, row.productionPlan);
     const isSolvent = row.category.endsWith("Solvent");
     if (isSolvent) {
       return {
@@ -206,16 +239,31 @@ export function applyPlumbingScheduleToFrozenRows(
       };
     }
 
-    const isPipe = row.category.endsWith("Pipe");
-    const isFitting = row.category.endsWith("Fitting");
     if (!isPipe && !isFitting) {
       throw new PlumbingScheduleExportError(
         `Plumbing item ${row.itemCode} is in unsupported export category "${row.category}".`,
       );
     }
-    const kind = isPipe ? "pipe" : "fitting";
+    if (kind === null) {
+      throw new PlumbingScheduleExportError(`Plumbing item ${row.itemCode} has no scheduler kind.`);
+    }
+    if (limitedReason) {
+      return {
+        ...row,
+        dataLimited: true,
+        dataLimitedReason: limitedReason,
+        productionPlan: 0,
+        cannotBeMade: 0,
+        releaseWeek: null,
+        w1: 0,
+        w2: 0,
+        w3: 0,
+        w4: 0,
+      };
+    }
+    const scheduleKind = kind;
     const code = normalizeCode(row.itemCode);
-    const sent = sentByCode.get(kind)!.has(code);
+    const sent = sentByCode.get(scheduleKind)!.has(code);
     const unfinished = sent ? Math.min(originalPlan, unfinishedByCode.get(code) ?? 0) : originalPlan;
     const scheduled = roundQuantity(Math.max(0, originalPlan - unfinished));
     const weeks = sent

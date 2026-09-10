@@ -17,10 +17,16 @@ import {
   PlanningInputError,
   withSimulatedMissingUpload,
   effectivePlumbingBufferMultiplier,
+  aggregatePlumbingUnmappedPendingRows,
+  assertPlumbingUnclassifiedPendingConservation,
 } from "./plan.js";
 import { computeItemPlan } from "../lib/calc.js";
 import planRouter from "./plan.js";
-import { parseStatusReasonInput } from "./plan-runs.js";
+import {
+  parseStatusReasonInput,
+  temporaryRerunBlock,
+  temporaryRerunClosedMessage,
+} from "./plan-runs.js";
 import { runCorrectiveReplan } from "../lib/corrective-engine.js";
 
 test("withdrawn Plumbing codes keep pending demand but remove speculative buffer", () => {
@@ -42,6 +48,125 @@ test("withdrawn Plumbing codes keep pending demand but remove speculative buffer
     assert.equal(item.pendingOrder, 23, itemCode);
     assert.equal(item.maxProduction, 40, itemCode);
   }
+});
+
+test("unmatched Plumbing pending rows are aggregated into Unclassified with provenance", () => {
+  const items = aggregatePlumbingUnmappedPendingRows([
+    {
+      sourceRole: "pending_current",
+      sourceRowCount: 1,
+      sourceQuantity: 25,
+      rosterMatchedQuantity: 0,
+      planResolvedQuantity: 0,
+      unmatchedQuantity: 25,
+      resolutionLossQuantity: 0,
+      rosterMatchedRowCount: 0,
+      planResolvedRowCount: 0,
+      unmatchedRowCount: 1,
+      resolutionLossRowCount: 0,
+      unmatchedRows: [{
+        segment: "PLUMBING",
+        sourceRole: "pending_current",
+        code: "A-1",
+        colour: "",
+        description: "Unknown valve",
+        quantity: 25,
+        disposition: "unmatched",
+        reason: "NO_ROSTER_MATCH",
+      }],
+      resolutionLossRows: [],
+      reconciliation: {
+        sourceQuantity: 25,
+        joinedQuantity: 0,
+        explainedExclusionQuantity: 25,
+        unexplainedResidual: 0,
+        reconciled: true,
+      },
+    },
+    {
+      sourceRole: "pending_last_month",
+      sourceRowCount: 1,
+      sourceQuantity: 10,
+      rosterMatchedQuantity: 0,
+      planResolvedQuantity: 0,
+      unmatchedQuantity: 10,
+      resolutionLossQuantity: 0,
+      rosterMatchedRowCount: 0,
+      planResolvedRowCount: 0,
+      unmatchedRowCount: 1,
+      resolutionLossRowCount: 0,
+      unmatchedRows: [{
+        segment: "PLUMBING",
+        sourceRole: "pending_last_month",
+        code: "A-1",
+        colour: "",
+        description: "Unknown valve",
+        quantity: 10,
+        disposition: "unmatched",
+        reason: "NO_ROSTER_MATCH",
+      }],
+      resolutionLossRows: [],
+      reconciliation: {
+        sourceQuantity: 10,
+        joinedQuantity: 0,
+        explainedExclusionQuantity: 10,
+        unexplainedResidual: 0,
+        reconciled: true,
+      },
+    },
+  ]);
+
+  assert.deepEqual(items, [{
+    itemCode: "A-1",
+    colour: "",
+    itemName: "Unknown valve",
+    pendingOrder: 25,
+    pendingOrderLastMonth: 10,
+    sourceRole: "pending_current,pending_last_month",
+    reason: "NO_ROSTER_MATCH",
+  }]);
+});
+
+test("Plumbing Unclassified rows conserve current and last-month unmatched evidence", () => {
+  const diagnostics = (unmatchedQuantity: number) => ({
+    sourceRole: "pending_current",
+    sourceRowCount: 1,
+    sourceQuantity: unmatchedQuantity,
+    rosterMatchedQuantity: 0,
+    planResolvedQuantity: 0,
+    unmatchedQuantity,
+    resolutionLossQuantity: 0,
+    rosterMatchedRowCount: 0,
+    planResolvedRowCount: 0,
+    unmatchedRowCount: 1,
+    resolutionLossRowCount: 0,
+    unmatchedRows: [],
+    resolutionLossRows: [],
+    reconciliation: {
+      sourceQuantity: unmatchedQuantity,
+      joinedQuantity: 0,
+      explainedExclusionQuantity: unmatchedQuantity,
+      unexplainedResidual: 0,
+      reconciled: true,
+    },
+  });
+
+  const items = [{
+    category: "Unclassified",
+    pendingOrder: 33386,
+    pendingOrderLastMonth: 7591,
+  }] as never;
+
+  assert.doesNotThrow(() => assertPlumbingUnclassifiedPendingConservation(
+    items,
+    diagnostics(33386),
+    diagnostics(7591),
+  ));
+
+  assert.throws(
+    () => assertPlumbingUnclassifiedPendingConservation(items, diagnostics(33385), diagnostics(7591)),
+    /unclassifiedPending=33386, unmatchedPendingEvidence=33385, pendingDifference=1/,
+  );
 });
 
 test("Google Sheets connector 504 becomes a named upstream timeout", async () => {
@@ -194,21 +319,19 @@ test("validation evidence is persisted before an uploaded pending read can fail"
 });
 
 test("Plumbing corrective live rebuild uses the month-correct source before machine checks", async () => {
-  await assert.rejects(
-    () => runCorrectiveReplan({
-      month: "2026-07",
-      segment: "Plumbing",
-      weekClosed: 0,
-      dryRun: true,
-    }),
-    (error: unknown) => {
-      assert.match(
-        String(error),
-        /no non-idle corrective machine-hour blocks/,
-      );
-      return true;
-    },
-  );
+  const result = await runCorrectiveReplan({
+    month: "2026-07",
+    segment: "Plumbing",
+    weekClosed: 0,
+    dryRun: true,
+  });
+
+  // This is a source-selection regression check. The July rebuild must
+  // complete against July's workbook and remain dry-run only; it must not
+  // accidentally use the current September source or create a run.
+  assert.equal(result.month, "2026-07");
+  assert.equal(result.segment, "Plumbing");
+  assert.equal(result.runId, 0);
 });
 
 test("plan-run status reason validation trims and rejects unsafe metadata", () => {
@@ -232,6 +355,28 @@ test("plan-run status reason validation trims and rejects unsafe metadata", () =
     ok: false,
     error: "planStatusReason must be at most 4000 characters",
   });
+});
+
+test("temporary rerun gate names the finalized Production baseline and date", () => {
+  assert.equal(temporaryRerunBlock(undefined), null);
+  assert.deepEqual(
+    temporaryRerunBlock({
+      id: 30,
+      createdAt: "2026-09-06T14:23:00.000Z",
+    }),
+    {
+      error: "TEMPORARY_RERUN_CLOSED",
+      message: "Production Plan #30 was fitted on 6 September 2026. The month's baseline is set — use Recompute to update it.",
+      productionRunId: 30,
+    },
+  );
+  assert.equal(
+    temporaryRerunClosedMessage({
+      id: 30,
+      createdAt: "2026-09-06T14:23:00.000Z",
+    }),
+    "Production Plan #30 was fitted on 6 September 2026. The month's baseline is set — use Recompute to update it.",
+  );
 });
 
 test("production-plan pending source is the uploaded file while live pending remains diagnostic-only", () => {

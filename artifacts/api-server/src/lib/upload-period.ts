@@ -68,8 +68,8 @@ function monthFromDate(value: Date | string | null | undefined): string | null {
  *
  * LAST_MONTH_PENDING and Plumbing FG Stock name the source month immediately
  * before the plan month. Current stock names the plan month directly. DATA
- * files without a month use their upload timestamp for legacy compatibility;
- * new uploads should provide an explicit period.
+ * files without a month may use their upload timestamp for legacy
+ * compatibility, but new uploads must opt out and provide an explicit period.
  */
 export function inferUploadPlanningMonth(
   kind: string,
@@ -77,6 +77,7 @@ export function inferUploadPlanningMonth(
   uploadedAt: Date | string | null | undefined,
   explicitPeriod?: string | null,
   detectedSourcePeriod?: string | null,
+  allowLegacyTimestampFallback = true,
 ): string | null {
   if (explicitPeriod && /^\d{4}-(0[1-9]|1[0-2])$/.test(explicitPeriod)) return explicitPeriod;
   // Workbook content (especially the Pending Order tab) is more authoritative
@@ -90,5 +91,5 @@ export function inferUploadPlanningMonth(
     // "Pending Order Aug-26"), while the upload feeds the following plan month.
     return shiftMonth(sourceMonth, 1);
   }
-  return sourceMonth ?? monthFromDate(uploadedAt);
+  return sourceMonth ?? (allowLegacyTimestampFallback ? monthFromDate(uploadedAt) : null);
 }

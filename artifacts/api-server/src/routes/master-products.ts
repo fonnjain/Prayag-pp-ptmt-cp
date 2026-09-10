@@ -10,6 +10,7 @@ import {
   syncMasterProducts,
   upsertCategoryMapping,
   getProducts,
+  getPlumbingRosterCoverage,
   reclassifyProduct,
   InvalidProductClassificationError,
   type ProductClassificationStatus,
@@ -37,8 +38,8 @@ router.get("/master-products/products", async (req, res): Promise<void> => {
     return;
   }
   const source = req.query.source == null ? undefined : String(req.query.source);
-   if (source && !["workbook", "rate-list", "catalogue", "seed", "mrp"].includes(source)) {
-    res.status(400).json({ error: "INVALID_SOURCE", message: "source must be workbook, rate-list, catalogue, seed, or mrp." });
+   if (source && !["workbook", "rate-list", "catalogue", "seed", "mrp", "prayag-planning-tabs"].includes(source)) {
+    res.status(400).json({ error: "INVALID_SOURCE", message: "source must be workbook, rate-list, catalogue, seed, mrp, or prayag-planning-tabs." });
     return;
   }
   try {
@@ -46,7 +47,7 @@ router.get("/master-products/products", async (req, res): Promise<void> => {
       segment,
       status: status as ProductClassificationStatus | undefined,
       category: req.query.category == null ? undefined : String(req.query.category),
-       source: source as "workbook" | "rate-list" | "catalogue" | "seed" | "mrp" | undefined,
+        source: source as "workbook" | "rate-list" | "catalogue" | "seed" | "mrp" | "prayag-planning-tabs" | undefined,
       search: req.query.search == null ? undefined : String(req.query.search),
     }));
   } catch (error) {
@@ -60,6 +61,25 @@ router.get("/master-products/products", async (req, res): Promise<void> => {
     res.status(500).json({
       error: "PRODUCTS_FAILED",
       message: error instanceof Error ? error.message : "Could not load products.",
+    });
+  }
+});
+
+router.get("/master-products/plumbing-roster-coverage", async (req, res): Promise<void> => {
+  const month = String(req.query.month ?? "");
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    res.status(400).json({
+      error: "INVALID_MONTH",
+      message: "month is required in YYYY-MM format.",
+    });
+    return;
+  }
+  try {
+    res.json(await getPlumbingRosterCoverage(month));
+  } catch (error) {
+    res.status(502).json({
+      error: "PLUMBING_ROSTER_COVERAGE_FAILED",
+      message: error instanceof Error ? error.message : "Could not build Plumbing roster coverage.",
     });
   }
 });

@@ -1,0 +1,2202 @@
+{
+  "stage": "H2r",
+  "warningOnly": true,
+  "rosterSizeBefore": 6574,
+  "rosterSizeAfter": 6574,
+  "frozenPlanRunId": 2419,
+  "frozenRows2419": 3584,
+  "collisionCount": 101,
+  "collisions": [
+    {
+      "strictKey": "1231F",
+      "entries": [
+        {
+          "rawCode": "1231-F",
+          "colour": "BURGUNDY",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "1231-F",
+          "colour": "GREEN",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "1231-F",
+          "colour": "IVORY",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "1231-F",
+          "colour": "M GREEN",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "1231-F",
+          "colour": "PINK",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "1231-F",
+          "colour": "WHITE",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "1231F",
+          "colour": "",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        }
+      ]
+    },
+    {
+      "strictKey": "129I",
+      "entries": [
+        {
+          "rawCode": "129-I",
+          "colour": "IVORY",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "129-I",
+          "colour": "WHITE",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "129I",
+          "colour": "",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        }
+      ]
+    },
+    {
+      "strictKey": "129QW",
+      "entries": [
+        {
+          "rawCode": "129-QW",
+          "colour": "",
+          "category": "Cocks Premium",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "129QW",
+          "colour": "",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        }
+      ]
+    },
+    {
+      "strictKey": "130C",
+      "entries": [
+        {
+          "rawCode": "130-C",
+          "colour": "BURGUNDY",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "130-C",
+          "colour": "GREEN",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "130-C",
+          "colour": "IVORY",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "130-C",
+          "colour": "M GREEN",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "130-C",
+          "colour": "PINK",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "130-C",
+          "colour": "WHITE",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 115
+        },
+        {
+          "rawCode": "130C",
+          "colour": "",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        }
+      ]
+    },
+    {
+      "strictKey": "132I",
+      "entries": [
+        {
+          "rawCode": "132-I",
+          "colour": "IVORY",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "132-I",
+          "colour": "WHITE",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "132I",
+          "colour": "",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        }
+      ]
+    },
+    {
+      "strictKey": "132T",
+      "entries": [
+        {
+          "rawCode": "132-T",
+          "colour": "BURGUNDY",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "132-T",
+          "colour": "GREEN",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "132-T",
+          "colour": "IVORY",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 4197
+        },
+        {
+          "rawCode": "132-T",
+          "colour": "M GREEN",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "132-T",
+          "colour": "PINK",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "132-T",
+          "colour": "WHITE",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 1902.67
+        },
+        {
+          "rawCode": "132T",
+          "colour": "",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        }
+      ]
+    },
+    {
+      "strictKey": "133NEW",
+      "entries": [
+        {
+          "rawCode": "133-NEW",
+          "colour": "BURGUNDY",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "133-NEW",
+          "colour": "GREEN",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "133-NEW",
+          "colour": "IVORY",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 136
+        },
+        {
+          "rawCode": "133-NEW",
+          "colour": "M GREEN",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "133-NEW",
+          "colour": "PINK",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "133-NEW",
+          "colour": "WHITE",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        },
+        {
+          "rawCode": "133NEW",
+          "colour": "",
+          "category": "Cocks Standard",
+          "entryPath": "rate-list",
+          "demand": 0
+        }
+      ]
+    },
+    {
+      "strictKey": "492B",
+      "entries": [
+        {
+          "rawCode": "492-B",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "492B",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "493B",
+      "entries": [
+        {
+          "rawCode": "493-B",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "493B",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "5254S",
+      "entries": [
+        {
+          "rawCode": "5254-S",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "5254S",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7305F",
+      "entries": [
+        {
+          "rawCode": "7305 F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7305-F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7892NONOFFN",
+      "entries": [
+        {
+          "rawCode": "7892 N-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7892N-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7903F",
+      "entries": [
+        {
+          "rawCode": "7903 F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7903-F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7916F",
+      "entries": [
+        {
+          "rawCode": "7916 F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7916-F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7918F",
+      "entries": [
+        {
+          "rawCode": "7918 F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7918-F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7950F",
+      "entries": [
+        {
+          "rawCode": "7950 F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7950-F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7952F",
+      "entries": [
+        {
+          "rawCode": "7952-F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7952F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7965F",
+      "entries": [
+        {
+          "rawCode": "7965 F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7965-F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7970F",
+      "entries": [
+        {
+          "rawCode": "7970 F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7970-F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7992F",
+      "entries": [
+        {
+          "rawCode": "7992 F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7992F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7992FN",
+      "entries": [
+        {
+          "rawCode": "7992 F-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7992F-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7992FONOFFN",
+      "entries": [
+        {
+          "rawCode": "7992 F-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7992F-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7995F",
+      "entries": [
+        {
+          "rawCode": "7995 F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7995-F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "7998F",
+      "entries": [
+        {
+          "rawCode": "7998-F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "7998F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "9392NN",
+      "entries": [
+        {
+          "rawCode": "9392 N-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "9392N-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "9392N-N.",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "BB53S",
+      "entries": [
+        {
+          "rawCode": "BB-53-S",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "BB-53-S.",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "BB79F",
+      "entries": [
+        {
+          "rawCode": "BB-79 F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "BB-79F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "BB93N",
+      "entries": [
+        {
+          "rawCode": "BB-93-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "BB-93N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "BB93-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "BCT04S",
+      "entries": [
+        {
+          "rawCode": "BCT-04S",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "BCT04S",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "BCT05S",
+      "entries": [
+        {
+          "rawCode": "BCT-05S",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "BCT05S",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "BH73",
+      "entries": [
+        {
+          "rawCode": "BH 73",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "BH-73",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "BH79",
+      "entries": [
+        {
+          "rawCode": "BH 79",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "BH-79",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "C5211",
+      "entries": [
+        {
+          "rawCode": "C 5211",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "C5211",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "CNS15",
+      "entries": [
+        {
+          "rawCode": "CNS 15",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "CNS-15",
+          "colour": "",
+          "category": "Accessorise",
+          "entryPath": "rate-list",
+          "demand": 70
+        }
+      ]
+    },
+    {
+      "strictKey": "CSS79F",
+      "entries": [
+        {
+          "rawCode": "CSS 79F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "CSS-79F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "D5151",
+      "entries": [
+        {
+          "rawCode": "D 5151",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "D-5151",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "D5516",
+      "entries": [
+        {
+          "rawCode": "D 5516",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "D-5516",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "D5751",
+      "entries": [
+        {
+          "rawCode": "D 5751",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "D-5751",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB523INONOFFN",
+      "entries": [
+        {
+          "rawCode": "DB-52-3 IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-52-3IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB533INN",
+      "entries": [
+        {
+          "rawCode": "DB-53-3 IN-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-53-3IN-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB533INONOFFN",
+      "entries": [
+        {
+          "rawCode": "DB-53-3 IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-53-3IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-53-3IN-ON-OFF-N.",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB663IN",
+      "entries": [
+        {
+          "rawCode": "DB-66-3 IN",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-66-3IN",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB663INONOFF",
+      "entries": [
+        {
+          "rawCode": "DB-66-3 IN-ON-OFF",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-66-3IN ON-OFF",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB683INONOFFN",
+      "entries": [
+        {
+          "rawCode": "DB-68-3 IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-68-3IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-68-3IN-ON-OFF-N.",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB713INN",
+      "entries": [
+        {
+          "rawCode": "DB-71 3 IN-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-71-3 IN-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB713INONOFFN",
+      "entries": [
+        {
+          "rawCode": "DB-71-3 IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-71-3-IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-71-3IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB71H",
+      "entries": [
+        {
+          "rawCode": "DB-71-H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-71H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB78NHN",
+      "entries": [
+        {
+          "rawCode": "DB-78 N-H-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-78N-H-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB78ONOFF",
+      "entries": [
+        {
+          "rawCode": "DB-78 ON-OFF",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-78-ON-OFF",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB78S",
+      "entries": [
+        {
+          "rawCode": "DB-78-S",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB78S",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB79F3INN",
+      "entries": [
+        {
+          "rawCode": "DB-79 F-3 IN-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-79F-3IN-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB79F3INONOFFN",
+      "entries": [
+        {
+          "rawCode": "DB-79 F-3 IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-79F-3IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB79FH",
+      "entries": [
+        {
+          "rawCode": "DB-79 F-H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-79F-H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-79FH",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB79FHN",
+      "entries": [
+        {
+          "rawCode": "DB-79 F-H-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-79F-H-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB79FHONOFFN",
+      "entries": [
+        {
+          "rawCode": "DB-79 F-H-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-79F-H-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB79FN",
+      "entries": [
+        {
+          "rawCode": "DB-79 F-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-79F-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB79HONOFFN",
+      "entries": [
+        {
+          "rawCode": "DB-79-H-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB79-H-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB79ONOFF",
+      "entries": [
+        {
+          "rawCode": "DB-79 ON-OFF",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-79-ON-OFF",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB813INONOFFN",
+      "entries": [
+        {
+          "rawCode": "DB-81-3 IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-81-3IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB873INONOFFN",
+      "entries": [
+        {
+          "rawCode": "DB-87-3 IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-87-3IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB87ONOFF",
+      "entries": [
+        {
+          "rawCode": "DB-87 ON-OFF",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-87ON-OFF",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB903INONOFFN",
+      "entries": [
+        {
+          "rawCode": "DB-90-3 IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-90-3IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB90H",
+      "entries": [
+        {
+          "rawCode": "DB-90-H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-90H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB93HN",
+      "entries": [
+        {
+          "rawCode": "DB-93-H-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-93-H-N.",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DB93N",
+      "entries": [
+        {
+          "rawCode": "DB-93-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-93-N.",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DB-93N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DBP66",
+      "entries": [
+        {
+          "rawCode": "DB-P66",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DBP-66",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "DPH79F",
+      "entries": [
+        {
+          "rawCode": "DPH-79F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "DPH79F",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "P6650",
+      "entries": [
+        {
+          "rawCode": "P-6650",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "P6650",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "P6870",
+      "entries": [
+        {
+          "rawCode": "P-6870",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "P6870",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PD3INN",
+      "entries": [
+        {
+          "rawCode": "PD-3 IN-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PD-3IN-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PD3INONOFFN",
+      "entries": [
+        {
+          "rawCode": "PD-3 IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PD-3IN-ON-OFF-N",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS02",
+      "entries": [
+        {
+          "rawCode": "PIS 02",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-02",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS02H",
+      "entries": [
+        {
+          "rawCode": "PIS 02H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-02 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-02H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS06",
+      "entries": [
+        {
+          "rawCode": "PIS 06",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-06",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS06H",
+      "entries": [
+        {
+          "rawCode": "PIS 06H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-06 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-06H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS08",
+      "entries": [
+        {
+          "rawCode": "PIS 08",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-08",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS08H",
+      "entries": [
+        {
+          "rawCode": "PIS 08H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-08 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-08H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS09",
+      "entries": [
+        {
+          "rawCode": "PIS 09",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-09",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS09H",
+      "entries": [
+        {
+          "rawCode": "PIS 09H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-09 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-09H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS10",
+      "entries": [
+        {
+          "rawCode": "PIS 10",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-10",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS10H",
+      "entries": [
+        {
+          "rawCode": "PIS 10 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS 10H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-10 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS11H",
+      "entries": [
+        {
+          "rawCode": "PIS-11 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-11H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS12",
+      "entries": [
+        {
+          "rawCode": "PIS 12",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-12",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS12H",
+      "entries": [
+        {
+          "rawCode": "PIS 12H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-12 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-12H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS14H",
+      "entries": [
+        {
+          "rawCode": "PIS-14 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-14H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS16",
+      "entries": [
+        {
+          "rawCode": "PIS 16",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-16",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS16H",
+      "entries": [
+        {
+          "rawCode": "PIS-16 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-16H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS18",
+      "entries": [
+        {
+          "rawCode": "PIS 18",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-18",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS18H",
+      "entries": [
+        {
+          "rawCode": "PIS 18H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-18 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-18H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS20H",
+      "entries": [
+        {
+          "rawCode": "PIS-20 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-20H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS26",
+      "entries": [
+        {
+          "rawCode": "PIS 26",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-26",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS28",
+      "entries": [
+        {
+          "rawCode": "PIS 28",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-28",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS50",
+      "entries": [
+        {
+          "rawCode": "PIS 50",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-50",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS50H",
+      "entries": [
+        {
+          "rawCode": "PIS-50 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-50H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS75H",
+      "entries": [
+        {
+          "rawCode": "PIS-75 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-75H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PIS80H",
+      "entries": [
+        {
+          "rawCode": "PIS-80 H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PIS-80H",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PR139",
+      "entries": [
+        {
+          "rawCode": "PR-139",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PR139",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PR144",
+      "entries": [
+        {
+          "rawCode": "PR-144",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PR144",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PR244",
+      "entries": [
+        {
+          "rawCode": "PR-244",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PR244",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PR444",
+      "entries": [
+        {
+          "rawCode": "PR-444",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PR444",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    },
+    {
+      "strictKey": "PR544",
+      "entries": [
+        {
+          "rawCode": "PR-544",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        },
+        {
+          "rawCode": "PR544",
+          "colour": "",
+          "category": "Unclassified",
+          "entryPath": "rate-list",
+          "demand": null
+        }
+      ]
+    }
+  ],
+  "categorySplit129": [
+    {
+      "itemCode": "129-QW",
+      "colour": "",
+      "category": "Cocks Premium",
+      "rosterSource": "rate-list",
+      "classificationSource": "prayag-planning-tabs",
+      "planningCategorySource": "prayag-planning-tabs",
+      "demand2419": 0
+    },
+    {
+      "itemCode": "129QW",
+      "colour": "",
+      "category": "Cocks Standard",
+      "rosterSource": "rate-list",
+      "classificationSource": "rate-list",
+      "planningCategorySource": "rate-list",
+      "demand2419": 0
+    }
+  ]
+}

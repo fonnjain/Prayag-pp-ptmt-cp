@@ -44,7 +44,7 @@ interface PlanItem {
   itemCode: string;
   category: string;
   maxProduction: number;
-  weightKg?: number;
+  totalKg?: number;
   w1: number;
   w2: number;
   w3: number;
@@ -98,6 +98,17 @@ interface ScheduleResult {
   total_unfinished_pcs: number;
   total_unfinished_kg: number;
   total_unfinished_hours: number;
+  total_data_limited_pcs: number;
+  total_data_limited_kg: number | null;
+  data_limited: Array<{
+    item_code: string;
+    material?: string;
+    requested_pcs?: number;
+    reasons?: string[];
+    reason_text?: string[];
+    reason?: string;
+    message?: string;
+  }>;
   total_downtime_hours_lost: number;
   total_downtime_machine_days: number;
   blocks: unknown[];
@@ -137,6 +148,20 @@ interface PlumbingScheduleReport {
   demand: { pieces: number; item_count: number; kg: number | null };
   scheduled: { pieces: number; kg: number | null; hours: number };
   unfinished: { pieces: number; kg: number; hours: number };
+  data_limited: Array<{
+    kind: "pipe" | "fitting";
+    item_code: string;
+    material: string;
+    qty_pcs: number;
+    reason: string;
+  }>;
+  data_limited_pieces: number;
+  working_days_provenance?: {
+    total_days: number;
+    week_days: number[];
+    worked_sunday_dates: string[];
+    source: string;
+  };
   capacity_hours: number;
   idle_hours: number;
   downtime_hours_lost: number;
@@ -187,9 +212,9 @@ function buildCategoryRows(items: PlanItem[]): CategoryRow[] {
       });
     }
     const row = map.get(item.category)!;
-    const wgt = item.weightKg ?? 0;
+    const totalKg = item.totalKg ?? 0;
     const maxProd = item.maxProduction || 1;
-    const kgPerPiece = wgt / maxProd;
+    const kgPerPiece = totalKg / maxProd;
 
     const desired = [item.w1, item.w2, item.w3, item.w4];
     const feasible = [item.machineW1 ?? 0, item.machineW2 ?? 0, item.machineW3 ?? 0, item.machineW4 ?? 0];
@@ -208,7 +233,7 @@ const CATEGORY_ORDER = [
   "CPVC Pipe", "CPVC Fitting", "CPVC Solvent",
   "UPVC Pipe", "UPVC Fitting", "UPVC Solvent",
   "SWR Pipe",  "SWR Fitting",  "SWR Solvent",
-  "AGRI Pipe", "AGRI Fitting", "AGRI Solvent",
+  "AGRI Pipe", "AGRI Fitting", "AGRI Solvent", "HDPE Pipe",
 ];
 
 export default function PlumbingMachineRelease({ month }: { month: string }) {
@@ -354,6 +379,19 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
                 <p className="mt-1 text-amber-700">These demand rows were kept out of the scheduler request because the machine app reported no capable route or BOM weight.</p>
               </div>
             )}
+            {schedule.data_limited.length > 0 && (
+              <div className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-900">
+                <strong>Data-limited ({schedule.data_limited.length} rows / {fmtN(schedule.data_limited_pieces)} pcs):</strong>
+                {" "}These rows were present in coverage but could not be treated as scheduled because the machine app reported limited source data.
+                <div className="mt-1 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
+                  {schedule.data_limited.map((row) => (
+                    <div key={`${row.kind}-${row.item_code}`}>
+                      <span className="font-medium">{row.item_code}</span> · {row.kind} · {row.material} · {fmtN(row.qty_pcs)} pcs · {row.reason}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {schedule.solventExclusions.length > 0 && (
               <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
                 <strong>Known limitation — solvents:</strong> {schedule.solventExclusions.length} solvent lines
@@ -370,6 +408,7 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
                 ["Items", `${schedule.demand.item_count}`],
                 ["Scheduled", `${fmtN(schedule.scheduled.pieces)} pcs`],
                 ["Scheduled kg", fmtMaybeKg(schedule.scheduled.kg)],
+                ["Data-limited", `${fmtN(schedule.data_limited_pieces)} pcs`],
                 ["Unfinished", `${fmtN(schedule.unfinished.pieces)} pcs`],
                 ["Unfinished kg", fmtKg(schedule.unfinished.kg)],
                 ["Capacity", fmtHrs(schedule.capacity_hours)],
@@ -386,6 +425,7 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
             <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-gray-600">
               <span><strong>week_days:</strong> [{schedule.week_days.join(", ")}] = {schedule.week_days.reduce((a, b) => a + b, 0)} working days</span>
               <span><strong>worked Sundays:</strong> {schedule.worked_sunday_dates.length ? schedule.worked_sunday_dates.join(", ") : "none"}</span>
+              <span><strong>calendar provenance:</strong> {schedule.working_days_provenance?.source ?? "sunday-aware-calendar"}</span>
               <span className="text-emerald-700">Both upstream echoes matched the sent calendar</span>
             </div>
             <div className="overflow-x-auto rounded-md border text-sm">
@@ -395,6 +435,7 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
                     <th className="px-3 py-2 text-left">Result</th>
                     <th className="px-3 py-2 text-right">Scheduled pcs</th>
                     <th className="px-3 py-2 text-right">Scheduled kg</th>
+                    <th className="px-3 py-2 text-right">Data-limited pcs</th>
                     <th className="px-3 py-2 text-right">Unfinished pcs</th>
                     <th className="px-3 py-2 text-right">Unfinished kg</th>
                     <th className="px-3 py-2 text-right">Unfinished h</th>
@@ -408,6 +449,7 @@ export default function PlumbingMachineRelease({ month }: { month: string }) {
                       <td className="px-3 py-2 font-medium capitalize">{result.kind}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{fmtN(result.total_scheduled_pcs)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{fmtMaybeKg(result.total_scheduled_kg)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-orange-700">{fmtN(result.total_data_limited_pcs)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-amber-700">{fmtN(result.total_unfinished_pcs)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-amber-700">{fmtKg(result.total_unfinished_kg)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-amber-700">{fmtHrs(result.total_unfinished_hours)}</td>

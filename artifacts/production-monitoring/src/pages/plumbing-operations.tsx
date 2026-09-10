@@ -211,7 +211,7 @@ export default function PlumbingOperations({ month, mode }: { month: string; mod
             <CardContent className="space-y-2 text-sm">
               <p>Actuals: <strong>Sheet3</strong> daily production feed.</p>
                <p>Last data date: <strong>{fmtDate(data.lastDataDate) || "Unavailable"}</strong></p>
-              <p>Categories: <strong>12 Plumbing categories</strong></p>
+              <p>Categories: <strong>13 Plumbing categories</strong></p>
             </CardContent>
           </Card>
           <Card>

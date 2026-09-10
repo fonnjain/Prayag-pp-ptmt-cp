@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { formatMonthLabel } from "@/lib/month";
 import { RefreshCw, FileSpreadsheet, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -10,6 +12,11 @@ import { useSegment } from "@/contexts/segment-context";
 import { useMonth } from "@workspace/month-filter";
 import { MonthEmptyState } from "@/components/month-empty-state";
 import { useCreateTemporaryPlan } from "@/hooks/use-create-temporary-plan";
+import {
+  useCreatePlanRun,
+  useListPlanRuns,
+  type PlanRunSummary,
+} from "@workspace/api-client-react";
 
 async function downloadFile(url: string, filename: string) {
   const response = await fetch(url);
@@ -39,7 +46,7 @@ async function downloadFile(url: string, filename: string) {
   URL.revokeObjectURL(objectUrl);
 }
 
-type ExportKind = "temporary-excel" | "excel" | "pdf" | "weekly-excel" | "corrective-excel-standard" | "corrective-excel-detail" | "corrective-pdf";
+type ExportKind = "temporary-excel" | "excel" | "pdf" | "weekly-excel" | "weekly-pdf" | "corrective-excel-standard" | "corrective-excel-detail" | "corrective-pdf";
 
 function DownloadPair({
   title,
@@ -97,8 +104,15 @@ export default function ExportPage() {
   const { month, isMonthAvailable, isAvailableMonthsLoading } = useMonth();
   const { segment } = useSegment();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [downloading, setDownloading] = useState<ExportKind | null>(null);
   const { createTemporaryPlan, isPending: isCreatingTemporaryPlan } = useCreateTemporaryPlan();
+  const { data: planRunsData, refetch: refetchPlanRuns } = useListPlanRuns({ month, segment });
+  const createCapacityPlan = useCreatePlanRun();
+  const planRuns = (planRunsData as unknown as PlanRunSummary[] | undefined) ?? [];
+  const finalizedTemporaryRun = planRuns.find(
+    (run) => run.planType === "temporary" && run.status === "finalized",
+  );
 
   function handleRunPlan() {
     createTemporaryPlan(
@@ -108,6 +122,42 @@ export default function ExportPage() {
           toast({ title: "Temporary Plan frozen", description: `Run #${run.id} is a demand-true snapshot for ${formatMonthLabel(month)}.` }),
         onError: () =>
           toast({ title: "Failed to create run", description: "Check that all data sources are available.", variant: "destructive" }),
+      },
+    );
+  }
+
+  function handleFitToCapacity(temporaryRunId: number) {
+    createCapacityPlan.mutate(
+      {
+        data: {
+          month,
+          segment,
+          planType: "production",
+          temporaryRunId,
+          effectiveFrom: `${month}-01`,
+        },
+      },
+      {
+        onSuccess: (rawRun) => {
+          const run = rawRun as unknown as PlanRunSummary;
+          toast({
+            title: "Production Plan fitted to capacity",
+            description: `Production Plan #${run.id} was created from Temporary Plan #${temporaryRunId}.`,
+          });
+          refetchPlanRuns();
+          void queryClient.invalidateQueries({
+            predicate: (query) => {
+              const key = query.queryKey[0];
+              return typeof key === "string" && (key === "/api/plan" || key.startsWith("/api/plan/"));
+            },
+          });
+        },
+        onError: () =>
+          toast({
+            title: "Could not fit Temporary Plan",
+            description: "The Production Plan could not be created. Check the Plan Runs page for the source warning.",
+            variant: "destructive",
+          }),
       },
     );
   }
@@ -136,6 +186,9 @@ export default function ExportPage() {
       } else if (kind === "weekly-excel") {
         path = `plan/export/weekly-excel?month=${month}&segment=${encodeURIComponent(segment)}`;
         filename = `${prefix}_Weekly_Release_Plan_${month}.xlsx`;
+      } else if (kind === "weekly-pdf") {
+        path = `plan/export/weekly-pdf?month=${month}&segment=${encodeURIComponent(segment)}`;
+        filename = `${prefix}_Weekly_Release_Plan_${month}.pdf`;
       } else if (kind === "corrective-excel-standard") {
         path = `corrective/export/excel?month=${month}&segment=${encodeURIComponent(segment)}&format=standard`;
         filename = `${prefix}_Corrective_Plan_${month}_Standard.xlsx`;
@@ -150,14 +203,31 @@ export default function ExportPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not generate the file.";
       const isMissingRun = msg.includes("No corrective run");
+      const isMissingProductionPlan =
+        msg.includes("NO_FINALIZED_PRODUCTION_PLAN")
+        || msg.includes("No finalized capacity-fitted Production Plan");
       const isMissingFinalizedPlan = msg.includes("NO_FINALIZED_") || msg.includes("No finalized");
+      const fitAction = isMissingProductionPlan && finalizedTemporaryRun && segment === "PTMT"
+        ? (
+          <ToastAction
+            altText={`Fit #${finalizedTemporaryRun.id} to capacity`}
+            onClick={() => handleFitToCapacity(finalizedTemporaryRun.id)}
+            disabled={createCapacityPlan.isPending}
+          >
+            Fit #{finalizedTemporaryRun.id} to Capacity
+          </ToastAction>
+        )
+        : undefined;
       toast({
         title: "Export failed",
-        description: isMissingRun
+        description: isMissingProductionPlan
+          ? `No finalized Production Plan exists for ${formatMonthLabel(month)}. Fit the finalized Temporary Plan to capacity first.`
+          : isMissingRun
           ? "No corrective re-plan found for this month. Run the Corrective Plan first."
           : isMissingFinalizedPlan
             ? "No finalized plan run is available for this month. Finalize the Temporary and Production Plans in Plan Runs first."
           : "Could not generate the file. Make sure the plan data is loaded.",
+        action: fitAction,
         variant: "destructive",
       });
     } finally {
@@ -238,16 +308,28 @@ export default function ExportPage() {
                   The workbook asserts Σ W1..W4 = Production Plan total. No cover-ratio banding is used.
                 </p>
               </CardHeader>
-              <CardContent className="mt-auto pt-2">
+              <CardContent className="flex gap-3 mt-auto pt-2">
                 <Button
                   size="sm"
                   variant="outline"
-                  className="gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50 w-full"
+                  className="flex-1 gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50"
+                  data-testid="weekly-excel-export-button"
                   onClick={() => handleExport("weekly-excel")}
                   disabled={downloading === "weekly-excel"}
                 >
                   <FileSpreadsheet size={14} />
-                  {downloading === "weekly-excel" ? "Generating…" : "Download Weekly Release Excel"}
+                  {downloading === "weekly-excel" ? "Generating…" : "Excel"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 gap-1.5 border-blue-300 text-blue-700 hover:bg-blue-50"
+                  data-testid="weekly-pdf-export-button"
+                  onClick={() => handleExport("weekly-pdf")}
+                  disabled={downloading === "weekly-pdf"}
+                >
+                  <FileText size={14} />
+                  {downloading === "weekly-pdf" ? "Generating…" : "PDF"}
                 </Button>
               </CardContent>
             </Card>
