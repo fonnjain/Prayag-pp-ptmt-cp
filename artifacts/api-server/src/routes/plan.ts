@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
-import { exportTimestamp } from "../lib/export-filename";
+import { governedExportFilename } from "../lib/export-filename";
 import { db, itemMasterTable, bufferCategoriesTable, ptmtBufferMultipliersTable, uploadedFilesTable, weeklyReleaseBandsTable, plumbingMachineCapacityTable, planRunsTable, planRunResultsTable, plantMonthSnapshotsTable } from "@workspace/db";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
@@ -35,6 +35,7 @@ import {
   runInPlanningContext,
   PlanningIsolationError,
   PlumbingInputUnreadableError,
+  WorkbookConfigurationRequiredError,
   UpstreamTimeoutError,
   type DualTotals,
   type PlumbingSheet3Row,
@@ -266,6 +267,16 @@ export function handlePlanError(res: Response, err: unknown): void {
       message: `${provider} did not respond in time while loading planning data. Retry shortly.`,
       upstreamErrorType: err.upstreamErrorType,
       retryable: err.retryable,
+    }));
+    return;
+  }
+  if (err instanceof WorkbookConfigurationRequiredError) {
+    res.status(422).json(withValidationChecks({
+      error: "WORKBOOK_CONFIGURATION_REQUIRED",
+      kind: err.name,
+      division: err.division,
+      month: err.month,
+      message: err.message,
     }));
     return;
   }
@@ -738,13 +749,12 @@ function assertPendingJoinIdentity(
     : ", reviewedLimits=missing";
   const actualFingerprint = pendingExclusionFingerprint(diagnostics);
   const allowUnmapped = options.allowUnmapped === true;
-  const exceedsReviewedLimit = policy !== undefined
+  const exceedsReviewedLimit = !allowUnmapped && policy !== undefined
     && (
-      (!allowUnmapped && diagnostics.unmatchedQuantity > policy.maxUnmatchedQuantity + 0.01)
+      diagnostics.unmatchedQuantity > policy.maxUnmatchedQuantity + 0.01
       || diagnostics.resolutionLossQuantity > policy.maxResolutionLossQuantity + 0.01
       || (
-        !allowUnmapped
-        && diagnostics.unmatchedQuantity + diagnostics.resolutionLossQuantity > 0.01
+        diagnostics.unmatchedQuantity + diagnostics.resolutionLossQuantity > 0.01
         && actualFingerprint !== policy.reviewedFingerprint
       )
     );
@@ -820,6 +830,151 @@ export function aggregatePlumbingUnmappedPendingRows(
   return [...byIdentity.values()].sort(
     (a, b) => a.itemCode.localeCompare(b.itemCode) || a.colour.localeCompare(b.colour),
   );
+}
+
+export type PtmtUnmappedPendingItem = {
+  itemCode: string;
+  colour: string;
+  itemName: string;
+  pendingOrder: number;
+  pendingOrderLastMonth: number;
+  sourceRole: "pending_current" | "pending_last_month";
+  reason: PendingPlanResolutionRow["reason"];
+};
+
+function pendingUnclassifiedIdentityKey(
+  sourceRole: string,
+  itemCode: string,
+  colour: string,
+  reason: PendingPlanResolutionRow["reason"],
+): string {
+  const aliased = applyPendingOrderAlias(itemCode, colour);
+  return [
+    sourceRole,
+    normalizeCode(aliased.code),
+    String(aliased.colour ?? colour).trim().toUpperCase(),
+    reason,
+  ].join("::");
+}
+
+/**
+ * PTMT keeps unmatched rows separate by source role. This preserves the
+ * itemized pending and dummy quantities in the plan while leaving
+ * resolution-loss rows outside Unclassified.
+ */
+export function aggregatePtmtUnmappedPendingRows(
+  diagnostics: PendingPlanDiagnostics[],
+): PtmtUnmappedPendingItem[] {
+  const byIdentity = new Map<string, PtmtUnmappedPendingItem>();
+  for (const diagnostic of diagnostics) {
+    for (const row of diagnostic.unmatchedRows) {
+      if (row.sourceRole !== "pending_current" && row.sourceRole !== "pending_last_month") continue;
+      const aliased = applyPendingOrderAlias(row.code, row.colour);
+      const itemCode = normalizeCode(aliased.code);
+      const colour = String(aliased.colour ?? row.colour).trim();
+      const key = pendingUnclassifiedIdentityKey(row.sourceRole, itemCode, colour, row.reason);
+      const existing = byIdentity.get(key);
+      if (existing) {
+        if (row.sourceRole === "pending_current") existing.pendingOrder += row.quantity;
+        else existing.pendingOrderLastMonth += row.quantity;
+        if (row.description && !existing.itemName.split(" / ").includes(row.description)) {
+          existing.itemName = `${existing.itemName} / ${row.description}`;
+        }
+        continue;
+      }
+      byIdentity.set(key, {
+        itemCode,
+        colour,
+        itemName: row.description,
+        pendingOrder: row.sourceRole === "pending_current" ? row.quantity : 0,
+        pendingOrderLastMonth: row.sourceRole === "pending_last_month" ? row.quantity : 0,
+        sourceRole: row.sourceRole,
+        reason: row.reason,
+      });
+    }
+  }
+  return [...byIdentity.values()].sort(
+    (a, b) => a.sourceRole.localeCompare(b.sourceRole)
+      || a.itemCode.localeCompare(b.itemCode)
+      || a.colour.localeCompare(b.colour),
+  );
+}
+
+/**
+ * A PTMT plan may proceed with unmatched pending only when each unmatched
+ * source line is represented by an Unclassified row and the full source
+ * identity remains conserved:
+ *
+ *   source = plan-resolved + Unclassified + resolution-loss
+ *
+ * Resolution loss is deliberately not routed to Unclassified because its
+ * roster code exists but its colour/category is ambiguous.
+ */
+export function assertPtmtUnclassifiedPendingConservation(
+  items: PlanItemWithBom[],
+  currentDiagnostics: PendingPlanDiagnostics,
+  lastMonthDiagnostics: PendingPlanDiagnostics,
+): void {
+  const unclassifiedItems = items.filter((item) => item.category === "Unclassified");
+  const diagnostics = [currentDiagnostics, lastMonthDiagnostics];
+  const actualByIdentity = new Map<string, number>();
+  for (const item of unclassifiedItems) {
+    const sourceRole = item.sourceRole ?? "";
+    const quantity = sourceRole === "pending_current"
+      ? item.pendingOrder
+      : sourceRole === "pending_last_month"
+        ? item.pendingOrderLastMonth
+        : 0;
+    if (quantity === 0) continue;
+    const key = pendingUnclassifiedIdentityKey(
+      sourceRole,
+      item.itemCode,
+      item.colour,
+      (item.unmappedReason ?? "NO_ROSTER_MATCH") as PendingPlanResolutionRow["reason"],
+    );
+    actualByIdentity.set(key, (actualByIdentity.get(key) ?? 0) + quantity);
+  }
+
+  const expectedByIdentity = new Map<string, number>();
+  for (const diagnostic of diagnostics) {
+    const unclassifiedQuantity = diagnostic.unmatchedRows.reduce((sum, row) => {
+      const key = pendingUnclassifiedIdentityKey(row.sourceRole, row.code, row.colour, row.reason);
+      expectedByIdentity.set(key, (expectedByIdentity.get(key) ?? 0) + row.quantity);
+      return sum + row.quantity;
+    }, 0);
+    const identityExpected =
+      diagnostic.planResolvedQuantity
+      + unclassifiedQuantity
+      + diagnostic.resolutionLossQuantity;
+    const identityDifference = identityExpected - diagnostic.sourceQuantity;
+    if (!Number.isFinite(identityDifference) || Math.abs(identityDifference) > 0.01) {
+      throw new PlanningInputError(
+        `PTMT pending conservation failed for ${diagnostic.sourceRole}: ` +
+        `source=${diagnostic.sourceQuantity}, planResolved=${diagnostic.planResolvedQuantity}, ` +
+        `unclassified=${unclassifiedQuantity}, resolutionLoss=${diagnostic.resolutionLossQuantity}, ` +
+        `residual=${identityDifference}. Refusing to build a partially routed plan.`,
+      );
+    }
+  }
+
+  const keys = new Set([...expectedByIdentity.keys(), ...actualByIdentity.keys()]);
+  const mismatches = [...keys]
+    .map((key) => ({
+      key,
+      expected: expectedByIdentity.get(key) ?? 0,
+      actual: actualByIdentity.get(key) ?? 0,
+    }))
+    .filter((row) => Math.abs(row.expected - row.actual) > 0.01);
+  if (mismatches.length > 0) {
+    const detail = mismatches
+      .slice(0, 5)
+      .map((row) => `${row.key} expected=${row.expected} actual=${row.actual}`)
+      .join("; ");
+    throw new PlanningInputError(
+      `PTMT Unclassified pending conservation failed: ${detail}. ` +
+      `Refusing to build a plan with unmatched source lines absent from both the roster and Unclassified.`,
+    );
+  }
 }
 
 /**
@@ -1016,6 +1171,11 @@ type PlanBuildOptions = {
    * leaving all real plan/corrective validation paths strict.
    */
   auditAllowPendingJoinDrift?: boolean;
+  /**
+   * Route unmatched pending into visible Unclassified rows. Resolution loss
+   * remains a separate diagnostic and is never silently assigned.
+   */
+  allowUnmappedPending?: boolean;
 };
 
 type PlumbingValidationEvidencePersistence = {
@@ -1490,9 +1650,15 @@ export async function buildPlanItems(
 ): Promise<PlanItemWithBom[]> {
   // Plumbing: all inputs come from the daily-production workbook — no item_master or uploads.
   if (segment === "Plumbing") {
+    // VERIFIED AND FIXED — September 2026. This is the Plumbing Temporary Plan
+    // calculation entry point: 1,136 items and 1,866,432 pieces match Prayag.
+    // Do not alter without explicit approval naming this calculation. See replit.md.
     return buildPlumbingPlanItemsFromWorkbook(month, options);
   }
 
+  // VERIFIED AND FIXED — September 2026. This is the PTMT Temporary Plan
+  // calculation entry point: 3,426 rows reproduce REPORT 1–9.
+  // Do not alter without explicit approval naming this calculation. See replit.md.
   return runInPlanningContext(`PTMT plan build (${month})`, () => buildPtmtPlanItemsInner(month, segment, options));
 }
 
@@ -1589,9 +1755,11 @@ async function buildPtmtPlanItemsInner(
     "PTMT last-month pending",
     ptmtLastMonthPendingDiagnostics,
     totalByCode(pendingLastMoTotals),
-    options.auditAllowPendingJoinDrift
+    options.allowUnmappedPending || options.auditAllowPendingJoinDrift
       ? undefined
       : reviewedPendingExclusionPolicy("PTMT", "pending_last_month", month),
+    undefined,
+    { allowUnmapped: options.allowUnmappedPending === true },
   );
   const ptmtCurrentPendingDiagnostics = pendingPlanDiagnosticsFromParsedRows(
     pendingOrderTotals.pendingRows ?? [],
@@ -1602,9 +1770,11 @@ async function buildPtmtPlanItemsInner(
     "PTMT current pending",
     ptmtCurrentPendingDiagnostics,
     totalByCode(pendingOrderTotals),
-    options.auditAllowPendingJoinDrift
+    options.allowUnmappedPending || options.auditAllowPendingJoinDrift
       ? undefined
       : reviewedPendingExclusionPolicy("PTMT", "pending_current", month),
+    undefined,
+    { allowUnmapped: options.allowUnmappedPending === true },
   );
 
   // Stock: F.G Sheet — try every item-code column variant the FG Stock upload may carry.
@@ -1665,20 +1835,70 @@ async function buildPtmtPlanItemsInner(
     return computed;
   });
 
+  const allowUnmappedPending = options.allowUnmappedPending === true;
+  const unmappedPendingItems: PlanItemWithBom[] = allowUnmappedPending
+    ? aggregatePtmtUnmappedPendingRows([
+      ptmtCurrentPendingDiagnostics,
+      ptmtLastMonthPendingDiagnostics,
+    ]).map((unmapped) => {
+      const source: ItemSourceRow = {
+        itemCode: unmapped.itemCode,
+        colour: unmapped.colour,
+        avg3MoSaleTotal3Mo: 0,
+        stock: stockTotals.exact.get(itemKey(unmapped.itemCode, unmapped.colour)) ?? 0,
+        stockNeedsReview: false,
+        pendingOrderLastMonth: unmapped.pendingOrderLastMonth,
+        pendingOrder: unmapped.pendingOrder,
+        order: 0,
+      };
+      const computed = computeItemPlan(source, "Unclassified", null);
+      return {
+        ...computed,
+        itemName: unmapped.itemName || "Unmapped pending item",
+        sourceRole: unmapped.sourceRole,
+        unmappedReason: unmapped.reason,
+      };
+    })
+    : [];
+  const planItems = [...items, ...unmappedPendingItems];
+
   assertPlanUsesPendingJoin(
     "PTMT current pending",
     ptmtCurrentPendingDiagnostics,
-    items,
+    planItems,
     "pendingOrder",
   );
   assertPlanUsesPendingJoin(
     "PTMT last-month pending",
     ptmtLastMonthPendingDiagnostics,
-    items,
+    planItems,
     "pendingOrderLastMonth",
   );
-  annotateWeeklyRelease(items, bandsByCategory);
-  return items;
+  assertPendingJoinIdentity(
+    "PTMT current pending",
+    ptmtCurrentPendingDiagnostics,
+    totalByCode(pendingOrderTotals),
+    options.allowUnmappedPending ? undefined : reviewedPendingExclusionPolicy("PTMT", "pending_current", month),
+    undefined,
+    { allowUnmapped: allowUnmappedPending },
+  );
+  assertPendingJoinIdentity(
+    "PTMT last-month pending",
+    ptmtLastMonthPendingDiagnostics,
+    totalByCode(pendingLastMoTotals),
+    options.allowUnmappedPending ? undefined : reviewedPendingExclusionPolicy("PTMT", "pending_last_month", month),
+    undefined,
+    { allowUnmapped: allowUnmappedPending },
+  );
+  if (allowUnmappedPending) {
+    assertPtmtUnclassifiedPendingConservation(
+      planItems,
+      ptmtCurrentPendingDiagnostics,
+      ptmtLastMonthPendingDiagnostics,
+    );
+  }
+  annotateWeeklyRelease(planItems, bandsByCategory);
+  return planItems;
 }
 
 export interface UploadRowsSnapshot {
@@ -1776,9 +1996,10 @@ router.get("/plan/export/excel", async (req, res): Promise<void> => {
       return;
     }
     const buffer = await exportFrozenRunExcel(run, "production");
-    const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Production_Plan_${month}_${exportTimestamp()}.xlsx"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${governedExportFilename({
+      segment: run.segment, kind: "Production", month: run.month, runId: run.id, extension: "xlsx",
+    })}"`);
     res.send(buffer);
   } catch (err) {
     if (err instanceof PlumbingScheduleExportError || err instanceof WeeklyExportInvariantError) {
@@ -1808,11 +2029,12 @@ router.get("/plan/export/pdf", async (req, res): Promise<void> => {
       return;
     }
     const { rows } = await loadProductionExportRows(run);
-    const buffer = await exportFrozenProductionPdf(month, rows);
+    const buffer = await exportFrozenProductionPdf(run.month, rows, run.segment);
     logger.info({ month, segment, renderMs: Date.now() - startedAt }, "plan/export/pdf complete");
-    const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Production_Plan_${month}_${exportTimestamp()}.pdf"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${governedExportFilename({
+      segment: run.segment, kind: "Production", month: run.month, runId: run.id, extension: "pdf",
+    })}"`);
     res.send(buffer);
   } catch (err) {
     if (err instanceof PlumbingScheduleExportError || err instanceof WeeklyExportInvariantError) {
@@ -1845,9 +2067,10 @@ router.get("/plan/export/temporary-excel", async (req, res): Promise<void> => {
       return;
     }
     const buffer = await exportFrozenRunExcel(run, "temporary");
-    const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Temporary_Plan_${month}_${exportTimestamp()}.xlsx"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${governedExportFilename({
+      segment: run.segment, kind: "Temporary", month: run.month, runId: run.id, extension: "xlsx",
+    })}"`);
     res.send(buffer);
   } catch (err) {
     handlePlanError(res, err);
@@ -1875,10 +2098,14 @@ router.get("/plan/export/weekly-excel", async (req, res): Promise<void> => {
     const sourceDescription = segment === "Plumbing"
       ? "finalized Plumbing machine-app schedule; item pieces distributed by non-idle block-hours within each scheduler week"
       : "finalized PTMT Pass 2 capacity fit";
-    const buffer = await exportWeeklyReleaseExcel(month, rows, sourceDescription);
-    const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
+    const buffer = await exportWeeklyReleaseExcel(run.month, rows, sourceDescription, run.segment, {
+      planType: run.planType as "temporary" | "production",
+      runId: run.id,
+    });
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Weekly_Release_Plan_${month}_${exportTimestamp()}.xlsx"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${governedExportFilename({
+      segment: run.segment, kind: "WeeklyRelease", month: run.month, runId: run.id, extension: "xlsx",
+    })}"`);
     res.send(buffer);
   } catch (err) {
     if (err instanceof PlumbingScheduleExportError || err instanceof WeeklyExportInvariantError) {
@@ -1911,11 +2138,12 @@ router.get("/plan/export/weekly-pdf", async (req, res): Promise<void> => {
     const sourceDescription = segment === "Plumbing"
       ? "finalized Plumbing machine-app schedule; item pieces distributed by non-idle block-hours within each scheduler week"
       : "finalized PTMT Pass 2 capacity fit";
-    const buffer = await exportWeeklyReleasePdf(month, rows, sourceDescription);
+    const buffer = await exportWeeklyReleasePdf(run.month, rows, sourceDescription, run.segment);
     logger.info({ month, segment, renderMs: Date.now() - startedAt }, "plan/export/weekly-pdf complete");
-    const prefix = segment === "Plumbing" ? "Plumbing" : "PTMT";
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${prefix}_Weekly_Release_Plan_${month}_${exportTimestamp()}.pdf"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${governedExportFilename({
+      segment: run.segment, kind: "WeeklyRelease", month: run.month, runId: run.id, extension: "pdf",
+    })}"`);
     res.send(buffer);
   } catch (err) {
     if (err instanceof PlumbingScheduleExportError || err instanceof WeeklyExportInvariantError) {

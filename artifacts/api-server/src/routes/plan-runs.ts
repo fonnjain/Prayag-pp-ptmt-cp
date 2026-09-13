@@ -1,6 +1,7 @@
-import { Router, type IRouter } from "express";
-import { db, bufferCategoriesTable, categoryCapacityTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, planRunInputSnapshotsTable, pendingReadSnapshotsTable, correctivePlanRunsTable, plantMonthSnapshotsTable, planScheduleResultsTable, plumbingMachineCapacityTable, planRunSupersessionsTable } from "@workspace/db";
-import { and, asc, eq, desc, ne, sql, isNull } from "drizzle-orm";
+import { Router, type IRouter, type Response } from "express";
+import { createHash } from "node:crypto";
+import { db, bufferCategoriesTable, categoryCapacityTable, planRunsTable, planRunInputsTable, planRunResultsTable, pendingSnapshotsTable, planRunInputSnapshotsTable, pendingReadSnapshotsTable, correctivePlanRunsTable, plantMonthSnapshotsTable, planScheduleResultsTable, plumbingMachineCapacityTable, planRunSupersessionsTable, plumbingFitAttemptsTable } from "@workspace/db";
+import { and, asc, eq, desc, ne, lt, sql, isNull } from "drizzle-orm";
 import {
   buildPlanInputTrace,
   buildPlanItems,
@@ -15,6 +16,8 @@ import {
   normalizeCodeStrict,
   pendingOrderRecordsFromRows,
   pendingPlanDiagnosticsFromParsedRows,
+  SHEET_IDS,
+  SHEET_LABELS,
   type PendingOrderRow,
 } from "../lib/sheets";
 import {
@@ -38,15 +41,19 @@ import {
 import { loadSession, requireAdmin } from "./session-middleware";
 import { type FrozenPlanRow } from "../lib/excel-export";
 import { exportFrozenRunExcel } from "../lib/frozen-plan-export";
-import { exportTimestamp } from "../lib/export-filename";
+import { buildFactorProvenance, type PlanRunProvenance } from "../lib/plan-run-provenance";
+import { resolveEffectivePtmtRoster } from "../lib/rate-list";
+import { governedExportFilename } from "../lib/export-filename";
 import { loadStoredDailyActualsForSegment } from "../lib/plant-ingestion";
 import { isSunday } from "../lib/working-days";
 import { runPtmtPass2, type PtmtPass2Result, PtmtPass2InputError } from "../lib/ptmt-pass2-engine";
 import {
   runPlumbingSchedule,
+  buildPlumbingWeekDays,
   PLUMBING_SCHEDULE_KINDS,
   type PlumbingScheduleDemand,
 } from "../lib/plumbing-scheduler";
+import { getPlumbingProductionFinalizationBlock } from "../lib/plumbing-production-finalization";
 
 const router: IRouter = Router();
 
@@ -140,6 +147,26 @@ function sameUploadSnapshot(a: PendingSourceSnapshot, b: PendingSourceSnapshot):
   return a.id === b.id
     && a.rowCount === b.rowCount
     && a.uploadedAt?.getTime() === b.uploadedAt?.getTime();
+}
+
+function uploadProvenance(
+  sourceKind: string,
+  source: {
+    id: number | null;
+    filename: string | null;
+    rowCount?: number | null;
+    uploadedAt: Date | null;
+  },
+  usedForPlanning: boolean,
+): PlanRunProvenance["uploads"][string] {
+  return {
+    sourceKind,
+    sourceUploadId: source.id,
+    sourceFilename: source.filename,
+    rowCount: source.rowCount ?? null,
+    uploadedAt: source.uploadedAt?.toISOString() ?? null,
+    usedForPlanning,
+  };
 }
 
 function makePendingSnapshotPayloads(
@@ -638,6 +665,7 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
       pendingSourcesBefore = await loadPendingSources(segment, month);
       planItems = await buildPlanItems(month, segment, {
         allowUnapprovedMrp: planType === "temporary" && segment === "PTMT",
+        allowUnmappedPending: segment === "PTMT",
       });
       const pendingSourcesAfter = await loadPendingSources(segment, month);
       if (
@@ -701,6 +729,67 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
     });
     return;
   }
+
+  let rosterResolution: Awaited<ReturnType<typeof resolveEffectivePtmtRoster>> | null = null;
+  try {
+    if (segment === "PTMT") {
+      rosterResolution = await resolveEffectivePtmtRoster(month);
+    }
+  } catch (err) {
+    handlePlanError(res, err);
+    return;
+  }
+  const currentStockKind = segment === "Plumbing" ? "plumbing_fg_stock" : "current_stock";
+  const currentStockSource = await loadLatestUploadSnapshotByKind(currentStockKind, month);
+  const pendingCurrentSnapshot = pendingSnapshotPayloads.find((snapshot) => snapshot.sourceRole === "pending_current");
+  const pendingLastMonthSnapshot = pendingSnapshotPayloads.find((snapshot) => snapshot.sourceRole === "pending_last_month");
+  const factorCategories = [...new Set(bufferRows.map((row) => row.name))];
+  const runProvenance: PlanRunProvenance = {
+    version: 1,
+    capturedAt: new Date().toISOString(),
+    roster: {
+      source: rosterResolution?.rosterSource ?? null,
+      workbookId: rosterResolution?.workbookId ?? null,
+      rowCount: rosterResolution?.rosterRowCount ?? null,
+      fallbackReason: rosterResolution?.fallbackReason ?? null,
+    },
+    salesHistory: {
+      workbookId: segment === "PTMT" ? SHEET_IDS.sale2627 : null,
+      label: segment === "PTMT" ? SHEET_LABELS.sale2627 : null,
+    },
+    uploads: {
+      current_stock: uploadProvenance(currentStockKind, currentStockSource, planType === "temporary"),
+      pending_current: uploadProvenance(
+        pendingCurrentSnapshot?.sourceKind ?? pendingSourceKinds(segment).current,
+        {
+          id: pendingCurrentSnapshot?.sourceUploadId ?? null,
+          filename: pendingCurrentSnapshot?.sourceFilename ?? null,
+          rowCount: pendingCurrentSnapshot?.diagnostics.rowCount ?? null,
+          uploadedAt: pendingCurrentSnapshot?.sourceUploadedAt ?? null,
+        },
+        true,
+      ),
+      pending_last_month: uploadProvenance(
+        pendingLastMonthSnapshot?.sourceKind ?? pendingSourceKinds(segment).lastMonth,
+        {
+          id: pendingLastMonthSnapshot?.sourceUploadId ?? null,
+          filename: pendingLastMonthSnapshot?.sourceFilename ?? null,
+          rowCount: pendingLastMonthSnapshot?.diagnostics.rowCount ?? null,
+          uploadedAt: pendingLastMonthSnapshot?.sourceUploadedAt ?? null,
+        },
+        true,
+      ),
+    },
+    factors: buildFactorProvenance(
+      planItems.map((item) => ({
+        category: item.category,
+        avg3MoSale: item.avg3MoSale,
+        bufferReq: item.bufferReq,
+      })),
+      factorsJson,
+      factorCategories,
+    ),
+  };
 
   let effectiveFrom: string;
   try {
@@ -798,6 +887,7 @@ router.post("/plan/runs", async (req, res): Promise<void> => {
         status: "draft",
         weeklyReleaseVersion: planType === "temporary" ? 0 : 1,
         factorsJson,
+        provenanceJson: runProvenance,
         note: runNote,
         pass2Json: pass2Summary ? pass2Summary as unknown as Record<string, unknown> : null,
       })
@@ -982,13 +1072,15 @@ router.get("/plan/runs/:id", async (req, res): Promise<void> => {
     db.select().from(pendingReadSnapshotsTable).where(eq(pendingReadSnapshotsTable.runId, id)),
   ]);
 
-  const inputByKey = new Map(inputs.map((inp) => [`${inp.itemCode}::${inp.colour}`, inp]));
   const pendingSnapshotStatus = getPendingSnapshotStatus(
     pendingInputSnapshots.map((snapshot) => snapshot.sourceRole),
   );
 
-  const items = results.map((r) => {
-    const inp = inputByKey.get(`${r.itemCode}::${r.colour}`);
+  // Inputs and results are inserted from the same ordered planItems array.
+  // Pair by ordinal so duplicate code/colour rows (for example an
+  // Unclassified current-pending row and an Unclassified last-month row)
+  // retain their own source-role quantities.
+  const items = pairRunInputsWithResults(results, inputs).map(({ result: r, input: inp }) => {
     const dummy = Math.max(inp?.pendingLastMonth ?? 0, 0);
     const orders = Math.max(inp?.pendingCurrent ?? 0, 0);
     const buffer = r.bufferReq == null ? 0 : Math.max(r.bufferReq - (inp?.stock ?? 0), 0);
@@ -1138,6 +1230,22 @@ router.get("/plan/runs/:id/schedule-request", async (req, res): Promise<void> =>
  * external machine scheduler. The two upstream results are persisted as
  * separate rows under one batch id and merged only in the response.
  */
+export function legacyScheduleEligibility(run: { segment: string; planType: string }): { error: string; message: string } | null {
+  if (run.planType !== "production") {
+    return {
+      error: "LEGACY_SCHEDULE_PRODUCTION_ONLY",
+      message: "Legacy scheduling cannot mutate a Temporary run; use fit-plumbing for finalized Plumbing Temporary runs.",
+    };
+  }
+  if (run.segment !== "Plumbing") {
+    return {
+      error: "EXTERNAL_PLUMBING_SCHEDULER_ONLY",
+      message: "The machine scheduler adapter accepts Plumbing runs only.",
+    };
+  }
+  return null;
+}
+
 router.post("/plan/runs/:id/schedule", async (req, res): Promise<void> => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) {
@@ -1149,8 +1257,9 @@ router.post("/plan/runs/:id/schedule", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Run not found" });
     return;
   }
-  if (run.segment !== "Plumbing") {
-    res.status(422).json({ error: "EXTERNAL_PLUMBING_SCHEDULER_ONLY", message: "The machine scheduler adapter accepts Plumbing runs only." });
+  const eligibilityError = legacyScheduleEligibility(run);
+  if (eligibilityError) {
+    res.status(422).json(eligibilityError);
     return;
   }
   if (run.status !== "finalized") {
@@ -1336,6 +1445,679 @@ router.post("/plan/runs/:id/schedule", async (req, res): Promise<void> => {
   }
 });
 
+const FIT_MATERIAL_BY_PREFIX: Record<string, string> = {
+  C: "CPVC",
+  U: "UPVC",
+  "5": "SWR",
+  A: "AGRI",
+};
+
+type PlumbingFitSourceRow = typeof planRunResultsTable.$inferSelect;
+type PlumbingFitDemand = PlumbingScheduleDemand & { sourceId: number; category: string };
+
+export const PLUMBING_FIT_STALE_RUNNING_MS = 5 * 60 * 1000;
+export function plumbingFitAttemptIsStale(attempt: { state: string; updatedAt: Date }, now = Date.now()): boolean {
+  return attempt.state === "running" && now - attempt.updatedAt.getTime() > PLUMBING_FIT_STALE_RUNNING_MS;
+}
+
+export function plumbingFitAttemptLeaseIsOwned(
+  attempt: { id: number; state: string } | undefined,
+  attemptId: number,
+): boolean {
+  return attempt?.id === attemptId && attempt.state === "running";
+}
+
+export function plumbingTemporaryDeletionGuard(
+  run: { planType: string },
+  productionReferenceCount: number,
+  attemptReferenceCount: number,
+): { error: string; message: string } | null {
+  if (run.planType !== "temporary") return null;
+  if (productionReferenceCount > 0 || attemptReferenceCount > 0) {
+    return {
+      error: "PLUMBING_TEMPORARY_LINEAGE_LOCKED",
+      message: "A Plumbing Temporary run referenced by a Production run or fit attempt cannot be deleted.",
+    };
+  }
+  return null;
+}
+
+function plumbingFitFingerprint(
+  sourceRunId: number,
+  month: string,
+  weekDays: number[],
+  sourceRows: PlumbingFitSourceRow[],
+): string {
+  return createHash("sha256").update(JSON.stringify({
+    version: "MB.1-allocation-schema-v2-net-warning",
+    sourceRunId,
+    month,
+    weekDays,
+    sourceRows: sourceRows.map((row) => ({ ...row })),
+  })).digest("hex");
+}
+
+export function plumbingFitRetryFingerprint(
+  priorFingerprint: string,
+  failedAttemptId: number,
+): string {
+  return createHash("sha256")
+    .update(`${priorFingerprint}:retry-after-failed-attempt:${failedAttemptId}`)
+    .digest("hex");
+}
+
+/**
+ * Build MB.1 demand only from the frozen Temporary rows.  In particular, do
+ * not infer a fitting material from a sibling, a default, or the first
+ * category seen in the run.
+ */
+export function buildPlumbingFitDemand(rows: PlumbingFitSourceRow[]): {
+  demandByKind: Record<"pipe" | "fitting", PlumbingFitDemand[]>;
+  unknownFittings: Set<number>;
+  solvents: Set<number>;
+  materialBySourceId: Map<number, string>;
+} {
+  const demandByKind: Record<"pipe" | "fitting", PlumbingFitDemand[]> = { pipe: [], fitting: [] };
+  const unknownFittings = new Set<number>();
+  const solvents = new Set<number>();
+  const materialBySourceId = new Map<number, string>();
+  const seen = new Map<"pipe" | "fitting", Set<string>>([
+    ["pipe", new Set()],
+    ["fitting", new Set()],
+  ]);
+  for (const row of rows) {
+    const quantity = Math.max(0, Math.round(row.demandPlan ?? row.productionPlan));
+    if (row.category.endsWith("Solvent")) {
+      const solventMaterial = String(row.material ?? row.category.split(/\s+/)[0] ?? "").trim().toUpperCase();
+      if (solventMaterial) materialBySourceId.set(row.id, solventMaterial);
+      solvents.add(row.id);
+      continue;
+    }
+    const kind = row.category.endsWith("Pipe") ? "pipe" : row.category.endsWith("Fitting") ? "fitting" : null;
+    if (!kind) {
+      const sourceMaterial = String(row.material ?? "").trim().toUpperCase();
+      if (sourceMaterial) materialBySourceId.set(row.id, sourceMaterial);
+      continue;
+    }
+    if (quantity <= 0) {
+      const prefixMaterial = FIT_MATERIAL_BY_PREFIX[row.itemCode.trim().toUpperCase().charAt(0)];
+      const categoryMaterial = String(row.material ?? row.category.split(/\s+/)[0] ?? "").trim().toUpperCase();
+      if (prefixMaterial && categoryMaterial) materialBySourceId.set(row.id, categoryMaterial);
+      continue;
+    }
+    const code = normalizeCodeStrict(row.itemCode);
+    if (!code) throw new Error(`Plumbing row ${row.itemCode} has no normalized item code`);
+    if (seen.get(kind)!.has(code)) {
+      throw new Error(`Duplicate normalized Plumbing ${kind} code ${code}; refusing capacity calls`);
+    }
+    seen.get(kind)!.add(code);
+    const categoryMaterial = String(row.category.split(/\s+/)[0] ?? "").trim().toUpperCase();
+    const frozenMaterial = row.material === null || row.material === undefined || String(row.material).trim() === ""
+      ? null
+      : String(row.material).trim().toUpperCase();
+    const prefixMaterial = FIT_MATERIAL_BY_PREFIX[row.itemCode.trim().toUpperCase().charAt(0)];
+    if (prefixMaterial && (
+      categoryMaterial !== prefixMaterial
+      || (frozenMaterial !== null && frozenMaterial !== prefixMaterial)
+    )) {
+      throw new Error(
+        `Plumbing ${kind} material disagreement for ${row.itemCode}: category=${categoryMaterial} frozen=${frozenMaterial ?? "(absent)"} prefix=${prefixMaterial}`,
+      );
+    }
+    if (!prefixMaterial) {
+      if (kind === "fitting") {
+        // Unknown fittings are intentionally retained in the eventual draft
+        // as MATERIAL_UNKNOWN, but are never sent to the plant.
+        unknownFittings.add(row.id);
+        continue;
+      }
+      if (frozenMaterial !== null && frozenMaterial !== categoryMaterial) {
+        throw new Error(
+          `Plumbing pipe material disagreement for ${row.itemCode}: category=${categoryMaterial} frozen=${frozenMaterial}`,
+        );
+      }
+    }
+    if (!categoryMaterial || !["CPVC", "UPVC", "SWR", "AGRI"].includes(categoryMaterial)) {
+      throw new Error(`Plumbing ${kind} ${row.itemCode} has no recognized category material`);
+    }
+    materialBySourceId.set(row.id, categoryMaterial);
+    demandByKind[kind].push({
+      sourceId: row.id,
+      category: row.category,
+      item_code: row.itemCode,
+      material: categoryMaterial,
+      qty_pcs: quantity,
+    });
+  }
+  return { demandByKind, unknownFittings, solvents, materialBySourceId };
+}
+
+export function fitAllocationNetByCode(results: Array<{ kind: "pipe" | "fitting"; raw: Record<string, unknown> }>): Map<string, number> {
+  const totals = new Map<string, number>();
+  for (const result of results) {
+    for (const value of Array.isArray(result.raw.allocations) ? result.raw.allocations : []) {
+      if (!value || typeof value !== "object") continue;
+      const row = value as Record<string, unknown>;
+      const code = normalizeCodeStrict(String(row.item_code ?? row.itemCode ?? row.raw_code ?? ""));
+      if (!code) continue;
+      const net = Number(row.net_pcs ?? row.net ?? row.scheduled_net_pcs ?? row.scheduled_pcs ?? row.quantity_pcs ?? row.qty_pcs ?? 0);
+      if (Number.isFinite(net)) {
+        const key = `${result.kind}::${code}`;
+        totals.set(key, (totals.get(key) ?? 0) + net);
+      }
+    }
+  }
+  return totals;
+}
+
+function fitAttemptResponse(attempt: typeof plumbingFitAttemptsTable.$inferSelect, res: Response): void {
+  const status = attempt.state === "succeeded" ? 200 : attempt.state === "running" ? 409 : 502;
+  res.status(status).json({
+    error: attempt.state === "succeeded" ? undefined : "PLUMBING_FIT_ATTEMPT_FAILED",
+    attemptId: attempt.id,
+    state: attempt.state,
+    failedKind: attempt.failedKind,
+    message: attempt.state === "failed"
+      ? attempt.errorText ?? "Plumbing capacity fit failed"
+      : attempt.errorText,
+    productionRunId: attempt.productionRunId,
+    temporaryRunId: attempt.sourceRunId,
+    summary: attempt.summaryJson ?? null,
+    warnings: attempt.warningsJson ?? [],
+  });
+}
+
+export function buildPlumbingFitSummary(args: {
+  sourceRows: PlumbingFitSourceRow[];
+  demand: ReturnType<typeof buildPlumbingFitDemand>;
+  schedule: Awaited<ReturnType<typeof runPlumbingSchedule>>;
+  allocationByCode: Map<string, number>;
+  sourceRunId: number;
+}): Record<string, unknown> {
+  const demandPieces = args.sourceRows.reduce(
+    (sum, row) => sum + Math.max(0, Math.round(row.demandPlan ?? row.productionPlan)),
+    0,
+  );
+  const reasonMap = new Map<string, { rowCount: number; pieces: number }>();
+  const addReason = (reason: string, pieces: number) => {
+    if (pieces <= 0) return;
+    const current = reasonMap.get(reason) ?? { rowCount: 0, pieces: 0 };
+    current.rowCount++;
+    current.pieces += pieces;
+    reasonMap.set(reason, current);
+  };
+  const dataLimitedCodes = new Set(
+    args.schedule.data_limited.map((item) => `${item.kind}::${normalizeCodeStrict(item.item_code)}`),
+  );
+  const unroutableCodes = new Set(
+    args.schedule.unroutable.map((item) => `${item.kind}::${normalizeCodeStrict(item.item_code)}`),
+  );
+  const unfinishedCodes = new Set(
+    args.schedule.merged.unfinished.map((item) => normalizeCodeStrict(item.item_code)),
+  );
+  let executableNet = 0;
+  for (const row of args.sourceRows) {
+    const demandPiecesForRow = Math.max(0, Math.round(row.demandPlan ?? row.productionPlan));
+    if (demandPiecesForRow <= 0) continue;
+    const isUnknown = args.demand.unknownFittings.has(row.id);
+    const isSolvent = args.demand.solvents.has(row.id);
+    const kind = row.category.endsWith("Pipe") ? "pipe" : "fitting";
+    const net = isSolvent
+      ? demandPiecesForRow
+      : isUnknown
+        ? 0
+        : args.allocationByCode.get(`${kind}::${normalizeCodeStrict(row.itemCode)}`) ?? 0;
+    executableNet += net;
+    const residual = Math.max(0, demandPiecesForRow - net);
+    const code = normalizeCodeStrict(row.itemCode);
+    if (isUnknown) addReason("MATERIAL_UNKNOWN", residual);
+    else if (dataLimitedCodes.has(`${kind}::${code}`)) addReason("data-limited", residual);
+    else if (unroutableCodes.has(`${kind}::${code}`)) addReason("unroutable", residual);
+    else if (unfinishedCodes.has(code)) addReason("unfinished", residual);
+    else addReason("allocation-shortfall", residual);
+  }
+  const unfeasiblePieces = [...reasonMap.values()].reduce((sum, reason) => sum + reason.pieces, 0);
+  const fulfilledAgainstDemand = args.sourceRows.reduce((sum, row) => {
+    const demandForRow = Math.max(0, Math.round(row.demandPlan ?? row.productionPlan));
+    if (demandForRow <= 0) return sum;
+    const isSolvent = args.demand.solvents.has(row.id);
+    const isUnknown = args.demand.unknownFittings.has(row.id);
+    const kind = row.category.endsWith("Pipe") ? "pipe" : "fitting";
+    const net = isSolvent
+      ? demandForRow
+      : isUnknown
+        ? 0
+        : args.allocationByCode.get(`${kind}::${normalizeCodeStrict(row.itemCode)}`) ?? 0;
+    return sum + Math.min(demandForRow, Math.max(net, 0));
+  }, 0);
+  return {
+    demandPieces,
+    executableNet,
+    fulfilledAgainstDemand,
+    roundingDriftNet: executableNet - fulfilledAgainstDemand,
+    unfeasiblePieces,
+    percentAchieved: demandPieces > 0 ? fulfilledAgainstDemand / demandPieces * 100 : 100,
+    unfeasibleByReason: Object.fromEntries(reasonMap),
+    allocationsReconciliation: args.schedule.results.map((result) => ({
+      kind: result.kind,
+      ...(result.raw.contract_reconciliation ?? {}),
+      warnings: Array.isArray(result.raw.contract_warnings) ? result.raw.contract_warnings : [],
+    })),
+    references: args.schedule.results.map((result) => ({
+      kind: result.kind,
+      reference: result.raw.reference,
+      referenceRole: "machine-scheduler provenance metadata (not input fingerprint)",
+    })),
+    fittingLinesSent: args.schedule.sentDemandByKind?.fitting.length ?? 0,
+    materialUnknown: {
+      rowCount: [...args.demand.unknownFittings].filter((id) => args.sourceRows.some((row) => row.id === id)).length,
+      pieces: args.sourceRows
+        .filter((row) => args.demand.unknownFittings.has(row.id))
+        .reduce((sum, row) => sum + Math.max(0, Math.round(row.demandPlan ?? row.productionPlan)), 0),
+    },
+    prefixDisagreementCount: 0,
+    sourceTemporaryUnchanged: true,
+    draft: {
+      status: "draft",
+      lineage: { temporaryRunId: args.sourceRunId },
+      environment: process.env.NODE_ENV ?? "development",
+    },
+  };
+}
+
+/**
+ * MB.1: fit a finalized Plumbing Temporary run.  This is deliberately a new
+ * endpoint; the legacy /schedule endpoint above retains its historical
+ * source-mutating behaviour for compatibility.
+ */
+router.post("/plan/runs/:id/fit-plumbing", async (req, res): Promise<void> => {
+  const sourceRunId = Number(req.params.id);
+  if (!Number.isInteger(sourceRunId) || sourceRunId <= 0) {
+    res.status(400).json({ error: "Run id must be a positive integer" });
+    return;
+  }
+  const [sourceRun] = await db.select().from(planRunsTable).where(eq(planRunsTable.id, sourceRunId));
+  if (!sourceRun) {
+    res.status(404).json({ error: "Run not found" });
+    return;
+  }
+  if (sourceRun.segment !== "Plumbing" || sourceRun.planType !== "temporary") {
+    res.status(422).json({ error: "PLUMBING_TEMPORARY_ONLY", message: "Only a Plumbing Temporary run can be fitted." });
+    return;
+  }
+  if (sourceRun.status !== "finalized") {
+    res.status(422).json({ error: "RUN_NOT_FINALIZED", message: "Finalize the Plumbing Temporary run before fitting it." });
+    return;
+  }
+
+  let activeKind: "pipe" | "fitting" | null = null;
+  let attemptId: number | null = null;
+  try {
+    const [sourceRows, sourceInputs, sourceSnapshots, sourcePendingSnapshots, storedActuals, bomWeights, machineRows] = await Promise.all([
+      db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, sourceRunId)).orderBy(asc(planRunResultsTable.id)),
+      db.select().from(planRunInputsTable).where(eq(planRunInputsTable.runId, sourceRunId)).orderBy(asc(planRunInputsTable.id)),
+      db.select().from(planRunInputSnapshotsTable).where(eq(planRunInputSnapshotsTable.runId, sourceRunId)),
+      db.select().from(pendingSnapshotsTable).where(eq(pendingSnapshotsTable.runId, sourceRunId)),
+      loadStoredDailyActualsForSegment(sourceRun.month, "Plumbing"),
+      fetchPlumbingBomWeights(),
+      db.select().from(plumbingMachineCapacityTable).where(eq(plumbingMachineCapacityTable.segment, "Plumbing")),
+    ]);
+    const normalizedBomWeights = new Map<string, number>(
+      [...bomWeights.entries()].map(([code, weight]) => [normalizeCodeStrict(code), weight]),
+    );
+    const weightByCode = new Map<string, number>();
+    for (const item of sourceRows) {
+      const quantity = Math.max(0, Math.round(item.demandPlan ?? item.productionPlan));
+      if (quantity <= 0 || (!item.category.endsWith("Pipe") && !item.category.endsWith("Fitting"))) continue;
+      const normalizedCode = normalizeCodeStrict(item.itemCode);
+      if (!normalizedCode || !FIT_MATERIAL_BY_PREFIX[item.itemCode.trim().toUpperCase().charAt(0)]) continue;
+      const weight = normalizedBomWeights.get(normalizedCode);
+      if (weight !== undefined) weightByCode.set(item.itemCode, weight);
+    }
+    const machineLockedOut = new Map(machineRows.map((machine) => [machine.machineId, machine.lockedOut]));
+    const workedSundayDates = [...new Set(
+      storedActuals.actuals
+        .filter((actual: { qty: number; date: string }) => actual.qty > 0 && isSunday(actual.date))
+        .map((actual: { qty: number; date: string }) => actual.date),
+    )];
+    const weekDays = buildPlumbingWeekDays(sourceRun.month, workedSundayDates);
+    // Establish idempotency from the immutable frozen source before any
+    // material/duplicate assertion. This lets malformed pre-call requests
+    // become durable failed attempts without calling the plant.
+    const sourceFingerprint = plumbingFitFingerprint(sourceRunId, sourceRun.month, weekDays, sourceRows);
+    let requestFingerprint = sourceFingerprint;
+    let already: typeof plumbingFitAttemptsTable.$inferSelect | undefined;
+    // A failed attempt is immutable audit evidence, not a terminal idempotency
+    // result. Derive a deterministic retry fingerprint from it so repeated
+    // requests converge on the same replacement without altering the failure.
+    for (let retryDepth = 0; retryDepth < 20; retryDepth++) {
+      [already] = await db.select().from(plumbingFitAttemptsTable)
+        .where(and(
+          eq(plumbingFitAttemptsTable.requestFingerprint, requestFingerprint),
+          ne(plumbingFitAttemptsTable.state, "abandoned"),
+        ));
+      if (!already || already.state !== "failed") break;
+      requestFingerprint = plumbingFitRetryFingerprint(requestFingerprint, already.id);
+    }
+    if (already?.state === "failed") {
+      throw new Error("Plumbing fit retry chain exceeds the supported audit depth");
+    }
+    let insertedAttempt: typeof plumbingFitAttemptsTable.$inferSelect | undefined;
+    if (already) {
+      if (!plumbingFitAttemptIsStale(already)) {
+        fitAttemptResponse(already, res);
+        return;
+      }
+      insertedAttempt = await db.transaction(async (tx) => {
+        const [abandoned] = await tx.update(plumbingFitAttemptsTable).set({
+          state: "abandoned",
+          errorText: already.errorText ?? "Attempt abandoned after exceeding the five-minute running timeout",
+          updatedAt: new Date(),
+        }).where(and(
+          eq(plumbingFitAttemptsTable.id, already.id),
+          eq(plumbingFitAttemptsTable.state, "running"),
+          lt(plumbingFitAttemptsTable.updatedAt, new Date(Date.now() - PLUMBING_FIT_STALE_RUNNING_MS)),
+        )).returning();
+        if (!abandoned) return undefined;
+        const [replacement] = await tx.insert(plumbingFitAttemptsTable).values({
+          sourceRunId,
+          requestFingerprint,
+          state: "running",
+        }).onConflictDoNothing().returning();
+        return replacement;
+      });
+      if (!insertedAttempt) {
+        const [current] = await db.select().from(plumbingFitAttemptsTable)
+          .where(and(
+            eq(plumbingFitAttemptsTable.requestFingerprint, requestFingerprint),
+            ne(plumbingFitAttemptsTable.state, "abandoned"),
+          ));
+        if (current) fitAttemptResponse(current, res);
+        else res.status(409).json({ error: "PLUMBING_FIT_ATTEMPT_CONCURRENT", message: "A concurrent Plumbing fit attempt is being created." });
+        return;
+      }
+    }
+    if (!insertedAttempt) {
+      [insertedAttempt] = await db.insert(plumbingFitAttemptsTable).values({
+        sourceRunId,
+        requestFingerprint,
+        state: "running",
+      }).onConflictDoNothing().returning();
+    }
+    if (!insertedAttempt) {
+      const [concurrentAttempt] = await db.select().from(plumbingFitAttemptsTable)
+        .where(and(
+          eq(plumbingFitAttemptsTable.requestFingerprint, requestFingerprint),
+          ne(plumbingFitAttemptsTable.state, "abandoned"),
+        ));
+      if (!concurrentAttempt) throw new Error("Could not resolve concurrent Plumbing fit attempt");
+      fitAttemptResponse(concurrentAttempt, res);
+      return;
+    }
+    const attempt = insertedAttempt;
+    attemptId = attempt.id;
+    if (sourceRows.length === 0) throw new Error(`Temporary Plan #${sourceRunId} has no frozen item rows`);
+    const demand = buildPlumbingFitDemand(sourceRows);
+    if (demand.demandByKind.pipe.length === 0 || demand.demandByKind.fitting.length === 0) {
+      throw new Error("Plumbing Temporary run must contain both corroborated Pipe and Fitting demand");
+    }
+    activeKind = "pipe";
+    const schedule = await runPlumbingSchedule({
+      month: sourceRun.month,
+      workedSundayDates,
+      demandByKind: {
+        pipe: demand.demandByKind.pipe.map(({ sourceId, category, ...item }) => item),
+        fitting: demand.demandByKind.fitting.map(({ sourceId, category, ...item }) => item),
+      },
+      weightByCode,
+      machineLockedOut,
+      strictAllocationContract: true,
+      exposeSentDemandByKind: true,
+      // Removing rows explicitly rejected as unroutable is upstream
+      // classification, not a local capacity cascade. Those rows remain
+      // visible in the draft with cannotBeMade equal to their demand.
+      allowUnroutableRetry: true,
+      onRequest: async (kind, payload) => {
+        activeKind = kind;
+        const [leased] = await db.update(plumbingFitAttemptsTable).set({
+          [`${kind}RequestedAt`]: new Date(),
+          [`${kind}RequestJson`]: payload,
+          updatedAt: new Date(),
+        } as Partial<typeof plumbingFitAttemptsTable.$inferInsert>).where(and(
+          eq(plumbingFitAttemptsTable.id, attempt.id),
+          eq(plumbingFitAttemptsTable.state, "running"),
+        )).returning();
+        if (!plumbingFitAttemptLeaseIsOwned(leased, attempt.id)) {
+          throw new Error("PLUMBING_FIT_ATTEMPT_LOST_LEASE");
+        }
+      },
+      onResponse: async (kind, raw) => {
+        const [leased] = await db.update(plumbingFitAttemptsTable).set({
+          [`${kind}RespondedAt`]: new Date(),
+          [`${kind}ResponseJson`]: raw,
+          updatedAt: new Date(),
+        } as Partial<typeof plumbingFitAttemptsTable.$inferInsert>).where(and(
+          eq(plumbingFitAttemptsTable.id, attempt.id),
+          eq(plumbingFitAttemptsTable.state, "running"),
+        )).returning();
+        if (!plumbingFitAttemptLeaseIsOwned(leased, attempt.id)) {
+          throw new Error("PLUMBING_FIT_ATTEMPT_LOST_LEASE");
+        }
+      },
+    });
+    const allocationByCode = fitAllocationNetByCode(schedule.results);
+    const dataLimitedCodes = new Set(schedule.data_limited.map((item) => `${item.kind}::${normalizeCodeStrict(item.item_code)}`));
+    const unroutableByCode = new Map(
+      schedule.unroutable.map((item) => [`${item.kind}::${normalizeCodeStrict(item.item_code)}`, item.reason]),
+    );
+    const warnings = schedule.results.flatMap((result) =>
+      Array.isArray(result.raw.contract_warnings) ? result.raw.contract_warnings.map(String) : [],
+    );
+    const summary = buildPlumbingFitSummary({
+      sourceRows,
+      demand,
+      schedule,
+      allocationByCode,
+      sourceRunId,
+    });
+    const production = await db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM plumbing_fit_attempts WHERE id = ${attempt.id} FOR UPDATE`);
+      const [leasedAttempt] = await tx.select().from(plumbingFitAttemptsTable).where(and(
+        eq(plumbingFitAttemptsTable.id, attempt.id),
+        eq(plumbingFitAttemptsTable.state, "running"),
+      ));
+      if (!plumbingFitAttemptLeaseIsOwned(leasedAttempt, attempt.id)) {
+        throw new Error("PLUMBING_FIT_ATTEMPT_LOST_LEASE");
+      }
+      await tx.execute(sql`SELECT id FROM plan_runs WHERE id = ${sourceRunId} FOR UPDATE`);
+      const [lockedSourceRun] = await tx.select().from(planRunsTable).where(eq(planRunsTable.id, sourceRunId));
+      if (
+        !lockedSourceRun
+        || lockedSourceRun.segment !== "Plumbing"
+        || lockedSourceRun.planType !== "temporary"
+        || lockedSourceRun.status !== "finalized"
+      ) {
+        throw new Error("PLUMBING_SOURCE_CHANGED");
+      }
+      const lockedSourceRows = await tx.select().from(planRunResultsTable)
+        .where(eq(planRunResultsTable.runId, sourceRunId))
+        .orderBy(asc(planRunResultsTable.id));
+      if (plumbingFitFingerprint(sourceRunId, lockedSourceRun.month, weekDays, lockedSourceRows) !== sourceFingerprint) {
+        throw new Error("PLUMBING_SOURCE_CHANGED");
+      }
+      const [created] = await tx.insert(planRunsTable).values({
+        month: sourceRun.month,
+        segment: "Plumbing",
+        planType: "production",
+        temporaryRunId: sourceRunId,
+        status: "draft",
+        weeklyReleaseVersion: 1,
+        factorsJson: sourceRun.factorsJson,
+        provenanceJson: {
+          ...(sourceRun.provenanceJson ?? {}),
+           plumbingFit: {
+             attemptId: attempt.id,
+             requestFingerprint,
+             reference: schedule.results.map((r) => r.raw.reference),
+             referenceRole: "machine-scheduler provenance metadata (not input fingerprint)",
+           },
+        },
+        note: `MB.1 capacity fit of Plumbing Temporary Plan #${sourceRunId}`,
+      }).returning();
+      if (!created) throw new Error("Could not create Plumbing Production run");
+      const runId = created.id;
+       const draft = summary.draft as { lineage?: Record<string, unknown> } | undefined;
+       if (draft) {
+         draft.lineage = { temporaryRunId: sourceRunId, productionRunId: runId };
+       }
+      if (sourceInputs.length > 0) {
+        await tx.insert(planRunInputsTable).values(sourceInputs.map((input) => ({
+          runId,
+          itemCode: input.itemCode,
+          colour: input.colour,
+          avg3MoSale: input.avg3MoSale,
+          stock: input.stock,
+          pendingCurrent: input.pendingCurrent,
+          pendingLastMonth: input.pendingLastMonth,
+        })));
+      }
+      await tx.insert(planRunResultsTable).values(sourceRows.map((item) => {
+        const demandQty = Math.max(0, Math.round(item.demandPlan ?? item.productionPlan));
+        const isUnknown = demand.unknownFittings.has(item.id);
+        const isSolvent = demand.solvents.has(item.id);
+        const kind = item.category.endsWith("Pipe") ? "pipe" : "fitting";
+        const allocationNet = allocationByCode.get(`${kind}::${normalizeCodeStrict(item.itemCode)}`) ?? 0;
+        const net = isSolvent ? demandQty : isUnknown ? 0 : allocationNet;
+        const cannot = Math.max(0, demandQty - net);
+        const dataLimited = !isUnknown && !isSolvent && dataLimitedCodes.has(`${kind}::${normalizeCodeStrict(item.itemCode)}`);
+        const unroutableReason = unroutableByCode.get(`${kind}::${normalizeCodeStrict(item.itemCode)}`);
+        return {
+          runId,
+          itemCode: item.itemCode,
+          colour: item.colour,
+          category: item.category,
+          itemName: item.itemName,
+          sourceRole: item.sourceRole,
+          unmappedReason: item.unmappedReason,
+          dataLimited: dataLimited || isUnknown,
+          dataLimitedReason: isUnknown ? "MATERIAL_UNKNOWN" : dataLimited ? schedule.data_limited.find((row) => row.kind === kind && normalizeCodeStrict(row.item_code) === normalizeCodeStrict(item.itemCode))?.reason ?? "Scheduler data limited" : unroutableReason ?? null,
+          bufferReq: item.bufferReq,
+          minProduction: item.minProduction,
+          demandPlan: demandQty,
+          productionPlan: net,
+          temporaryPlan: item.temporaryPlan ?? demandQty,
+          cannotBeMade: cannot,
+          feasibilityStatus: isUnknown ? "unfulfillable" : dataLimited ? "data-limited" : cannot > 0 ? "unfulfillable" : "fitted",
+          material: isUnknown ? null : demand.materialBySourceId.get(item.id) ?? null,
+          totalKg: item.totalKg,
+          urgencyRank: item.urgencyRank,
+          releaseWeek: null,
+          w1: 0,
+          w2: 0,
+          w3: 0,
+          w4: 0,
+        };
+      }));
+      if (sourcePendingSnapshots.length > 0) {
+        await tx.insert(pendingSnapshotsTable).values(sourcePendingSnapshots.map((row) => ({
+          runId,
+          catNo: row.catNo,
+          colour: row.colour,
+          qty: row.qty,
+        })));
+      }
+      if (sourceSnapshots.length > 0) {
+        await tx.insert(planRunInputSnapshotsTable).values(sourceSnapshots.map((snapshot) => ({
+          runId,
+          segment: snapshot.segment,
+          sourceRole: snapshot.sourceRole,
+          sourceKind: snapshot.sourceKind,
+          sourceUploadId: snapshot.sourceUploadId,
+          sourceFilename: snapshot.sourceFilename,
+          sourceUploadedAt: snapshot.sourceUploadedAt,
+          rawRowsJson: snapshot.rawRowsJson,
+          parsedRowsJson: snapshot.parsedRowsJson,
+          diagnosticsJson: snapshot.diagnosticsJson,
+        })));
+      }
+      for (const result of schedule.results) {
+        const sent = schedule.sentDemandByKind![result.kind];
+        const request = {
+          segment: "PLUMBING",
+          month: sourceRun.month,
+          kind: result.kind,
+          week_days: schedule.week_days,
+          demand: sent,
+        };
+        await tx.insert(planScheduleResultsTable).values({
+          batchId: schedule.batchId,
+          runId,
+          month: sourceRun.month,
+          segment: "Plumbing",
+          kind: result.kind,
+          weekDays: schedule.week_days,
+          requestJson: request,
+          resultJson: result.raw,
+          demandPieces: sent.reduce((sum, row) => sum + row.qty_pcs, 0),
+          demandKg: sent.every((row) => weightByCode.has(row.item_code)) ? sent.reduce((sum, row) => sum + row.qty_pcs * (weightByCode.get(row.item_code) ?? 0), 0) : null,
+          scheduledPieces: result.total_scheduled_pcs,
+          scheduledKg: result.total_scheduled_kg,
+          unfinishedPieces: result.total_unfinished_pcs,
+          unfinishedKg: result.total_unfinished_kg,
+          unfinishedHours: result.total_unfinished_hours,
+          capacityHours: result.total_capacity_hrs,
+          scheduledHours: result.total_scheduled_hrs,
+          idleHours: result.total_idle_hrs,
+          downtimeHoursLost: result.total_downtime_hours_lost,
+          downtimeMachineDays: result.total_downtime_machine_days,
+        });
+      }
+      const [completedAttempt] = await tx.update(plumbingFitAttemptsTable).set({
+        state: "succeeded",
+        completedAt: new Date(),
+        productionRunId: runId,
+        warningsJson: warnings,
+        summaryJson: summary,
+        updatedAt: new Date(),
+      }).where(and(
+        eq(plumbingFitAttemptsTable.id, attempt.id),
+        eq(plumbingFitAttemptsTable.state, "running"),
+      )).returning();
+      if (!completedAttempt) throw new Error("Could not complete Plumbing fit attempt");
+      return created;
+    });
+    res.status(201).json({
+      attemptId: attempt.id,
+      state: "succeeded",
+      productionRunId: production.id,
+      temporaryRunId: sourceRunId,
+      summary,
+      warnings,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Plumbing capacity fit failed";
+    const [failedAttempt] = attemptId === null ? [] : await db.select().from(plumbingFitAttemptsTable)
+      .where(eq(plumbingFitAttemptsTable.id, attemptId)).limit(1);
+    if (failedAttempt?.state === "running") {
+      const [failed] = await db.update(plumbingFitAttemptsTable).set({
+        state: "failed",
+        failedKind: activeKind,
+        errorText: message,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(and(
+        eq(plumbingFitAttemptsTable.id, failedAttempt.id),
+        eq(plumbingFitAttemptsTable.state, "running"),
+      )).returning();
+      if (failed) {
+        fitAttemptResponse(failed, res);
+        return;
+      }
+    }
+    res.status(502).json({ error: "PLUMBING_FIT_FAILED", message, failedKind: activeKind });
+  }
+});
+
 /** GET /api/plan/runs/:id/export/excel — export only persisted frozen rows */
 router.get("/plan/runs/:id/export/excel", async (req, res): Promise<void> => {
   const id = Number(req.params.id);
@@ -1345,9 +2127,14 @@ router.get("/plan/runs/:id/export/excel", async (req, res): Promise<void> => {
     return;
   }
   const buffer = await exportFrozenRunExcel(run, run.planType as "temporary" | "production");
-  const prefix = run.segment === "Plumbing" ? "Plumbing" : "PTMT";
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="${prefix}_${run.planType === "temporary" ? "Temporary" : "Production"}_Plan_${run.month}_${exportTimestamp()}.xlsx"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${governedExportFilename({
+    segment: run.segment,
+    kind: run.planType === "temporary" ? "Temporary" : "Production",
+    month: run.month,
+    runId: run.id,
+    extension: "xlsx",
+  })}"`);
   res.send(buffer);
 });
 
@@ -1597,6 +2384,23 @@ router.delete("/plan/runs/:id", async (req, res): Promise<void> => {
   if (!id) { res.status(400).json({ error: "Invalid id" }); return; }
   const [run] = await db.select().from(planRunsTable).where(eq(planRunsTable.id, id));
   if (!run) { res.status(404).json({ error: "Run not found" }); return; }
+  const [productionReferences, fitAttemptReferences] = await Promise.all([
+    db.select({ id: planRunsTable.id })
+      .from(planRunsTable)
+      .where(eq(planRunsTable.temporaryRunId, id)),
+    db.select({ id: plumbingFitAttemptsTable.id })
+      .from(plumbingFitAttemptsTable)
+      .where(eq(plumbingFitAttemptsTable.sourceRunId, id)),
+  ]);
+  const lineageGuard = plumbingTemporaryDeletionGuard(
+    run,
+    productionReferences.length,
+    fitAttemptReferences.length,
+  );
+  if (lineageGuard) {
+    res.status(409).json(lineageGuard);
+    return;
+  }
   const supersession = await db
     .select({ id: planRunSupersessionsTable.id })
     .from(planRunSupersessionsTable)
@@ -1680,6 +2484,18 @@ router.post("/plan/runs/:id/finalize", async (req, res): Promise<void> => {
     return;
   }
   const results = await db.select().from(planRunResultsTable).where(eq(planRunResultsTable.runId, id));
+  const plumbingFinalizationBlock = getPlumbingProductionFinalizationBlock(
+    run.segment,
+    run.planType,
+    results,
+  );
+  if (plumbingFinalizationBlock) {
+    res.status(422).json({
+      ...plumbingFinalizationBlock,
+      runId: run.id,
+    });
+    return;
+  }
   // A draft is not yet a governing production version. Persist the immutable
   // timeline snapshot only after the run passes the finalization guard.
   if (run.planType === "production") {

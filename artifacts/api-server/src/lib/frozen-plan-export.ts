@@ -1,4 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
+import type ExcelJS from "exceljs";
 import {
   db,
   planRunInputsTable,
@@ -11,6 +12,8 @@ import {
 import type { CalcPlanItem, PlanSummaryResult } from "./calc";
 import { summarizePlan } from "./calc";
 import {
+  addPtmtTemporaryTargetSheet,
+  addRunTraceSheet,
   exportFrozenPlanExcel,
   type FrozenPlanRow,
 } from "./excel-export";
@@ -61,9 +64,11 @@ export function frozenRows(
       pendingLastMonth: input?.pendingLastMonth ?? 0,
       bufferReq: result.bufferReq,
       minProduction: result.minProduction,
+      demandPlan: result.demandPlan,
       productionPlan: result.productionPlan,
       temporaryPlan: result.temporaryPlan || (planType === "temporary" ? result.productionPlan : 0),
       cannotBeMade: result.cannotBeMade,
+      feasibilityStatus: result.feasibilityStatus,
       dummy,
       orders,
       buffer,
@@ -186,8 +191,9 @@ export function frozenRowsSummary(rows: FrozenPlanRow[]): PlanSummaryResult {
 export async function exportFrozenProductionPdf(
   month: string,
   rows: FrozenPlanRow[],
+  segment = "PTMT",
 ): Promise<Buffer> {
-  return exportPlanPdf(month, frozenRowsAsCalcItems(rows), frozenRowsSummary(rows));
+  return exportPlanPdf(month, frozenRowsAsCalcItems(rows), frozenRowsSummary(rows), segment);
 }
 
 export async function exportFrozenRunExcel(
@@ -197,16 +203,57 @@ export async function exportFrozenRunExcel(
   const { rows, temporaryRows } = planType === "production"
     ? await loadProductionExportRows(run)
     : { rows: await loadFrozenRows(run), temporaryRows: [] };
-  let appendSheets;
+  const appenders: Array<(workbook: ExcelJS.Workbook) => void> = [];
   if (run.segment === "Plumbing" && planType === "temporary") {
     const [machines, bands] = await Promise.all([
       db.select().from(plumbingMachineCapacityTable).where(eq(plumbingMachineCapacityTable.segment, "Plumbing")),
       db.select().from(weeklyReleaseBandsTable).where(eq(weeklyReleaseBandsTable.segment, "Plumbing")),
     ]);
     const analysis = buildPlumbingAchievability(run.month, rows, machines, bands);
-    appendSheets = (workbook: import("exceljs").Workbook) => {
+    appenders.push((workbook: import("exceljs").Workbook) => {
       addPlumbingAchievabilitySheets(workbook, analysis);
-    };
+    });
+  } else if (run.segment === "PTMT" && planType === "temporary") {
+    appenders.push((workbook: ExcelJS.Workbook) => {
+      addPtmtTemporaryTargetSheet(workbook, run.month, rows, run.factorsJson);
+    });
   }
-  return exportFrozenPlanExcel(run.month, planType, rows, temporaryRows, run.factorsJson, appendSheets);
+  if (planType === "temporary") {
+    appenders.push((workbook: ExcelJS.Workbook) => {
+      addRunTraceSheet(workbook, run.provenanceJson);
+    });
+  }
+  const appendSheets = appenders.length > 0
+    ? (workbook: ExcelJS.Workbook) => appenders.forEach((append) => append(workbook))
+    : undefined;
+  let capacityFittedPieces: number | null | undefined;
+  if (run.segment === "PTMT" && planType === "temporary") {
+    const [fittedRun] = await db.select().from(planRunsTable).where(and(
+      eq(planRunsTable.month, run.month),
+      eq(planRunsTable.segment, "PTMT"),
+      eq(planRunsTable.planType, "production"),
+      eq(planRunsTable.status, "finalized"),
+      eq(planRunsTable.temporaryRunId, run.id),
+    )).orderBy(desc(planRunsTable.id)).limit(1);
+    if (fittedRun) {
+      const fittedRows = await loadFrozenRows(fittedRun);
+      capacityFittedPieces = fittedRows.reduce(
+        (sum, row) => sum + Math.max(0, row.productionPlan),
+        0,
+      );
+    } else {
+      capacityFittedPieces = null;
+    }
+  }
+  return exportFrozenPlanExcel(
+    run.month,
+    planType,
+    rows,
+    temporaryRows,
+    run.factorsJson,
+    appendSheets,
+    run.segment,
+    run.id,
+    capacityFittedPieces,
+  );
 }

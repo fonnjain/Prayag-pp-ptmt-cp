@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { launchBrowser } from "../lib/browser";
-import { exportTimestamp } from "../lib/export-filename";
+import { governedExportFilename } from "../lib/export-filename";
 import { db, correctivePlanRunsTable, correctivePlanItemsTable, categoryCapacityTable, planRunsTable, planRunResultsTable } from "@workspace/db";
 import { eq, desc, and, sql, ne } from "drizzle-orm";
 import { runCorrectiveReplan, type CorrectiveItemResult, type CorrectiveSchedulerAudit } from "../lib/corrective-engine";
@@ -947,7 +947,7 @@ async function buildCorrectiveReferenceExcel(
       w4: Number(item.w4Rev ?? 0),
     };
   });
-  return exportPrayagPlanExcel(run.month, "production", rows, {}, appendSheets);
+  return exportPrayagPlanExcel(run.month, "production", rows, {}, appendSheets, run.segment ?? "PTMT");
 }
 
 async function buildCorrectiveReferenceDetailExcel(
@@ -1784,16 +1784,17 @@ router.get("/corrective/runs/:id/export/excel", async (req, res): Promise<void> 
   let buffer: Buffer;
   let suffix: string;
   if (format === "standard") {
-    buffer = await buildCorrectiveStandardExcel(run, items, segLabel, orderTotals);
+    buffer = await buildCorrectiveReferenceExcel(run, items, orderTotals);
     suffix = "Standard";
   } else {
-    const capRows = await db.select().from(categoryCapacityTable).where(eq(categoryCapacityTable.segment, segLabel));
-    buffer = await buildCorrectiveDetailExcel(run, items, capRows, segLabel, orderTotals);
+    buffer = await buildCorrectiveReferenceDetailExcel(run, items, orderTotals);
     suffix = "Detail";
   }
 
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="${segLabel}_Corrective_Plan_${run.month}_W${run.weekClosed}_${suffix}_${exportTimestamp()}.xlsx"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${governedExportFilename({
+    segment: segLabel, kind: "CorrectiveRePlan", variant: suffix, month: run.month, runId: run.id, extension: "xlsx",
+  })}"`);
   res.send(buffer);
 });
 
@@ -1824,7 +1825,9 @@ router.get("/corrective/runs/:id/export/pdf", async (req, res): Promise<void> =>
       const pdfUint8 = await page.pdf({ format: "A4", landscape: true, printBackground: true, margin: { top: "10mm", bottom: "10mm", left: "8mm", right: "8mm" } });
       const segLabel = run.segment ?? "PTMT";
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${segLabel}_Corrective_Plan_${run.month}_W${run.weekClosed}_${exportTimestamp()}.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${governedExportFilename({
+        segment: segLabel, kind: "CorrectiveRePlan", month: run.month, runId: run.id, extension: "pdf",
+      })}"`);
       res.send(Buffer.from(pdfUint8));
     } finally {
       await browser.close();
@@ -1870,7 +1873,9 @@ router.get("/corrective/export/excel", async (req, res): Promise<void> => {
   }
 
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="${segment}_Corrective_Plan_${month}_W${run.weekClosed}_${suffix}.xlsx"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${governedExportFilename({
+    segment: run.segment ?? "PTMT", kind: "CorrectiveRePlan", variant: suffix, month: run.month, runId: run.id, extension: "xlsx",
+  })}"`);
   res.send(buffer);
 });
 
@@ -1905,7 +1910,9 @@ router.get("/corrective/export/pdf", async (req, res): Promise<void> => {
       await page.setContent(html, { waitUntil: "networkidle0" });
       const pdfUint8 = await page.pdf({ format: "A4", landscape: true, printBackground: true, margin: { top: "10mm", bottom: "10mm", left: "8mm", right: "8mm" } });
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${segment}_Corrective_Plan_${month}_W${run.weekClosed}.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${governedExportFilename({
+        segment: run.segment ?? "PTMT", kind: "CorrectiveRePlan", month: run.month, runId: run.id, extension: "pdf",
+      })}"`);
       res.send(Buffer.from(pdfUint8));
     } finally {
       await browser.close();

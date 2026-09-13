@@ -5,7 +5,7 @@ function escapeHtml(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function buildHtml(month: string, items: CalcPlanItem[], summary: PlanSummaryResult): string {
+function buildHtml(month: string, items: CalcPlanItem[], summary: PlanSummaryResult, segment: string): string {
   const byCategory = new Map<string, CalcPlanItem[]>();
   for (const item of items) {
     const list = byCategory.get(item.category) ?? [];
@@ -70,7 +70,7 @@ function buildHtml(month: string, items: CalcPlanItem[], summary: PlanSummaryRes
     </style>
   </head>
   <body>
-    <h1>PTMT Production Plan — ${escapeHtml(month)}</h1>
+    <h1>${escapeHtml(segment)} Production Plan — ${escapeHtml(month)}</h1>
     <table>
       <thead><tr><th>Category</th><th>Min Production Required</th><th>Max Production Required</th></tr></thead>
       <tbody>${summaryRows}
@@ -86,8 +86,9 @@ export async function exportPlanPdf(
   month: string,
   items: CalcPlanItem[],
   summary: PlanSummaryResult,
+  segment = "PTMT",
 ): Promise<Buffer> {
-  const html = buildHtml(month, items, summary);
+  const html = buildHtml(month, items, summary, segment);
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();

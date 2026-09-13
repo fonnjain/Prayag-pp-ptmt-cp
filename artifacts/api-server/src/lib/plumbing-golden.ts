@@ -107,12 +107,73 @@ export const SEPTEMBER_PLUMBING_SOURCE_TARGETS: Array<{ category: string; items:
 export const SEPTEMBER_PLUMBING_SOURCE_TOTAL = 1_866_432;
 
 export const SEPTEMBER_PTMT_TARGET_SNAPSHOT = {
-  readDate: "2026-09-09",
+  readDate: "2026-09-10",
   multiplierSet:
     "1.0x default; Accessorise 1.5x; Ball Cock ROD/BODY/BALL 1.5x, BALL COCK and blank sub-types 1.0x",
   comparisonReports: 7,
   comparisonTotal: 597_023,
 } as const;
+
+export type PtmtPrayagMultiplierEvidence = {
+  value: number | null;
+  source: string;
+  readDate: string;
+  note?: string;
+};
+
+/**
+ * Point-in-time multiplier lookups read from the September REPORT tabs.
+ * Ball Cock is intentionally not reduced to one category multiplier because
+ * Prayag applies different values by the item's sub-type.
+ */
+export const SEPTEMBER_PTMT_PRAYAG_MULTIPLIERS: Record<string, PtmtPrayagMultiplierEvidence> = {
+  "Cocks Standard": {
+    value: 1.0,
+    source: "Prayag REPORT 1 multiplier lookup",
+    readDate: "2026-09-10",
+  },
+  "Cocks Premium": {
+    value: 1.0,
+    source: "Prayag REPORT 2 multiplier lookup",
+    readDate: "2026-09-10",
+  },
+  "Faucets & Jetsprays & Shower": {
+    value: 1.0,
+    source: "Prayag REPORT 3 multiplier lookup",
+    readDate: "2026-09-10",
+  },
+  Accessorise: {
+    value: 1.5,
+    source: "Prayag REPORT 4 multiplier lookup",
+    readDate: "2026-09-10",
+  },
+  "Cistern & Seat Cover": {
+    value: 1.0,
+    source: "Prayag REPORT 5 multiplier lookup",
+    readDate: "2026-09-10",
+  },
+  Cabinet: {
+    value: 1.0,
+    source: "Prayag REPORT 6 multiplier lookup",
+    readDate: "2026-09-10",
+  },
+  "Ball Cock": {
+    value: null,
+    source: "Prayag REPORT 7 subtype lookup",
+    readDate: "2026-09-10",
+    note: "sub-type lookup — BALL COCK 1.0, ROD/BODY/BALL 1.5",
+  },
+  "P.V.C. Connections": {
+    value: null,
+    source: "Prayag REPORT 8 not produced",
+    readDate: "2026-09-10",
+  },
+  "Waste Pipes": {
+    value: null,
+    source: "Prayag REPORT 9 not produced",
+    readDate: "2026-09-10",
+  },
+};
 
 export const SEPTEMBER_PTMT_SOURCE_TARGETS: Array<{
   report: string;

@@ -27,6 +27,7 @@ export * from "./users";
 export * from "./sessions";
 export * from "./alerts";
 export * from "./plan-schedule-results";
+export * from "./plumbing-fit-attempts";
 export * from "./plumbing-bom-overrides";
 // Legacy auth tables remain exported for compatibility with inactive
 // transitional modules; browser auth uses users/user_sessions above.

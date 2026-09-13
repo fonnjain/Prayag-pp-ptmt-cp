@@ -510,7 +510,6 @@ export function invalidateWorkbookCache(division: string, month: string): void {
 export function invalidateAllWorkbookCaches(): void {
   _dbWorkbookCache.clear();
   _resolvedWorkbookCache.clear();
-  _driveWorkbookCache.clear();
 }
 
 async function proxyJson(path: string): Promise<any> {
@@ -596,67 +595,6 @@ const _MONTH_ABBREVS: Record<string, string[]> = {
   "11": ["Nov", "November"],
   "12": ["Dec", "December"],
 };
-
-// Cache Drive workbook lookups for 30 minutes
-const _driveWorkbookCache = new Map<string, { fileIds: string[]; expires: number }>();
-
-/**
- * Searches Google Drive for the Plumbing daily-production workbook for a given
- * planning month (YYYY-MM).  Returns the file ID of the best match, or null if
- * none found or Drive is not connected.  Falls back to PLUMBING_DAILY_WORKBOOK_IDS.
- */
-/**
- * Returns ALL Drive candidates matching the month/year (most-recently-modified
- * first), not just the first: the name filter can also match non-production
- * workbooks (e.g. "PLUMBING DAILY PURCHASE AUG- (2026)"), so the caller must be
- * able to try the next candidate when one has no material tabs.
- */
-async function findPlumbingWorkbookIds(month: string): Promise<string[]> {
-  const now = Date.now();
-  const cached = _driveWorkbookCache.get(month);
-  if (cached && cached.expires > now) return cached.fileIds;
-
-  try {
-    const [year, mo] = month.split("-");
-    const abbrevs = _MONTH_ABBREVS[mo] ?? [];
-    const yearShort = year.slice(2); // e.g. "26"
-
-    const q = encodeURIComponent(
-      "name contains 'PLUMBING' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
-    );
-    const data = await driveProxyJson(
-      `/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime%20desc&pageSize=30`,
-    );
-
-    const files: Array<{ id: string; name: string; modifiedTime: string }> = data.files ?? [];
-    const matches = files.filter((f) => {
-      const upper = f.name.toUpperCase();
-      return (
-        abbrevs.some((a) => upper.includes(a.toUpperCase())) &&
-        (upper.includes(year) || upper.includes(yearShort))
-      );
-    });
-
-    const fileIds = matches.map((m) => m.id);
-    _driveWorkbookCache.set(month, { fileIds, expires: now + 30 * 60 * 1000 });
-    if (fileIds.length > 0) {
-      logger.info(
-        { month, candidates: matches.map((m) => m.name) },
-        "fetchPlumbingPlanData: workbook candidates found via Drive",
-      );
-    } else {
-      logger.warn(
-        { month, candidates: files.slice(0, 5).map((f) => f.name) },
-        "fetchPlumbingPlanData: no matching Plumbing workbook in Drive",
-      );
-    }
-    return fileIds;
-  } catch (err) {
-    if (err instanceof UpstreamTimeoutError) throw err;
-    logger.warn({ month, err: String(err) }, "fetchPlumbingPlanData: Drive lookup failed — using hardcoded ID");
-    return [];
-  }
-}
 
 /**
  * Searches Google Drive for spreadsheets matching a given division and planning month.
@@ -2200,45 +2138,27 @@ function assertNotComputedColumn(material: string, tab: string, purpose: string,
 }
 
 async function fetchPlumbingPlanDataInner(month: string): Promise<PlumbingPlanRow[]> {
-  // Priority: DB-configured ID → hardcoded month map → Drive discovery.
-  // After finding any file, validate it has at least one material tab.
-  // The Drive search can match wrong files (e.g. purchase workbooks) that share
-  // "PLUMBING" + month + year in their name but have no CPVC/UPVC/SWR/AGRI tabs.
-  const dbId = await loadWorkbookIdFromDb("Plumbing", month);
-  const hardcodedId = PLUMBING_DAILY_WORKBOOK_IDS[month] ?? null;
-  const driveIds = dbId ? [] : await findPlumbingWorkbookIds(month); // skip Drive if DB has an ID
-
-  // Try DB ID first, then the exact month-pinned workbook, then ALL Drive candidates.
-  // Discovery can return similarly named purchase workbooks with incompatible
-  // production-summary layouts, so it must not outrank the known month source.
-  let fileId: string | null = null;
-  let tabs: string[] = [];
-  for (const candidateId of [...new Set([dbId, hardcodedId, ...driveIds].filter(Boolean) as string[])]) {
-    const candidateTabs = await listTabs(candidateId);
-    const hasMaterialTab = PLUMBING_CORE_MATERIALS.some((m) =>
-      candidateTabs.some((t) => t.toUpperCase().includes(m)),
-    );
-    if (hasMaterialTab) {
-      fileId = candidateId;
-      tabs = candidateTabs;
-      logger.info(
-        { month, fileId, source: driveIds.includes(candidateId) ? "drive" : "hardcoded" },
-        "fetchPlumbingPlanData: workbook validated — has material tabs",
-      );
-      break;
-    }
-    // Wrong file — invalidate Drive cache so next call re-searches
-    if (driveIds.includes(candidateId)) _driveWorkbookCache.delete(month);
-    logger.warn(
-      { month, candidateId, tabs: candidateTabs },
-      "fetchPlumbingPlanData: workbook has no material tabs — skipping",
+  // Planning must use an explicitly pinned workbook. Monitoring may continue to
+  // use the legacy static/Drive fallback through getWorkbookIdForMonth(), but a
+  // plan must never silently choose a candidate or reuse another month.
+  const resolved = await resolveWorkbookForMonth("Plumbing", month, { requireConfigured: true });
+  const fileId = resolved.workbookId;
+  const tabs = await listTabs(fileId);
+  const hasMaterialTab = PLUMBING_CORE_MATERIALS.some((m) =>
+    tabs.some((t) => t.toUpperCase().includes(m)),
+  );
+  if (!hasMaterialTab) {
+    throw new PlumbingInputUnreadableError(
+      month,
+      fileId,
+      tabs.filter(looksLikePlumbingMaterialTab),
+      `configured workbook has no usable ${PLUMBING_CORE_MATERIALS.join(", ")} material tabs`,
     );
   }
-
-  if (!fileId) {
-    logger.warn({ month }, "fetchPlumbingPlanData: no valid Plumbing workbook found");
-    return [];
-  }
+  logger.info(
+    { month, fileId, source: resolved.source },
+    "fetchPlumbingPlanData: configured workbook validated — has material tabs",
+  );
 
   const result: PlumbingPlanRow[] = [];
   const skippedTabs = new Set<string>();

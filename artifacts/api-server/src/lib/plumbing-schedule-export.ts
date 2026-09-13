@@ -10,12 +10,21 @@ export interface PersistedPlumbingScheduleRow {
   resultJson: JsonObject;
 }
 
-export class PlumbingScheduleExportError extends Error {
-  readonly code = "PLUMBING_SCHEDULE_EXPORT_RECONCILIATION_FAILED";
+export type PlumbingScheduleExportErrorCode =
+  | "PLUMBING_SCHEDULE_EXPORT_RECONCILIATION_FAILED"
+  | "PLUMBING_SCHEDULE_EXPORT_NOT_PROMOTED"
+  | "PLUMBING_SCHEDULE_EXPORT_PARTIALLY_PROMOTED";
 
-  constructor(message: string) {
+export class PlumbingScheduleExportError extends Error {
+  readonly code: PlumbingScheduleExportErrorCode;
+
+  constructor(
+    message: string,
+    code: PlumbingScheduleExportErrorCode = "PLUMBING_SCHEDULE_EXPORT_RECONCILIATION_FAILED",
+  ) {
     super(message);
     this.name = "PlumbingScheduleExportError";
+    this.code = code;
   }
 }
 
@@ -83,19 +92,6 @@ function requestCodes(row: PersistedPlumbingScheduleRow): Set<string> {
       .filter((item): item is JsonObject => item !== null)
       .map((item) => normalizeCode(item.item_code ?? item.itemCode)),
   );
-}
-
-function addUnfinished(
-  target: Map<string, number>,
-  resultJson: JsonObject,
-): void {
-  for (const raw of asArray(resultJson.unfinished)) {
-    const row = asObject(raw);
-    if (!row) continue;
-    const code = normalizeCode(row.item_code ?? row.raw_code ?? row.itemCode);
-    if (!code) continue;
-    target.set(code, (target.get(code) ?? 0) + Math.max(0, asNumber(row.remaining_pcs)));
-  }
 }
 
 function dataLimitedReason(row: JsonObject): string {
@@ -190,10 +186,50 @@ function scheduleRowsByKind(
   return byKind;
 }
 
+const PROMOTED_FEASIBILITY_STATUSES = new Set([
+  "fitted",
+  "unfulfillable",
+  "data-limited",
+]);
+
+function assertScheduleWasPromoted(
+  rows: FrozenPlanRow[],
+  batchId: string,
+): void {
+  const positiveDemandRows = rows.filter((row) =>
+    Math.max(0, Number(row.demandPlan ?? row.temporaryPlan ?? row.productionPlan)) > 0
+  );
+  const promotedRows = positiveDemandRows.filter((row) =>
+    PROMOTED_FEASIBILITY_STATUSES.has(String(row.feasibilityStatus ?? ""))
+  );
+  if (
+    positiveDemandRows.length > 0
+    && promotedRows.length === positiveDemandRows.length
+  ) {
+    return;
+  }
+
+  const counts =
+    `${promotedRows.length} of ${positiveDemandRows.length} positive-demand rows ` +
+    `(${rows.length} total rows)`;
+  if (promotedRows.length === 0) {
+    throw new PlumbingScheduleExportError(
+      `Plumbing schedule batch ${batchId} is present, but the run was never promoted: ` +
+      `${counts} carry a promotion marker. The export cannot state executable quantities.`,
+      "PLUMBING_SCHEDULE_EXPORT_NOT_PROMOTED",
+    );
+  }
+  throw new PlumbingScheduleExportError(
+    `Plumbing schedule batch ${batchId} is present, but the run was only partially promoted: ` +
+    `${counts} carry a promotion marker. The export cannot state executable quantities.`,
+    "PLUMBING_SCHEDULE_EXPORT_PARTIALLY_PROMOTED",
+  );
+}
+
 /**
  * Convert the persisted machine schedule into the common frozen export row
  * shape. The upstream blocks carry hours, not quantities, so the scheduler's
- * item-level scheduled pieces are conserved and distributed by that item's
+ * already-persisted executable pieces are conserved and distributed by that item's
  * non-idle block-hour share in each echoed week. Solvents are intentionally
  * outside the machine app and remain unconstrained pass-through demand.
  */
@@ -202,16 +238,15 @@ export function applyPlumbingScheduleToFrozenRows(
   schedules: PersistedPlumbingScheduleRow[],
 ): FrozenPlanRow[] {
   const byKind = scheduleRowsByKind(schedules);
+  assertScheduleWasPromoted(rows, byKind.get("pipe")!.batchId);
   const sentByCode = new Map<string, Set<string>>();
   const dataLimitedByCode = new Map<string, string>();
-  const unfinishedByCode = new Map<string, number>();
   const hoursByCode = new Map<string, [number, number, number, number]>();
 
   for (const kind of ["pipe", "fitting"] as const) {
     const schedule = byKind.get(kind)!;
     sentByCode.set(kind, requestCodes(schedule));
     addDataLimited(dataLimitedByCode, kind, schedule.resultJson);
-    addUnfinished(unfinishedByCode, schedule.resultJson);
     addBlockHours(hoursByCode, schedule);
   }
 
@@ -233,6 +268,21 @@ export function applyPlumbingScheduleToFrozenRows(
         cannotBeMade: 0,
         releaseWeek: originalPlan > 0 ? 1 : null,
         w1: originalPlan,
+        w2: 0,
+        w3: 0,
+        w4: 0,
+      };
+    }
+    // MB.1 keeps unresolved fitting-material rows visible as Unclassified with
+    // zero executable output. They were never sent to the scheduler, so export
+    // their persisted fitted result without inventing a machine week.
+    if (row.category === "Unclassified") {
+      return {
+        ...row,
+        productionPlan: Math.max(0, row.productionPlan),
+        cannotBeMade: Math.max(0, row.cannotBeMade),
+        releaseWeek: null,
+        w1: 0,
         w2: 0,
         w3: 0,
         w4: 0,
@@ -264,8 +314,7 @@ export function applyPlumbingScheduleToFrozenRows(
     const scheduleKind = kind;
     const code = normalizeCode(row.itemCode);
     const sent = sentByCode.get(scheduleKind)!.has(code);
-    const unfinished = sent ? Math.min(originalPlan, unfinishedByCode.get(code) ?? 0) : originalPlan;
-    const scheduled = roundQuantity(Math.max(0, originalPlan - unfinished));
+    const scheduled = sent ? roundQuantity(originalPlan) : 0;
     const weeks = sent
       ? allocateByBlockHours(scheduled, hoursByCode.get(code) ?? [0, 0, 0, 0], code)
       : [0, 0, 0, 0] as [number, number, number, number];
@@ -279,7 +328,9 @@ export function applyPlumbingScheduleToFrozenRows(
     return {
       ...row,
       productionPlan: scheduled,
-      cannotBeMade: roundQuantity(Math.max(0, originalPlan - scheduled)),
+      cannotBeMade: sent
+        ? roundQuantity(Math.max(0, row.cannotBeMade))
+        : roundQuantity(Math.max(0, originalPlan)),
       releaseWeek: scheduled > 0 ? (weeks.findIndex((value) => value > 0) + 1 || null) as 1 | 2 | 3 | 4 : null,
       w1: weeks[0],
       w2: weeks[1],

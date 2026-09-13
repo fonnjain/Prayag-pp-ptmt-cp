@@ -15,8 +15,9 @@ import {
   parseRateListRows,
   ptmtRosterDemandKey,
   rateListPlanningCategory,
+  shouldFallbackFromPtmtRosterError,
 } from "./rate-list";
-import { parsePtmtReportRows } from "./sheets";
+import { WorkbookConfigurationRequiredError, parsePtmtReportRows } from "./sheets";
 import { extractRateListRows } from "../routes/uploads";
 
 function rate(code: string, rangeName = "New Range") {
@@ -69,6 +70,13 @@ test("PTMT REPORT roster parser preserves report grain and blank-colour fallback
       ["A-102", "", "Cocks Premium", "workbook"],
     ],
   );
+});
+
+test("PTMT roster fallback distinguishes missing configuration from read failures", () => {
+  const missingPin = new WorkbookConfigurationRequiredError("PTMT", "2026-09");
+  assert.equal(shouldFallbackFromPtmtRosterError(missingPin), false);
+  assert.equal(shouldFallbackFromPtmtRosterError(new Error("network timeout")), true);
+  assert.equal(shouldFallbackFromPtmtRosterError(new Error("malformed REPORT 4 tab")), true);
 });
 
 test("rate-list category promotion is conservative", () => {

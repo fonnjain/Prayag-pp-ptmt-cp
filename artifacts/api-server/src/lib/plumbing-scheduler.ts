@@ -20,6 +20,8 @@ export interface PlumbingScheduleCoverageItem {
   raw_code?: string;
   requested_pcs: number;
   status: string;
+  /** Plant schema v2 may report this at item level. */
+  net_conservation?: unknown;
   [key: string]: unknown;
 }
 
@@ -29,6 +31,8 @@ export interface PlumbingScheduleDataLimited {
   requested_pcs?: number;
   reasons?: string[];
   reason_text?: string[];
+  /** Plant schema v2 may report this at item level. */
+  net_conservation?: unknown;
   [key: string]: unknown;
 }
 
@@ -46,9 +50,18 @@ export interface PlumbingScheduleDemandReconciliation {
 export interface PlumbingScheduleUnfinished {
   item_code: string;
   material: string;
+  /**
+   * Backward-compatible alias for the net remainder.  For schema v2 this is
+   * normalised from remaining_net_pcs; it must never be derived from the
+   * gross remainder.
+   */
   remaining_pcs: number;
+  remaining_net_pcs?: number;
+  remaining_gross_pcs?: number | null;
   remaining_kg: number;
   remaining_hours: number;
+  /** Plant schema v2 may report this at item level. */
+  net_conservation?: unknown;
   [key: string]: unknown;
 }
 
@@ -70,18 +83,25 @@ export interface PlumbingScheduleResult {
   total_scheduled_pcs: number;
   total_scheduled_kg: number | null;
   total_unfinished_pcs: number;
+  total_unfinished_gross_pcs?: number | null;
   total_unfinished_kg: number;
   total_unfinished_hours: number;
   total_data_limited_pcs: number;
   total_data_limited_kg: number | null;
   total_downtime_hours_lost: number;
   total_downtime_machine_days: number;
+  /** Optional schema v2 response-level conservation evidence and timings. */
+  net_conservation?: unknown;
+  timings_ms?: unknown;
   unfinished_capability: Array<{
     item_code: string;
     material: string;
     remaining_pcs: number;
+    remaining_net_pcs?: number;
+    remaining_gross_pcs?: number | null;
     remaining_kg: number;
     remaining_hours: number;
+    net_conservation?: unknown;
     capable_machines: Array<{
       machine_id: string;
       locked_out: boolean | null;
@@ -120,6 +140,7 @@ export interface PlumbingScheduleBatch {
   };
   unfinished: {
     pieces: number;
+    gross_pieces?: number | null;
     kg: number;
     hours: number;
   };
@@ -141,9 +162,12 @@ export interface PlumbingScheduleBatch {
     material: string;
     qty_pcs: number;
     reason: string;
+    net_conservation?: unknown;
   }>;
   data_limited_pieces: number;
   results: PlumbingScheduleResult[];
+  /** Exact per-kind demand retained after any upstream unroutable retries. */
+  sentDemandByKind?: Record<PlumbingScheduleKind, PlumbingScheduleDemand[]>;
   merged: {
     blocks: unknown[];
     weekly_fill: unknown[];
@@ -159,6 +183,7 @@ export interface PlumbingScheduleBatch {
       scheduled_pcs: number;
       scheduled_kg: number | null;
       unfinished_pcs: number;
+      unfinished_gross_pcs?: number | null;
       unfinished_kg: number;
       unfinished_hours: number;
       data_limited_pcs: number;
@@ -277,6 +302,55 @@ function reasonText(row: PlumbingScheduleDataLimited): string {
   return [...new Set(reasons)].join("; ") || "Scheduler data limited";
 }
 
+/**
+ * Schema v2 separates net and gross unfinished pieces.  Keep the old
+ * remaining_pcs spelling as a compatibility fallback, but never use a gross
+ * value for conservation and never coerce an unavailable/null snapshot to 0.
+ */
+function remainingNetPieces(
+  row: Record<string, unknown>,
+  requestedKind: PlumbingScheduleKind,
+): number {
+  const hasNetSnapshot = Object.prototype.hasOwnProperty.call(row, "remaining_net_pcs");
+  const value = hasNetSnapshot ? row.remaining_net_pcs : row.remaining_pcs;
+  if (value === undefined || value === null) {
+    throw new Error(
+      `Machine scheduler ${requestedKind} unfinished rows have unavailable ` +
+      `${hasNetSnapshot ? "remaining_net_pcs" : "remaining_pcs"}; refusing to treat it as zero`,
+    );
+  }
+  return numberField(value);
+}
+
+function optionalRemainingGrossPieces(row: Record<string, unknown>): number | null {
+  if (row.remaining_gross_pcs === undefined || row.remaining_gross_pcs === null) return null;
+  return numberField(row.remaining_gross_pcs);
+}
+
+function assertUnfinishedDataLimitedExclusive(
+  raw: Record<string, unknown>,
+  requestedKind: PlumbingScheduleKind,
+): void {
+  // This check is deliberately conditional on both explicit arrays.  It keeps
+  // legacy envelopes compatible while rejecting the ambiguous v2 state where
+  // one submitted item is simultaneously classified in both buckets.
+  if (!Array.isArray(raw.unfinished) || !Array.isArray(raw.data_limited)) return;
+  const unfinishedCodes = new Set(
+    raw.unfinished.map((value) => normalizeProductionCode(
+      responseItemCode(asObject(value, "unfinished"), "unfinished"),
+    )),
+  );
+  for (const value of raw.data_limited) {
+    const row = asObject(value, "data-limited");
+    const code = normalizeProductionCode(responseItemCode(row, "data-limited"));
+    if (unfinishedCodes.has(code)) {
+      throw new Error(
+        `Machine scheduler ${requestedKind} response classifies ${code} as both unfinished and data_limited`,
+      );
+    }
+  }
+}
+
 function assertSchedulerContract(
   raw: Record<string, unknown>,
   requestedKind: PlumbingScheduleKind,
@@ -326,6 +400,7 @@ function assertSchedulerContract(
     }
     return { ...row, item_code: itemCode } as PlumbingScheduleDataLimited;
   });
+  assertUnfinishedDataLimitedExclusive(raw, requestedKind);
 
   const demandReconciliation = asObject(
     raw.demand_reconciliation,
@@ -357,6 +432,222 @@ function assertSchedulerContract(
   };
 }
 
+/**
+ * Capacity-fitting (MB.1) is deliberately stricter than the legacy
+ * /schedule adapter.  The old adapter remains unchanged by making this
+ * validation opt-in: production fitting may only consume the versioned
+ * allocation contract, never an inferred local quantity.
+ */
+export function assertAllocationContract(
+  raw: Record<string, unknown>,
+  requestedKind: PlumbingScheduleKind,
+  demand: PlumbingScheduleDemand[],
+  dataLimited: PlumbingScheduleDataLimited[] = [],
+): string[] {
+  if (raw.allocation_schema_version !== "2") {
+    throw new Error(`Machine scheduler ${requestedKind} response must declare allocation_schema_version "2"`);
+  }
+  if (!Array.isArray(raw.allocations)) {
+    throw new Error(`Machine scheduler ${requestedKind} response is missing allocations`);
+  }
+  if (!Array.isArray(raw.blocks)) {
+    throw new Error(`Machine scheduler ${requestedKind} response is missing blocks`);
+  }
+  if (!Array.isArray(raw.unfinished)) {
+    throw new Error(`Machine scheduler ${requestedKind} response is missing unfinished`);
+  }
+  if (raw.reference === undefined || raw.reference === null || String(raw.reference).trim() === "") {
+    throw new Error(`Machine scheduler ${requestedKind} response is missing reference`);
+  }
+
+  // Absolute tolerances fail on large totals because floating-point accumulation
+  // error scales with the number and size of summed terms. Use a relative
+  // tolerance with a tight absolute floor instead.
+  const toleranceFor = (scale: number): number => Math.max(0.01, Math.abs(scale) * 1e-9);
+  const exceedsTolerance = (difference: number, scale: number): boolean =>
+    Math.abs(difference) > toleranceFor(scale);
+  const canonicalNumber = (row: Record<string, unknown>, name: string, required = true): number | null => {
+    const value = row[name];
+    if (value === undefined || value === null) {
+      if (required) throw new Error(`Machine scheduler ${requestedKind} response is missing ${name}`);
+      return null;
+    }
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+      throw new Error(`Machine scheduler ${requestedKind} response contains an invalid or negative ${name}`);
+    }
+    return value;
+  };
+  const identity = (row: Record<string, unknown>): string => {
+    if (typeof row.item_code !== "string" || row.item_code.trim() === "") {
+      throw new Error(`Machine scheduler ${requestedKind} response row is missing item_code`);
+    }
+    return normalizeProductionCode(row.item_code);
+  };
+  const reconciliation = asObject(raw.demand_reconciliation, "demand_reconciliation");
+  const submittedRequested = canonicalNumber(reconciliation, "submitted_requested_pcs")!;
+  const scheduledGross = canonicalNumber(reconciliation, "scheduled_gross_pcs")!;
+  const allocationTotals = { net: 0, gross: 0, kg: 0 };
+  const allocationByCode = new Map<string, { net: number; gross: number; kg: number }>();
+  for (const value of raw.allocations) {
+    const row = asObject(value, "allocation");
+    const code = identity(row);
+    const net = canonicalNumber(row, "scheduled_net_pcs")!;
+    const gross = canonicalNumber(row, "scheduled_gross_pcs")!;
+    const kg = canonicalNumber(row, "scheduled_kg")!;
+    const existing = allocationByCode.get(code) ?? { net: 0, gross: 0, kg: 0 };
+    allocationTotals.net += net; existing.net += net;
+    allocationTotals.gross += gross; existing.gross += gross;
+    allocationTotals.kg += kg; existing.kg += kg;
+    allocationByCode.set(code, existing);
+  }
+
+  const blockTotals = { net: 0, gross: 0, kg: 0 };
+  const blocksByCode = new Map<string, { net: number; gross: number; kg: number }>();
+  for (const value of raw.blocks) {
+    const row = asObject(value, "block");
+    const status = String(row.status ?? row.block_type ?? row.type ?? "").trim().toLowerCase();
+    if (row.idle === true || row.is_idle === true || String(row.is_idle ?? "").toLowerCase() === "true" || status === "idle") continue;
+    const hasQuantity = [
+      "scheduled_net_pcs", "scheduled_gross_pcs", "scheduled_kg",
+      "net_pcs", "gross_pcs", "net", "gross", "kg", "quantity_pcs", "qty_pcs", "scheduled_pcs",
+    ]
+      .some((name) => row[name] !== undefined && row[name] !== null);
+    if (!hasQuantity) continue;
+    const code = identity(row);
+    const net = canonicalNumber(row, "scheduled_net_pcs")!;
+    const gross = canonicalNumber(row, "scheduled_gross_pcs")!;
+    const kg = canonicalNumber(row, "scheduled_kg")!;
+    const existing = blocksByCode.get(code) ?? { net: 0, gross: 0, kg: 0 };
+    blockTotals.net += net; existing.net += net;
+    blockTotals.gross += gross; existing.gross += gross;
+    blockTotals.kg += kg; existing.kg += kg;
+    blocksByCode.set(code, existing);
+  }
+  for (const value of asArray(raw.unfinished)) {
+    const row = asObject(value, "unfinished");
+    identity(row);
+    canonicalNumber(row, "remaining_net_pcs");
+    canonicalNumber(row, "remaining_gross_pcs", false);
+    canonicalNumber(row, "remaining_kg");
+    canonicalNumber(row, "remaining_hours", false);
+  }
+  const warnings: string[] = [];
+  const assertTotal = (name: string, left: number, right: number) => {
+    if (exceedsTolerance(left - right, Math.max(Math.abs(left), Math.abs(right)))) {
+      throw new Error(`Machine scheduler ${requestedKind} ${name} reconciliation mismatch: allocations=${left} blocks=${right}`);
+    }
+  };
+  assertTotal("net", allocationTotals.net, blockTotals.net);
+  assertTotal("gross", allocationTotals.gross, blockTotals.gross);
+  assertTotal("kg", allocationTotals.kg, blockTotals.kg);
+  if (scheduledGross !== null) assertTotal("scheduled_gross_pcs", allocationTotals.gross, scheduledGross);
+  raw.contract_reconciliation = {
+    tolerance: toleranceFor(submittedRequested),
+    tolerance_policy: "max(0.01, scale * 1e-9)",
+    allocations: { ...allocationTotals },
+    non_idle_blocks: { ...blockTotals },
+    scheduled_gross_pcs: scheduledGross,
+  };
+
+  const submittedDemand = new Map<string, number>();
+  for (const item of demand) {
+    const code = normalizeProductionCode(item.item_code);
+    submittedDemand.set(code, (submittedDemand.get(code) ?? 0) + item.qty_pcs);
+  }
+  if (exceedsTolerance(
+    submittedRequested - [...submittedDemand.values()].reduce((sum, value) => sum + value, 0),
+    submittedRequested,
+  )) {
+    throw new Error(`Machine scheduler ${requestedKind} submitted_requested_pcs does not match submitted demand`);
+  }
+  const dataLimitedCodes = new Set(dataLimited.map((item) => normalizeProductionCode(item.item_code)));
+  const dataLimitedDemand = [...submittedDemand.entries()]
+    .filter(([code]) => dataLimitedCodes.has(code))
+    .reduce((sum, [, value]) => sum + value, 0);
+  const unfinishedDemand = asArray(raw.unfinished).reduce<number>(
+    (sum, value) => sum + canonicalNumber(asObject(value, "unfinished"), "remaining_net_pcs")!,
+    0,
+  );
+  if (exceedsTolerance(
+    submittedRequested - allocationTotals.net - unfinishedDemand - dataLimitedDemand,
+    submittedRequested,
+  )) {
+    throw new Error(
+      `Machine scheduler ${requestedKind} response does not conserve submitted demand: ` +
+      `submitted=${submittedRequested} allocations=${allocationTotals.net} unfinished=${unfinishedDemand} data_limited=${dataLimitedDemand}`,
+    );
+  }
+  // Schema v1 left per-item reconciliation as warning metadata because
+  // unfinished quantities were gross while allocations were net. Schema v2
+  // separates the units, but the live response still carries small per-item
+  // drift (up to 0.001 pcs in the development fixture). Keep response-wide
+  // conservation hard and preserve measured item drift as warnings.
+  const netConservation = asObject(reconciliation.net_conservation, "demand_reconciliation.net_conservation");
+  if (netConservation.passed !== true || String(netConservation.status ?? "").toLowerCase() !== "passed") {
+    throw new Error(`Machine scheduler ${requestedKind} response-level net conservation did not pass`);
+  }
+  const responseDrift = Number(netConservation.drift_net_pcs);
+  if (!Number.isFinite(responseDrift) || exceedsTolerance(responseDrift, submittedRequested)) {
+    throw new Error(`Machine scheduler ${requestedKind} response-level net conservation drift is invalid: ${String(netConservation.drift_net_pcs)}`);
+  }
+  const conservationByCode = new Map<string, Record<string, unknown>>();
+  for (const value of asArray(netConservation.items)) {
+    const item = asObject(value, "demand_reconciliation.net_conservation item");
+    const code = identity(item);
+    if (conservationByCode.has(code)) {
+      throw new Error(`Machine scheduler ${requestedKind} net conservation contains duplicate item ${code}`);
+    }
+    conservationByCode.set(code, item);
+  }
+  for (const [code, requested] of submittedDemand) {
+    const item = conservationByCode.get(code);
+    if (!item) throw new Error(`Machine scheduler ${requestedKind} net conservation is missing submitted item ${code}`);
+    const submitted = canonicalNumber(item, "submitted_net_pcs")!;
+    const allocated = canonicalNumber(item, "allocated_net_pcs")!;
+    const unfinished = canonicalNumber(item, "unfinished_net_pcs")!;
+    const limited = canonicalNumber(item, "data_limited_net_pcs")!;
+    const accounted = canonicalNumber(item, "accounted_net_pcs")!;
+    const drift = Number(item.drift_net_pcs);
+    if (
+      item.passed !== true
+      || !Number.isFinite(drift)
+      || exceedsTolerance(drift, submitted)
+      || exceedsTolerance(submitted - requested, submitted)
+      || exceedsTolerance(accounted - allocated - unfinished - limited, submitted)
+      || exceedsTolerance(submitted - accounted, submitted)
+    ) {
+      warnings.push(
+        `Per-item net conservation drift code=${code} submitted_net=${submitted} ` +
+        `accounted_net=${accounted} drift=${String(item.drift_net_pcs)} plant_passed=${String(item.passed)}`,
+      );
+    }
+  }
+  for (const code of conservationByCode.keys()) {
+    if (!submittedDemand.has(code)) {
+      throw new Error(`Machine scheduler ${requestedKind} net conservation contains unsubmitted item ${code}`);
+    }
+  }
+  const positiveNonDataLimitedDemand = [...submittedDemand.entries()]
+    .filter(([code, value]) => value > 0 && !dataLimitedCodes.has(code));
+  if (positiveNonDataLimitedDemand.length > 0 && (raw.allocations.length === 0 || blockTotals.net === 0)) {
+    throw new Error(`Machine scheduler ${requestedKind} response has positive non-data-limited demand but no allocation/quantity blocks`);
+  }
+  for (const [code] of allocationByCode) {
+    if (!submittedDemand.has(code)) throw new Error(`Machine scheduler returned allocation for unsubmitted item ${code}`);
+  }
+  for (const [code, allocated] of allocationByCode) {
+    const blocked = blocksByCode.get(code) ?? { net: 0, gross: 0, kg: 0 };
+    if (exceedsTolerance(allocated.net - blocked.net, Math.max(allocated.net, blocked.net))
+      || exceedsTolerance(allocated.gross - blocked.gross, Math.max(allocated.gross, blocked.gross))
+      || exceedsTolerance(allocated.kg - blocked.kg, Math.max(allocated.kg, blocked.kg))) {
+      warnings.push(
+        `Per-item block reconciliation drift code=${code} submitted_demand=${submittedDemand.get(code) ?? 0} allocated_net=${allocated.net} drift=${allocated.net - blocked.net}`,
+      );
+    }
+  }
+  return warnings;
+}
+
 function normalizeMachineId(value: string): string {
   return value.trim().toUpperCase()
     .replace(/\([^)]*\)/g, "")
@@ -379,6 +670,7 @@ function parseScheduleResult(
   weekDays: number[],
   weightByCode: Map<string, number>,
   machineLockedOut?: Map<string, boolean>,
+  strictAllocationContract = false,
 ): PlumbingScheduleResult {
   if (raw.kind !== requestedKind) {
     throw new Error(`Machine scheduler returned kind=${String(raw.kind)} for requested kind=${requestedKind}`);
@@ -389,15 +681,40 @@ function parseScheduleResult(
     demand,
     weekDays,
   );
+  const contractWarnings = strictAllocationContract
+    ? assertAllocationContract(raw, requestedKind, demand, dataLimited)
+    : [];
+  if (contractWarnings.length > 0) raw.contract_warnings = contractWarnings;
   const unfinished = asArray(raw.unfinished).map((value) => {
     if (!value || typeof value !== "object") throw new Error("Machine scheduler returned an invalid unfinished row");
     const row = value as Record<string, unknown>;
     if (row.remaining_pcs === undefined || row.remaining_kg === undefined) {
-      throw new Error("Machine scheduler unfinished rows must include remaining_pcs and remaining_kg");
+      if (row.remaining_net_pcs === undefined || row.remaining_kg === undefined) {
+        throw new Error("Machine scheduler unfinished rows must include remaining_net_pcs (or remaining_pcs) and remaining_kg");
+      }
     }
-    return row as PlumbingScheduleUnfinished;
+    const remainingNetPcs = remainingNetPieces(row, requestedKind);
+    // The old property remains the canonical local alias so existing API
+    // consumers continue to work.  Schema v2's source fields are retained
+    // separately, including an explicitly unavailable gross snapshot.
+    const hasNetField = Object.prototype.hasOwnProperty.call(row, "remaining_net_pcs");
+    const hasGrossField = Object.prototype.hasOwnProperty.call(row, "remaining_gross_pcs");
+    return {
+      ...row,
+      ...(hasNetField ? {
+        remaining_pcs: remainingNetPcs,
+        remaining_net_pcs: remainingNetPcs,
+      } : {}),
+      ...(hasGrossField ? { remaining_gross_pcs: optionalRemainingGrossPieces(row) } : {}),
+    } as PlumbingScheduleUnfinished;
   });
   const unfinishedPcs = unfinished.reduce((sum, row) => sum + numberField(row.remaining_pcs), 0);
+  const unfinishedGrossPcs = unfinished.reduce<number | null>(
+    (sum, row) => sum === null || row.remaining_gross_pcs === null
+      ? null
+      : sum + numberField(row.remaining_gross_pcs),
+    0,
+  );
   const unfinishedKg = unfinished.reduce((sum, row) => sum + numberField(row.remaining_kg), 0);
   const unfinishedHours = unfinished.reduce((sum, row) => sum + numberField(row.remaining_hours), 0);
   const demandPieces = demand.reduce((sum, item) => sum + item.qty_pcs, 0);
@@ -456,6 +773,16 @@ function parseScheduleResult(
       item_code: String(row.item_code ?? row.raw_code ?? ""),
       material: String(row.material ?? ""),
       remaining_pcs: numberField(row.remaining_pcs),
+      ...(Object.prototype.hasOwnProperty.call(row, "remaining_net_pcs")
+        ? { remaining_net_pcs: numberField(row.remaining_net_pcs) } : {}),
+      ...(Object.prototype.hasOwnProperty.call(row, "remaining_gross_pcs")
+        ? {
+          remaining_gross_pcs: row.remaining_gross_pcs === null
+            ? null
+            : numberField(row.remaining_gross_pcs),
+        } : {}),
+      ...(Object.prototype.hasOwnProperty.call(row, "net_conservation")
+        ? { net_conservation: row.net_conservation } : {}),
       remaining_kg: numberField(row.remaining_kg),
       remaining_hours: numberField(row.remaining_hours),
       capable_machines: capableMachineIds.map((machineId) => {
@@ -495,12 +822,20 @@ function parseScheduleResult(
     total_scheduled_pcs: scheduledPcs,
     total_scheduled_kg: scheduledKg,
     total_unfinished_pcs: unfinishedPcs,
+    ...(unfinished.some((row) =>
+      Object.prototype.hasOwnProperty.call(row, "remaining_net_pcs")
+      || Object.prototype.hasOwnProperty.call(row, "remaining_gross_pcs")
+    ) ? { total_unfinished_gross_pcs: unfinishedGrossPcs } : {}),
     total_unfinished_kg: unfinishedKg,
     total_unfinished_hours: unfinishedHours,
     total_data_limited_pcs: dataLimitedPcs,
     total_data_limited_kg: dataLimitedKg,
     total_downtime_hours_lost: optionalNumberField(raw, ["downtime_hours_lost", "downtime_hours", "downtime_hrs"]) ?? 0,
     total_downtime_machine_days: optionalNumberField(raw, ["downtime_machine_days", "downtime_days"]) ?? 0,
+    ...(Object.prototype.hasOwnProperty.call(raw, "net_conservation")
+      ? { net_conservation: raw.net_conservation } : {}),
+    ...(Object.prototype.hasOwnProperty.call(raw, "timings_ms")
+      ? { timings_ms: raw.timings_ms } : {}),
     unfinished_capability: unfinishedCapability,
     raw,
   };
@@ -513,9 +848,22 @@ async function callSchedule(
   demand: PlumbingScheduleDemand[],
   weightByCode: Map<string, number>,
   machineLockedOut?: Map<string, boolean>,
+  options?: {
+    strictAllocationContract?: boolean;
+    onRequest?: (kind: PlumbingScheduleKind, payload: Record<string, unknown>) => Promise<void> | void;
+    onResponse?: (kind: PlumbingScheduleKind, raw: Record<string, unknown>) => Promise<void> | void;
+  },
 ): Promise<PlumbingScheduleResult> {
   const apiKey = process.env.PRAYAG_PLANT_API_KEY;
   if (!apiKey) throw new Error("PRAYAG_PLANT_API_KEY is not configured");
+  const payload = {
+    segment: "PLUMBING",
+    month,
+    kind,
+    week_days: weekDays,
+    demand,
+  };
+  await options?.onRequest?.(kind, payload);
   const response = await fetch(SCHEDULE_URL, {
     method: "POST",
     headers: {
@@ -523,13 +871,7 @@ async function callSchedule(
       "Content-Type": "application/json",
       "X-API-Key": apiKey,
     },
-    body: JSON.stringify({
-      segment: "PLUMBING",
-      month,
-      kind,
-      week_days: weekDays,
-      demand,
-    }),
+    body: JSON.stringify(payload),
     signal: AbortSignal.timeout(20_000),
   });
   const body = await response.text();
@@ -565,7 +907,9 @@ async function callSchedule(
         weekDays,
         weightByCode,
         machineLockedOut,
+        options?.strictAllocationContract,
       );
+      await options?.onResponse?.(kind, normalizedStructuredBody);
       if (JSON.stringify(structuredResult.week_days) !== JSON.stringify(weekDays)) {
         throw new Error(`Machine scheduler echoed week_days=${JSON.stringify(structuredResult.week_days)} instead of ${JSON.stringify(weekDays)}`);
       }
@@ -587,7 +931,9 @@ async function callSchedule(
     throw new Error(`Machine scheduler HTTP ${response.status}: ${detail.slice(0, 1000)}`);
   }
   if (!parsed || typeof parsed !== "object") throw new Error("Machine scheduler returned an invalid response");
-  const result = parseScheduleResult(parsed as Record<string, unknown>, kind, demand, weekDays, weightByCode, machineLockedOut);
+  const parsedObject = parsed as Record<string, unknown>;
+  await options?.onResponse?.(kind, parsedObject);
+  const result = parseScheduleResult(parsedObject, kind, demand, weekDays, weightByCode, machineLockedOut, options?.strictAllocationContract);
   if (JSON.stringify(result.week_days) !== JSON.stringify(weekDays)) {
     throw new Error(`Machine scheduler echoed week_days=${JSON.stringify(result.week_days)} instead of ${JSON.stringify(weekDays)}`);
   }
@@ -600,6 +946,11 @@ export async function runPlumbingSchedule(args: {
   demandByKind: Record<PlumbingScheduleKind, PlumbingScheduleDemand[]>;
   weightByCode: Map<string, number>;
   machineLockedOut?: Map<string, boolean>;
+  strictAllocationContract?: boolean;
+  allowUnroutableRetry?: boolean;
+  onRequest?: (kind: PlumbingScheduleKind, payload: Record<string, unknown>) => Promise<void> | void;
+  onResponse?: (kind: PlumbingScheduleKind, raw: Record<string, unknown>) => Promise<void> | void;
+  exposeSentDemandByKind?: boolean;
 }): Promise<PlumbingScheduleBatch> {
   const weekDays = buildPlumbingWeekDays(args.month, args.workedSundayDates);
   const allDemand = PLUMBING_SCHEDULE_KINDS.flatMap((kind) => args.demandByKind[kind]);
@@ -625,11 +976,16 @@ export async function runPlumbingSchedule(args: {
           kind,
           sentDemandByKind[kind],
           args.weightByCode,
-          args.machineLockedOut,
+            args.machineLockedOut,
+            {
+              strictAllocationContract: args.strictAllocationContract,
+              onRequest: args.onRequest,
+              onResponse: args.onResponse,
+            },
         ));
         break;
       } catch (error) {
-        if (!(error instanceof UnroutableDemandError) || error.kind !== kind) throw error;
+        if (args.allowUnroutableRetry === false || !(error instanceof UnroutableDemandError) || error.kind !== kind) throw error;
         const rejected = new Set(error.itemCodes);
         const retained = sentDemandByKind[kind].filter((item) => !rejected.has(item.item_code));
         let removed = 0;
@@ -670,6 +1026,7 @@ export async function runPlumbingSchedule(args: {
         material: String(row.material ?? submitted?.material ?? ""),
         qty_pcs: submitted?.qty_pcs ?? numberField(row.requested_pcs),
         reason: reasonText(row),
+        ...(row.net_conservation === undefined ? {} : { net_conservation: row.net_conservation }),
       };
     });
   });
@@ -687,10 +1044,16 @@ export async function runPlumbingSchedule(args: {
   const totalDowntimeHours = results.reduce((sum, result) => sum + result.total_downtime_hours_lost, 0);
   const totalDowntimeMachineDays = results.reduce((sum, result) => sum + result.total_downtime_machine_days, 0);
   const unfinishedPcs = unfinished.reduce((sum, row) => sum + numberField(row.remaining_pcs), 0);
+  const unfinishedGrossPcs = unfinished.reduce<number | null>(
+    (sum, row) => sum === null || row.remaining_gross_pcs === null
+      ? null
+      : sum + numberField(row.remaining_gross_pcs),
+    0,
+  );
   const unfinishedKg = unfinished.reduce((sum, row) => sum + numberField(row.remaining_kg), 0);
   const unfinishedHours = unfinished.reduce((sum, row) => sum + numberField(row.remaining_hours), 0);
 
-  return {
+  const batch: PlumbingScheduleBatch = {
     batchId: randomUUID(),
     month: args.month,
     segment: "Plumbing",
@@ -705,7 +1068,15 @@ export async function runPlumbingSchedule(args: {
     materials,
     demand: { pieces: demandPieces, item_count: sentDemand.length, kg: demandKg },
     scheduled: { pieces: scheduledPieces, kg: scheduledKg, hours: totalScheduledHours },
-    unfinished: { pieces: unfinishedPcs, kg: unfinishedKg, hours: unfinishedHours },
+    unfinished: {
+      pieces: unfinishedPcs,
+      ...(unfinished.some((row) =>
+        Object.prototype.hasOwnProperty.call(row, "remaining_net_pcs")
+        || Object.prototype.hasOwnProperty.call(row, "remaining_gross_pcs")
+      ) ? { gross_pieces: unfinishedGrossPcs } : {}),
+      kg: unfinishedKg,
+      hours: unfinishedHours,
+    },
     capacity_hours: totalCapacity,
     idle_hours: totalIdleHours,
     downtime_hours_lost: totalDowntimeHours,
@@ -730,12 +1101,23 @@ export async function runPlumbingSchedule(args: {
         scheduled_pcs: scheduledPieces,
         scheduled_kg: scheduledKg,
         unfinished_pcs: unfinishedPcs,
+        ...(unfinished.some((row) =>
+          Object.prototype.hasOwnProperty.call(row, "remaining_net_pcs")
+          || Object.prototype.hasOwnProperty.call(row, "remaining_gross_pcs")
+        ) ? { unfinished_gross_pcs: unfinishedGrossPcs } : {}),
         unfinished_kg: unfinishedKg,
         unfinished_hours: unfinishedHours,
         data_limited_pcs: dataLimitedPieces,
       },
     },
   };
+  if (args.exposeSentDemandByKind) {
+    batch.sentDemandByKind = {
+      pipe: [...sentDemandByKind.pipe],
+      fitting: [...sentDemandByKind.fitting],
+    };
+  }
+  return batch;
 }
 
 function correctiveLocalWeek(block: Record<string, unknown>, weekDays: number[]): number {

@@ -30,6 +30,7 @@ function buildWeeklyPdfHtml(
   month: string,
   rows: FrozenPlanRow[],
   sourceDescription: string,
+  segment: string,
 ): string {
   const byCategory = new Map<string, FrozenPlanRow[]>();
   for (const row of rows) {
@@ -158,7 +159,7 @@ function buildWeeklyPdfHtml(
         </style>
       </head>
       <body>
-        <h1>Weekly Release Plan — ${escapeHtml(month)}</h1>
+        <h1>${escapeHtml(segment)} Weekly Release Plan — ${escapeHtml(month)}</h1>
         <p>Source: ${escapeHtml(sourceDescription)}</p>
         <p>Invariant: Σ W1..W4 = Production Plan total</p>
         <table>
@@ -190,12 +191,13 @@ export async function exportWeeklyReleasePdf(
   month: string,
   rows: FrozenPlanRow[],
   sourceDescription = "capacity-fitted finalized plan",
+  segment = "PTMT",
 ): Promise<Buffer> {
   assertWeeklyProductionConservation(rows);
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
-    await page.setContent(buildWeeklyPdfHtml(month, rows, sourceDescription), {
+    await page.setContent(buildWeeklyPdfHtml(month, rows, sourceDescription, segment), {
       waitUntil: "networkidle0",
       timeout: 120_000,
     });

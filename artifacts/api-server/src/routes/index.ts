@@ -23,6 +23,7 @@ import apiV1Router from "./api-v1";
 import masterProductsRouter from "./master-products";
 import alertsRouter from "./alerts";
 import activityAuditRouter from "./activity-audit";
+import machinePlanningRouter from "./machine-planning";
 
 const router: IRouter = Router();
 
@@ -70,6 +71,7 @@ router.use(capacityRouter);
 router.use(apiKeysRouter);
 router.use(masterProductsRouter);
 router.use(alertsRouter);
+router.use(machinePlanningRouter);
 router.use(sheetConfigRouter);
 router.use("/monitoring", plantPlanUploadRouter);
 

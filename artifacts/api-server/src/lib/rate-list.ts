@@ -17,7 +17,13 @@ import {
   type MrpClassificationRow,
 } from "./mrp-classification";
 import { getPrayagCategoryEvidence, type PrayagPlanningCategory } from "./prayag-category-evidence";
-import { fetchPtmtReportRoster, fetchRateListSheetRows, normalizeCodeStrict, type PtmtReportRosterRow } from "./sheets";
+import {
+  fetchPtmtReportRoster,
+  fetchRateListSheetRows,
+  normalizeCodeStrict,
+  WorkbookConfigurationRequiredError,
+  type PtmtReportRosterRow,
+} from "./sheets";
 import { logger } from "./logger";
 
 export const RATE_LIST_UPLOAD_KIND = "rate_list";
@@ -838,6 +844,15 @@ export type PtmtRosterResolution = {
   fallbackReason: string | null;
 };
 
+/**
+ * Missing monthly configuration is a control failure, not a recoverable
+ * connector/read failure. Other errors can still use the explicit legacy
+ * recovery path so the caller can surface rosterSource=FALLBACK and the reason.
+ */
+export function shouldFallbackFromPtmtRosterError(error: unknown): boolean {
+  return !(error instanceof WorkbookConfigurationRequiredError);
+}
+
 export async function resolveEffectivePtmtRoster(month: string): Promise<PtmtRosterResolution> {
   let fallbackReason: string | null = null;
   try {
@@ -853,6 +868,7 @@ export async function resolveEffectivePtmtRoster(month: string): Promise<PtmtRos
       };
     }
   } catch (err) {
+    if (!shouldFallbackFromPtmtRosterError(err)) throw err;
     // Keep the legacy sources as an explicit recovery path for connector
     // outages. A successful REPORT read always wins and is never merged with
     // category-tab/rate-list identities.

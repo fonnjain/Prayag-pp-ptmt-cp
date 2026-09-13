@@ -14,6 +14,7 @@ export const planRunsTable = pgTable("plan_runs", {
   status: text("status").notNull().default("draft"),
   weeklyReleaseVersion: integer("weekly_release_version").notNull().default(0),
   factorsJson: jsonb("factors_json").notNull().$type<Record<string, number>>().default({}),
+  provenanceJson: jsonb("provenance_json").$type<Record<string, unknown> | null>(),
   note: text("note"),
   planStatusReason: text("plan_status_reason"),
   pass2Json: jsonb("pass2_json").$type<Record<string, unknown> | null>(),

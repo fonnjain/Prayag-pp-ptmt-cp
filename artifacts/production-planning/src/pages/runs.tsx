@@ -37,6 +37,7 @@ import {
   useGetPlanRun,
   getGetPlanRunQueryKey,
   useGetPlanRunDrift,
+  useFitPlumbingTemporaryRunToCapacity,
   type PlanRunSummary,
   type PlanRunDrift,
 } from "@workspace/api-client-react";
@@ -63,9 +64,60 @@ function planRunErrorDetails(error: unknown): { title: string; description: stri
       description: message ?? "Authoritative MRP category and capacity approval is required before a PTMT Production Plan can be created.",
     };
   }
+  if (body?.error === "PLUMBING_PRODUCTION_NOT_FITTED") {
+    return {
+      title: "Plumbing Production Plan could not be fitted",
+      description: message ?? "The finalized Plumbing Temporary Plan did not produce an executable Production Plan.",
+    };
+  }
+  if (typeof body?.error === "string") {
+    return {
+      title: `Plan action failed (${body.error})`,
+      description: message ?? body.error,
+    };
+  }
   return {
     title: "Failed to freeze plan",
     description: message ?? (error instanceof Error ? error.message : "Check that all data sources are available."),
+  };
+}
+
+function numericField(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/**
+ * The Plumbing fit contract returns the newly-created draft run. Keep the
+ * display tolerant of the generated response's envelope while codegen for the
+ * endpoint is landing (the API client normally returns the JSON body itself).
+ */
+function plumbingFitResult(raw: unknown, temporaryRunId: number): {
+  productionRunId: number | null;
+  lineage: string;
+} {
+  const result = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const productionRun = result.productionRun && typeof result.productionRun === "object"
+    ? result.productionRun as Record<string, unknown>
+    : null;
+  const nestedRun = result.run && typeof result.run === "object"
+    ? result.run as Record<string, unknown>
+    : null;
+  const productionRunId =
+    numericField(result.productionRunId)
+    ?? numericField(result.production_run_id)
+    ?? numericField(productionRun?.id)
+    ?? numericField(nestedRun?.id)
+    ?? numericField(result.id);
+  const returnedTemporaryRunId =
+    numericField(result.temporaryRunId)
+    ?? numericField(result.temporary_run_id)
+    ?? numericField(productionRun?.temporaryRunId)
+    ?? numericField(nestedRun?.temporaryRunId)
+    ?? temporaryRunId;
+
+  return {
+    productionRunId,
+    lineage: `Temporary Plan #${returnedTemporaryRunId} → draft Production Plan${productionRunId == null ? "" : ` #${productionRunId}`}`,
   };
 }
 
@@ -642,6 +694,7 @@ export default function RunsPage() {
   const finalizeRun = useFinalizePlanRun();
   const deleteRun = useDeletePlanRun();
   const { rerunTemporaryPlan, isPending: isRerunningTemporary } = useRerunTemporaryPlan();
+  const fitPlumbingRun = useFitPlumbingTemporaryRunToCapacity();
   const [compareIds, setCompareIds] = useState<number[] | null>(null);
   const [driftRunId, setDriftRunId] = useState<number | null>(null);
   const [auditRunId, setAuditRunId] = useState<number | null>(null);
@@ -655,6 +708,7 @@ export default function RunsPage() {
   const [temporaryRunId, setTemporaryRunId] = useState("");
   const [creatingPlan, setCreatingPlan] = useState(false);
   const [fittingRunId, setFittingRunId] = useState<number | null>(null);
+  const [fittingPlumbingRunId, setFittingPlumbingRunId] = useState<number | null>(null);
   const [rerunningRunId, setRerunningRunId] = useState<number | null>(null);
   const [effectiveFrom, setEffectiveFrom] = useState(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -763,6 +817,44 @@ export default function RunsPage() {
     );
   };
 
+  const handleFitPlumbingToCapacity = (temporaryId: number) => {
+    setFittingPlumbingRunId(temporaryId);
+    fitPlumbingRun.mutate(
+      { id: temporaryId },
+      {
+        onSuccess: (rawResult: unknown) => {
+          const result = plumbingFitResult(rawResult, temporaryId);
+          const productionRunLabel = result.productionRunId == null
+            ? "the new draft Production Plan"
+            : `draft Production Plan #${result.productionRunId}`;
+          toast({
+            title: "Plumbing Temporary Plan fitted to capacity",
+            description: `${productionRunLabel} created. ${result.lineage}.`,
+          });
+          void refetch();
+          void queryClient.invalidateQueries({
+            predicate: (query) => {
+              const key = query.queryKey[0];
+              return typeof key === "string" && (key === "/api/plan" || key.startsWith("/api/plan/"));
+            },
+          });
+          if (result.productionRunId != null) {
+            setAuditRunId(result.productionRunId);
+          }
+        },
+        onError: (error: unknown) => {
+          const details = planRunErrorDetails(error);
+          toast({
+            ...details,
+            title: details.title === "Failed to freeze plan" ? "Failed to fit Plumbing plan" : details.title,
+            variant: "destructive",
+          });
+        },
+        onSettled: () => setFittingPlumbingRunId(null),
+      },
+    );
+  };
+
   const handleRerunTemporary = (run: PlanRunSummary) => {
     setRerunningRunId(run.id);
     rerunTemporaryPlan(
@@ -847,7 +939,7 @@ export default function RunsPage() {
     }
   };
 
-  const handleDownload = async (id: number, planType: string) => {
+  const handleDownload = async (id: number, _planType: string) => {
     try {
       const response = await fetch(`${import.meta.env.BASE_URL}api/plan/runs/${id}/export/excel`);
       if (!response.ok) throw new Error(`Export failed (${response.status})`);
@@ -855,7 +947,10 @@ export default function RunsPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `PTMT_${planType === "temporary" ? "Temporary" : "Production"}_Plan_${month}_Run_${id}.xlsx`;
+      const disposition = response.headers.get("content-disposition");
+      const encodedName = disposition?.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+      const plainName = disposition?.match(/filename="?([^";]+)"?/i)?.[1];
+      link.download = encodedName ? decodeURIComponent(encodedName) : plainName ?? `Plan_Run${id}.xlsx`;
       link.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -1108,13 +1203,25 @@ export default function RunsPage() {
                       <TableCell className="text-sm text-gray-500">{run.note ?? "—"}</TableCell>
                       <TableCell>
                         <div className="flex gap-1.5 justify-end">
+                              {run.planType === "temporary" && run.status === "finalized" && run.segment === "Plumbing" && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1 border-sky-300 text-sky-700 hover:bg-sky-50"
+                                  onClick={() => handleFitPlumbingToCapacity(run.id)}
+                                  disabled={fitPlumbingRun.isPending || fittingPlumbingRunId !== null || fittingRunId !== null}
+                                >
+                                  <Gauge className="h-3.5 w-3.5" />
+                                  {fittingPlumbingRunId === run.id ? "Fitting…" : `Fit #${run.id} to Capacity`}
+                                </Button>
+                              )}
                               {run.planType === "temporary" && run.status === "finalized" && run.segment === "PTMT" && (
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   className="gap-1 border-sky-300 text-sky-700 hover:bg-sky-50"
                                   onClick={() => handleFitToCapacity(run.id)}
-                                  disabled={createRun.isPending || fittingRunId !== null}
+                                  disabled={createRun.isPending || fittingRunId !== null || fittingPlumbingRunId !== null}
                                 >
                                   <Gauge className="h-3.5 w-3.5" />
                                   {fittingRunId === run.id ? "Fitting…" : `Fit #${run.id} to Capacity`}

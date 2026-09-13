@@ -1,0 +1,3 @@
+ALTER TABLE plumbing_fit_attempts
+  ADD COLUMN IF NOT EXISTS summary_json JSONB,
+  ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ NOT NULL DEFAULT NOW();

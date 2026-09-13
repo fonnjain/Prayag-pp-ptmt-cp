@@ -15,6 +15,7 @@ import {
   KeyRound,
   PackageSearch,
   Bell,
+  Factory,
 } from "lucide-react";
 import { useSegment, type Segment } from "@/contexts/segment-context";
 import { useListBufferCategories, type BufferCategory } from "@workspace/api-client-react";
@@ -31,6 +32,7 @@ type NavItem = { href: string; label: string; icon?: React.ReactNode };
 const OVERVIEW_LINKS: NavItem[] = [
   { href: "/", label: "Data", icon: <UploadCloud size={15} /> },
   { href: "/summary", label: "Summary", icon: <LayoutGrid size={15} /> },
+  { href: "/machine-planning", label: "Machine Planning", icon: <Factory size={15} /> },
   { href: "/products", label: "Products", icon: <PackageSearch size={15} /> },
   { href: "/alerts", label: "Alerts", icon: <Bell size={15} /> },
 ];

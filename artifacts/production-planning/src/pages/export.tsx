@@ -12,39 +12,12 @@ import { useSegment } from "@/contexts/segment-context";
 import { useMonth } from "@workspace/month-filter";
 import { MonthEmptyState } from "@/components/month-empty-state";
 import { useCreateTemporaryPlan } from "@/hooks/use-create-temporary-plan";
+import { downloadFile } from "@/lib/download";
 import {
   useCreatePlanRun,
   useListPlanRuns,
   type PlanRunSummary,
 } from "@workspace/api-client-react";
-
-async function downloadFile(url: string, filename: string) {
-  const response = await fetch(url);
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    let detail = text;
-    try {
-      const payload = JSON.parse(text) as { message?: unknown; error?: unknown };
-      detail = typeof payload.message === "string"
-        ? payload.message
-        : typeof payload.error === "string"
-          ? payload.error
-          : text;
-    } catch {
-      // Keep the raw response when the server did not return JSON.
-    }
-    throw new Error(detail || `Export failed with status ${response.status}`);
-  }
-  const blob = await response.blob();
-  const objectUrl = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = objectUrl;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(objectUrl);
-}
 
 type ExportKind = "temporary-excel" | "excel" | "pdf" | "weekly-excel" | "weekly-pdf" | "corrective-excel-standard" | "corrective-excel-detail" | "corrective-pdf";
 

@@ -13,6 +13,7 @@ import DataPage from "@/pages/data";
 import SummaryPage from "@/pages/summary";
 import CategoryPage from "@/pages/category";
 import ExportPage from "@/pages/export";
+import MachinePlanningPage from "@/pages/machine-planning";
 import RunsPage from "@/pages/runs";
 import CorrectivePage from "@/pages/corrective";
 import ProductsPage from "@/pages/products";
@@ -30,6 +31,7 @@ function Router() {
       <Route path="/summary" component={SummaryPage} />
       <Route path="/products" component={ProductsPage} />
       <Route path="/alerts" component={AlertsPage} />
+      <Route path="/machine-planning" component={MachinePlanningPage} />
       <Route path="/category/:slug" component={CategoryPage} />
       <Route path="/runs" component={RunsPage} />
       <Route path="/export" component={ExportPage} />

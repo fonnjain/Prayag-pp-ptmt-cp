@@ -167,6 +167,153 @@ test("Plumbing parser keeps coverage data-limited rows out of scheduled pieces",
   }
 });
 
+test("Plumbing parser uses v2 net remainders, retains gross remainders, and captures evidence", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.PRAYAG_PLANT_API_KEY;
+  process.env.PRAYAG_PLANT_API_KEY = "test-key";
+  globalThis.fetch = (async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    const demand = body.demand as Array<Record<string, unknown>>;
+    const isPipe = body.kind === "pipe";
+    return new Response(JSON.stringify({
+      kind: body.kind,
+      week_days: body.week_days,
+      ...contractFields(body),
+      net_conservation: { balanced: true, remaining_net_pcs: isPipe ? 2 : 0 },
+      timings_ms: { total: isPipe ? 17 : 19, server: 11 },
+      blocks: demand.map((item) => ({ item_code: item.item_code })),
+      weekly_fill: [],
+      unfinished: isPipe
+        ? [{
+          item_code: "P-1",
+          material: "CPVC",
+          remaining_pcs: null,
+          remaining_net_pcs: 2,
+          remaining_gross_pcs: 3,
+          remaining_kg: 1,
+          remaining_hours: 0.5,
+          net_conservation: { balanced: true },
+        }]
+        : [],
+      total_capacity_hrs: 10,
+      total_scheduled_hrs: 8,
+      total_idle_hrs: 2,
+      downtime_hours_lost: 0,
+      downtime_machine_days: 0,
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+
+  try {
+    const result = await runPlumbingSchedule({
+      month: "2026-09",
+      workedSundayDates: [],
+      demandByKind: {
+        pipe: [{ item_code: "P-1", material: "CPVC", qty_pcs: 10 }],
+        fitting: [{ item_code: "F-1", material: "UPVC", qty_pcs: 20 }],
+      },
+      weightByCode: new Map([["P-1", 0.5], ["F-1", 0.5]]),
+    });
+
+    const pipe = result.results[0]!;
+    assert.equal(pipe.total_unfinished_pcs, 2);
+    assert.equal(pipe.total_unfinished_gross_pcs, 3);
+    assert.equal(pipe.unfinished[0]!.remaining_pcs, 2);
+    assert.equal(pipe.unfinished[0]!.remaining_net_pcs, 2);
+    assert.equal(pipe.unfinished[0]!.remaining_gross_pcs, 3);
+    assert.deepEqual(pipe.unfinished[0]!.net_conservation, { balanced: true });
+    assert.deepEqual(pipe.net_conservation, { balanced: true, remaining_net_pcs: 2 });
+    assert.deepEqual(pipe.timings_ms, { total: 17, server: 11 });
+    assert.equal(result.unfinished.pieces, 2);
+    assert.equal(result.unfinished.gross_pieces, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.PRAYAG_PLANT_API_KEY;
+    else process.env.PRAYAG_PLANT_API_KEY = originalKey;
+  }
+});
+
+test("Plumbing parser does not turn unavailable legacy remainder snapshots into zero", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.PRAYAG_PLANT_API_KEY;
+  process.env.PRAYAG_PLANT_API_KEY = "test-key";
+  globalThis.fetch = (async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(JSON.stringify({
+      kind: body.kind,
+      week_days: body.week_days,
+      ...contractFields(body),
+      blocks: [],
+      weekly_fill: [],
+      unfinished: [{
+        item_code: "P-1",
+        material: "CPVC",
+        remaining_pcs: null,
+        remaining_kg: 1,
+      }],
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      runPlumbingSchedule({
+        month: "2026-09",
+        workedSundayDates: [],
+        demandByKind: {
+          pipe: [{ item_code: "P-1", material: "CPVC", qty_pcs: 10 }],
+          fitting: [{ item_code: "F-1", material: "UPVC", qty_pcs: 20 }],
+        },
+        weightByCode: new Map(),
+      }),
+      /unavailable remaining_pcs; refusing to treat it as zero/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.PRAYAG_PLANT_API_KEY;
+    else process.env.PRAYAG_PLANT_API_KEY = originalKey;
+  }
+});
+
+test("Plumbing parser rejects an item reported as both unfinished and data-limited", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalKey = process.env.PRAYAG_PLANT_API_KEY;
+  process.env.PRAYAG_PLANT_API_KEY = "test-key";
+  globalThis.fetch = (async (_input, init) => {
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    return new Response(JSON.stringify({
+      kind: body.kind,
+      week_days: body.week_days,
+      ...contractFields(body, [{ item_code: "P-1", requested_pcs: 10 }]),
+      blocks: [],
+      weekly_fill: [],
+      unfinished: [{
+        item_code: "P-1",
+        material: "CPVC",
+        remaining_pcs: 1,
+        remaining_kg: 1,
+      }],
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+
+  try {
+    await assert.rejects(
+      runPlumbingSchedule({
+        month: "2026-09",
+        workedSundayDates: [],
+        demandByKind: {
+          pipe: [{ item_code: "P-1", material: "CPVC", qty_pcs: 10 }],
+          fitting: [{ item_code: "F-1", material: "UPVC", qty_pcs: 20 }],
+        },
+        weightByCode: new Map(),
+      }),
+      /both unfinished and data_limited/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalKey === undefined) delete process.env.PRAYAG_PLANT_API_KEY;
+    else process.env.PRAYAG_PLANT_API_KEY = originalKey;
+  }
+});
+
 test("corrective scheduler persists and applies the original-week offset", async () => {
   const originalFetch = globalThis.fetch;
   const originalKey = process.env.PRAYAG_PLANT_API_KEY;

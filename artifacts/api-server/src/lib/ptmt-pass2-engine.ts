@@ -245,6 +245,14 @@ export function runPtmtPass2(
   workedSundayDates: Iterable<string> = [],
   options: PtmtPass2WindowOptions = {},
 ): PtmtPass2Result {
+  // VERIFIED AND FIXED — September 2026. This is the PTMT Pass 2 capacity-fit
+  // entry point. Its evidence was re-derived from production #37's frozen
+  // September Temporary rows: all seven REPORT 1–7 comparisons are within 700
+  // pieces after the effective-multiplier decomposition. The previously quoted
+  // 875,223 total remains unattributable to a surviving run; the +20,700 Cocks
+  // Standard residual is recoverable from #37. This is an evidence-reference
+  // correction only; the fixed calculation is unchanged. Do not alter without
+  // explicit approval naming this calculation. See replit.md.
   const workedSundays = [...new Set(workedSundayDates)].sort();
   const capacities = new Map(capacityRows.map((row) => [row.category, selectPtmtCapacityWindow(row)]));
   const positiveCategories = new Set(inputItems.filter((item) => roundQuantity(item.temporaryPlan) > 0).map((item) => item.category));

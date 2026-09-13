@@ -4,9 +4,11 @@ import express from "express";
 import http from "node:http";
 import {
   _setConnectorsForTest,
+  fetchPlumbingPlanData,
   listTabs,
   pendingOrderTotalsFromRows,
   UpstreamTimeoutError,
+  WorkbookConfigurationRequiredError,
 } from "../lib/sheets.js";
 import {
   classifyPendingSource,
@@ -27,7 +29,6 @@ import {
   temporaryRerunBlock,
   temporaryRerunClosedMessage,
 } from "./plan-runs.js";
-import { runCorrectiveReplan } from "../lib/corrective-engine.js";
 
 test("withdrawn Plumbing codes keep pending demand but remove speculative buffer", () => {
   const demandOnlyCodes = ["C122", "C123", "U121", "U122", "U123"];
@@ -251,6 +252,35 @@ test("plan routes surface named planning input failures as a 422 diagnostic", ()
   });
 });
 
+test("plan routes surface a missing monthly workbook pin as a named 422", () => {
+  let statusCode = 0;
+  let body: Record<string, unknown> | undefined;
+  const response = {
+    status(code: number) {
+      statusCode = code;
+      return this;
+    },
+    json(value: Record<string, unknown>) {
+      body = value;
+      return this;
+    },
+  };
+
+  handlePlanError(
+    response as never,
+    new WorkbookConfigurationRequiredError("Plumbing", "2026-09"),
+  );
+
+  assert.equal(statusCode, 422);
+  assert.deepEqual(body, {
+    error: "WORKBOOK_CONFIGURATION_REQUIRED",
+    kind: "WorkbookConfigurationRequiredError",
+    division: "Plumbing",
+    month: "2026-09",
+    message: "No configured Plumbing workbook exists for 2026-09; refusing to auto-discover or reuse another month's workbook.",
+  });
+});
+
 test("validation failures include the persisted live pending capture id", () => {
   let statusCode = 0;
   let body: Record<string, unknown> | undefined;
@@ -318,20 +348,16 @@ test("validation evidence is persisted before an uploaded pending read can fail"
   ]);
 });
 
-test("Plumbing corrective live rebuild uses the month-correct source before machine checks", async () => {
-  const result = await runCorrectiveReplan({
-    month: "2026-07",
-    segment: "Plumbing",
-    weekClosed: 0,
-    dryRun: true,
-  });
-
-  // This is a source-selection regression check. The July rebuild must
-  // complete against July's workbook and remain dry-run only; it must not
-  // accidentally use the current September source or create a run.
-  assert.equal(result.month, "2026-07");
-  assert.equal(result.segment, "Plumbing");
-  assert.equal(result.runId, 0);
+test("Plumbing roster reads fail with a named missing-pin error before any pin exists", async () => {
+  await assert.rejects(
+    () => fetchPlumbingPlanData("2026-09"),
+    (error: unknown) => {
+      assert.ok(error instanceof WorkbookConfigurationRequiredError);
+      assert.equal(error.division, "Plumbing");
+      assert.equal(error.month, "2026-09");
+      return true;
+    },
+  );
 });
 
 test("plan-run status reason validation trims and rejects unsafe metadata", () => {

@@ -1749,7 +1749,7 @@ export const getPlanRunScheduleRequestResponse = zod.object({
 
 
 /**
- * Run a finalized Plumbing plan through the external pipe and fitting machine scheduler.
+ * Run a finalized Plumbing Production plan through the external pipe and fitting machine scheduler. Temporary runs are immutable and must use fit-plumbing.
  */
 export const schedulePlumbingPlanRunParams = zod.object({
   "id": zod.number()
@@ -1850,6 +1850,62 @@ export const schedulePlumbingPlanRunResponse = zod.object({
   "qty_pcs": zod.number()
 })).optional()
 })
+
+
+/**
+ * Calls the external Pipe and Fitting scheduler synchronously and creates a draft Plumbing Production run only after both versioned allocation responses reconcile. Requests are idempotent by immutable fingerprint; repeated requests return the existing durable attempt.
+
+ * @summary Fit a finalized Plumbing Temporary run without mutating its frozen rows
+ */
+
+
+
+export const fitPlumbingTemporaryRunToCapacityParams = zod.object({
+  "id": zod.number().min(1)
+})
+
+export const fitPlumbingTemporaryRunToCapacityResponse = zod.object({
+  "attemptId": zod.number(),
+  "state": zod.enum(['running', 'failed', 'succeeded']),
+  "failedKind": zod.union([zod.literal('pipe'),zod.literal('fitting'),zod.literal(null)]).nullish(),
+  "message": zod.string().nullish(),
+  "productionRunId": zod.number().nullish(),
+  "temporaryRunId": zod.number().nullish(),
+  "summary": zod.object({
+  "demandPieces": zod.number(),
+  "executableNet": zod.number(),
+  "fulfilledAgainstDemand": zod.number(),
+  "roundingDriftNet": zod.number(),
+  "unfeasiblePieces": zod.number(),
+  "percentAchieved": zod.number(),
+  "unfeasibleByReason": zod.record(zod.string(), zod.object({
+
+})),
+  "allocationsReconciliation": zod.array(zod.object({
+
+})),
+  "references": zod.array(zod.object({
+
+})),
+  "fittingLinesSent": zod.number(),
+  "materialUnknown": zod.object({
+  "rowCount": zod.number(),
+  "pieces": zod.number()
+}),
+  "prefixDisagreementCount": zod.number(),
+  "sourceTemporaryUnchanged": zod.boolean(),
+  "draft": zod.object({
+  "status": zod.enum(['draft']),
+  "lineage": zod.object({
+
+}),
+  "environment": zod.string()
+})
+}).optional(),
+  "warnings": zod.array(zod.string())
+}).and(zod.object({
+  "temporaryRunId": zod.number()
+}))
 
 
 export const exportFrozenPlanExcelParams = zod.object({

@@ -1105,7 +1105,7 @@ paths:
     post:
       operationId: schedulePlumbingPlanRun
       tags: [plan]
-      description: Run a finalized Plumbing plan through the external pipe and fitting machine scheduler.
+      description: Run a finalized Plumbing Production plan through the external pipe and fitting machine scheduler. Temporary runs are immutable and must use fit-plumbing.
       parameters:
         - name: id
           in: path
@@ -1121,9 +1121,52 @@ paths:
         "404":
           description: Not found
         "422":
-          description: Run is not a finalized Plumbing run
+          description: Run is not a finalized Plumbing Production run (LEGACY_SCHEDULE_PRODUCTION_ONLY for Temporary runs)
         "502":
           description: Machine scheduler rejected or could not process the request
+
+  /plan/runs/{id}/fit-plumbing:
+    post:
+      operationId: fitPlumbingTemporaryRunToCapacity
+      tags: [plan]
+      summary: Fit a finalized Plumbing Temporary run without mutating its frozen rows
+      description: >
+        Calls the external Pipe and Fitting scheduler synchronously and creates
+        a draft Plumbing Production run only after both versioned allocation
+        responses reconcile. Requests are idempotent by immutable fingerprint;
+        repeated requests return the existing durable attempt.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "201":
+          description: Draft Plumbing Production run created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlumbingFitResponse" }
+        "200":
+          description: Existing successful or idempotent attempt
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlumbingFitResponse" }
+        "400": { description: Invalid run id }
+        "404": { description: Source run not found }
+        "409":
+          description: An identical attempt is still running
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlumbingFitAttemptResponse" }
+        "422": { description: Source is not a finalized Plumbing Temporary run }
+        "502":
+          description: Validation or upstream failure; no Production run is created
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/PlumbingFitAttemptResponse"
+                  - $ref: "#/components/schemas/PlumbingFitError"
 
   /plan/runs/{id}/export/excel:
     get:
@@ -2941,6 +2984,60 @@ components:
               item_code: { type: string }
               category: { type: string }
               qty_pcs: { type: number }
+
+    PlumbingFitAttemptResponse:
+      type: object
+      required: [attemptId, state, warnings]
+      properties:
+        attemptId: { type: integer }
+        state: { type: string, enum: [running, failed, succeeded] }
+        failedKind: { type: ["string", "null"], enum: [pipe, fitting, null] }
+        message: { type: ["string", "null"] }
+        productionRunId: { type: ["integer", "null"] }
+        temporaryRunId: { type: ["integer", "null"] }
+        summary: { $ref: "#/components/schemas/PlumbingFitSummary" }
+        warnings: { type: array, items: { type: string } }
+
+    PlumbingFitResponse:
+      allOf:
+        - $ref: "#/components/schemas/PlumbingFitAttemptResponse"
+        - type: object
+          required: [temporaryRunId]
+          properties:
+            temporaryRunId: { type: integer }
+
+    PlumbingFitError:
+      type: object
+      required: [error, message]
+      properties:
+        error: { type: string }
+        message: { type: string }
+        failedKind: { type: ["string", "null"], enum: [pipe, fitting, null] }
+
+    PlumbingFitSummary:
+      type: object
+      required: [demandPieces, executableNet, fulfilledAgainstDemand, roundingDriftNet, unfeasiblePieces, percentAchieved, unfeasibleByReason, allocationsReconciliation, references, fittingLinesSent, materialUnknown, prefixDisagreementCount, sourceTemporaryUnchanged, draft]
+      properties:
+        demandPieces: { type: number }
+        executableNet: { type: number }
+        fulfilledAgainstDemand: { type: number }
+        roundingDriftNet: { type: number }
+        unfeasiblePieces: { type: number }
+        percentAchieved: { type: number }
+        unfeasibleByReason: { type: object, additionalProperties: { type: object } }
+        allocationsReconciliation: { type: array, items: { type: object } }
+        references: { type: array, items: { type: object } }
+        fittingLinesSent: { type: integer }
+        materialUnknown: { type: object, required: [rowCount, pieces], properties: { rowCount: { type: integer }, pieces: { type: number } } }
+        prefixDisagreementCount: { type: integer }
+        sourceTemporaryUnchanged: { type: boolean }
+        draft:
+          type: object
+          required: [status, lineage, environment]
+          properties:
+            status: { type: string, enum: [draft] }
+            lineage: { type: object }
+            environment: { type: string }
 
     PlanRunDriftCategory:
       type: object

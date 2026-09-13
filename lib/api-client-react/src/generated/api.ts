@@ -55,6 +55,7 @@ import type {
   ExportTemporaryPlanExcelParams,
   ExportWeeklyReleaseExcelParams,
   FinalizePlanRunRequest,
+  FitPlumbingTemporaryRunToCapacity502,
   FollowupAiPlantAnalysisBody,
   GetAlertsHistoryParams,
   GetAlertsParams,
@@ -135,6 +136,8 @@ import type {
   PlantSnapshotBackfillResult,
   PlantSourceConfigUpsert,
   PlantWeeklySummary,
+  PlumbingFitAttemptResponse,
+  PlumbingFitResponse,
   PlumbingMachine,
   PlumbingMachineUpdate,
   PlumbingScheduleResponse,
@@ -175,7 +178,7 @@ export type getHealthzResponse200 = {
   data: HealthStatus
   status: 200
 }
-    
+
 export type getHealthzResponseSuccess = (getHealthzResponse200) & {
   headers: Headers;
 };
@@ -186,19 +189,19 @@ export type getHealthzResponse = (getHealthzResponseSuccess)
 export const getGetHealthzUrl = () => {
 
 
-  
+
 
   return `/api/healthz`
 }
 
 export const getHealthz = async ( options?: RequestInit): Promise<getHealthzResponse> => {
-  
+
   return customFetch<getHealthzResponse>(getGetHealthzUrl(),
-  {      
+  {
     ...options,
     method: 'GET'
-    
-    
+
+
   }
 );}
 
@@ -224,7 +227,7 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 
     const queryFn: QueryFunction<Awaited<ReturnType<typeof getHealthz>>> = ({ signal }) => getHealthz({ signal, ...requestOptions });
 
-      
+
 
       
 
@@ -875,7 +878,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
           return  updateBufferCategory(id,data,requestOptions)
         }
 
-        
+
 
 
   return  { mutationFn, ...mutationOptions }}
@@ -897,7 +900,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
       return useMutation(mutationOptions);
     }
-    
+
 /**
  * @summary Recompute seasonality engine for all PTMT categories
  */
@@ -5085,7 +5088,7 @@ export function useGetPlanRunScheduleRequest<TData = Awaited<ReturnType<typeof g
 
 
 /**
- * Run a finalized Plumbing plan through the external pipe and fitting machine scheduler.
+ * Run a finalized Plumbing Production plan through the external pipe and fitting machine scheduler. Temporary runs are immutable and must use fit-plumbing.
  */
 export type schedulePlumbingPlanRunResponse200 = {
   data: PlumbingScheduleResponse
@@ -5181,6 +5184,123 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       return useMutation(mutationOptions);
     }
     
+/**
+ * Calls the external Pipe and Fitting scheduler synchronously and creates a draft Plumbing Production run only after both versioned allocation responses reconcile. Requests are idempotent by immutable fingerprint; repeated requests return the existing durable attempt.
+
+ * @summary Fit a finalized Plumbing Temporary run without mutating its frozen rows
+ */
+export type fitPlumbingTemporaryRunToCapacityResponse200 = {
+  data: PlumbingFitResponse
+  status: 200
+}
+
+export type fitPlumbingTemporaryRunToCapacityResponse201 = {
+  data: PlumbingFitResponse
+  status: 201
+}
+
+export type fitPlumbingTemporaryRunToCapacityResponse400 = {
+  data: void
+  status: 400
+}
+
+export type fitPlumbingTemporaryRunToCapacityResponse404 = {
+  data: void
+  status: 404
+}
+
+export type fitPlumbingTemporaryRunToCapacityResponse409 = {
+  data: PlumbingFitAttemptResponse
+  status: 409
+}
+
+export type fitPlumbingTemporaryRunToCapacityResponse422 = {
+  data: void
+  status: 422
+}
+
+export type fitPlumbingTemporaryRunToCapacityResponse502 = {
+  data: FitPlumbingTemporaryRunToCapacity502
+  status: 502
+}
+
+export type fitPlumbingTemporaryRunToCapacityResponseSuccess = (fitPlumbingTemporaryRunToCapacityResponse200 | fitPlumbingTemporaryRunToCapacityResponse201) & {
+  headers: Headers;
+};
+export type fitPlumbingTemporaryRunToCapacityResponseError = (fitPlumbingTemporaryRunToCapacityResponse400 | fitPlumbingTemporaryRunToCapacityResponse404 | fitPlumbingTemporaryRunToCapacityResponse409 | fitPlumbingTemporaryRunToCapacityResponse422 | fitPlumbingTemporaryRunToCapacityResponse502) & {
+  headers: Headers;
+};
+
+export type fitPlumbingTemporaryRunToCapacityResponse = (fitPlumbingTemporaryRunToCapacityResponseSuccess | fitPlumbingTemporaryRunToCapacityResponseError)
+
+export const getFitPlumbingTemporaryRunToCapacityUrl = (id: number,) => {
+
+
+
+
+  return `/api/plan/runs/${id}/fit-plumbing`
+}
+
+export const fitPlumbingTemporaryRunToCapacity = async (id: number, options?: RequestInit): Promise<fitPlumbingTemporaryRunToCapacityResponse> => {
+
+  return customFetch<fitPlumbingTemporaryRunToCapacityResponse>(getFitPlumbingTemporaryRunToCapacityUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getFitPlumbingTemporaryRunToCapacityMutationOptions = <TError = void | PlumbingFitAttemptResponse | FitPlumbingTemporaryRunToCapacity502,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof fitPlumbingTemporaryRunToCapacity>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof fitPlumbingTemporaryRunToCapacity>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['fitPlumbingTemporaryRunToCapacity'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof fitPlumbingTemporaryRunToCapacity>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  fitPlumbingTemporaryRunToCapacity(id,requestOptions)
+        }
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type FitPlumbingTemporaryRunToCapacityMutationResult = NonNullable<Awaited<ReturnType<typeof fitPlumbingTemporaryRunToCapacity>>>
+
+    export type FitPlumbingTemporaryRunToCapacityMutationError = void | PlumbingFitAttemptResponse | FitPlumbingTemporaryRunToCapacity502
+
+    /**
+ * @summary Fit a finalized Plumbing Temporary run without mutating its frozen rows
+ */
+export const useFitPlumbingTemporaryRunToCapacity = <TError = void | PlumbingFitAttemptResponse | FitPlumbingTemporaryRunToCapacity502,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof fitPlumbingTemporaryRunToCapacity>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof fitPlumbingTemporaryRunToCapacity>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+
+      const mutationOptions = getFitPlumbingTemporaryRunToCapacityMutationOptions(options);
+
+      return useMutation(mutationOptions);
+    }
+
 export type exportFrozenPlanExcelResponse200 = {
   data: Blob
   status: 200
